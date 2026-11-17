@@ -16,7 +16,7 @@ from itertools import islice
 from types import MappingProxyType
 import uuid
 
-from continuity_capabilities import CapabilityRefusal, OwnerAdapter, owner_reference_check
+from continuity_capabilities import CapabilityRefusal, OwnerAdapter, native_input_check, owner_reference_check
 from continuity_contracts import (
     MAX_DEPENDENCY_BYTES, VERSION, canonical_bytes, portable_path, _read_regular_bytes, verify_references,
 )
@@ -143,11 +143,8 @@ class RigOwner(OwnerAdapter):
 
         def load_pinned_rig(retained=0):
             limits = native_limits(retained)
-            try:
+            with native_input_check():
                 return load_rig(rig_root, limits=limits, expected_manifest_sha256=manifest_sha256)
-            except FileNotFoundError as exc:
-                raise CapabilityRefusal('RIG_MISSING_ASSET', 'integrity',
-                                        'Native dependency could not be verified') from exc
 
         with job_lock(rig_root):
             with owner_reference_check():

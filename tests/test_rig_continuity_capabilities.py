@@ -298,6 +298,14 @@ class CapabilityTest(unittest.TestCase):
             ('RIG_LIMIT_MEMORY', 'resource-memory_bytes', 'verified'),
             ('RIG_HASH', 'integrity', 'failed'),
             ('RIG_SOURCE_CHANGED', 'integrity', 'failed'),
+            ('RIG_PAYLOAD_IO', 'integrity', 'failed'),
+            ('RIG_PAYLOAD_TYPE', 'integrity', 'failed'),
+            ('RIG_PAYLOAD_PATH', 'integrity', 'failed'),
+            ('RIG_DIRECTORY_CLOSED', 'integrity', 'failed'),
+            ('RIG_DIRECTORY_CHANGED', 'integrity', 'failed'),
+            ('RIG_DIRECTORY_FD', 'integrity', 'failed'),
+            ('RIG_DIRECTORY_PATH', 'integrity', 'failed'),
+            ('RIG_DIRECTORY_UNAVAILABLE', 'integrity', 'failed'),
         ):
             with self.subTest(code=code), patch(
                 'rig_models.load_rig', side_effect=RigError(code, f'Native input at {self.root}'),
@@ -307,6 +315,18 @@ class CapabilityTest(unittest.TestCase):
                 self.assertEqual(result['checks'][0]['unsatisfied_gates'], [gate])
                 self.assertTrue(result['checks'][0]['error'].startswith(code + ':'))
                 self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_backend_payload_error_does_not_claim_native_dependency_drift(self):
+        owner, request = self.bound('geometry-inspection')
+        error = RigError('RIG_PAYLOAD_IO', f'Backend output at {self.root}')
+        with patch.object(owner, 'execute', side_effect=error):
+            result = self.engine(owner).run(request)
+        row = result['checks'][0]
+        self.assertEqual(result['integrity'], 'verified')
+        self.assertEqual(row['outcome'], 'failed')
+        self.assertEqual(row['unsatisfied_gates'], ['execution'])
+        self.assertTrue(row['error'].startswith('CONTINUITY_CAPABILITY_EXECUTION:'))
+        self.assertNotIn(str(self.root), json.dumps(result))
 
     def test_missing_native_dependency_fails_report_integrity(self):
         owner, request = self.bound('geometry-inspection')

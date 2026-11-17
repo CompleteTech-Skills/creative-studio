@@ -222,9 +222,11 @@ class CapabilityRefusal(ValueError):
 
 
 _NATIVE_INTEGRITY_CODES = frozenset({
-    'RIG_DIRECTORY_CHANGED', 'RIG_EVIDENCE_CHANGED', 'RIG_HASH', 'RIG_IDENTITY_CHANGED',
-    'RIG_ANIMATION', 'RIG_ASSET_INVENTORY', 'RIG_MISSING_ASSET', 'RIG_PATH', 'RIG_PAYLOAD_CHANGED',
-    'RIG_REVIEW_MISSING', 'RIG_SOURCE_CHANGED', 'RIG_SOURCE_INVENTORY', 'RIG_SYMLINK',
+    'RIG_ANIMATION', 'RIG_ASSET_INVENTORY', 'RIG_DIRECTORY_CHANGED', 'RIG_DIRECTORY_CLOSED',
+    'RIG_DIRECTORY_FD', 'RIG_DIRECTORY_PATH', 'RIG_DIRECTORY_UNAVAILABLE', 'RIG_EVIDENCE_CHANGED',
+    'RIG_HASH', 'RIG_IDENTITY_CHANGED', 'RIG_MISSING_ASSET', 'RIG_PATH', 'RIG_PAYLOAD_CHANGED',
+    'RIG_PAYLOAD_IO', 'RIG_PAYLOAD_PATH', 'RIG_PAYLOAD_TYPE', 'RIG_REVIEW_MISSING',
+    'RIG_SOURCE_CHANGED', 'RIG_SOURCE_INVENTORY', 'RIG_SYMLINK',
 })
 _NATIVE_RESOURCE_CODES = frozenset({
     'RIG_LIMITS', 'RIG_LIMIT_ANIMATION', 'RIG_LIMIT_BINARY', 'RIG_LIMIT_BONES', 'RIG_LIMIT_CLIPS',
@@ -240,12 +242,25 @@ def _execution_refusal(exc):
         code = exc.report['code']
         if code == 'RIG_BUSY':
             return CapabilityRefusal(code, 'ownership', 'Another writer owns the native rig')
-        if code in _NATIVE_INTEGRITY_CODES:
-            return CapabilityRefusal(code, 'integrity', 'Native dependency could not be verified')
         if code in _NATIVE_RESOURCE_CODES:
             gate = 'resource-memory_bytes' if code == 'RIG_LIMIT_MEMORY' else 'resource-admission'
             return CapabilityRefusal(code, gate, 'Native resource limit refused admission')
     return CapabilityRefusal('CONTINUITY_CAPABILITY_EXECUTION', 'execution', 'Native owner operation failed')
+
+
+@contextmanager
+def native_input_check():
+    """Classify errors from the canonical native input reader only."""
+    try:
+        yield
+    except FileNotFoundError as exc:
+        raise CapabilityRefusal('RIG_MISSING_ASSET', 'integrity',
+                                'Native dependency could not be verified') from exc
+    except RigError as exc:
+        code = exc.report['code']
+        if code in _NATIVE_INTEGRITY_CODES:
+            raise CapabilityRefusal(code, 'integrity', 'Native dependency could not be verified') from exc
+        raise
 
 
 def _reference_refusal(exc):
