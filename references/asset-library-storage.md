@@ -7,6 +7,9 @@ query projection. Existing SQLite-only libraries remain readable. Call
 garbage collection on an old library. Migration preserves manifest and payload
 bytes, exact references, and the latest annotation revision. A legacy annotation
 checkpoint identifies the actual retained revision without inventing lost history.
+Once `records/READY` is published every handle writes durably, even if the
+migration crashed before its SQLite flag; rerunning `upgrade_storage()` verifies
+both directions and then records the flag.
 
 ## Publication and failure boundaries
 
@@ -56,6 +59,9 @@ The conservative GC only deletes verified content-addressed blobs unreachable fr
 **every** committed version. There is no implicit retirement or old-version deletion;
 project pins, shared users, rollback retention and active jobs cannot lose a
 registered version through this collector. Staging data is reported and retained.
+Index-only history (an indexed version, blob, annotation or event absent from
+canonical records) blocks analysis and application exactly as it blocks writes
+and `recover()`; no blob the index still stores is ever a candidate.
 
 Limits retain the foundation's 64 MiB/file, 256 MiB/version and 4,096 versions.
 Canonical payloads plus commit records fit within 1 GiB; each commit is at most

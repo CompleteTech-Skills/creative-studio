@@ -367,6 +367,113 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertIn(orphan, self.library.list_references())
         self.assertEqual(self.library.resolve(orphan)['version'], '2.0.0')
 
+    def test_gc_refuses_while_index_only_version_depends_on_orphan_blobs(self):
+        reference = self.register()
+        storage = self.library.storage
+        # An interrupted registration leaves canonical blobs with no commit.
+        for f in self.fixture.files:
+            path = storage.root / 'blobs' / f['sha256']
+            payload = path.read_bytes()
+            path.unlink()
+            storage._publish(storage.root / 'blobs', f['sha256'], payload)
+        commits = sorted((storage.root / 'commits').iterdir())
+        stale_plan = self.library.analyze_gc()
+        self.assertEqual(stale_plan['candidates'], [])
+        for path in commits:
+            path.unlink()
+        # Commit records lost while the index survives: every blob is now
+        # unreachable canonically but still required by an indexed version.
+        for operation in (self.library.analyze_gc, lambda: self.library.apply_gc(stale_plan)):
+            with self.subTest(operation=operation), self.assertRaises(RigError) as raised:
+                operation()
+            self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        for f in self.fixture.files:
+            self.assertTrue((storage.root / 'blobs' / f['sha256']).exists())
+        self.assertEqual(self.library.inspect(reference), self.fixture.manifest)
+
+    def test_gc_refuses_index_only_version_sharing_uncommitted_blobs(self):
+        # Interrupted durable registration: blobs published, no commit record.
+        def interrupted(record, payloads=()):
+            for digest, payload in dict(payloads).items():
+                self.library.storage._publish(self.library.storage.root / 'blobs', digest, payload)
+            raise OSError('interrupted after blob publication')
+        with patch.object(self.library.storage, 'append', interrupted):
+            with self.assertRaises(OSError):
+                self.register()
+        self.assertEqual(len(self.library.analyze_gc()['candidates']), len(self.fixture.files))
+        # A pre-durability writer then records the same bytes in SQLite only.
+        with patch.object(self.library.storage, 'append', lambda *a, **k: None), \
+                patch.object(self.library.storage, 'check_projection', lambda *a, **k: None):
+            other = self.library.register(self.version('9.0.0'), self.fixture.sources)
+        with self.assertRaises(RigError) as raised:
+            self.library.analyze_gc()
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        self.assertEqual(self.library.resolve(other)['version'], '9.0.0')
+
+    def test_missing_canonical_blob_is_a_typed_durability_error(self):
+        reference = self.register()
+        (self.library.storage.root / 'blobs' / self.fixture.files[0]['sha256']).unlink()
+        for operation in (lambda: self.library.resolve(reference),
+                          lambda: self.library.inspect(reference),
+                          self.library.recover):
+            with self.subTest(operation=operation), self.assertRaises(RigError) as raised:
+                operation()
+            self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+
+    def test_storage_filesystem_errors_are_typed(self):
+        import errno
+        from asset_library_storage import Storage
+        reference = self.register()
+        def denied(*_args, **_kwargs):
+            raise OSError(errno.EIO, 'Input/output error')
+        manifest = self.version('2.0.0')
+        with patch.object(Path, 'iterdir', denied):
+            with self.assertRaises(RigError) as raised:
+                self.library.storage.append(dict(schema_version=1, kind='version', value=manifest))
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        orphan = b'Uncommitted unreachable payload'
+        digest = hashlib.sha256(orphan).hexdigest()
+        self.library.storage._publish(self.library.storage.root / 'blobs', digest, orphan)
+        plan = self.library.analyze_gc()
+        with patch.object(Path, 'unlink', denied):
+            with self.assertRaises(RigError) as raised:
+                self.library.apply_gc(plan)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        # A failing staging cleanup must not replace the typed publish error.
+        import asset_library_storage
+        def full(_fd):
+            raise OSError(errno.ENOSPC, 'No space left on device')
+        with patch.object(asset_library_storage.os, 'fsync', full), patch.object(Path, 'unlink', denied):
+            with self.assertRaises(RigError) as raised:
+                self.library.storage._publish(self.library.storage.root / 'blobs', 'f' * 64, b'payload')
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        self.assertIsInstance(self.library.storage, Storage)
+        self.assertEqual(self.library.resolve(reference), self.fixture.manifest)
+
+    def test_crash_after_ready_before_flag_keeps_stale_handles_durable_and_upgrade_finishes(self):
+        from asset_library_storage import Storage
+        reference, (migrator, old_writer, _unused) = self.legacy_handles()
+        original_ready = Storage.ready
+        def crash_after_ready(storage):
+            original_ready(storage)
+            raise RuntimeError('simulated crash before durability flag commit')
+        with patch.object(Storage, 'ready', crash_after_ready):
+            with self.assertRaises(RuntimeError):
+                migrator.upgrade_storage()
+        with closing(sqlite3.connect(self.library.database)) as db:
+            self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='durability'").fetchone())
+        newer = old_writer.register(self.version('2.0.0'), self.fixture.sources)
+        self.assertIsNotNone(old_writer.storage)
+        fresh = AssetLibrary(self.library.root)
+        fresh.register(self.version('3.0.0'), self.fixture.sources)
+        status = fresh.upgrade_storage()
+        self.assertEqual(status['versions'], 3)
+        with closing(sqlite3.connect(self.library.database)) as db:
+            self.assertEqual(db.execute('SELECT canonical FROM durability').fetchall(), [(1,)])
+        fresh.recover()
+        self.assertEqual(fresh.resolve(newer)['version'], '2.0.0')
+        self.assertEqual(fresh.resolve(reference), self.fixture.manifest)
+
     def test_index_only_annotation_and_event_rows_block_recovery(self):
         reference = self.register()
         with patch.object(self.library.storage, 'append', lambda *a, **k: None):

@@ -185,8 +185,7 @@ class AssetLibrary:
             if db.execute('SELECT version FROM settings').fetchall() != [(1,)]:
                 _fail('VERSION', 'Unsupported library storage schema.')
             db.execute('CREATE TABLE IF NOT EXISTS asset_events(stream TEXT NOT NULL, revision INTEGER NOT NULL, document BLOB NOT NULL, PRIMARY KEY(stream,revision))')
-            durable_flag = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durability'").fetchone()
-            durable_required = bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
+            durable_required = self._durable_flag(db)
         from asset_library_storage import Storage
         self.storage = Storage(self, create=True) if create else (
             Storage(self) if (self.root / 'records' / 'READY').exists() else None)
@@ -249,9 +248,16 @@ class AssetLibrary:
         db.execute('BEGIN')
         self._refresh_mode(db)
 
-    def _refresh_mode(self, db):
+    @staticmethod
+    def _durable_flag(db):
         durable_flag = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durability'").fetchone()
-        required = bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
+        return bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
+
+    def _refresh_mode(self, db):
+        # A published READY marker makes durable mode required even if the
+        # migration crashed before its SQLite flag committed: a stale legacy
+        # handle must never add index-only history after canonical publication.
+        required = self._durable_flag(db) or os.path.lexists(self.root / 'records' / 'READY')
         if required and self.storage is None:
             from asset_library_storage import Storage
             storage = Storage(self)
@@ -460,11 +466,16 @@ class AssetLibrary:
     def upgrade_storage(self):
         """Explicitly migrate a legacy SQLite-only library without rewriting bytes."""
         from asset_library_storage import Storage
-        if self.storage:
-            return self.storage_status()
         with self._connect() as db:
             self._begin_writer(db)
             if self.storage:
+                if not self._durable_flag(db):
+                    # READY was published but the flag transaction did not
+                    # commit. Verify both directions, then finish migration.
+                    self.storage.check_projection(db)
+                    db.execute('CREATE TABLE IF NOT EXISTS durability(canonical INTEGER NOT NULL)')
+                    db.execute('DELETE FROM durability')
+                    db.execute('INSERT INTO durability VALUES(1)')
                 return self._storage_status_locked()
             # resume completes a layout left by an interrupted earlier upgrade.
             storage = Storage(self, resume=True)
@@ -601,14 +612,14 @@ class AssetLibrary:
             _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
         with self._connect() as db:
             self._begin_writer(db)
-            return self.storage.gc_plan()
+            return self.storage.gc_plan(db)
 
     def apply_gc(self, plan):
         if not self.storage:
             _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
         with self._connect() as db:
             self._begin_writer(db)
-            return self.storage.apply_gc(plan)
+            return self.storage.apply_gc(db, plan)
 
     def backup(self, destination):
         """Publish a complete portable private library at a new destination."""

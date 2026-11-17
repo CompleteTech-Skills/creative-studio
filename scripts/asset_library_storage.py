@@ -27,6 +27,10 @@ def _fail(message):
     raise RigError('LIBRARY_DURABILITY', message)
 
 
+def _os_fail(action, exc):
+    raise RigError('LIBRARY_DURABILITY', action + ': ' + str(exc)) from exc
+
+
 def validate_stream(stream):
     if not isinstance(stream, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,95}', stream):
         _fail('Event stream must be a bounded portable lowercase identifier.')
@@ -83,7 +87,10 @@ class Storage:
 
     def _read(self, path, limit):
         from asset_library import read_source_bytes
-        info = path.lstat()
+        try:
+            info = path.lstat()
+        except OSError as exc:
+            _os_fail('Canonical record is missing or unreadable', exc)
         if info.st_nlink != 1:
             _fail('Canonical records cannot be hard links.')
         return read_source_bytes(path, limit)
@@ -91,7 +98,11 @@ class Storage:
     def _publish(self, directory, name, payload):
         self._check()
         destination = directory / name
-        if destination.exists() or destination.is_symlink():
+        try:
+            present = os.path.lexists(destination)
+        except OSError as exc:
+            _os_fail('Canonical record publication failed', exc)
+        if present:
             if self._read(destination, max(len(payload), 1)) != payload:
                 _fail('Existing immutable content differs from its digest.')
             return
@@ -111,8 +122,13 @@ class Storage:
             # Disk-full, permission and exclusive-rename failures stay typed.
             raise RigError('LIBRARY_DURABILITY', 'Canonical record publication failed: ' + str(exc)) from exc
         finally:
-            if temporary is not None and temporary.exists():
-                temporary.unlink()
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    # Absent after rename, or undeletable: never mask the typed
+                    # outcome; leftover staging is reported, never inferred.
+                    pass
 
     def ready(self):
         self._publish(self.root, 'READY', b'asset-library-canonical-storage-v1\n')
@@ -177,15 +193,18 @@ class Storage:
         if len(encoded) > MAX_RECORD_BYTES:
             _fail('Canonical commit exceeds record budget.')
         payloads = dict(payloads)
-        paths = list((self.root / 'blobs').iterdir())
-        if len(paths) > 1048576:
-            _fail('Canonical blob inventory exceeds bound.')
-        total = sum(p.lstat().st_size for p in paths)
-        commits = list((self.root / 'commits').iterdir())
-        total += sum(p.lstat().st_size for p in commits) + len(encoded)
-        for digest, payload in payloads.items():
-            if not (self.root / 'blobs' / digest).exists():
-                total += len(payload)
+        try:
+            paths = list((self.root / 'blobs').iterdir())
+            if len(paths) > 1048576:
+                _fail('Canonical blob inventory exceeds bound.')
+            total = sum(p.lstat().st_size for p in paths)
+            commits = list((self.root / 'commits').iterdir())
+            total += sum(p.lstat().st_size for p in commits) + len(encoded)
+            for digest, payload in payloads.items():
+                if not os.path.lexists(self.root / 'blobs' / digest):
+                    total += len(payload)
+        except OSError as exc:
+            _os_fail('Canonical quota scan failed', exc)
         if total > 1024 ** 3:
             _fail('Canonical payload quota exceeded; analyze unreferenced content before retrying.')
         for digest, payload in payloads.items():
@@ -311,16 +330,28 @@ class Storage:
                 self.library._verify_payloads(db, dependency)
         return dict(snapshot=snapshot, versions=len(manifests), blobs=len(blobs), bytes=sum(map(len, blobs.values())))
 
-    def gc_plan(self):
+    def gc_plan(self, db):
+        """Plan deletion only of content no canonical or indexed history uses.
+
+        Index-only history blocks GC exactly as it blocks writes and recovery:
+        an indexed version may depend on a blob canonical history lacks.
+        """
         manifests, blobs, _, snapshot = self.materialize()
-        paths = sorted((self.root / 'blobs').iterdir())
+        _, history, _, events = self._records()
+        self.check_index_backed(db, manifests, history, events)
+        # Defense in depth: never offer a digest the index still stores.
+        indexed = {digest for (digest,) in db.execute('SELECT sha256 FROM blobs')}
+        try:
+            paths = sorted((self.root / 'blobs').iterdir())
+        except OSError as exc:
+            _os_fail('Canonical blob inventory could not be scanned', exc)
         if len(paths) > 1048576:
             _fail('Blob inventory exceeds bounded scan.')
         candidates = []
         for path in paths:
             if not _HASH.fullmatch(path.name):
                 _fail('Unexpected canonical blob path.')
-            if path.name in blobs:
+            if path.name in blobs or path.name in indexed:
                 continue
             payload = self._read(path, 64 * 1024 * 1024)
             if hashlib.sha256(payload).hexdigest() != path.name:
@@ -331,10 +362,13 @@ class Storage:
                     policy='Retain all committed versions, annotation history, dependencies, source and evidence; staging is never deleted.')
         return {**body, 'plan_sha256': object_hash(body)}
 
-    def apply_gc(self, plan):
-        if not isinstance(plan, dict) or plan != self.gc_plan():
+    def apply_gc(self, db, plan):
+        if not isinstance(plan, dict) or plan != self.gc_plan(db):
             _fail('GC analysis is stale or altered; analyze again before applying.')
-        for candidate in plan['candidates']:
-            (self.root / 'blobs' / candidate['sha256']).unlink()
-        _sync_directory(self.root / 'blobs')
+        try:
+            for candidate in plan['candidates']:
+                (self.root / 'blobs' / candidate['sha256']).unlink()
+            _sync_directory(self.root / 'blobs')
+        except OSError as exc:
+            _os_fail('Unreferenced blob removal failed', exc)
         return dict(deleted=len(plan['candidates']), bytes=sum(c['bytes'] for c in plan['candidates']), snapshot=plan['snapshot'])
