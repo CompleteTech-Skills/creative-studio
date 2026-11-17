@@ -57,6 +57,30 @@ class CameraColorTests(unittest.TestCase):
             self.assertEqual(validate_color_binding(self.optics, self.render, self.world, color)['exposure_stops'],
                              exposure)
 
+    def test_traceability_names_existing_tests(self):
+        """Every test cited in the #76 traceability table must exist in its file."""
+        import re
+        text = (ROOT / 'references/camera3d-traceability.md').read_text()
+        cited = []
+        for line in text.splitlines():
+            current = None
+            for match in re.finditer(r'`(tests/test_\w+\.py)`|`(test_\w+)`', line):
+                if match.group(1):
+                    current = match.group(1)
+                elif current is not None:
+                    cited.append((current, match.group(2)))
+        self.assertGreaterEqual(len(cited), 20)
+        sources = {}
+        for path, name in cited:
+            source = sources.setdefault(path, (ROOT / path).read_text())
+            with self.subTest(path=path, test=name):
+                self.assertRegex(source, r'\n    def ' + re.escape(name) + r'\(self')
+        for task in range(1, 5):
+            self.assertIn(f'## Task {task}:', text)
+        self.assertIn('**ISO is unsupported.**', text)
+        for directory in ('camera-optics-gate/', 'camera-color-gate/'):
+            self.assertIn(directory, text)
+
     @unittest.skipUnless(os.environ.get('HATCH_CAMERA3D_COLOR_TEST') == '1',
                          'explicit actual Blender camera/shared WB acceptance')
     def test_actual_camera_shared_white_balance(self):

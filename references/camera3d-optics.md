@@ -111,3 +111,8 @@ tests -p test_rig_camera3d_color.py -v`. Set `HATCH_BLENDER`, and optionally
 renders independent temperature/tint PNG controls, identical linear EXR
 controls, saves and reopens the native project, and records input/source/output
 hashes. Fixture success supplies no production-art visual approval.
+
+## Traceability
+
+`references/camera3d-traceability.md` maps each #76 task to the host and native
+tests that exercise it and states which behavior, including ISO, is unsupported.
