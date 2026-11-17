@@ -15,6 +15,7 @@ from asset_library_import import ImportPipeline
 from asset_library_validation import _generated_workspace, validate_asset
 from rig_errors import RigError, object_hash
 from rig_gltf import read_gltf
+from rig_interop import validate_gltf
 import test_asset_library as library_fixture
 import test_rig_asset_library_import as import_fixture
 
@@ -133,6 +134,7 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual(report['meshes'][0]['texcoord_sets'], 1)
         self.assertEqual(report['meshes'][0]['boundary_edges'], 3)
         self.assertEqual(report['meshes'][0]['material_slot'], 0)
+        self.assertEqual(report['authored_textures'], 1)
         self.assertEqual(report['textures'], [dict(width=2, height=2, mime_type='image/png',
                                                     sha256=hashlib.sha256(image).hexdigest())])
         for private in (str(self.root), 'fixture.gltf', 'paint.png'):
@@ -167,7 +169,7 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual(walk_report['source_end_exact'], dict(numerator=2, denominator=1))
         self.assertEqual(walk_report['tracks'][0]['key_times_sha256'], object_hash(expected))
 
-    def test_unskinned_animation_reports_exact_source_end_and_rigid_fallback(self):
+    def animated_source(self, names=None, *, morph=False):
         source = import_fixture.NativeImportTests.external_source(SimpleNamespace(root=self.root))
         document = json.loads(source.read_bytes())
         buffer_path = self.root / 'resources/triangle.bin'
@@ -183,18 +185,33 @@ class NativeVerificationTests(unittest.TestCase):
                                   count=len(values) // width, type=kind, **metadata))
             return len(accessors) - 1
 
+        if morph:
+            deltas = accessor([0.0, 0.0, 0.25] * 3, 3, 'VEC3',
+                              min=[0.0, 0.0, 0.25], max=[0.0, 0.0, 0.25])
+            primitives = document['meshes'][0]['primitives']
+            primitives[0]['targets'] = [dict(POSITION=deltas)]
+            primitives.append(dict(primitives[0]))
         document['animations'] = []
-        for times in ([0.0], [0.0, 1 / 128], [0.0, 2.0]):
+        for index, times in enumerate(([0.0], [0.0, 1 / 128], [0.0, 2.0])):
             sample_times = accessor(times, 1, 'SCALAR', min=[times[0]], max=[times[-1]])
             translations = accessor([0.0, 0.0, 0.0] * len(times), 3, 'VEC3')
             document['animations'].append(dict(
                 samplers=[{'input': sample_times, 'output': translations}],
                 channels=[dict(sampler=0, target=dict(node=0, path='translation'))]))
+            animation = document['animations'][-1]
+            if names:
+                animation['name'] = names[index]
+            if morph:
+                weights = accessor([0.5] * len(times), 1, 'SCALAR')
+                animation['samplers'].append(dict(input=sample_times, output=weights, interpolation='STEP'))
+                animation['channels'].append(dict(sampler=1, target=dict(node=0, path='weights')))
         document['buffers'][0]['byteLength'] = len(payload)
         buffer_path.write_bytes(payload)
         source.write_text(json.dumps(document), encoding='utf-8')
+        return source
 
-        report = validate_asset(self.library, self.import_asset(source))
+    def test_unskinned_animation_reports_exact_source_end_and_rigid_fallback(self):
+        report = validate_asset(self.library, self.import_asset(self.animated_source()))
         self.assertEqual(report['skins'], [])
         self.assertEqual(report['native_rigid_bindings'], 1)
         self.assertNotIn('skin', report['capabilities'])
@@ -204,6 +221,40 @@ class NativeVerificationTests(unittest.TestCase):
         floor = dict(zip(('numerator', 'denominator'), (1 / 24).as_integer_ratio()))
         self.assertEqual([clip['native_playback_duration_exact'] for clip in report['clips']],
                          [floor, floor, exact[-1]])
+
+    def test_named_clip_collision_fails_after_khronos_validates_normalized_bytes(self):
+        source = self.animated_source(['Walk', 'Walk-2', 'Walk'])
+        reference = self.import_asset(source, category='animation')
+        payload = self.library.read_file(reference, 'normalized.glb')
+        staged = self.root / 'normalized.glb'
+        staged.write_bytes(payload)
+        independent = validate_gltf(staged)
+        self.assertTrue(independent['ok'])
+        self.assertIs(independent['issues']['truncated'], False)
+        self.assertEqual(independent['asset_sha256'], hashlib.sha256(payload).hexdigest())
+        with self.assertRaises(RigError) as error:
+            validate_asset(self.library, reference)
+        self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_ANIMATION')
+        self.assertEqual((error.exception.report['expected'], error.exception.report['observed']), (3, 2))
+
+    def test_weights_channel_expands_to_one_track_per_active_primitive(self):
+        source = self.animated_source(['Walk', 'Walk-1', 'Walk'], morph=True)
+        report = validate_asset(self.library, self.import_asset(source, category='animation'))
+        self.assertEqual([clip['metrics']['tracks'] for clip in report['clips']], [3, 3, 3])
+        self.assertEqual([(track['path'], track['interpolation'], track['keys'])
+                          for track in report['clips'][2]['tracks']],
+                         [('translation', 'LINEAR', 2), ('weights', 'STEP', 2), ('weights', 'STEP', 2)])
+
+    def test_image_without_texture_object_does_not_verify_texture_category(self):
+        source = import_fixture.NativeImportTests.external_source(SimpleNamespace(root=self.root))
+        document = json.loads(source.read_bytes())
+        del document['textures']
+        document['materials'] = [{}]
+        source.write_text(json.dumps(document), encoding='utf-8')
+        reference = self.import_asset(source, category='texture')
+        with self.assertRaises(RigError) as error:
+            validate_asset(self.library, reference)
+        self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_CATEGORY')
 
     def test_early_byte_and_native_budgets_and_missing_khronos(self):
         reference = self.import_asset()
@@ -257,7 +308,8 @@ class NativeVerificationTests(unittest.TestCase):
         native.assert_not_called()
 
         payload = self.library.read_file(reference, 'normalized.glb')
-        unknown_version = dict(ok=True, issues=dict(numErrors=0), validator=str(self.root),
+        unknown_version = dict(ok=True, issues=dict(numErrors=0, numWarnings=0, truncated=False),
+                               validator=str(self.root),
                                asset_sha256=hashlib.sha256(payload).hexdigest())
         with (patch('asset_library_validation.validate_gltf', return_value=unknown_version),
               self.assertRaises(RigError) as error):
@@ -272,6 +324,38 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual(error.exception.report['code'], 'RIG_TEXTURE_DECODE')
         self.assertNotIn(str(self.root), json.dumps(error.exception.report))
         native.assert_called_once()
+
+    def test_real_khronos_issue_cap_fails_even_with_zero_errors(self):
+        source = import_fixture.NativeImportTests.external_source(SimpleNamespace(root=self.root))
+        document = json.loads(source.read_bytes())
+        document['materials'].extend({} for _ in range(1001))
+        source.write_text(json.dumps(document), encoding='utf-8')
+        reference = self.import_asset(source)
+        normalized = self.root / 'normalized.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        independent = validate_gltf(normalized)
+        self.assertTrue(independent['ok'])
+        self.assertEqual(independent['issues']['numErrors'], 0)
+        self.assertIs(independent['issues']['truncated'], True)
+        with self.assertRaises(RigError) as error:
+            validate_asset(self.library, reference)
+        self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_VALIDATION')
+
+    def test_incomplete_or_malformed_khronos_counts_fail_before_native_decode(self):
+        reference = self.import_asset()
+        for issue_overrides in (dict(truncated=True), dict(truncated=None), dict(truncated=0),
+                                dict(numErrors=False), dict(numErrors=0.0), dict(numErrors=-1),
+                                dict(numWarnings=False), dict(numWarnings=0.0), dict(numWarnings=-1)):
+            issues = {**dict(truncated=False, numErrors=0, numWarnings=0), **issue_overrides}
+            if issues['truncated'] is None:
+                del issues['truncated']
+            with (self.subTest(issues=issues),
+                  patch('asset_library_validation.validate_gltf', return_value=dict(ok=True, issues=issues)),
+                  patch('asset_library_validation.load_character_model') as native,
+                  self.assertRaises(RigError) as error):
+                validate_asset(self.library, reference)
+            self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_VALIDATION')
+            native.assert_not_called()
 
 
 if __name__ == '__main__':

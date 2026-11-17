@@ -84,22 +84,29 @@ def _animation_workspace(document, order, limits):
     mesh_instances = {i: len(body['meshes'][body['nodes'][i]['mesh']]['primitives'])
                       for i in order if 'mesh' in body['nodes'][i]}
     keys = scalars = tracks = 0
+    expected_clips = []
     for animation in animations:
+        expected_tracks = []
         samplers = animation['samplers']
         for channel in animation['channels']:
             sampler = samplers[_index(channel['sampler'], len(samplers), 'animation sampler')]
             times = accessors[_index(sampler['input'], len(accessors), 'key times')]
             values = accessors[_index(sampler['output'], len(accessors), 'key values')]
             target = channel['target']
-            copies = max(1, mesh_instances.get(target['node'], 0)) if target['path'] == 'weights' else 1
+            path = target['path']
+            copies = mesh_instances.get(target['node'], 0) if path == 'weights' else 1
+            require(copies > 0, 'RIG_ANIMATION_REFERENCE', 'Morph channel needs active mesh primitives.')
             keys += copies * times['count']
             require(keys <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
                     'Expanded native animation tracks exceed the aggregate key budget.')
             scalars += copies * values['count'] * WIDTHS[values['type']]
             tracks += copies
+            expected_tracks.extend([(path, sampler.get('interpolation', 'LINEAR'),
+                                     times['count'])] * copies)
+        expected_clips.append(expected_tracks)
     # Retained Python float lists may repeat accessor values per target and
     # need room alongside NumPy validation buffers and exact-time summaries.
-    return 128 * keys + 64 * scalars + 1024 * tracks
+    return 128 * keys + 64 * scalars + 1024 * tracks, expected_clips
 
 
 def _generated_workspace(document, order, limits):
@@ -151,9 +158,10 @@ def _preflight(path, size, limits):
             'Expanded embedded textures exceed the verification byte limit.')
     # Admit simultaneous loader, geometry analysis and native raster allocations.
     # Analysis includes transient topology, vertex and nearest-neighbor arrays.
+    animation_reserve, expected_clips = _animation_workspace(document, order, limits)
     reserve = (raw['estimated_memory_bytes'] + 4 * size + image_bytes
                + 256 * raw['triangles'] + 120 * raw['vertices'] + 16 * 1024**2
-               + _animation_workspace(document, order, limits)
+               + animation_reserve
                + _generated_workspace(document, order, limits))
     require(reserve < limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
             'Native decoding and geometry analysis exceed the verification working-set estimate.')
@@ -167,10 +175,13 @@ def _preflight(path, size, limits):
         require(pixels <= 16_777_216 and total_pixels * 16 <= decode_limits['memory_bytes'] // 2,
                 'RIG_LIMIT_TEXTURE', 'Embedded textures exceed the native raster admission budget.')
         dimensions.append((width, height))
-    return raw, hierarchy, len(document.json.get('materials', [])), dimensions, decode_limits
+    return raw, hierarchy, len(document.json.get('materials', [])), dimensions, decode_limits, expected_clips
 
 
-def _measure_rig(model, limits):
+def _measure_rig(model, limits, expected_clips):
+    require(len(model.clips) == len(expected_clips), 'ASSET_TECHNICAL_ANIMATION',
+            'Preflight and decoded animation clip counts differ.',
+            expected=len(expected_clips), observed=len(model.clips))
     skeleton = model.skeleton
     summary = None
     if skeleton is not None:
@@ -199,7 +210,12 @@ def _measure_rig(model, limits):
                 raise RigError('ASSET_TECHNICAL_SKIN', 'Unknown native GLB binding classification.')
     clips = []
     keys = 0
-    for clip in model.clips.values():
+    for clip, expected_tracks in zip(model.clips.values(), expected_clips, strict=True):
+        observed_tracks = [(track['path'], track['interpolation'], len(track['times']))
+                           for track in clip['tracks']]
+        require(observed_tracks == expected_tracks, 'ASSET_TECHNICAL_ANIMATION',
+                'Preflight and decoded animation track coverage differ.',
+                expected=len(expected_tracks), observed=len(observed_tracks))
         track_keys = sum(len(track['times']) for track in clip['tracks'])
         keys += track_keys
         require(keys <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
@@ -217,10 +233,15 @@ def _measure_rig(model, limits):
 
 
 def _native_report(path, record, limits):
-    raw, hierarchy, materials, dimensions, decode_limits = _preflight(path, record['bytes'], limits)
+    raw, hierarchy, materials, dimensions, decode_limits, expected_clips = _preflight(
+        path, record['bytes'], limits)
     independent = validate_gltf(path, timeout=min(120, limits['timeout_seconds']))
-    require(independent.get('ok') is True and independent['issues']['numErrors'] == 0,
-            'ASSET_TECHNICAL_VALIDATION', 'Independent Khronos validation must pass.')
+    issues = independent.get('issues')
+    require(independent.get('ok') is True and isinstance(issues, dict)
+            and issues.get('truncated') is False
+            and type(issues.get('numErrors')) is int and issues['numErrors'] == 0
+            and type(issues.get('numWarnings')) is int and issues['numWarnings'] >= 0,
+            'ASSET_TECHNICAL_VALIDATION', 'Independent Khronos validation must pass with complete counts.')
     require(independent['asset_sha256'] == record['sha256'], 'ASSET_TECHNICAL_HASH',
             'Independent validation must check the exact registered bytes.')
     version = independent.get('validator')
@@ -245,17 +266,19 @@ def _native_report(path, record, limits):
     for image, (width, height) in zip(model.geometry.images, dimensions, strict=True):
         textures.append(dict(width=width, height=height, mime_type=image.mime_type,
                              sha256=hashlib.sha256(image.data).hexdigest()))
-    skeleton, skins, rigid_bindings, clips = _measure_rig(model, limits)
+    authored_textures = len(model.geometry.textures)
+    skeleton, skins, rigid_bindings, clips = _measure_rig(model, limits, expected_clips)
     capabilities = ['mesh']
-    for capability, observed in (('material', materials), ('texture', textures), ('skin', skins),
+    for capability, observed in (('material', materials), ('texture', authored_textures), ('skin', skins),
                                  ('animation', clips), ('morph', any(m['morph_targets'] for m in meshes))):
         if observed:
             capabilities.append(capability)
     return dict(geometry=geometry, meshes=meshes, hierarchy=hierarchy, authored_materials=materials,
-                textures=textures, skeleton=skeleton, skins=skins, native_rigid_bindings=rigid_bindings, clips=clips,
+                authored_textures=authored_textures, textures=textures, skeleton=skeleton, skins=skins,
+                native_rigid_bindings=rigid_bindings, clips=clips,
                 capabilities=sorted(capabilities),
                 independent_validation=dict(status='passed', version=version, asset_sha256=record['sha256'],
-                                            errors=0, warnings=independent['issues']['numWarnings']))
+                                            errors=0, warnings=issues['numWarnings']))
 
 
 def validate_asset(library, reference, *, limits=None):
