@@ -73,6 +73,7 @@ class SceneServiceTests(unittest.TestCase):
             destination = self.root/('invalid-nested-'+str(index))
             with self.assertRaises(RigError):
                 snapshot_project(self.root/'source', destination, malformed, scene_path='example-scene.json',
+                    expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
                     derived_documents={outer['path']:outer_doc, inner['path']:inner_doc})
             self.assertFalse(destination.exists())
 
@@ -94,6 +95,7 @@ class SceneServiceTests(unittest.TestCase):
             validate_prefab_instances(graph.document(), library.resolve, max_nodes=evidence['expanded_nodes']-1)
         destination = self.root/'valid-nested'
         snapshot = snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
             derived_documents={outer['path']:outer_doc, inner['path']:inner_doc})
         reopened = load_project(destination)
         self.assertEqual(reopened['status'], 'hash-and-contract-verified')
@@ -200,7 +202,8 @@ class SceneServiceTests(unittest.TestCase):
         bundle['documents']['example-scene.json'] = scene
         exact = SceneGraph.from_bundle(bundle,'example-scene.json',source_root=self.root/'source')
         exact.duplicate('mesh','portable-copy')
-        snapshot_project(self.root/'source',self.root/'noncanonical-copy',exact,scene_path='example-scene.json')
+        snapshot_project(self.root/'source',self.root/'noncanonical-copy',exact,scene_path='example-scene.json',
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         self.assertEqual((self.root/'noncanonical-copy'/reference['path']).read_bytes(),payload)
         load_project(self.root/'noncanonical-copy')
 
@@ -352,7 +355,8 @@ class SceneServiceTests(unittest.TestCase):
         clip = next(iter(copied['derived_documents'].values()))
         self.assertEqual(clip['tracks'][0]['target'], 'mesh-copy')
         self.assertEqual(original, bundle['documents']['example-animation.json'])
-        snapshot_project(self.root/'source', self.root/'animated-copy', graph, scene_path='example-scene.json')
+        snapshot_project(self.root/'source', self.root/'animated-copy', graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'])
         reopened = load_project(self.root/'animated-copy')
         self.assertTrue(any(d['kind'] == 'scene3d-animation' and d['id'] == clip['id'] for d in reopened['documents'].values()))
         missing = self.graph(scene)
@@ -659,6 +663,7 @@ class SceneServiceTests(unittest.TestCase):
                 self.assertEqual(batch['derived_documents'][path], raw)
                 destination = self.root/('noncanonical-batch-'+str(duplicate))
                 snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+                    expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
                     derived_documents=batch['derived_documents'])
                 reopened = load_project(destination)
                 self.assertEqual((destination/path).read_bytes(), raw)
@@ -673,6 +678,7 @@ class SceneServiceTests(unittest.TestCase):
                     rejected = self.root/'changed-derived-must-not-publish'
                     with self.assertRaises(RigError):
                         snapshot_project(self.root/'source', rejected, graph, scene_path='example-scene.json',
+                            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
                             derived_documents=altered)
                     self.assertFalse(rejected.exists())
 
@@ -808,7 +814,8 @@ class SceneServiceTests(unittest.TestCase):
         t = deepcopy(TRANSFORM)
         t['translation'] = [8, 0, 0]
         graph.set_transform('mesh', t)
-        output = snapshot_project(self.root/'source', self.root/'portable', graph, scene_path='example-scene.json')
+        output = snapshot_project(self.root/'source', self.root/'portable', graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'])
         reopened = load_project(self.root/'portable')
         active = output['active_scene']
         self.assertEqual(reopened['documents'][active['path']]['nodes'][1]['transform']['translation'], [8, 0, 0])
@@ -876,7 +883,8 @@ class SceneServiceTests(unittest.TestCase):
         self.assertEqual(graph.revision, before['revision']+1)
         self.assertEqual(graph.query(name='Renamed triangle'), ['mesh'])
         self.assertEqual(graph.transform('mesh'), next(n for n in before['nodes'] if n['id'] == 'mesh')['transform'])
-        snapshot = snapshot_project(self.root/'source', self.root/'configured', graph, scene_path='example-scene.json')
+        snapshot = snapshot_project(self.root/'source', self.root/'configured', graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'])
         reopened = load_project(self.root/'configured')['documents'][snapshot['active_scene']['path']]
         self.assertEqual(reopened['world']['exposure'], 1.5)
         self.assertEqual(next(n for n in reopened['nodes'] if n['id'] == 'camera')['camera'], camera)
@@ -913,7 +921,8 @@ class SceneServiceTests(unittest.TestCase):
         graph = SceneGraph.from_bundle(self.bundle, 'example-scene.json')
         library.instantiate(graph, reference, 'foreign-instance')
         output = snapshot_project(self.root/'source', self.root/'foreign-copy', graph, scene_path='example-scene.json',
-                                  derived_documents={path: payload})
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
+            derived_documents={path: payload})
         self.assertEqual((self.root/'foreign-copy'/path).read_bytes(), payload)
         self.assertEqual(output['inventory'][path]['sha256'], hashlib.sha256(payload).hexdigest())
         load_project(self.root/'foreign-copy')
@@ -1225,6 +1234,7 @@ class RealSceneImportTests(unittest.TestCase):
         payloads = {r['path']: self.library.read_file(imported.library_reference, r['path']) for r in manifest['files']
                     if r['path'] != imported.asset_reference['path']}
         result = snapshot_project(self.root/'project', self.root/'portable', graph, scene_path='example-scene.json',
+            expected_project_sha256=b['inventory']['project.json']['sha256'],
             derived_documents={imported.asset_reference['path']: imported.asset}, extra_payloads=payloads)
         reopened = load_project(self.root/'portable')
         self.assertIn(imported.asset_reference['path'], reopened['documents'])

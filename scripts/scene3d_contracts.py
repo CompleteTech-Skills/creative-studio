@@ -18,7 +18,8 @@ from pathlib import Path
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, finite_json, normalize_root, open_payload, safe_path
+from portable_paths import existing_relative
+from rig_errors import RigError, decode_json, finite_json, normalize_root, open_payload
 
 MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_FILES = 4096
@@ -253,16 +254,10 @@ def validator(kind):
 
 def portable_path(value):
     """Canonical portable spelling; no aliases, traversal, drive or device paths."""
-    require(isinstance(value, str) and 0 < len(value) <= 1024, 'Invalid path.')
-    _unicode_scalars(value)
-    require(unicodedata.normalize('NFC', value) == value, 'Paths must use NFC Unicode.')
-    require(not re.search(r'[\\:\x00-\x1f<>"|?*]', value), 'Path contains a nonportable character.')
-    parts = value.split('/')
-    for part in parts:
-        require(part not in ('', '.', '..') and not part.startswith(' ') and not part.endswith((' ', '.')), 'Noncanonical path component.')
-        require(not re.match(r'^(CON|CONIN[$]|CONOUT[$]|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(?:\.|$)', part, re.I),
-                'Windows device path is unsupported.')
-    return value
+    try:
+        return existing_relative(value, profile='scene3d')
+    except ValueError as exc:
+        raise RigError('SCENE3D_CONTRACT', str(exc), stage='scene3d') from exc
 
 
 def _typed_values(value, schema):
@@ -697,14 +692,13 @@ def load_project(root, name='project.json'):
             # for opening files below. Registered descriptor roots stay pinned.
             require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
         require(target.is_file(), 'Missing regular dependency: ' + path)
-        target = safe_path(root, path, exists=True)
         size = target.stat().st_size
         require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
         require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
         digest = hashlib.sha256()
         observed = 0
         chunks = []
-        with open_payload(root, path) as (stream, opened):
+        with open_payload(root, path, profile='scene3d') as (stream, opened):
             require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
             while True:
                 chunk = stream.read(min(1024*1024, budgets['max_bytes'] - total + 1))

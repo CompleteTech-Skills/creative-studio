@@ -135,6 +135,9 @@ versions and exact references. The result explicitly selects `active_scene`.
 Old project bytes are retained as history evidence. No machine-local library path
 or mutable `latest` binding is needed to reopen a snapshot. Imported assets and
 derived prefab clips can be supplied as exact additional payloads/documents.
+When publishing a graph edit through the API, pass the exact source
+`project.json` digest from the bundle used to prepare the graph as
+`expected_project_sha256`. An unedited snapshot can omit this argument.
 
 Publication uses the shared exclusive native rename. A racing file, symlink or
 empty directory remains intact. Unsupported exclusive filesystems fail closed.
@@ -206,7 +209,9 @@ registered directory capabilities, then every exact payload is hash checked
 again after validation callbacks. An altered inner project entry fails closed;
 replacing the public temporary wrapper cannot redirect publication or cleanup.
 Failed attempts retain their private diagnostic contents, and the shared owner
-leaves the empty outer wrapper for explicit maintenance.
+leaves the empty outer wrapper for explicit maintenance. Linux publication
+requires protected staging and reports `SCENE3D_STAGING_UNAVAILABLE` when the
+shared adapter is unavailable.
 
 Other platforms retain their existing exclusive publication adapter. Descriptor
 ownership against temporary-wrapper replacement has not been implemented or

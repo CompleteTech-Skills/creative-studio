@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from copy import deepcopy
+import errno
 import hashlib
 import os
 from pathlib import Path
+import stat
+import sys
 import tempfile
 import zipfile
 
@@ -32,13 +35,24 @@ def _file_reference(document, payload, path):
                 path=path, sha256=hashlib.sha256(payload).hexdigest())
 
 
-def _new_destination(destination):
+def _admit_destination(destination):
     destination = Path(destination).absolute()
+    try:
+        parent = destination.parent.stat()
+        canonical_parent = destination.parent.resolve(strict=True)
+    except OSError as exc:
+        raise RigError('SCENE3D_DESTINATION', 'Snapshot parent must already be a trusted directory.',
+                       stage='scene3d-snapshot') from exc
+    require(stat.S_ISDIR(parent.st_mode), 'Snapshot parent must already be a trusted directory.', 'SCENE3D_DESTINATION')
+    # Canonicalize parents only. Never follow the requested destination leaf.
+    destination = canonical_parent / destination.name
     require(not destination.is_symlink() and not destination.exists(), 'Choose a new snapshot destination.',
             'SCENE3D_DESTINATION')
-    require(destination.parent.is_dir(), 'Snapshot parent must already be a trusted directory.', 'SCENE3D_DESTINATION')
-    # Canonicalize parents only. Never follow the requested destination leaf.
-    return destination.parent.resolve(strict=True) / destination.name
+    return destination, (parent.st_dev, parent.st_ino)
+
+
+def _new_destination(destination):
+    return _admit_destination(destination)[0]
 
 
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
@@ -49,12 +63,18 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     New scene versions coexist with original scene/shot versions. The return value
     selects the new scene explicitly; no hidden mutable ``latest`` binding exists.
     Additional derived documents must already reference complete input payloads.
+    Graph edits require the exact source project digest used to prepare the graph.
     """
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
     require(expected_project_sha256 is None or type(expected_project_sha256) is str and
             len(expected_project_sha256) == 64 and all(c in '0123456789abcdef' for c in expected_project_sha256),
             'Expected source project SHA256 must be an exact lowercase digest.')
-    destination = _new_destination(destination)
+    require(graph is None or expected_project_sha256 is not None,
+            'Graph publication requires the expected exact source project SHA256.', 'SCENE3D_SOURCE_CHANGED')
+    destination, parent_identity = _admit_destination(destination)
+    pinned = sys.platform.startswith('linux')
+    require(not pinned or private_stage_supported(), 'Linux snapshot publication requires protected staging.',
+            'SCENE3D_STAGING_UNAVAILABLE')
     bundle = load_project(source_root)
     require(expected_project_sha256 is None or bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
             'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
@@ -212,14 +232,35 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     # The portable adapter retains exclusive publication, but cannot yet promise
     # descriptor-owned staging on platforms unsupported by the shared authority.
     with ExitStack() as stack:
-        pinned = private_stage_supported()
         if pinned:
-            parent_fd = stack.enter_context(pinned_directory(destination.parent))
-            private, private_fd = stack.enter_context(private_stage(
-                parent_fd, prefix='.scene3d-snapshot-', cleanup_on_error=False))
+            try:
+                parent_fd = stack.enter_context(pinned_directory(destination.parent))
+                parent_held = os.fstat(parent_fd)
+            except OSError as exc:
+                if exc.errno == errno.ENOTSUP:
+                    raise RigError('SCENE3D_STAGING_UNAVAILABLE', 'Linux snapshot publication requires protected staging.',
+                                   stage='scene3d-snapshot') from exc
+                raise RigError('SCENE3D_DESTINATION', 'Cannot pin the admitted snapshot destination parent.',
+                               stage='scene3d-snapshot') from exc
+            require((parent_held.st_dev, parent_held.st_ino) == parent_identity,
+                    'Snapshot destination parent changed after admission.', 'SCENE3D_DESTINATION')
+            try:
+                _, private_fd = stack.enter_context(private_stage(
+                    parent_fd, prefix='.scene3d-snapshot-', cleanup_on_error=False))
+            except OSError as exc:
+                if exc.errno != errno.ENOTSUP:
+                    raise
+                raise RigError('SCENE3D_STAGING_UNAVAILABLE', 'Linux snapshot publication requires protected staging.',
+                               stage='scene3d-snapshot') from exc
             outer = stack.enter_context(directory_capability(private_fd))
             (outer.path/'project').mkdir(mode=0o700)
-            stage_fd = os.open('project', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=private_fd)
+            try:
+                stage_fd = os.open('project', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=private_fd)
+            except OSError as exc:
+                if exc.errno not in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
+                    raise
+                raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot staging entry changed while opening.',
+                               stage='scene3d-snapshot') from exc
             stack.callback(os.close, stage_fd)
             project_cap = stack.enter_context(directory_capability(stage_fd))
             stage = project_cap.path
@@ -263,7 +304,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                 observed_files.add(path)
         require(observed_files == set(files), 'Snapshot files disappeared after validation.', 'SCENE3D_SOURCE_CHANGED')
         for path, payload in sorted(files.items()):
-            with open_payload(stage, path) as (stream, info):
+            with open_payload(stage, path, profile='scene3d') as (stream, info):
                 require(info.st_size == len(payload), 'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
                 digest = hashlib.sha256()
                 remaining = len(payload) + 1
@@ -276,8 +317,14 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                     digest.update(chunk)
                 require(observed == len(payload) and digest.digest() == hashlib.sha256(payload).digest(),
                         'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
-        current = (os.stat('project', dir_fd=private_fd, follow_symlinks=False) if pinned else stage.stat())
-        require((current.st_dev, current.st_ino) == identity,
+        try:
+            current = (os.stat('project', dir_fd=private_fd, follow_symlinks=False) if pinned else stage.stat())
+        except FileNotFoundError as exc:
+            if not pinned:
+                raise
+            raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared after validation.',
+                           stage='scene3d-snapshot') from exc
+        require(stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == identity,
                 'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
         if pinned:
             # A held destination descriptor protects writes, but the returned
@@ -286,11 +333,14 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                 parent_now = destination.parent.stat(follow_symlinks=False)
             except OSError as exc:
                 raise RigError('SCENE3D_DESTINATION', 'Snapshot destination parent disappeared during validation.') from exc
-            parent_held = os.fstat(parent_fd)
-            require((parent_now.st_dev, parent_now.st_ino) == (parent_held.st_dev, parent_held.st_ino),
+            require((parent_now.st_dev, parent_now.st_ino) == parent_identity,
                     'Snapshot destination parent changed during validation.', 'SCENE3D_DESTINATION')
-            _rename_no_replace('project', destination.name, source_dir_fd=private_fd,
-                               destination_dir_fd=parent_fd)
+            try:
+                _rename_no_replace('project', destination.name, source_dir_fd=private_fd,
+                                   destination_dir_fd=parent_fd)
+            except FileNotFoundError as exc:
+                raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared during publication.',
+                               stage='scene3d-snapshot') from exc
         else:
             _rename_no_replace(stage, destination)
     return dict(destination=str(destination), project_sha256=hashlib.sha256(files['project.json']).hexdigest(),
