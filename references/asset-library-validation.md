@@ -12,8 +12,10 @@ The AssetLibrary checks the immutable manifest and payload inventory, including
 the canonical records where durable storage is enabled. The verifier stages
 only the exact normalized GLB in a private temporary directory. It rejects any
 buffer or image URI, including data URIs, before invoking readers that could
-resolve resources. It checks the same digest through native decode and a fresh
-run of the pinned offline Khronos glTF Validator. Results come from those reads
+resolve resources. The native decoder and the offline Khronos validator each
+read the staged path, and their reported file digests must match the registered
+payload. The default validator installation is pinned by the repository lockfile.
+A configured offline installation reports the version it actually ran. Results come from those reads
 and the native validators. Stored importer reports, diagnostics, and original
 source paths are unnecessary for inspection. Their blobs still belong to the
 AssetLibrary's integrity check.
@@ -35,8 +37,11 @@ typed codes, retryability and applicable integer counts.
 
 Callers can tighten native resource limits. Byte and memory admission precedes
 payload retrieval, and native preflight budgets geometry, hierarchy, animation copies
-and embedded texture work before validation. Memory admission is a conservative working-set
-estimate. Node, clip and key limits bound the report as well.
+and embedded texture work before validation. It accounts for generated native
+morph position arrays, repeated inverse binds and per-binding skeletal passes.
+Memory admission is a conservative working-set estimate. Node, clip and key
+limits bound the report. The timeout applies to the Khronos subprocess. The
+in-process native checks use the resource admission limits.
 
 Verification leaves the library read-only and reports visual review as
 `unreviewed` and production approval as false. Prefabs, environments, linked

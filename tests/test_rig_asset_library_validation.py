@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from asset_library import AssetLibrary
 from asset_library_import import ImportPipeline
-from asset_library_validation import validate_asset
+from asset_library_validation import _generated_workspace, validate_asset
 from rig_errors import RigError, object_hash
 from rig_gltf import read_gltf
 import test_asset_library as library_fixture
@@ -28,6 +28,22 @@ def _stage_record(payload):
 
 
 class VerificationRejectionTests(unittest.TestCase):
+    def test_generated_workspace_counts_active_primitive_copies(self):
+        primitive = dict(attributes={'POSITION': 0}, targets=[{'NORMAL': 0}])
+        description = dict(nodes=[dict(mesh=0, skin=0), dict(mesh=0, skin=0)],
+                           meshes=[dict(primitives=[primitive])],
+                           skins=[dict(joints=[2], inverseBindMatrices=1)],
+                           accessors=[dict(count=3), dict(count=1)])
+        document = SimpleNamespace(json=description)
+        limits = {'bones': 8}
+        normal_only = _generated_workspace(document, [0], limits)
+        self.assertEqual(_generated_workspace(document, [0, 1], limits), 2 * normal_only)
+        primitive['targets'][0]['POSITION'] = 0
+        authored_positions = _generated_workspace(document, [0], limits)
+        self.assertEqual(normal_only - authored_positions, 4 * 24 * 3)
+        description['accessors'][1]['count'] = 2
+        self.assertGreater(_generated_workspace(document, [0], limits), authored_positions)
+
     def test_real_obj_registration_is_outside_the_normalized_glb_lane(self):
         fixture = library_fixture.AssetLibraryTests()
         fixture.setUp()

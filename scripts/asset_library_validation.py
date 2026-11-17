@@ -102,9 +102,45 @@ def _animation_workspace(document, order, limits):
     return 128 * keys + 64 * scalars + 1024 * tracks
 
 
+def _generated_workspace(document, order, limits):
+    body = document.json
+    nodes = body.get('nodes', [])
+    skins = body.get('skins', [])
+    accessors = body.get('accessors', [])
+    may_build_skeleton = bool(skins or body.get('animations'))
+    reserve = 0
+    for node_index in order:
+        node = nodes[node_index]
+        if 'mesh' not in node:
+            continue
+        primitives = body['meshes'][node['mesh']]['primitives']
+        joint_matrices = 0
+        if 'skin' in node:
+            skin = skins[_index(node['skin'], len(skins), 'skin')]
+            joint_matrices = len(skin['joints'])
+            require(joint_matrices <= limits['bones'], 'RIG_LIMIT_BONES',
+                    'Declared skin joints exceed the native bone limit.')
+            if 'inverseBindMatrices' in skin:
+                matrix_accessor = _index(skin['inverseBindMatrices'], len(accessors), 'inverse bind accessor')
+                joint_matrices = max(joint_matrices, accessors[matrix_accessor]['count'])
+        # Both import and measurement evaluate the skeleton for each binding.
+        # Charge those passes plus per-primitive bind matrix materialization.
+        if may_build_skeleton:
+            reserve += len(primitives) * (2 * 256 * limits['bones'] + 768 * max(1, joint_matrices))
+        for primitive in primitives:
+            vertices = accessors[primitive['attributes']['POSITION']]['count']
+            missing_positions = sum('POSITION' not in target for target in primitive.get('targets', []))
+            reserve += 4 * 24 * vertices * missing_positions
+            if may_build_skeleton and 'skin' not in node:
+                reserve += 4 * 40 * vertices  # Native rigid joint indices and weights.
+    return reserve
+
+
 def _preflight(path, size, limits):
     document = read_gltf(path, limits)
     raw = preflight_gltf(document, encoded_bytes=size, limits=limits)
+    require(1 <= raw['mesh_instances'] <= 4096, 'RIG_GEOMETRY',
+            'Expected 1–4096 active mesh primitives.')
     parents, world, order = scene_graph(document)
     require(all(math.isfinite(value) for i in order for value in world[i].flat),
             'ASSET_TECHNICAL_TRANSFORM', 'Selected-scene transforms must be finite.')
@@ -117,7 +153,8 @@ def _preflight(path, size, limits):
     # Analysis includes transient topology, vertex and nearest-neighbor arrays.
     reserve = (raw['estimated_memory_bytes'] + 4 * size + image_bytes
                + 256 * raw['triangles'] + 120 * raw['vertices'] + 16 * 1024**2
-               + _animation_workspace(document, order, limits))
+               + _animation_workspace(document, order, limits)
+               + _generated_workspace(document, order, limits))
     require(reserve < limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
             'Native decoding and geometry analysis exceed the verification working-set estimate.')
     decode_limits = dict(limits, memory_bytes=limits['memory_bytes'] - reserve)
