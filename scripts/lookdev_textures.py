@@ -572,23 +572,34 @@ def validate_uvs(uv_sets, triangles, *, tangents=None, max_pairs=1_000_000):
 
     roundoff = 4 * np.finfo(np.float64).eps
 
-    def overlap(a, b):
+    def exact_local(triangle, origin):
+        from fractions import Fraction
+
+        offsets = [Fraction(float(value)) for value in origin]
+        return np.array([[Fraction(float(value)) - offset
+                          for value, offset in zip(point, offsets)]
+                         for point in triangle], dtype=object)
+
+    def signed_area(triangle):
+        first, second = triangle[1:] - triangle[0]
+        positive = first[0] * second[1]
+        negative = first[1] * second[0]
+        determinant = positive - negative
+        if abs(determinant) > roundoff * max(abs(positive), abs(negative)):
+            return determinant / 2, False
+        exact = exact_local(triangle, triangle[0])
+        return float(cross(exact[1], exact[2]) / 2), True
+
+    def overlap(a, b, *, exact):
         # Use the same origin for either face order. If shifting the pair loses
         # more than roundoff at a face's own scale, clip the six input vertices
         # as exact binary rationals. The clipper still has only three edges.
         origin = np.minimum(a.min(axis=0), b.min(axis=0))
         shifted_a, shifted_b = a - origin, b - origin
-        if (np.any(abs(shifted_a + origin - a) > roundoff * np.ptp(a, axis=0))
+        if (exact
+                or np.any(abs(shifted_a + origin - a) > roundoff * np.ptp(a, axis=0))
                 or np.any(abs(shifted_b + origin - b) > roundoff * np.ptp(b, axis=0))):
-            from fractions import Fraction
-
-            exact_origin = [Fraction(float(value)) for value in origin]
-            shifted_a, shifted_b = (
-                np.array([[Fraction(float(value)) - offset
-                           for value, offset in zip(point, exact_origin)]
-                          for point in triangle], dtype=object)
-                for triangle in (a, b)
-            )
+            shifted_a, shifted_b = (exact_local(triangle, origin) for triangle in (a, b))
             if cross(shifted_a[1] - shifted_a[0], shifted_a[2] - shifted_a[0]) == 0:
                 return False
             winding = cross(shifted_b[1] - shifted_b[0], shifted_b[2] - shifted_b[0])
@@ -629,8 +640,8 @@ def validate_uvs(uv_sets, triangles, *, tangents=None, max_pairs=1_000_000):
         return abs(area) > 1e-12
 
     def summarize(index, mapped):
-        signed = np.array([cross(triangle[1] - triangle[0], triangle[2] - triangle[0]) / 2
-                           for triangle in mapped])
+        areas = [signed_area(triangle) for triangle in mapped]
+        signed = np.array([area for area, _ in areas])
         pairs = []
         tested = 0
         exhausted = False
@@ -646,7 +657,7 @@ def validate_uvs(uv_sets, triangles, *, tangents=None, max_pairs=1_000_000):
                 a, b = mapped[i], mapped[j]
                 if np.any(a.max(axis=0) <= b.min(axis=0)) or np.any(b.max(axis=0) <= a.min(axis=0)):
                     continue
-                if overlap(a, b[::-1] if signed[j] < 0 else b):
+                if overlap(a, b[::-1] if signed[j] < 0 else b, exact=areas[i][1] or areas[j][1]):
                     pairs.append([j, i])
             if exhausted:
                 break

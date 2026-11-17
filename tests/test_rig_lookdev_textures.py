@@ -220,6 +220,22 @@ class TextureTests(unittest.TestCase):
                 self.assertEqual(report['overlap_pairs_tested'], 1)
                 self.assertTrue(report['overlap_complete'])
 
+    def test_uv_signed_area_recovers_finite_determinant_cancellation(self):
+        extent = 2**30
+        vertices = [
+            (0, 0), (extent, extent - 1), (extent + 1, extent),
+            (0, 0), (extent + 1, extent), (extent, extent - 1),
+        ]
+        for faces, mirrored in (([[0, 1, 2], [3, 4, 5]], [1]),
+                                ([[3, 4, 5], [0, 1, 2]], [0])):
+            with self.subTest(faces=faces):
+                report = t.validate_uvs([vertices], faces, max_pairs=1)["sets"][0]
+                self.assertEqual(report["degenerate_triangles"], [])
+                self.assertEqual(report["mirrored_triangles"], mirrored)
+                self.assertEqual(report["overlap_pairs"], [[0, 1]])
+                self.assertEqual(report["overlap_pairs_tested"], 1)
+                self.assertTrue(report["overlap_complete"])
+
     def test_uv_small_positive_area_still_overlaps(self):
         uv = [[0, 0], [1, 0], [0, 1], [0, 0], [2e-6, 0], [0, 2e-6]]
         for faces in [([0, 1, 2], [3, 4, 5]), ([3, 4, 5], [0, 1, 2])]:
