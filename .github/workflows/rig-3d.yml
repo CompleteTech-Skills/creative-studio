@@ -34,9 +34,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
+      - name: Check newly committed lines for machine-local paths
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python scripts/check_evidence_paths.py "$PR_BASE_SHA" "$PR_HEAD_SHA"
+      - run: python -m unittest discover -s tests -p test_evidence_paths.py -v
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python scripts/generate_schemas.py --check
       - run: python scripts/generate_rig_templates.py --check
@@ -128,11 +136,22 @@ jobs:
           tar -xJf /tmp/blender.tar.xz -C /tmp
       - run: echo 'HATCH_BLENDER=/tmp/blender-4.5.3-linux-x64/blender' >> "$GITHUB_ENV"
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-blender-gate --blender
+      - name: Install isolated schema validator for Blender Python 3.11
+        run: |
+          python -m pip install --target /tmp/camera-blender-site --python-version 3.11 --only-binary=:all: jsonschema==4.25.1
+      - name: Verify actual Camera3D optics and Blender projection
+        run: python -m unittest discover -s tests -p test_rig_camera3d_optics.py -v
+        env:
+          HATCH_CAMERA3D_BLENDER_TEST: '1'
+          HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
+          HATCH_CAMERA_EVIDENCE: /tmp/camera-optics-gate
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: blender-evidence
-          path: /tmp/rig-blender-gate/**/validation/*.json
+          path: |
+            /tmp/rig-blender-gate/**/validation/*.json
+            /tmp/camera-optics-gate/*
   browser:
     name: Three.js browser playback and vertex comparison
     # Playwright 1.55.0 supports Ubuntu 24.04; ubuntu-latest now selects 26.04.

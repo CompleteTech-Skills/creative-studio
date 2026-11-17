@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "decomposition-analysis-response",
+  "request_sha256": "607d9e4465e346af361f9d4eefc69b5e82f09731751793610606ec5a3ff58e35",
+  "source_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+  "status": "proposed",
+  "model": {
+    "provider": "local-opencv",
+    "name": "opencv-haar-face-eye",
+    "version": "4.13.0",
+    "files": [
+      {
+        "name": "haarcascade_frontalface_default.xml",
+        "sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0"
+      },
+      {
+        "name": "haarcascade_eye.xml",
+        "sha256": "71cc64fc305a355dc60067880f6fbbd43dd155bd63ee3844661a1bda34b2fd8c"
+      }
+    ],
+    "identity_evidence": "Installed OpenCV version and exact cascade bytes; not a remote call."
+  },
+  "annotation": {
+    "schema_version": 1,
+    "source_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+    "author": "Local OpenCV Haar detector",
+    "note": "Actual local inference; coarse human face/eye regions only, not general character segmentation.",
+    "components": [
+      {
+        "id": "face-region-1",
+        "name": "Face region 1",
+        "category": "face/region",
+        "parent_id": null,
+        "mask": {
+          "polygons": [
+            [
+              [
+                177,
+                66
+              ],
+              [
+                273,
+                66
+              ],
+              [
+                273,
+                162
+              ],
+              [
+                177,
+                162
+              ]
+            ]
+          ]
+        },
+        "confidence": 0.5,
+        "notes": [
+          "Uncalibrated detector confidence is unknown; 0.5 is a conservative proposal placeholder, not a probability.",
+          "Coarse detector rectangle includes background/other features; requires mask correction and semantic review."
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "execution": "local",
+    "call_id": null,
+    "unavailable_reason": "Local cascade inference does not issue provider call IDs.",
+    "elapsed_seconds": 0.6193275030000223,
+    "cost": 0,
+    "note": "Executed fixed installed cascades on original source RGB; detector rectangles are proposals."
+  },
+  "errors": []
+}

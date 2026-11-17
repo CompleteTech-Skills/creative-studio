@@ -14,6 +14,16 @@ reference. `generate_asset_library_schemas.py --check` checks those definitions;
 the schema drift test also runs through existing test discovery. Existing
 schemas and native manifests are unchanged. Runtime validation uses the same
 JSON Schema definitions, followed by semantic evidence/inventory/reference checks.
+`asset_library_types.py` exposes `TypedDict` request/response records for all eleven
+conceptual contracts, including optional evidence fields and explicit status enums.
+Public registration, resolution, annotation and scene-reference methods use these
+records in their annotations. A parity regression checks fields, required/optional
+keys, literal values and nested provenance records against the canonical schemas.
+It also checks the public return annotations, including the scene reference shape.
+Registration accepts logical-path dictionaries with string paths, path-like objects
+or a mix of both. Runtime admission still uses the schema and semantic validators,
+and annotations grant no payload, geometry, licensing or review approval.
+
 Timestamps are checked with a built-in RFC3339 spelling/calendar validator,
 including standalone identity/provenance contracts, without optional format packages.
 Canonical library encoding rejects unencodable escaped-surrogate text and other
@@ -84,8 +94,10 @@ JSON Schema integer values retain their mathematical meaning: finite whole
 floating spellings such as `43.0` are accepted for byte counts and revision
 inputs. Only validated local I/O/CAS bounds are converted to Python integers;
 immutable manifest spelling, canonical bytes, digests and original payloads
-remain unchanged. Schema-version constants and preview dimensions follow the
-same schema semantics without rewriting user records. Boolean, fractional,
+remain unchanged. The schema-version fields in `AssetVersion` and
+`AssetAnnotations` are typed as `int | float` because both `1` and `1.0` represent
+the same v1 constant. Runtime validation still requires that exact value.
+Preview dimensions also retain their input spelling. Boolean, fractional,
 nonfinite, negative and excessive values fail with structured diagnostics.
 
 This initial strict store requires every inventoried file and exact dependency,
