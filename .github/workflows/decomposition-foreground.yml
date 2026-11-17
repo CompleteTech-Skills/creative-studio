@@ -20,6 +20,7 @@ jobs:
           curl --fail --location --retry 2 https://download.pytorch.org/models/maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth -o foreground-inputs/model.pth
           echo 'bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0  foreground-inputs/model.pth' | sha256sum -c -
           curl --fail --location --retry 2 https://www.cis.upenn.edu/~jshi/ped_html/PennFudanPed.zip -o foreground-inputs/data.zip
+          echo '9095a9613c95586f1c7f2a327d454833d16e0f5e17e5f83d35027ffd315b48e2  foreground-inputs/data.zip' | sha256sum -c -
           python - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile

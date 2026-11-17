@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw
 from asset_contracts import MAX_SOURCE_BYTES
 from atomic_publish import _rename_no_replace
 from character_decomposition import create_decomposition
-from decomposition_analysis import _record_bytes, _record_json as read_json
+from decomposition_analysis import _parse_record_json, _record_bytes, _record_json as read_json
 from decomposition_masks import binary, count, intersect, union, mask_to_runs
 from decomposition_spec import (ASSET, BOOLEAN, CONFIDENCE, HASH, NOTE, TEXT, array,
                                 obj, safe_path, validate_structure)
@@ -123,8 +123,15 @@ def _mask(root, descriptor, size):
 
 
 def load(root):
+    return _load(root)[0]
+
+
+def _load(root):
+    """Validate a proposal directory; return the receipt, its digest and the exact parsed bytes."""
     root = Path(root).resolve()
-    receipt = read_json(safe_path(root, 'foreground-proposals.json'))
+    receipt_bytes = _record_bytes(safe_path(root, 'foreground-proposals.json'))
+    receipt_sha256 = hashlib.sha256(receipt_bytes).hexdigest()
+    receipt = _parse_record_json(receipt_bytes)
     validate_structure(receipt, RECEIPT, 'foreground proposal receipt')
     if not .05 <= receipt['parameters']['score_threshold'] <= .99:
         raise ValueError('invalid recorded score threshold')
@@ -165,7 +172,7 @@ def load(root):
     overlay = _verified_image(safe_path(root, receipt['overlay']['path']), receipt['overlay']['sha256'])
     if overlay.size != size:
         raise ValueError('overlay size mismatch')
-    return receipt
+    return receipt, receipt_sha256, receipt_bytes
 
 
 def _worker(stage, weights, threshold):
@@ -289,7 +296,7 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
 
 def select(root, identifiers, destination, *, name=None):
     """Explicitly select candidate union, preserving alpha and unassigned semantics."""
-    root = Path(root).resolve(); receipt = load(root)
+    root = Path(root).resolve(); receipt, receipt_sha256, receipt_bytes = _load(root)
     if (not isinstance(identifiers, list) or not identifiers or
             any(not isinstance(item, str) for item in identifiers) or len(identifiers) != len(set(identifiers))):
         raise ValueError('select one or more unique candidate IDs')
@@ -300,6 +307,9 @@ def select(root, identifiers, destination, *, name=None):
     selected = Image.new('L', size)
     for identifier in identifiers:
         selected = union(selected, _mask(root, by_id[identifier]['mask'], size))
+    # Pixels shared with any other candidate stay explicitly ambiguous in the run.
+    ambiguous = intersect(selected, _mask(root, receipt['overlap'], size))
+    ambiguous_pixels = count(ambiguous)
     # Carry the proposal receipt and all masks into the run, independently of
     # semantic annotations. Relocation/archive never depends on the old directory.
     destination = Path(destination).expanduser().absolute()
@@ -310,9 +320,16 @@ def select(root, identifiers, destination, *, name=None):
     try:
         annotation = {'schema_version': 1, 'source_sha256': source['asset']['sha256'],
             'author': 'Explicit foreground candidate selection',
-            'note': 'Only foreground selected; semantic components remain unassigned.', 'components': [],
+            'note': 'Only foreground selected; semantic components remain unassigned.' + (
+                f' {ambiguous_pixels} selected pixels overlap other candidates and remain ambiguous.'
+                if ambiguous_pixels else ''), 'components': [],
             'extensions': {'foreground_analysis': {'receipt': 'foreground-analysis/foreground-proposals.json',
-                'receipt_sha256': _safe_sha(root / 'foreground-proposals.json'), 'selected_ids': identifiers}}}
+                'receipt_sha256': receipt_sha256, 'selected_ids': identifiers,
+                'ambiguous_overlap': {'status': 'unresolved', 'pixels': ambiguous_pixels,
+                    'runs': mask_to_runs(ambiguous),
+                    'overlap_mask': {'path': 'foreground-analysis/' + receipt['overlap']['path'],
+                                     'sha256': receipt['overlap']['sha256']},
+                    'note': 'Selected pixels shared with another candidate; not owned by this selection.'}}}}
         run = stage / 'run'
         source_bytes = _record_bytes(safe_path(root, source['asset']['path']), MAX_SOURCE_BYTES)
         if hashlib.sha256(source_bytes).hexdigest() != source['asset']['sha256']:
@@ -324,13 +341,13 @@ def select(root, identifiers, destination, *, name=None):
             annotations=annotation, foreground_mask={'runs': mask_to_runs(selected)},
             name=name, origin=source['origin'], fixture=source['fixture'])
         kept = run / 'foreground-analysis'; kept.mkdir()
-        paths = {'foreground-proposals.json', source['asset']['path'], receipt['overlap']['path'], receipt['overlay']['path']}
+        (kept / 'foreground-proposals.json').write_bytes(receipt_bytes)
+        paths = {source['asset']['path'], receipt['overlap']['path'], receipt['overlay']['path']}
         paths.update(c['mask']['path'] for c in receipt['candidates'])
         for relative in sorted(paths):
             target = safe_path(kept, relative); target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(_record_bytes(safe_path(root, relative), MAX_SOURCE_BYTES))
-        load(kept)
-        if _safe_sha(kept / 'foreground-proposals.json') != annotation['extensions']['foreground_analysis']['receipt_sha256']:
+        if _load(kept)[1] != receipt_sha256:
             raise ValueError('proposal receipt changed during selection')
         _rename_no_replace(run, destination)
         return result

@@ -77,8 +77,11 @@ is a user choice, not proof those detections belong to one character. A model
 miss may be foreground, not background; no detection proves complete coverage.
 
 The selected run retains the original source, proposal receipt, all candidate
-masks and overlay in `foreground-analysis/`; its annotation records the exact
-receipt digest and selected IDs. It has source-bound unassigned foreground,
+masks and overlay in `foreground-analysis/`; its annotation records the
+digest of the receipt bytes it actually validated and the selected IDs. Selected
+pixels shared with another candidate are recorded under `ambiguous_overlap`
+(status `unresolved`, pixel count and runs, plus the retained overlap mask), so
+a later stage cannot treat them as owned by this selection. It has source-bound unassigned foreground,
 zero-error recomposition of selected pixels, and pending semantic review.
 The run's `analysis.semantic_model_called` remains false because this stage does
 not run the component analyzer; the retained foreground receipt separately records

@@ -60,6 +60,37 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(len(fg.load(destination/'foreground-analysis')['candidates']),2)
         self.assertEqual(load_decomposition(destination)['source']['sha256'],before)
 
+    def test_selection_records_the_receipt_bytes_it_actually_parsed(self):
+        original_bytes = (self.root/'foreground-proposals.json').read_bytes()
+        original_load = fg._load
+        calls = 0
+        def swap_receipt_after_first_load(root):
+            nonlocal calls
+            result = original_load(root)
+            calls += 1
+            if calls == 1:
+                self.receipt['uncertainty'] = ['Swapped receipt written after the selection load.']
+                self.save()
+            return result
+        destination = Path(self.temp.name)/'swapped'
+        with patch.object(fg, '_load', side_effect=swap_receipt_after_first_load):
+            fg.select(self.root, ['candidate-1'], destination)
+        self.assertNotEqual((self.root/'foreground-proposals.json').read_bytes(), original_bytes)
+        kept = destination/'foreground-analysis/foreground-proposals.json'
+        self.assertEqual(kept.read_bytes(), original_bytes)
+        record = load_decomposition(destination)['extensions']['foreground_analysis']
+        self.assertEqual(record['receipt_sha256'], sha(kept))
+
+    def test_selection_flags_selected_overlap_pixels_as_ambiguous(self):
+        destination = Path(self.temp.name)/'one-person'
+        fg.select(self.root, ['candidate-1'], destination)
+        record = load_decomposition(destination)['extensions']['foreground_analysis']
+        ambiguous = record['ambiguous_overlap']
+        self.assertEqual(ambiguous['status'], 'unresolved')
+        self.assertEqual(ambiguous['pixels'], 12)
+        self.assertEqual(ambiguous['runs'], [[y, 3, 5] for y in range(6)])
+        self.assertEqual(ambiguous['overlap_mask']['sha256'], sha(destination/ambiguous['overlap_mask']['path']))
+
     def test_current_runtime_counts_are_bound_and_historical_threads_remain_readable(self):
         self.assertEqual(fg.load(self.root)['parameters']['threads'],2)
         self.receipt['parameters']['threads']=1
