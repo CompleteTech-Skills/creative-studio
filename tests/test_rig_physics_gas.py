@@ -1,5 +1,6 @@
 """Real gas acceptance remains opt-in because Blender/OpenVDB are optional."""
 from copy import deepcopy
+import json
 import os
 from pathlib import Path
 import sys
@@ -8,7 +9,7 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import physics_backends as core
-from physics_gas import GasBackend, DEFAULT_SETTINGS, validate_settings, validate_source_readback, verify_cache
+from physics_gas import GasBackend, DEFAULT_SETTINGS, schemas, validate_settings, validate_source_readback, verify_cache
 from physics_gas_example import build_gas_inputs
 
 
@@ -66,8 +67,62 @@ class GasAdmissionTests(unittest.TestCase):
         self.assertEqual(error.exception.report['code'],'PHYSICS_RESOURCE_LIMIT')
 
 
-@unittest.skipUnless(os.environ.get('HATCH_GAS_TEST')=='1','Explicit real gas/OpenVDB acceptance gate')
+ROOT=Path(__file__).resolve().parents[1]
+SCHEMA_NAME='physics-gas-settings.schema.json'
+
+
+class GasSettingsSchemaTests(unittest.TestCase):
+    """The published GasSettings schema and the runtime admission must agree."""
+
+    def setUp(self):
+        try:
+            from jsonschema import Draft202012Validator
+        except ImportError:
+            self.skipTest('jsonschema is not installed; install requirements-rig-test.txt')
+        self.validator_type=Draft202012Validator
+        self.schema=schemas()[SCHEMA_NAME]
+
+    def test_generated_schema_is_valid_and_admits_defaults(self):
+        self.validator_type.check_schema(self.schema)
+        self.validator_type(self.schema).validate(deepcopy(DEFAULT_SETTINGS))
+        self.assertEqual(set(self.schema['required']),set(DEFAULT_SETTINGS))
+        self.assertEqual(validate_settings(deepcopy(DEFAULT_SETTINGS),24),DEFAULT_SETTINGS)
+
+    def test_structural_schema_and_runtime_rejection_parity(self):
+        validator=self.validator_type(self.schema)
+        for key,value in [('render_frames',[[1]]),('render_frames',[1,1]),('render_frames',[]),('render_size',True),
+            ('render_size',32),('vorticity',5),('fuel',-1),('maximum_substeps',0),('dissipation_enabled',1),
+            ('kind','other'),('schema_version',2),('new_field',1)]:
+            settings=deepcopy(DEFAULT_SETTINGS);settings[key]=value
+            with self.subTest(key=key,value=value):
+                self.assertFalse(validator.is_valid(settings))
+                with self.assertRaises(core.BackendError):validate_settings(settings,24)
+        missing=deepcopy(DEFAULT_SETTINGS);del missing['cfl']
+        self.assertFalse(validator.is_valid(missing))
+        with self.assertRaises(core.BackendError):validate_settings(missing,24)
+
+    def test_committed_profile_matches_generator_when_registered(self):
+        path=ROOT/'profiles'/SCHEMA_NAME
+        if not path.is_file():
+            self.skipTest('profiles/'+SCHEMA_NAME+' is not registered with scripts/generate_schemas.py yet')
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8')),self.schema)
+
+
+def _native_gate_enabled():
+    return os.environ.get('HATCH_GAS_TEST')=='1'
+
+
+@unittest.skipUnless(_native_gate_enabled(),'Real Blender Mantaflow/OpenVDB acceptance runs only with HATCH_GAS_TEST=1 '
+    '(the hosted native physics job enables it); it was not executed in this run')
 class GasNativeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Once the gate is enabled, missing native dependencies must fail rather than silently skip.
+        for name in ('HATCH_BLENDER','HATCH_OPENVDB_PYTHON'):
+            value=os.environ.get(name)
+            if not value or not Path(value).is_file():
+                raise AssertionError(name+' must name an executable when HATCH_GAS_TEST=1')
+
     def test_real_smoke_and_fire_cache_fields_and_relocation(self):
         target=os.environ.get('HATCH_GAS_EVIDENCE')
         with tempfile.TemporaryDirectory(prefix='hatch-gas-tests-') as temporary:
@@ -113,7 +168,6 @@ class GasNativeTests(unittest.TestCase):
                 finally:backend.cleanup(prepared)
 
     def test_actual_wind_and_obstacle_change_native_density(self):
-        import json
         target=os.environ.get('HATCH_GAS_EVIDENCE')
         with tempfile.TemporaryDirectory(prefix='hatch-gas-comparisons-') as temporary:
             root=Path(target) if target else Path(temporary)

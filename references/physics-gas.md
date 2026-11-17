@@ -59,6 +59,12 @@ python scripts/physics_gas.py simulate world.json --settings gas-settings.json \
 python scripts/physics_gas.py verify output/new-gas-cache
 ```
 
+Tests: `tests/test_rig_physics_gas.py` always runs admission, settings and
+schema-parity checks. The real smoke/fire, relocation, wind and obstacle cases
+run only with `HATCH_GAS_TEST=1`; once that gate is set, a missing
+`HATCH_BLENDER` or `HATCH_OPENVDB_PYTHON` fails the suite instead of skipping.
+`HATCH_GAS_EVIDENCE` optionally retains the produced caches and renders.
+
 `probe(smoke=False)` establishes executable and reader discovery only.
 `probe(smoke=True)` must execute both smoke and fire, decode the actual caches,
 reopen the generated native project and compare rendered pixels before claiming
