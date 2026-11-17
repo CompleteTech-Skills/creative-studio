@@ -1,0 +1,63 @@
+{
+  "backend": "local",
+  "dependencies": {
+    "inventory_source": "0357e94361c2669ff52b5928cb2d57c5966bd41e45303537a09c6732b12bf406",
+    "probe_source": "9edd4c76c76592e3d72ba02c9fc66fc06620d046efb4a24d4f8846bd3a094f19"
+  },
+  "dependency_fingerprint": "92326f8d4e3b0ec1270e7aa8d521ed072c082a8e8f4c4c5e345ee3ffd3eee983",
+  "discovered": true,
+  "execution": {
+    "decoded_pixels": 4,
+    "exit_code": 0,
+    "formats": [
+      "PNG"
+    ],
+    "reason": null,
+    "success": true,
+    "version": "13.0.0"
+  },
+  "execution_verified": true,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "format.image",
+  "payloads": [
+    {
+      "artifact_id": "probe-70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+      "byte_size": 77,
+      "dependencies": [],
+      "fixture": true,
+      "kind": "capability-probe-evidence",
+      "media_type": "image/png",
+      "path": "payloads/70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526.png",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526"
+    }
+  ],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "executed",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "available",
+  "supported_formats": [
+    "PNG"
+  ],
+  "supported_operations": [
+    "format.image"
+  ],
+  "version": "13.0.0"
+}
