@@ -176,14 +176,19 @@ def _definitions():
     response = _doc('response', dict(request_id=ident,
         status={'enum': ['accepted', 'complete', 'rejected', 'unavailable', 'cancelled']},
         project_revision=nullable(integer), project_sha256=nullable(digest),
-        outputs=arr(file, 0, 4096), diagnostics=arr(diagnostic, 0, 128),
+        outputs={}, diagnostics=arr(diagnostic, 0, 128),
         executed={'type': 'boolean'}, review_status={'const': 'unreviewed'}))
     response['properties']['job_id'] = nullable(ident)
-    response['allOf'] = [
-        {'if': {'properties': {'status': {'const': 'accepted'}}},
-         'then': {'required': ['job_id'], 'properties': {'job_id': ident}}},
-        {'if': {'properties': {'status': {'enum': ['accepted', 'cancelled', 'rejected', 'unavailable']}}},
-         'then': {'properties': {'outputs': {'maxItems': 0}}}}]
+    # Keep the base closed and narrow the fields together for each status.
+    response = {'allOf': [response, {'anyOf': [
+        dict(type='object', properties=dict(status={'const': 'accepted'},
+            job_id=ident, outputs=arr(file, 0, 0)), required=['status', 'job_id', 'outputs']),
+        dict(type='object', properties=dict(status={'const': 'complete'},
+            outputs=arr(file, 0, 4096)), required=['status', 'outputs']),
+        dict(type='object', properties=dict(
+            status={'enum': ['rejected', 'unavailable', 'cancelled']},
+            outputs=arr(file, 0, 0)), required=['status', 'outputs']),
+    ]}]}
     return dict(project=project, scene=scene, node=node, asset=asset, animation=animation,
         command=command, revision=revision, session=session, derived=derived, request=request,
         response=response, NativeReference=native, AnimationNativeReference=animation_native,
@@ -478,6 +483,8 @@ def migrate_document(value):
 
 
 def _ts(schema):
+    if not schema:
+        return 'unknown'
     if '$ref' in schema:
         return schema['$ref'].split('/')[-1]
     if 'const' in schema:

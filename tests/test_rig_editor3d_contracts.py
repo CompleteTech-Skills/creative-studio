@@ -265,6 +265,16 @@ class EditorContractTests(unittest.TestCase):
         del response['job_id']
         validate_contract(response); validator.validate(response)
 
+        generated = generated_files()[ROOT / 'assets/editor3d/contracts.ts']
+        declaration = next(line for line in generated.splitlines()
+                           if line.startswith('export type response ='))
+        self.assertIn('{ "status": "accepted"; "job_id": string; "outputs": [] }', declaration)
+        self.assertIn('{ "status": "complete"; "outputs": Array<', declaration)
+        self.assertIn(
+            '{ "status": "rejected" | "unavailable" | "cancelled"; "outputs": [] }',
+            declaration,
+        )
+
     def test_rig_asset_binding_requires_actual_rig_owner(self):
         value = example('asset'); value['asset_type'] = 'rig'
         with self.assertRaises(RigError): validate_contract(value)
