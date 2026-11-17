@@ -84,8 +84,10 @@ def _verify_cache_snapshot(root, *, expected_world_sha256=None, directory_fd=Non
             replay.get('blend_sha256')==job['expected_blend_sha256'] and replay.get('frames')==list(range(world['frame_range']['end'])),
             'PHYSICS_CACHE_CORRUPT','Liquid replay binding differs.')
         report=core.parse(reader.read('liquid-report.json',1024*1024))
-        core.require(report['world_sha256']==manifest['world_sha256'] and report['settings_sha256']==manifest['settings_sha256'] and
-            report['native_bake'] is True and 'Blender '+report['version']==manifest['backend']['application_version'],
+        core.require(type(report) is dict and type(report.get('version')) is str and type(manifest['backend']) is dict,
+            'PHYSICS_CACHE_CORRUPT','Liquid worker report or backend identity is malformed.')
+        core.require(report.get('world_sha256')==manifest['world_sha256'] and report.get('settings_sha256')==manifest['settings_sha256'] and
+            report.get('native_bake') is True and 'Blender '+report['version']==manifest['backend'].get('application_version'),
             'PHYSICS_CACHE_CORRUPT','Liquid worker report identity differs.')
         d=world['components'][0]
         observed=dict(fps_numerator=world['fps']['numerator'],fps_base=world['fps']['denominator'],

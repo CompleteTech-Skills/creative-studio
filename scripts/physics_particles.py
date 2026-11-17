@@ -54,6 +54,8 @@ def admit(world,settings):
     core.require(settings['world_sha256']==core.digest(core.canonical(world)),'PARTICLE_SOURCE_CHANGED','Settings bind a different physical world.')
     core.require(world['solver']['backend']=='particles-native' and world['solver']['adapter_version']==VERSION and
         set(world['solver']['required_categories'])==({'particles','rigid-body'} if world['bodies'] else {'particles'}),'PARTICLE_BACKEND','Select the versioned particles-native backend.')
+    core.require(world['solver']['reproducibility'] in ('not-guaranteed','verified-cache-replay'),
+        'PARTICLE_REPRODUCIBILITY','Particle recomputation defines no pinned numerical or approximation bound; request verified cache replay or not-guaranteed.')
     core.require('stability' not in world['solver'] and not world['joints'] and not world['events'],
         'PARTICLE_UNSUPPORTED','Rigid stability, joints and interaction events are not particle settings.')
     core.require(world['frame_range']['start']==0 and 2<=world['frame_range']['end']<=MAX_FRAMES,
@@ -251,7 +253,7 @@ def _verify_snapshot(root):
             manifest['schema_version']==1 and manifest['kind']=='hatch-physics-particle-cache' and manifest['review_status']=='unreviewed',
             'PARTICLE_CACHE','Invalid particle manifest.')
         names=[f['path'] for f in manifest['files']];core._paths(names)
-        core.require(len(set(names))==len(names) and len(names)<=256,'PARTICLE_CACHE','Invalid cache inventory.')
+        core.require(len(set(names))==len(names) and len(names)<=256 and 'particle-cache.json' not in names,'PARTICLE_CACHE','Invalid cache inventory.')
         actual={p.relative_to(root).as_posix() for p in root.rglob('*') if not p.is_dir()}
         core.require(actual==set(names)|{'particle-cache.json'},'PARTICLE_CACHE','Cache files differ from inventory.')
         for item in manifest['files']:
@@ -288,6 +290,18 @@ def _verify_snapshot(root):
         core.require(job==dict(world=world,settings=settings,emitters=expected_emitters,
             colliders=[body for body in world['bodies'] if body['id'] in references]),
             'PARTICLE_CACHE','Worker job differs from exact native inputs.')
+        # Bind retained executable sources to this package; hashes alone are self-consistent only.
+        core.require(reader.read('worker.py')==Path(__file__).with_name('physics_particle_worker.py').read_bytes(),
+            'PARTICLE_CACHE','Retained worker differs from the package particle worker.')
+        collides=any(e['collision']!='none' for e in settings['emitters'])
+        core.require(('physics_collision_native.py' in names)==collides,'PARTICLE_CACHE','Collision helper presence differs from settings.')
+        collision=report.get('collision')
+        core.require(type(collision) is dict and (type(collision.get('backend')) is dict if collides else collision.get('backend') is None),
+            'PARTICLE_CACHE','Collision backend identity differs from settings.')
+        if collides:
+            helper=Path(__file__).with_name('physics_collision_native.py').read_bytes()
+            core.require(reader.read('physics_collision_native.py')==helper and collision['backend'].get('helper_sha256')==core.digest(helper),
+                'PARTICLE_CACHE','Retained collision helper differs from the package helper.')
     core.require(manifest['backend']==ParticleBackend().capabilities(),'PARTICLE_CACHE','Backend capability identity differs.')
     core.require(report==manifest['execution'],'PARTICLE_CACHE','Solver execution report differs.')
     return dict(status='hash-and-state-verified',backend='particles-native',sample_count=len(particles['samples']),
@@ -316,6 +330,7 @@ def _verify_cache(root,*,directory_fd=None):
                 0<=item['bytes']<=core.MAX_CACHE_BYTES,'PARTICLE_CACHE','Invalid cache file record.')
             names.append(item['path'])
         core._paths(names)
+        core.require('particle-cache.json' not in names,'PARTICLE_CACHE','The manifest cannot inventory itself.')
         core.require(len(set(names))==len(names) and sum(item['bytes'] for item in manifest['files'])<=core.MAX_CACHE_BYTES,
             'PARTICLE_CACHE','Duplicate files or excessive cache bytes.')
         actual=reader.names()
@@ -347,6 +362,21 @@ def _verify_cache(root,*,directory_fd=None):
             return _verify_snapshot(snapshot)
 
 
+def read_source_directory(source):
+    """Collect regular files without following links outside the operator-selected tree."""
+    source=Path(source);payloads={}
+    core.require(source.is_dir() and not source.is_symlink(),'PARTICLE_SOURCE','Source must be a real directory.')
+    for directory,dirs,files in os.walk(source,followlinks=False):
+        for name in dirs+files:
+            path=Path(directory)/name
+            core.require(not path.is_symlink(),'PARTICLE_SOURCE','Linked source entries are forbidden: '+path.relative_to(source).as_posix())
+        for name in files:
+            path=Path(directory)/name
+            core.require(path.is_file(),'PARTICLE_SOURCE','Only regular source files are supported.')
+            payloads[path.relative_to(source).as_posix()]=path.read_bytes()
+    return payloads
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('capabilities')
@@ -356,7 +386,7 @@ def main():
     if args.command=='capabilities':result=ParticleBackend().capabilities()
     elif args.command=='verify':result=verify(args.cache)
     else:
-        source=Path(args.source);payloads={p.relative_to(source).as_posix():p.read_bytes() for p in source.rglob('*') if p.is_file()}
+        payloads=read_source_directory(args.source)
         backend=ParticleBackend();prepared=backend.prepare(core.parse(Path(args.world).read_bytes()),core.parse(Path(args.settings).read_bytes()),payloads)
         try:result=backend.bake(backend.simulate(prepared),args.destination)
         finally:backend.cleanup(prepared)
