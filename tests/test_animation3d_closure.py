@@ -222,6 +222,65 @@ class NativeClosureRegressionTests(unittest.TestCase):
                 self.assertEqual(native_registry.call_args.kwargs['payloads'], {'albedo-pixels.json': pixels})
                 self.assertIn('fixture/rig.json', snapshot.inventory)
 
+    def test_scene_descriptor_roles_preserve_opaque_json_and_legacy_project(self):
+        from production_fixture import build_fixture_project
+        from rig_load_limits import _JSON_FACTOR
+        from scene3d_contracts import load_project as load_scene_project
+
+        scene, _ = self.native_scene()
+        scene_root = self.root / 'native'
+        native = json.loads((scene_root / 'project.json').read_bytes())
+        validation_path = 'opaque-report.json'
+        payload = json.dumps([{'path': 'unrelated.json', 'sha256': '0' * 64}]).encode()
+        (scene_root / validation_path).write_bytes(payload)
+        native['validation'] = [dict(path=validation_path, sha256=hashlib.sha256(payload).hexdigest())]
+        build_fixture_project(scene_root / 'legacy')
+        legacy_path = 'legacy/project.json'
+        legacy_bytes = (scene_root / legacy_path).read_bytes()
+        legacy = json.loads(legacy_bytes)
+        reference = dict(path=legacy_path, sha256=hashlib.sha256(legacy_bytes).hexdigest(),
+                         kind='project', id=legacy['id'], version=legacy['version'])
+        native['linked_2d_project'] = reference
+        native['dependency_lock'].append(reference)
+
+        scene['scene_asset'] = self.put('native/project.json', native, 'scene')
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        native_closure = load_scene_project(scene_root)
+        admitted = self.check()
+        expected = {'native/' + path: item for path, item in native_closure['inventory'].items()}
+        for name in ('animation-project.json', 'scene.json'):
+            data = (self.root / name).read_bytes()
+            expected[name] = dict(sha256=hashlib.sha256(data).hexdigest(), bytes=len(data))
+        self.assertEqual(admitted['inventory'], expected)
+        decoded = {'animation-project.json', 'scene.json', 'native/' + legacy_path}
+        decoded.update('native/' + name for name in native_closure['documents'])
+        expected_memory = sum(item['bytes'] * (_JSON_FACTOR if name in decoded else 1)
+                              for name, item in expected.items())
+        self.assertEqual(admitted['memory_admission']['estimated_bytes'], expected_memory)
+
+    def test_project_rejects_non_native_zip_compression_before_opening_member(self):
+        import io
+        import zipfile
+        from unittest.mock import patch
+        import numpy as np
+
+        rig, _, _ = self.bound_clip()
+        normal = rig.manifest['geometry']['data']
+        path = rig.root / normal['path']
+        member = io.BytesIO()
+        np.save(member, np.array([1], dtype=np.int8), allow_pickle=False)
+        with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_BZIP2) as bundle:
+            bundle.writestr('metadata.json', '{}')
+            bundle.writestr('array.npy', member.getvalue())
+        normal['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        reference = self.put('fixture/rig.json', rig.manifest, 'rig')
+        self.project['rig_assets'] = [reference]
+        self.project['clips'] = []
+        with patch.object(zipfile.ZipFile, 'open', side_effect=AssertionError('opened an unsupported member')):
+            with self.assertRaises(RigError) as rejected:
+                self.check()
+        self.assertEqual(rejected.exception.report['code'], 'RIG_BINARY')
+
     def test_camera_suffixless_documents_keep_exact_project_inventory_and_charge(self):
         from rig_load_limits import _JSON_FACTOR
 

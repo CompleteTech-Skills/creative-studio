@@ -114,24 +114,33 @@ class Snapshot:
                         'ZIP directory exceeds memory admission budget.')
             _zip_directory(payload, SimpleNamespace(limits={'archive_files': DEFAULT_LIMITS['archive_files']}, add=charge_directory))
             with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-                expanded = max(expanded, sum(i.file_size for i in archive.infolist()) * 3) + directory_bytes
+                infos = archive.infolist()
+                expanded = max(expanded, sum(info.file_size for info in infos) * 3) + directory_bytes
                 require(expanded <= remaining,
                         'ANIMATION_LIMIT', 'Expanded binary exceeds memory admission budget.')
+                arrays = [info for info in infos if info.filename.endswith('.npy')]
+                for info in infos if mode == 'bundle' else arrays:
+                    # ZIP flags 0, 5 and 6 advertise encrypted, patched or strongly encrypted data.
+                    require(info.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+                            and not info.flag_bits & (1 | (1 << 5) | (1 << 6)),
+                            'RIG_BINARY', 'Native bundles require unencrypted stored/deflate members.')
                 import numpy as np
-                for info in archive.infolist():
-                    if not info.filename.endswith('.npy'): continue
-                    with archive.open(info) as stream:
-                        version = np.lib.format.read_magic(stream)
-                        require(version in ((1, 0), (2, 0)), 'ANIMATION_LIMIT', 'Unsupported binary array header.')
-                        shape, _, dtype = (np.lib.format.read_array_header_1_0(stream) if version == (1, 0)
-                                           else np.lib.format.read_array_header_2_0(stream))
-                        array_count = 1
-                        for size in shape:
-                            require(isinstance(size, int) and 0 <= size <= 2_000_000,
-                                    'ANIMATION_LIMIT', 'Unsafe binary array dimensions.')
-                            array_count *= size
-                        require(not dtype.hasobject and array_count * dtype.itemsize * 3 + directory_bytes <= remaining,
-                                'ANIMATION_LIMIT', 'Binary array header exceeds memory admission budget.')
+                for info in arrays:
+                    try:
+                        with archive.open(info) as stream:
+                            version = np.lib.format.read_magic(stream)
+                            require(version in ((1, 0), (2, 0)), 'ANIMATION_LIMIT', 'Unsupported binary array header.')
+                            shape, _, dtype = (np.lib.format.read_array_header_1_0(stream) if version == (1, 0)
+                                               else np.lib.format.read_array_header_2_0(stream))
+                    except (RuntimeError, EOFError) as exc:
+                        raise RigError('RIG_BINARY', 'Cannot read native binary member header.') from exc
+                    array_count = 1
+                    for size in shape:
+                        require(isinstance(size, int) and 0 <= size <= 2_000_000,
+                                'ANIMATION_LIMIT', 'Unsafe binary array dimensions.')
+                        array_count *= size
+                    require(not dtype.hasobject and array_count * dtype.itemsize * 3 + directory_bytes <= remaining,
+                            'ANIMATION_LIMIT', 'Binary array header exceeds memory admission budget.')
         expanded = max(expanded, previous)
         require(expanded <= remaining, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
         require(not json_suffix or count <= 16 * 1024**2,
@@ -282,29 +291,34 @@ class Snapshot:
                     self.copy(relative, descriptor['sha256'], mode='opaque')
             return kind, load_registry(path.parent, value)
 
-        # Scene owner references are relative to their owner root.
-        seen = set()
+        if kind == 'scene3d-project':
+            from scene3d_contracts import MANIFEST_KINDS, all_refs, load_project, validate_document
+            seen = set()
 
-        def capture(document, document_name, level):
-            require(level <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
-            if document_name in seen:
-                return
-            seen.add(document_name)
-            for node in _walk(document):
-                if not {'path', 'sha256'} <= node.keys():
-                    continue
-                relative = str(parent / node['path'])
-                child = self.copy(relative, node['sha256'])
-                if child.suffix == '.json':
-                    payload = self.json(relative, node['sha256'])
-                    require(isinstance(payload, dict), 'ANIMATION_KIND', 'Native dependency must be an object.')
-                    capture(payload, relative, level + 1)
+            def capture_scene(document, local, level):
+                require(level <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
+                if local in seen:
+                    return
+                seen.add(local)
+                for descriptor in all_refs(validate_document(document)):
+                    child = descriptor['path']
+                    relative = str(parent / child)
+                    child_kind = descriptor.get('kind')
+                    if child_kind in MANIFEST_KINDS:
+                        require(child.endswith('.json'), 'ANIMATION_OWNER', 'Scene3D manifests must use .json filenames.')
+                        captured = self.charge_json(relative, descriptor['sha256'])
+                        if child not in seen:
+                            capture_scene(decode_json(captured.read_bytes()), child, level + 1)
+                    elif child_kind == 'project':
+                        # Scene3D validates this exact legacy manifest without following its refs.
+                        self.charge_json(relative, descriptor['sha256'])
+                    else:
+                        self.copy(relative, descriptor['sha256'], mode='opaque')
 
-        capture(value, name, depth)
-        if isinstance(kind, str) and kind.startswith('scene3d-'):
-            from scene3d_contracts import load_project
-            require(kind == 'scene3d-project', 'ANIMATION_OWNER', 'Scene source must name its owner project closure.')
+            capture_scene(value, path.name, depth)
             return kind, load_project(path.parent, path.name)
+        if isinstance(kind, str) and kind.startswith('scene3d-'):
+            raise RigError('ANIMATION_OWNER', 'Scene source must name its owner project closure.')
         raise RigError('ANIMATION_OWNER', 'No registered native source owner for '+str(kind), stage='animation3d')
 
 
