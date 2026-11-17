@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import zipfile
+import zlib
 from functools import wraps
 
 from animation3d_contracts import KINDS, _walk, validate_contract
@@ -30,6 +31,8 @@ def _admission(function):
             return function(*args, **kwargs)
         except RigError:
             raise
+        except zlib.error as exc:
+            raise RigError('RIG_BINARY', 'Cannot decompress native binary member.') from exc
         except ImportError as exc:
             raise RigError('ANIMATION_DEPENDENCY', 'Install the optional native owner dependencies: '+str(exc), stage='animation3d') from exc
         except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile) as exc:

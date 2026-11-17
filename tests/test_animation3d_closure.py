@@ -281,6 +281,16 @@ class NativeClosureRegressionTests(unittest.TestCase):
                 self.check()
         self.assertEqual(rejected.exception.report['code'], 'RIG_BINARY')
 
+    def test_native_decoder_error_uses_binary_diagnostic(self):
+        from unittest.mock import patch
+        import zlib
+
+        self.bound_clip()
+        with patch('rig_models.load_rig', side_effect=zlib.error('Invalid deflate stream')):
+            with self.assertRaises(RigError) as rejected:
+                self.check()
+        self.assertEqual(rejected.exception.report['code'], 'RIG_BINARY')
+
     def test_camera_suffixless_documents_keep_exact_project_inventory_and_charge(self):
         from rig_load_limits import _JSON_FACTOR
 
