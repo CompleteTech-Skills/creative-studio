@@ -175,7 +175,7 @@ class AssetPublication(TypedDict):
 
 
 class AssetVersion(TypedDict):
-    schema_version: Literal[1]
+    schema_version: int | float  # The v1 schema's const accepts both 1 and 1.0.
     kind: Literal['asset-library-version']
     identity: AssetIdentity
     version: str
@@ -190,7 +190,7 @@ class AssetVersion(TypedDict):
 
 
 class AssetAnnotations(TypedDict):
-    schema_version: Literal[1]
+    schema_version: int | float  # The v1 schema's const accepts both 1 and 1.0.
     asset: AssetRef
     revision: int | float
     tags: list[str]

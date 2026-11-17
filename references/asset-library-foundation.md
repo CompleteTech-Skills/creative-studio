@@ -94,8 +94,10 @@ JSON Schema integer values retain their mathematical meaning: finite whole
 floating spellings such as `43.0` are accepted for byte counts and revision
 inputs. Only validated local I/O/CAS bounds are converted to Python integers;
 immutable manifest spelling, canonical bytes, digests and original payloads
-remain unchanged. Schema-version constants and preview dimensions follow the
-same schema semantics without rewriting user records. Boolean, fractional,
+remain unchanged. The schema-version fields in `AssetVersion` and
+`AssetAnnotations` are typed as `int | float` because both `1` and `1.0` represent
+the same v1 constant. Runtime validation still requires that exact value.
+Preview dimensions also retain their input spelling. Boolean, fractional,
 nonfinite, negative and excessive values fail with structured diagnostics.
 
 This initial strict store requires every inventoried file and exact dependency,

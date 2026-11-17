@@ -301,7 +301,10 @@ class AssetLibraryTests(unittest.TestCase):
                 self.assertEqual(record.__optional_keys__,
                                  set(contract['properties']) - set(contract['required']))
                 for field, schema in contract['properties'].items():
-                    if 'enum' in schema or 'const' in schema:
+                    if (schema.get('type') in ('integer', 'number')
+                            or type(schema.get('const')) in (int, float)):
+                        self.assertEqual(hints[field], int | float)
+                    elif 'enum' in schema or 'const' in schema:
                         values = schema['enum'] if 'enum' in schema else [schema['const']]
                         self.assertIs(get_origin(hints[field]), Literal)
                         self.assertEqual(set(get_args(hints[field])), set(values))
@@ -379,6 +382,8 @@ class AssetLibraryTests(unittest.TestCase):
         reference = self.register(manifest)
         reopened = AssetLibrary(self.library.root)
         restored = reopened.resolve(reference)
+        self.assertIs(type(restored['schema_version']), float)
+        self.assertEqual(restored['schema_version'], 1.0)
         self.assertEqual(canonical_bytes(restored), original_manifest)
         self.assertEqual(canonical_bytes(manifest), original_manifest)
         self.assertEqual(reference['sha256'], manifest['manifest_sha256'])
@@ -392,12 +397,23 @@ class AssetLibraryTests(unittest.TestCase):
         self.assertEqual(annotation['revision'], 1)
         self.assertEqual(canonical_bytes(reopened.resolve(reference)), original_manifest)
         self.assertEqual(reopened.annotations(reference), annotation)
+
+        # Simulate an existing annotation document with a valid numeric spelling.
+        float_annotation = {**annotation, 'schema_version': 1.0, 'revision': 1.0}
+        original_annotation = canonical_bytes(float_annotation)
+        with closing(sqlite3.connect(reopened.database)) as db, db:
+            db.execute('UPDATE annotations SET document=? WHERE id=? AND version=?',
+                       (original_annotation, reference['id'], reference['version']))
+        restored_annotation = reopened.annotations(reference)
+        self.assertIs(type(restored_annotation['schema_version']), float)
+        self.assertIs(type(restored_annotation['revision']), float)
+        self.assertEqual(canonical_bytes(restored_annotation), original_annotation)
         preview = dict(type='thumbnail', source_version_sha256=reference['sha256'],
             backend='schema-fixture', backend_version='1.0.0', settings_sha256=self.files[1]['sha256'],
             camera_sha256=self.files[1]['sha256'], lighting_sha256=self.files[1]['sha256'],
             settings_file=self.files[1], camera_file=self.files[1], lighting_file=self.files[1],
             file=self.files[0], width=1.0, height=1.0, status='generated')
-        for kind, value in [('AssetAnnotations', {**annotation, 'revision': 1.0}),
+        for kind, value in [('AssetAnnotations', float_annotation),
                             ('AssetIdentity', restored['identity']), ('AssetPreview', preview)]:
             before = canonical_bytes(value)
             validate(value, kind)
