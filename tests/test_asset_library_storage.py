@@ -568,6 +568,31 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertTrue(stale.upgrade_storage()['durable'])
         self.assertEqual(stale.resolve(reference), self.fixture.manifest)
 
+    def test_rebuild_index_requires_sync_of_published_ready_marker(self):
+        from asset_library_storage import _sync_directory
+        reference, (migrator, *_rest) = self.legacy_handles()
+        records = self.library.root / 'records'
+        marker = records / 'READY'
+
+        def fail_ready_sync(path):
+            if path == records and marker.exists():
+                raise OSError('simulated failure after marker rename')
+            _sync_directory(path)
+
+        with patch('asset_library_storage._sync_directory', side_effect=fail_ready_sync):
+            with self.assertRaises(RigError):
+                migrator.upgrade_storage()
+            self.assertTrue(marker.is_file())
+            self.library.database.unlink()
+            with self.assertRaises(RigError) as raised:
+                AssetLibrary.rebuild_index(self.library.root)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        self.assertFalse(self.library.database.exists())
+        self.assertEqual(list(self.library.root.glob('.index-recovery-*')), [])
+
+        AssetLibrary.rebuild_index(self.library.root)
+        self.assertEqual(AssetLibrary(self.library.root).resolve(reference), self.fixture.manifest)
+
     def test_recovery_syncs_published_commit_before_indexing_it(self):
         from asset_library_storage import _sync_directory
         directory = self.library.storage.root / 'commits'

@@ -555,6 +555,7 @@ class AssetLibrary:
         if not (storage.root / 'READY').is_file():
             _fail('DURABILITY', 'Canonical storage migration did not finish.')
         storage.validate_ready()
+        storage.ready()
         fd, name = tempfile.mkstemp(prefix='.index-recovery-', dir=root)
         os.close(fd)
         temporary = Path(name)
