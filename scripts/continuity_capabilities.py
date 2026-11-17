@@ -256,6 +256,9 @@ def native_input_check():
     except FileNotFoundError as exc:
         raise CapabilityRefusal('RIG_MISSING_ASSET', 'integrity',
                                 'Native dependency could not be verified') from exc
+    except OSError as exc:
+        raise CapabilityRefusal('RIG_PAYLOAD_IO', 'integrity',
+                                'Native dependency could not be verified') from exc
     except RigError as exc:
         code = exc.report['code']
         if code in _NATIVE_INTEGRITY_CODES:
@@ -298,6 +301,13 @@ def _check_report_size(output):
         raise
     if size > MAX_REPORT_BYTES:
         raise _report_limit()
+    if any(len(canonical_bytes(check)) > MAX_CHECK_BYTES for check in output['checks']):
+        raise _check_limit()
+
+
+def _check_limit():
+    return CapabilityRefusal('CONTINUITY_CAPABILITY_REPORT_LIMIT', 'resource-admission',
+                             'Complete check exceeds the one MiB check limit')
 
 
 def _report_limit():
@@ -482,8 +492,7 @@ class Admission:
                     item = validate(item, 'check-result')
                     encoded_bytes = len(canonical_bytes(item))
                     if encoded_bytes > MAX_CHECK_BYTES:
-                        raise CapabilityRefusal('CONTINUITY_CAPABILITY_REPORT_LIMIT', 'resource-admission',
-                                                'Complete check exceeds the one MiB check limit')
+                        raise _check_limit()
                     if report_bytes + encoded_bytes > MAX_REPORT_BYTES:
                         raise _report_limit()
                 except Exception as exc:
@@ -542,8 +551,9 @@ class Admission:
                 check.update(outcome='failed', error=check['error'] or 'CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
                     unsatisfied_gates=sorted(set(check['unsatisfied_gates'])|{'resource-admission'}))
         output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
-        # Enforce once more after the bounded final digest. Measurements are
-        # taken before digest emission to avoid self-referential timing hashes.
+        _check_report_size(output)
+        # Recheck the deadline after sizing and digesting the final report.
+        # Reported measurements precede digest emission to avoid self-reference.
         if (time.monotonic()-meter['wall_start']>meter['reserved_cpu_seconds']
                 or time.process_time()-meter['cpu_start']>meter['reserved_cpu_seconds']):
             output['outcome']='failed'
@@ -551,7 +561,7 @@ class Admission:
                 check.update(outcome='failed', error=check['error'] or 'CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
                     unsatisfied_gates=sorted(set(check['unsatisfied_gates'])|{'resource-admission'}))
             output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
-        _check_report_size(output)
+            _check_report_size(output)
         return output
 
     def _check(self, check, clock, canceled,references,meter):

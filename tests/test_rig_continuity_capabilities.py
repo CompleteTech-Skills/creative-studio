@@ -316,17 +316,29 @@ class CapabilityTest(unittest.TestCase):
                 self.assertTrue(result['checks'][0]['error'].startswith(code + ':'))
                 self.assertNotIn(str(self.root), json.dumps(result))
 
-    def test_backend_payload_error_does_not_claim_native_dependency_drift(self):
+    def test_native_input_io_failure_is_redacted_and_fails_integrity(self):
         owner, request = self.bound('geometry-inspection')
-        error = RigError('RIG_PAYLOAD_IO', f'Backend output at {self.root}')
-        with patch.object(owner, 'execute', side_effect=error):
+        error = PermissionError(f'Cannot read source at {self.root}')
+        with patch('rig_models.load_rig', side_effect=error):
             result = self.engine(owner).run(request)
         row = result['checks'][0]
-        self.assertEqual(result['integrity'], 'verified')
-        self.assertEqual(row['outcome'], 'failed')
-        self.assertEqual(row['unsatisfied_gates'], ['execution'])
-        self.assertTrue(row['error'].startswith('CONTINUITY_CAPABILITY_EXECUTION:'))
+        self.assertEqual(result['integrity'], 'failed')
+        self.assertEqual(row['unsatisfied_gates'], ['integrity'])
+        self.assertTrue(row['error'].startswith('RIG_PAYLOAD_IO:'))
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_backend_payload_error_does_not_claim_native_dependency_drift(self):
+        owner, request = self.bound('geometry-inspection')
+        for error in (RigError('RIG_PAYLOAD_IO', f'Backend output at {self.root}'),
+                      PermissionError(f'Cannot write output at {self.root}')):
+            with self.subTest(error_type=type(error)), patch.object(owner, 'execute', side_effect=error):
+                result = self.engine(owner).run(request)
+                row = result['checks'][0]
+                self.assertEqual(result['integrity'], 'verified')
+                self.assertEqual(row['outcome'], 'failed')
+                self.assertEqual(row['unsatisfied_gates'], ['execution'])
+                self.assertTrue(row['error'].startswith('CONTINUITY_CAPABILITY_EXECUTION:'))
+                self.assertNotIn(str(self.root), json.dumps(result))
 
     def test_missing_native_dependency_fails_report_integrity(self):
         owner, request = self.bound('geometry-inspection')
@@ -375,6 +387,21 @@ class CapabilityTest(unittest.TestCase):
             with self.assertRaises(CapabilityRefusal) as refusal:
                 self.engine().run(request)
         self.assertEqual(refusal.exception.code, 'CONTINUITY_CAPABILITY_REPORT_LIMIT')
+
+    def test_final_integrity_failure_cannot_make_a_check_exceed_its_cap(self):
+        owner, request = self.image_owner_and_request()
+        baseline = self.engine(owner).run(request)
+        check_limit = len(canonical_bytes(baseline['checks'][0])) + 40
+        late_failure = CapabilityRefusal(
+            'CONTINUITY_HASH', 'integrity',
+            'The exact reference verified before execution no longer matches the bound bytes during final verification',
+        )
+        with patch('continuity_capabilities.MAX_CHECK_BYTES', check_limit), patch(
+            'continuity_capabilities.ReferencePass.final', side_effect=late_failure,
+        ), self.assertRaises(CapabilityRefusal) as refusal:
+            self.engine(owner).run(request)
+        self.assertEqual(refusal.exception.code, 'CONTINUITY_CAPABILITY_REPORT_LIMIT')
+        self.assertIn('one MiB check limit', refusal.exception.message)
 
     def test_cli_and_discovery_omit_private_paths(self):
         with patch('continuity_capabilities.shutil.which', return_value=str(self.root / 'private/tool')):

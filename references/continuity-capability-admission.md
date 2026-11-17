@@ -51,7 +51,8 @@ checks. A final deduplicated hash pass rechecks request, snapshot, and
 evidence pointers. `integrity_coverage` describes this closure and the native
 dependency checks reached during execution. Missing, changed, or malformed
 evidence and native dependency refusals fail the aggregate integrity gate.
-Reports and CLI errors use fixed public messages with typed refusal codes.
+Reports and CLI errors use fixed public messages with typed refusal codes. A
+native input read error without a more specific code appears as `RIG_PAYLOAD_IO`.
 The host must supply the project root and caller-owned evidence directory.
 Portable path checks and stable reads bind observed files. Treat untrusted
 executable formats as separate native worker jobs.
