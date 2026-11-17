@@ -161,7 +161,7 @@ class NativeClosureRegressionTests(unittest.TestCase):
             with self.assertRaises(RigError) as rejected:
                 self.check()
         self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
-        self.assertIn('morph target budget', rejected.exception.report['message'])
+        self.assertIn('morph budget', rejected.exception.report['message'])
         self.assertEqual(geometry_loads.call_count, 1)
 
     def test_json_object_capacity_is_admitted_before_dependency_decode(self):

@@ -191,17 +191,18 @@ class Snapshot:
                                max_total_morph_targets=remaining_morphs)
             except RigError as exc:
                 code = exc.report['code']
-                resource = 'memory' if code == 'RIG_LIMIT_MEMORY' else None
+                message = ('Native rig load exceeds remaining project memory budget.'
+                           if code == 'RIG_LIMIT_MEMORY' else None)
                 if self.project_budgets is not None:
                     if code == 'RIG_LIMIT_BONES' and budgets['max_bones_per_rig'] <= value['limits']['bones']:
-                        resource = 'bone'
+                        message = 'Rig exceeds project bone budget.'
                     elif code == 'RIG_LIMIT_VERTICES' and budgets['max_vertices'] - self.native_vertices <= value['limits']['vertices']:
-                        resource = 'vertex'
+                        message = 'Native geometry exceeds project vertex/morph budget.'
                     elif code == 'RIG_LIMIT_MORPHS' and exc.report['expected'] == remaining_morphs:
-                        resource = 'morph target'
-                if resource is not None:
-                    raise RigError('ANIMATION_LIMIT', f'Native rig load exceeds project {resource} budget.',
-                                   stage='animation3d') from exc
+                        message = 'Native geometry exceeds project vertex/morph budget.'
+                if message is not None:
+                    stage = 'animation3d' if code == 'RIG_LIMIT_MEMORY' else 'rig'
+                    raise RigError('ANIMATION_LIMIT', message, stage=stage) from exc
                 raise
             self.native_memory += rig.resource_usage['estimated_memory_bytes']
             self.native_vertices += rig.geometry.vertex_count
