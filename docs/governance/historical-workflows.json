@@ -1,0 +1,148 @@
+[
+  {
+    "id": 394350696,
+    "path": ".github/workflows/model3d-source-transfer.yml",
+    "source_commit": "508b254e722bc44317d62b39ee8b8c3e30f088af",
+    "source_sha256": "aac3a3001b97f9112aad3bb1c8e68c349e148d1b2168e1d39970d865a6782e3a",
+    "source_bytes": 8385,
+    "latest_runs": {
+      "runs": [
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "failure",
+          "created_at": "2026-10-23T17:36:04Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "508b254e722bc44317d62b39ee8b8c3e30f088af",
+          "id": 39996403225,
+          "status": "completed"
+        }
+      ],
+      "total_count": 1
+    },
+    "disposition": "Retire registration after review; preserve source branch and Git history. No active run, latest use is 2026-10-23; task-specific transfer/capture superseded by current ordinary Git publication and live inventory."
+  },
+  {
+    "id": 394394294,
+    "path": ".github/workflows/model3d-stat-transfer.yml",
+    "source_commit": "b89c4e5747fa2c8116a723704ec94dcd886280f1",
+    "source_sha256": "1397e99de3ebd44730aaec61b5c0199d9264eed3a86821ba46d1e9adb29cac8b",
+    "source_bytes": 9361,
+    "latest_runs": {
+      "runs": [
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T18:15:04Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "b89c4e5747fa2c8116a723704ec94dcd886280f1",
+          "id": 40001754371,
+          "status": "completed"
+        }
+      ],
+      "total_count": 1
+    },
+    "disposition": "Retire registration after review; preserve source branch and Git history. No active run, latest use is 2026-10-23; task-specific transfer/capture superseded by current ordinary Git publication and live inventory."
+  },
+  {
+    "id": 394370612,
+    "path": ".github/workflows/model3d-test-fixture-transfer.yml",
+    "source_commit": "6694bab04d5befc6d2f35e0fec9cf819ab4ebc31",
+    "source_sha256": "86290ff03baaf52f3067b3c9e90331b3da9ea883cabd26a1b1a11712e8d36c19",
+    "source_bytes": 6121,
+    "latest_runs": {
+      "runs": [
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T18:09:07Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "6694bab04d5befc6d2f35e0fec9cf819ab4ebc31",
+          "id": 40000945867,
+          "status": "completed"
+        },
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T17:53:59Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "9970d9303eaa46735a9dce5c624170c4aaf1e7d3",
+          "id": 39998855852,
+          "status": "completed"
+        },
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "failure",
+          "created_at": "2026-10-23T17:53:10Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "5c87d6727ca15f6e5b9d67f2182ff328a27e3b48",
+          "id": 39998742313,
+          "status": "completed"
+        }
+      ],
+      "total_count": 3
+    },
+    "disposition": "Retire registration after review; preserve source branch and Git history. No active run, latest use is 2026-10-23; task-specific transfer/capture superseded by current ordinary Git publication and live inventory."
+  },
+  {
+    "id": 394264892,
+    "path": ".github/workflows/roadmap-capture.yml",
+    "source_commit": "b89c4e5747fa2c8116a723704ec94dcd886280f1",
+    "source_sha256": "c7f63f96cc6e0e83979ebda673b708a4e76d9fb9c716066b16b7a6667b05a7c3",
+    "source_bytes": 7192,
+    "latest_runs": {
+      "runs": [
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T18:15:04Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "b89c4e5747fa2c8116a723704ec94dcd886280f1",
+          "id": 40001754253,
+          "status": "completed"
+        },
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T18:09:07Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "6694bab04d5befc6d2f35e0fec9cf819ab4ebc31",
+          "id": 40000945855,
+          "status": "completed"
+        },
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T17:53:59Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "9970d9303eaa46735a9dce5c624170c4aaf1e7d3",
+          "id": 39998855678,
+          "status": "completed"
+        }
+      ],
+      "total_count": 8
+    },
+    "disposition": "Retire registration after review; preserve source branch and Git history. No active run, latest use is 2026-10-23; task-specific transfer/capture superseded by current ordinary Git publication and live inventory."
+  },
+  {
+    "id": 394275719,
+    "path": ".github/workflows/roadmap-test-tools.yml",
+    "source_commit": "6fef3fdaa6e68973be2ae750fd8c4b273afc8dd9",
+    "source_sha256": "9b33f815100c884fa140818c85af9204dbef7a9f9c4ed88ec4cd37c5f9c16bac",
+    "source_bytes": 914,
+    "latest_runs": {
+      "runs": [
+        {
+          "actor": "CompleteDotTech",
+          "conclusion": "success",
+          "created_at": "2026-10-23T16:28:10Z",
+          "head_branch": "agent/roadmap-capture-20261023",
+          "head_sha": "6fef3fdaa6e68973be2ae750fd8c4b273afc8dd9",
+          "id": 39987029689,
+          "status": "completed"
+        }
+      ],
+      "total_count": 1
+    },
+    "disposition": "Retire registration after review; preserve source branch and Git history. No active run, latest use is 2026-10-23; task-specific transfer/capture superseded by current ordinary Git publication and live inventory."
+  }
+]
