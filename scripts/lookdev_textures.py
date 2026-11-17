@@ -593,6 +593,9 @@ def validate_uvs(uv_sets, triangles, *, tangents=None, max_pairs=1_000_000):
             for j in range(i):
                 if tested>=max_pairs:exhausted=True;break
                 tested+=1
+                # Zero-area triangles cannot bound a clipping polygon.
+                if signed[i] == 0 or signed[j] == 0:
+                    continue
                 if np.any(mapped[i].max(axis=0)<=mapped[j].min(axis=0)) or np.any(mapped[j].max(axis=0)<=mapped[i].min(axis=0)):continue
                 if overlap(mapped[i],mapped[j]):pairs.append([j,i])
             if exhausted:break

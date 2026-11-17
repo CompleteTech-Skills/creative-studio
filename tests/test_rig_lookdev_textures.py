@@ -209,6 +209,25 @@ class TextureTests(unittest.TestCase):
         with self.assertRaises(RigError):t.validate_uvs([uv],[[0,1,9]])
         with self.assertRaises(RigError):t.validate_uvs([uv],[[0,1,2]],tangents=np.zeros((6,4)))
 
+    def test_uv_zero_area_faces_consume_budget_without_overlapping(self):
+        uv = [[0, 0], [1, 0], [0, 1], [.25, .25], [.25, .25], [.25, .25]]
+        valid, collapsed = [0, 1, 2], [3, 4, 5]
+        for faces, collapsed_index in [([valid, collapsed], 1), ([collapsed, valid], 0)]:
+            with self.subTest(collapsed_index=collapsed_index):
+                report = t.validate_uvs([uv], faces, max_pairs=1)['sets'][0]
+                self.assertEqual(report['degenerate_triangles'], [collapsed_index])
+                self.assertEqual(report['overlap_pairs'], [])
+                self.assertEqual(report['overlap_pairs_tested'], 1)
+                self.assertTrue(report['overlap_complete'])
+
+    def test_uv_small_positive_area_still_overlaps(self):
+        uv = [[0, 0], [1, 0], [0, 1], [0, 0], [2e-6, 0], [0, 2e-6]]
+        for faces in [([0, 1, 2], [3, 4, 5]), ([3, 4, 5], [0, 1, 2])]:
+            with self.subTest(faces=faces):
+                report = t.validate_uvs([uv], faces)['sets'][0]
+                self.assertEqual(report['degenerate_triangles'], [])
+                self.assertEqual(report['overlap_pairs'], [[0, 1]])
+
     def test_uv_adjacent_edges_are_not_overlap_and_work_is_bounded(self):
         uv=[[0,0],[1,0],[0,1],[1,1]]
         self.assertEqual(t.validate_uvs([uv],[[0,1,2],[1,3,2]])['sets'][0]['overlap_pairs'],[])
