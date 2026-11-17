@@ -223,6 +223,52 @@ class ParticleTests(unittest.TestCase):
             with self.assertRaises(core.BackendError):verify(self.root/'cache')
         finally:backend.cleanup(prepared)
 
+    def test_unbounded_reproducibility_contracts_reject(self):
+        for value in ('pinned-numerical','approximate'):
+            with self.subTest(reproducibility=value):
+                world,settings,_=fixture();world['solver']['reproducibility']=value
+                settings['world_sha256']=core.digest(core.canonical(world))
+                with self.assertRaises(core.BackendError) as caught:admit(world,settings)
+                self.assertEqual(caught.exception.report['code'],'PARTICLE_REPRODUCIBILITY')
+        for value in ('not-guaranteed','verified-cache-replay'):
+            world,settings,_=fixture();world['solver']['reproducibility']=value
+            settings['world_sha256']=core.digest(core.canonical(world));admit(world,settings)
+
+    def test_rehashed_worker_or_self_inventory_is_rejected(self):
+        world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        try:
+            backend.bake(backend.simulate(prepared),self.root/'cache')
+            manifest_path=self.root/'cache/particle-cache.json';pristine=manifest_path.read_bytes()
+            worker=self.root/'cache/worker.py';original=worker.read_bytes()
+            try:
+                worker.write_bytes(original+b'# edited\n')
+                manifest=core.parse(pristine)
+                for record in manifest['files']:
+                    if record['path']=='worker.py':record.update(bytes=worker.stat().st_size,sha256=core.digest(worker.read_bytes()))
+                manifest_path.write_bytes(core.canonical(manifest))
+                with self.assertRaises(core.BackendError) as caught:verify(self.root/'cache')
+                self.assertEqual(caught.exception.report['code'],'PARTICLE_CACHE')
+            finally:worker.write_bytes(original);manifest_path.write_bytes(pristine)
+            manifest=core.parse(pristine)
+            manifest['files'].append(dict(path='particle-cache.json',bytes=len(pristine),sha256=core.digest(pristine)))
+            manifest_path.write_bytes(core.canonical(manifest))
+            with self.assertRaises(core.BackendError) as caught:verify(self.root/'cache')
+            self.assertEqual(caught.exception.report['code'],'PARTICLE_CACHE')
+            manifest_path.write_bytes(pristine)
+            self.assertEqual(verify(self.root/'cache')['status'],'hash-and-state-verified')
+        finally:backend.cleanup(prepared)
+
+    def test_cli_source_collection_rejects_links(self):
+        from physics_particles import read_source_directory
+        source=self.root/'source';(source/'nested').mkdir(parents=True)
+        (source/'nested/a.obj').write_bytes(b'v 0 0 0\n')
+        self.assertEqual(read_source_directory(source),{'nested/a.obj':b'v 0 0 0\n'})
+        outside=self.root/'secret.txt';outside.write_bytes(b'secret')
+        (source/'link.obj').symlink_to(outside)
+        with self.assertRaises(core.BackendError):read_source_directory(source)
+        (source/'link.obj').unlink();(source/'linked').symlink_to(self.root,target_is_directory=True)
+        with self.assertRaises(core.BackendError):read_source_directory(source)
+
     @unittest.skipUnless(__import__('os').environ.get('HATCH_PHYSICS_BACKEND_TEST')=='1', 'real optional native tests opt in')
     def test_native_bounce_and_removal_use_real_bullet_contacts(self):
         import os

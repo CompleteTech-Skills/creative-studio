@@ -19,6 +19,8 @@ def fixture(kind='hinge'):
         anchor_a=dict(translation=[0,4.1,0],rotation=[0,0,0,1]),
         anchor_b=dict(translation=[0,1,0],rotation=[0,0,0,1]),axis=[0,0,1],
         limits=[-.5,.5],stiffness=0,damping=0,motor_velocity=0,motor_max_force=0,collide_connected=False)]
+    if kind=='generic-6dof':
+        world['joints'][0].update(limits=[0,0],linear_limits=[[0,0],[0,0],[0,0]],angular_limits=[[0,0],[0,0],[-.5,.5]])
     return world,payloads
 
 
@@ -29,6 +31,11 @@ class JointAdmissionTests(unittest.TestCase):
         for patch in [dict(motor_velocity=1,motor_max_force=1),dict(damping=.5),dict(break_force=10),dict(axis=[0,0,0]),dict(body_b='missing'),dict(limits=[1,-1])]:
             world,_=fixture();world['joints'][0].update(patch)
             with self.assertRaises(Exception):physics.BlenderBackend('/missing').validate_scene(world)
+        for drop in ['linear_limits','angular_limits']:
+            world,_=fixture('generic-6dof');del world['joints'][0][drop]
+            with self.assertRaises(physics.BackendError):physics.BlenderBackend('/missing').validate_scene(world)
+        world,_=fixture('generic-6dof');world['joints'][0]['limits']=[-1,1]
+        with self.assertRaises(physics.BackendError):physics.BlenderBackend('/missing').validate_scene(world)
         world,_=fixture('spring');world['joints'][0]['damping']=.5
         with self.assertRaises(physics.BackendError):physics.BlenderBackend('/missing').validate_scene(world)
         world,_=fixture();world['joints'][0]['anchor_b']['translation']=[0,0,0]

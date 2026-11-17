@@ -46,6 +46,12 @@ def admit(world, backend):
             _error('Native break force conversion is not yet verified.')
         if kind == 'hinge' and any(abs(x)>math.pi for x in joint['limits']):
             _error('Angular limits must lie within -pi..pi.')
+        if kind == 'generic-6dof':
+            # Without explicit rows every axis would silently lock at [0, 0].
+            if 'linear_limits' not in joint or 'angular_limits' not in joint:
+                _error('Generic six-DOF joints require explicit linear_limits and angular_limits per axis.')
+            if list(joint['limits']) != [0, 0]:
+                _error('Generic six-DOF joints use per-axis limits; the scalar limits field must be [0, 0].')
         for key in ('linear_limits','angular_limits'):
             if key in joint and kind != 'generic-6dof':
                 _error('Per-axis limits apply only to generic-6dof constraints.')

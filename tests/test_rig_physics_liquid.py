@@ -53,7 +53,8 @@ class NativeLiquidTests(unittest.TestCase):
             png=(root/'frame-0000.png').read_bytes()
             ihdr=struct.pack('>II',50000,50000)+png[24:29]
             mutations['frame-0000.png']=png[:16]+ihdr+struct.pack('>I',zlib.crc32(b'IHDR'+ihdr))+png[33:]
-            for relative,replacement in mutations.items():
+            # Hash-consistent but malformed JSON must classify as corrupt, not raise TypeError/KeyError.
+            for relative,replacement in list(mutations.items())+[('liquid-report.json',b'[]'),('liquid-report.json',b'{}')]:
                 path=root/relative;original_bytes=path.read_bytes()
                 try:
                     path.write_bytes(replacement)
