@@ -28,6 +28,10 @@ solver behavior, external interoperability or artistic acceptance.
 
 Keep historical logs and receipts bound to their original revisions. New
 evidence supplements them; it does not rewrite an earlier failure or approval.
+Use repository-relative paths in new evidence. For paths outside the repository,
+use a placeholder such as `<local-work-dir>/inputs/example.json`. Pull request
+CI checks added text lines for absolute home-directory paths, including any
+added lines in existing receipts.
 The existing workflow files define independent 2D, rig/native and Model3D gates.
 Preserve optional dependency isolation and all applicable integration gates.
 Use PRs for substantial documentation or implementation changes. Check the
