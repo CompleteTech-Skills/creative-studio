@@ -204,6 +204,7 @@ def validate_structure(value, spec, label='decomposition'):
 def safe_path(root, value):
     # Geometry, review and transport use the same portable filename contract.
     from decomposition_package import _relative
+    from rig_errors import normalize_root, scoped_directory_descriptor
     _relative(value)
     if not isinstance(value, str) or not value or '\\' in value or ':' in value or '\0' in value:
         raise ValueError('unsafe decomposition artifact path')
@@ -211,9 +212,15 @@ def safe_path(root, value):
     if path.is_absolute() or any(p in ('.', '..', '') for p in value.split('/')):
         raise ValueError('decomposition artifact path escapes package')
     target = Path(root) / path
-    root = Path(root).resolve()
-    if not target.resolve().is_relative_to(root):
-        raise ValueError('decomposition artifact path escapes package')
+    with scoped_directory_descriptor(root) as root_fd:
+        if root_fd is None:
+            root = Path(root).resolve()
+            if not target.resolve().is_relative_to(root):
+                raise ValueError('decomposition artifact path escapes package')
+        else:
+            root = normalize_root(root)
+            target = root / path
+            normalize_root(target.parent)
     current = root
     for part in path.parts:
         current = current / part
