@@ -1,0 +1,19 @@
+test_authored_landmarks_keep_exact_endpoints_and_evidence (test_rig_landmarks.LandmarkAdmissionTests.test_authored_landmarks_keep_exact_endpoints_and_evidence) ... ok
+test_cli_rejects_explicit_null_without_discarding_skin_or_animation (test_rig_landmarks.LandmarkAdmissionTests.test_cli_rejects_explicit_null_without_discarding_skin_or_animation) ... ok
+test_dispatcher_accepts_hash_bound_landmarks_and_can_reload (test_rig_landmarks.LandmarkAdmissionTests.test_dispatcher_accepts_hash_bound_landmarks_and_can_reload) ... ok
+test_dispatcher_rejection_preserves_active_rig_revisions_and_sources (test_rig_landmarks.LandmarkAdmissionTests.test_dispatcher_rejection_preserves_active_rig_revisions_and_sources) ... ok
+test_invalid_evidence_and_nonfinite_geometry_never_return_ready (test_rig_landmarks.LandmarkAdmissionTests.test_invalid_evidence_and_nonfinite_geometry_never_return_ready) ... ok
+test_low_confidence_and_geometric_sources_remain_uncertain (test_rig_landmarks.LandmarkAdmissionTests.test_low_confidence_and_geometric_sources_remain_uncertain) ... ok
+test_malformed_landmarks_fail_with_typed_diagnostics (test_rig_landmarks.LandmarkAdmissionTests.test_malformed_landmarks_fail_with_typed_diagnostics) ... ok
+test_composed_templates_cannot_exceed_the_published_bone_limit (test_rig_landmarks.TemplateAdmissionTests.test_composed_templates_cannot_exceed_the_published_bone_limit) ... ok
+test_custom_template_dictionary_has_the_same_strict_admission_as_file (test_rig_landmarks.TemplateAdmissionTests.test_custom_template_dictionary_has_the_same_strict_admission_as_file) ... ok
+test_deep_inheritance_fails_before_python_recursion_limit (test_rig_landmarks.TemplateAdmissionTests.test_deep_inheritance_fails_before_python_recursion_limit) ... ok
+test_dictionary_and_file_reject_duplicate_template_semantics (test_rig_landmarks.TemplateAdmissionTests.test_dictionary_and_file_reject_duplicate_template_semantics) ... ok
+test_fitted_templates_reject_missing_controller_and_socket_targets (test_rig_landmarks.TemplateAdmissionTests.test_fitted_templates_reject_missing_controller_and_socket_targets) ... ok
+test_preserved_existing_skeleton_is_validated_before_returning_ready (test_rig_landmarks.TemplateAdmissionTests.test_preserved_existing_skeleton_is_validated_before_returning_ready) ... ok
+test_repeated_acyclic_inheritance_has_a_total_work_budget (test_rig_landmarks.TemplateAdmissionTests.test_repeated_acyclic_inheritance_has_a_total_work_budget) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 3.012s
+
+OK
