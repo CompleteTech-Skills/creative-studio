@@ -348,5 +348,87 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
                 self.assertTrue(results)
 
 
+    def version(self, number):
+        manifest = deepcopy(self.fixture.manifest)
+        manifest['version'] = number
+        return seal(manifest)
+
+    def test_index_only_history_blocks_writes_and_recovery_instead_of_being_discarded(self):
+        self.register()
+        # Mimic a pre-durability writer on the same root: SQLite rows only.
+        with patch.object(self.library.storage, 'append', lambda *a, **k: None), \
+                patch.object(self.library.storage, 'check_projection', lambda *a, **k: None):
+            orphan = self.library.register(self.version('2.0.0'), self.fixture.sources)
+        with self.assertRaises(RigError) as raised:
+            self.library.register(self.version('3.0.0'), self.fixture.sources)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        with self.assertRaises(RigError):
+            self.library.recover()
+        self.assertIn(orphan, self.library.list_references())
+        self.assertEqual(self.library.resolve(orphan)['version'], '2.0.0')
+
+    def test_index_only_annotation_and_event_rows_block_recovery(self):
+        reference = self.register()
+        with patch.object(self.library.storage, 'append', lambda *a, **k: None):
+            self.library.update_annotations(reference, expected_revision=0, tags=['index-only'], favorite=False, note='only in SQLite')
+        with self.assertRaises(RigError):
+            self.library.recover()
+        with closing(sqlite3.connect(self.library.database)) as db:
+            self.assertEqual(db.execute('SELECT revision FROM annotations').fetchone(), (1,))
+        other = foundation_fixture.AssetLibraryTests()
+        other.setUp()
+        self.addCleanup(other.doCleanups)
+        other.register()
+        with closing(sqlite3.connect(other.library.database)) as db, db:
+            db.execute('INSERT INTO asset_events VALUES(?,?,?)', ('lifecycle', 1, canonical_bytes({'kind': 'pin'})))
+        with self.assertRaises(RigError):
+            other.library.recover()
+        with closing(sqlite3.connect(other.library.database)) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM asset_events').fetchone(), (1,))
+
+    def test_upgrade_completes_layout_left_by_interrupted_migration(self):
+        reference, (migrator, *_rest) = self.legacy_handles()
+        (self.library.root / 'records').mkdir(mode=0o700)
+        status = migrator.upgrade_storage()
+        self.assertTrue(status['durable'])
+        self.assertEqual(AssetLibrary(self.library.root).resolve(reference), self.fixture.manifest)
+
+    def test_incomplete_layout_is_a_typed_durability_error(self):
+        self.register()
+        (self.library.storage.root / 'staging').rmdir()
+        with self.assertRaises(RigError) as raised:
+            AssetLibrary(self.library.root)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+
+    def test_disk_full_during_publication_is_typed_and_rolls_back(self):
+        import errno
+        import asset_library_storage
+        def full(_fd):
+            raise OSError(errno.ENOSPC, 'No space left on device')
+        with patch.object(asset_library_storage.os, 'fsync', full):
+            with self.assertRaises(RigError) as raised:
+                self.register()
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        self.assertEqual(self.library.list_references(), [])
+        self.assertEqual(list((self.library.storage.root / 'staging').iterdir()), [])
+
+    def test_verified_reads_share_access_while_writer_lock_is_held(self):
+        reference = self.register()
+        with closing(sqlite3.connect(self.library.database, timeout=0)) as writer:
+            writer.execute('BEGIN IMMEDIATE')
+            reader = AssetLibrary(self.library.root)
+            self.assertEqual(reader.resolve(reference), self.fixture.manifest)
+            self.assertEqual(reader.inspect(reference), self.fixture.manifest)
+            self.assertEqual(reader.read_own_file(reference, 'mesh/triangle.obj'), self.fixture.mesh.read_bytes())
+            writer.rollback()
+
+    def test_verified_reads_work_on_read_only_database(self):
+        reference = self.register()
+        os.chmod(self.library.database, 0o400)
+        self.addCleanup(os.chmod, self.library.database, 0o600)
+        self.assertEqual(self.library.resolve(reference), self.fixture.manifest)
+        self.assertEqual(self.library.read_file(reference, 'mesh/triangle.obj'), self.fixture.mesh.read_bytes())
+
+
 if __name__ == '__main__':
     unittest.main()

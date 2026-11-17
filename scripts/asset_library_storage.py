@@ -44,21 +44,36 @@ def _sync_directory(path):
 
 
 class Storage:
-    def __init__(self, library, *, create=False):
+    def __init__(self, library, *, create=False, resume=False):
+        """create makes a new layout; resume also completes an interrupted one.
+
+        Directories left by an interrupted migration are accepted only after
+        _check confirms they are private, owned, alias-free directories.
+        """
         self.library = library
         self.root = library.root / 'records'
-        if create:
-            self.root.mkdir(mode=0o700)
-            for name in ('blobs', 'commits', 'staging'):
-                (self.root / name).mkdir(mode=0o700)
-            _sync_directory(library.root)
+        if create or resume:
+            try:
+                for path in (self.root, *(self.root / n for n in ('blobs', 'commits', 'staging'))):
+                    try:
+                        path.mkdir(mode=0o700)
+                    except FileExistsError:
+                        if not resume:
+                            raise
+                _sync_directory(library.root)
+                _sync_directory(self.root)
+            except OSError as exc:
+                raise RigError('LIBRARY_DURABILITY', 'Canonical storage layout could not be created: ' + str(exc)) from exc
         self._check()
 
     def _check(self):
         # The parent library remains a private owned trust boundary, matching
         # AssetLibrary._connect. Reject aliases even inside that boundary.
         for path in (self.library.root, self.root, *(self.root / n for n in ('blobs', 'commits', 'staging'))):
-            info = path.lstat()
+            try:
+                info = path.lstat()
+            except OSError as exc:
+                raise RigError('LIBRARY_DURABILITY', 'Canonical storage layout is incomplete; run upgrade_storage to finish migration: ' + str(exc)) from exc
             if path == self.library.root and hasattr(self.library, '_root_identity') and (info.st_dev, info.st_ino) != self.library._root_identity:
                 _fail('Canonical library root was replaced.')
             if (not stat.S_ISDIR(info.st_mode) or path.is_symlink() or
@@ -80,9 +95,10 @@ class Storage:
             if self._read(destination, max(len(payload), 1)) != payload:
                 _fail('Existing immutable content differs from its digest.')
             return
-        fd, temporary = tempfile.mkstemp(prefix='write-', dir=self.root / 'staging')
-        temporary = Path(temporary)
+        temporary = None
         try:
+            fd, temporary = tempfile.mkstemp(prefix='write-', dir=self.root / 'staging')
+            temporary = Path(temporary)
             with os.fdopen(fd, 'wb') as stream:
                 stream.write(payload)
                 stream.flush()
@@ -91,8 +107,11 @@ class Storage:
             _sync_directory(directory)
             if self._read(destination, max(len(payload), 1)) != payload:
                 _fail('Published bytes differ from the verified staged bytes.')
+        except OSError as exc:
+            # Disk-full, permission and exclusive-rename failures stay typed.
+            raise RigError('LIBRARY_DURABILITY', 'Canonical record publication failed: ' + str(exc)) from exc
         finally:
-            if temporary.exists():
+            if temporary is not None and temporary.exists():
                 temporary.unlink()
 
     def ready(self):
@@ -102,13 +121,46 @@ class Storage:
         if self._read(self.root / 'READY', 128) != b'asset-library-canonical-storage-v1\n':
             _fail('Canonical storage readiness marker is invalid.')
 
-    def check_projection(self, db):
-        """Reject a split commit instead of silently discarding durable history."""
-        manifests, _, _ = self.records()
-        # Registration inserts its own row before calling this check.
+    def check_projection(self, db, *, pending=None):
+        """Reject a split commit instead of silently discarding durable history.
+
+        Both directions are checked: canonical versions must be indexed, and
+        index rows must be backed by canonical history. ``pending`` names the
+        version registration inserted in this transaction before appending.
+        """
+        manifests, annotations, _, events = self._records()
         indexed = {(a, v): digest for a, v, digest in db.execute('SELECT id,version,sha256 FROM versions')}
         if any(indexed.get(key) != m['manifest_sha256'] for key, m in manifests.items()):
             _fail('A committed version is absent from the index; run recover before writing.')
+        self.check_index_backed(db, manifests, annotations, events, pending=pending)
+
+    def check_index_backed(self, db, manifests, annotations, events, *, pending=None):
+        """Refuse index-only history; recovery must never silently discard it."""
+        message = ('The index holds {} absent from canonical history; refusing to discard it. '
+                   'Preserve the database for diagnosis before any recovery.')
+        for identity, version, digest in db.execute('SELECT id,version,sha256 FROM versions'):
+            if (identity, version) == pending:
+                continue
+            manifest = manifests.get((identity, version))
+            if manifest is None or manifest['manifest_sha256'] != digest:
+                _fail(message.format('a version'))
+        referenced = {f['sha256'] for m in manifests.values() for f in m['files']}
+        if pending is None:
+            for (digest,) in db.execute('SELECT sha256 FROM blobs'):
+                if digest not in referenced:
+                    _fail(message.format('blob content'))
+        for identity, version, revision, document in db.execute('SELECT id,version,revision,document FROM annotations'):
+            if (identity, version) == pending:
+                continue
+            history = {r: v for (a, ver, r), v in annotations.items() if (a, ver) == (identity, version)}
+            expected = history.get(revision)
+            if (revision > max(history, default=-1) or (expected is not None and
+                    {k: v for k, v in expected.items() if k != '_checkpoint'} != decode_json(document))):
+                _fail(message.format('an annotation revision'))
+        durable_events = {(e['stream'], e['revision']): e['document'] for e in events}
+        for stream, revision, document in db.execute('SELECT stream,revision,document FROM asset_events'):
+            if durable_events.get((stream, revision)) != decode_json(document):
+                _fail(message.format('an event'))
 
     def check_annotation_previous(self, reference, revision):
         manifests, annotations, _ = self.records()
@@ -238,6 +290,8 @@ class Storage:
     def rebuild(self, db):
         """Verify the whole canonical closure before replacing query rows."""
         manifests, blobs, annotations, snapshot = self.materialize()
+        _, history, _, events = self._records()
+        self.check_index_backed(db, manifests, history, events)
         db.execute('DELETE FROM annotations')
         db.execute('DELETE FROM versions')
         db.execute('DELETE FROM blobs')

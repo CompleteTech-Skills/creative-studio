@@ -232,13 +232,28 @@ class AssetLibrary:
     def _begin_writer(self, db):
         """Acquire the writer lock before observing another handle's migration."""
         db.execute('BEGIN IMMEDIATE')
+        # Migration and ordinary publication use this same SQLite lock.
+        # Loading after acquisition also covers writers that waited while
+        # a migration was in progress.
+        self._refresh_mode(db)
+
+    def _begin_reader(self, db):
+        """Take a consistent shared snapshot for self-verifying reads.
+
+        Index rows commit only after their canonical records, so verifying a
+        committed row against canonical bytes needs no writer lock; readers
+        neither queue behind each other nor need a writable database. Reads
+        that compare whole histories (annotations, events, status) keep the
+        writer lock so an in-flight publication is not mistaken for a split.
+        """
+        db.execute('BEGIN')
+        self._refresh_mode(db)
+
+    def _refresh_mode(self, db):
         durable_flag = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durability'").fetchone()
         required = bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
         if required and self.storage is None:
             from asset_library_storage import Storage
-            # Migration and ordinary publication use this same SQLite lock.
-            # Loading after acquisition also covers writers that waited while
-            # a migration was in progress.
             storage = Storage(self)
             storage.validate_ready()
             self.storage = storage
@@ -312,7 +327,7 @@ class AssetLibrary:
             db.execute('INSERT INTO annotations VALUES(?,?,?,?)',
                        (identity, version, 0, canonical_bytes(annotations)))
             if self.storage:
-                self.storage.check_projection(db)
+                self.storage.check_projection(db, pending=(identity, version))
                 self.storage.append(dict(schema_version=1, kind='version', value=manifest), payloads)
         return reference
 
@@ -341,7 +356,7 @@ class AssetLibrary:
     def resolve(self, reference):
         validate(reference, 'AssetRef')
         with self._connect() as db:
-            self._begin_writer(db)
+            self._begin_reader(db)
             visited, pending = set(), [reference]
             first = None
             while pending:
@@ -363,7 +378,7 @@ class AssetLibrary:
         if type(verify_payloads) is not bool:
             _fail('REQUEST', 'verify_payloads must be boolean.')
         with self._connect() as db:
-            self._begin_writer(db)
+            self._begin_reader(db)
             manifest = self._lookup(db, reference)
             if verify_payloads:
                 self._verify_payloads(db, manifest)
@@ -381,7 +396,7 @@ class AssetLibrary:
         f = next((x for x in manifest['files'] if x['path'] == path), None)
         if not f: _fail('MISSING', 'Logical file is not in this exact version.', path)
         with self._connect() as db:
-            self._begin_writer(db)
+            self._begin_reader(db)
             self._verify_payloads(db, manifest)
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
@@ -392,7 +407,7 @@ class AssetLibrary:
         """Read verified own bytes; dependency admission stays with the caller."""
         portable_path(path)
         with self._connect() as db:
-            self._begin_writer(db)
+            self._begin_reader(db)
             manifest = self._lookup(db, reference)
             self._verify_payloads(db, manifest)
             file = next((x for x in manifest['files'] if x['path'] == path), None)
@@ -451,7 +466,8 @@ class AssetLibrary:
             self._begin_writer(db)
             if self.storage:
                 return self._storage_status_locked()
-            storage = Storage(self, create=not (self.root / 'records').exists())
+            # resume completes a layout left by an interrupted earlier upgrade.
+            storage = Storage(self, resume=True)
             # Validate all current records before making the durable copy.
             rows = db.execute('SELECT id,version,sha256 FROM versions ORDER BY id,version').fetchall()
             for identity, version, digest in rows:
