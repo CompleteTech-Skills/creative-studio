@@ -9,7 +9,7 @@ from asset_library_import import EXTENSIONS
 from rig_animation import validate_animation
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, object_hash, require
-from rig_gltf import preflight_gltf, read_gltf, scene_graph
+from rig_gltf import WIDTHS, _index, preflight_gltf, read_gltf, scene_graph
 from rig_import import load_character_model
 from rig_interop import validate_gltf
 from rig_load_limits import _JSON_FACTOR, effective_limits, image_dimensions
@@ -74,6 +74,33 @@ def _stage_glb(path, payload):
     path.write_bytes(payload)
 
 
+def _animation_workspace(document, order, limits):
+    body = document.json
+    animations = body.get('animations', [])
+    require(len(animations) <= limits['clips'], 'RIG_LIMIT_CLIPS',
+            'GLB animations exceed the native clip budget.')
+    accessors = body.get('accessors', [])
+    mesh_instances = {i: len(body['meshes'][body['nodes'][i]['mesh']]['primitives'])
+                      for i in order if 'mesh' in body['nodes'][i]}
+    keys = scalars = tracks = 0
+    for animation in animations:
+        samplers = animation['samplers']
+        for channel in animation['channels']:
+            sampler = samplers[_index(channel['sampler'], len(samplers), 'animation sampler')]
+            times = accessors[_index(sampler['input'], len(accessors), 'key times')]
+            values = accessors[_index(sampler['output'], len(accessors), 'key values')]
+            target = channel['target']
+            copies = max(1, mesh_instances.get(target['node'], 0)) if target['path'] == 'weights' else 1
+            keys += copies * times['count']
+            require(keys <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
+                    'Expanded native animation tracks exceed the aggregate key budget.')
+            scalars += copies * values['count'] * WIDTHS[values['type']]
+            tracks += copies
+    # Retained Python float lists may repeat accessor values per target and
+    # need room alongside NumPy validation buffers and exact-time summaries.
+    return 128 * keys + 64 * scalars + 1024 * tracks
+
+
 def _preflight(path, size, limits):
     document = read_gltf(path, limits)
     raw = preflight_gltf(document, encoded_bytes=size, limits=limits)
@@ -88,7 +115,8 @@ def _preflight(path, size, limits):
     # Admit simultaneous loader, geometry analysis and native raster allocations.
     # Analysis includes transient topology, vertex and nearest-neighbor arrays.
     reserve = (raw['estimated_memory_bytes'] + 4 * size + image_bytes
-               + 256 * raw['triangles'] + 120 * raw['vertices'] + 16 * 1024**2)
+               + 256 * raw['triangles'] + 120 * raw['vertices'] + 16 * 1024**2
+               + _animation_workspace(document, order, limits))
     require(reserve < limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
             'Native decoding and geometry analysis exceed the verification working-set estimate.')
     decode_limits = dict(limits, memory_bytes=limits['memory_bytes'] - reserve)

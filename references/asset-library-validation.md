@@ -29,8 +29,8 @@ report omits embedded names and arbitrary validator messages. Errors retain
 typed codes, retryability and applicable integer counts.
 
 Callers can tighten native resource limits. Byte and memory admission precedes
-payload retrieval, and native preflight budgets geometry, hierarchy and embedded
-texture work before validation. Memory admission is a conservative working-set
+payload retrieval, and native preflight budgets geometry, hierarchy, animation copies
+and embedded texture work before validation. Memory admission is a conservative working-set
 estimate. Node, clip and key limits bound the report as well.
 
 Verification leaves the library read-only and reports visual review as

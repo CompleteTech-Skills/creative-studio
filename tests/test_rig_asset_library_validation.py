@@ -122,7 +122,14 @@ class NativeVerificationTests(unittest.TestCase):
     def test_rig_geometry_skin_and_binary_key_times(self):
         source = import_fixture.ROOT / 'examples/rig-3d/humanoid/exports/character.glb'
         reference = self.import_asset(source, category='rig', scale=1)
-        report = validate_asset(AssetLibrary(self.library.root), reference)
+        reopened = AssetLibrary(self.library.root)
+        with (patch('asset_library_validation.validate_gltf') as independent,
+              self.assertRaises(RigError) as error):
+            validate_asset(reopened, reference, limits={'keyframes': 1000})
+        self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_KEYFRAMES')
+        independent.assert_not_called()
+
+        report = validate_asset(reopened, reference)
         self.assertEqual((report['geometry']['vertices'], report['geometry']['triangles']), (3830, 7536))
         self.assertEqual((report['skeleton']['bones'], report['skeleton']['deform_bones']), (57, 56))
         self.assertEqual(len(report['skins']), 31)
