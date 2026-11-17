@@ -4,10 +4,12 @@ import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import model3d
 import model3d_contracts
 import model3d_discovery_cli as discovery
