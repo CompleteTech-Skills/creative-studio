@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import struct
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -133,6 +134,7 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual((report['geometry']['vertices'], report['geometry']['triangles']), (3830, 7536))
         self.assertEqual((report['skeleton']['bones'], report['skeleton']['deform_bones']), (57, 56))
         self.assertEqual(len(report['skins']), 31)
+        self.assertEqual(report['native_rigid_bindings'], 0)
         self.assertEqual((report['skins'][0]['joints'], report['skins'][0]['metrics']['vertices'],
                           report['skins'][0]['metrics']['influences']), (56, 146, 4))
         self.assertIn('morph', report['capabilities'])
@@ -143,8 +145,46 @@ class NativeVerificationTests(unittest.TestCase):
         sampler = walk['samplers'][walk['channels'][0]['sampler']]
         expected = source_glb.accessor(sampler['input']).ravel().tolist()
         walk_report = report['clips'][4]
-        self.assertEqual(walk_report['duration_exact'], dict(numerator=2, denominator=1))
+        self.assertEqual(walk_report['source_end_exact'], dict(numerator=2, denominator=1))
         self.assertEqual(walk_report['tracks'][0]['key_times_sha256'], object_hash(expected))
+
+    def test_unskinned_animation_reports_exact_source_end_and_rigid_fallback(self):
+        source = import_fixture.NativeImportTests.external_source(SimpleNamespace(root=self.root))
+        document = json.loads(source.read_bytes())
+        buffer_path = self.root / 'resources/triangle.bin'
+        payload = bytearray(buffer_path.read_bytes())
+
+        def accessor(values, width, kind, **metadata):
+            offset = len(payload)
+            payload.extend(struct.pack(f'<{len(values)}f', *values))
+            views = document['bufferViews']
+            views.append(dict(buffer=0, byteOffset=offset, byteLength=len(payload) - offset))
+            accessors = document['accessors']
+            accessors.append(dict(bufferView=len(views) - 1, componentType=5126,
+                                  count=len(values) // width, type=kind, **metadata))
+            return len(accessors) - 1
+
+        document['animations'] = []
+        for times in ([0.0], [0.0, 1 / 128], [0.0, 2.0]):
+            sample_times = accessor(times, 1, 'SCALAR', min=[times[0]], max=[times[-1]])
+            translations = accessor([0.0, 0.0, 0.0] * len(times), 3, 'VEC3')
+            document['animations'].append(dict(
+                samplers=[{'input': sample_times, 'output': translations}],
+                channels=[dict(sampler=0, target=dict(node=0, path='translation'))]))
+        document['buffers'][0]['byteLength'] = len(payload)
+        buffer_path.write_bytes(payload)
+        source.write_text(json.dumps(document), encoding='utf-8')
+
+        report = validate_asset(self.library, self.import_asset(source))
+        self.assertEqual(report['skins'], [])
+        self.assertEqual(report['native_rigid_bindings'], 1)
+        self.assertNotIn('skin', report['capabilities'])
+        self.assertIn('animation', report['capabilities'])
+        exact = [dict(numerator=n, denominator=d) for n, d in ((0, 1), (1, 128), (2, 1))]
+        self.assertEqual([clip['source_end_exact'] for clip in report['clips']], exact)
+        floor = dict(zip(('numerator', 'denominator'), (1 / 24).as_integer_ratio()))
+        self.assertEqual([clip['native_playback_duration_exact'] for clip in report['clips']],
+                         [floor, floor, exact[-1]])
 
     def test_early_byte_and_native_budgets_and_missing_khronos(self):
         reference = self.import_asset()

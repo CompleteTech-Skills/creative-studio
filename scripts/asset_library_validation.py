@@ -147,12 +147,18 @@ def _measure_rig(model, limits):
                         controllers=dict(ik=[], constraints=[])),
                    model.geometry, model.weights, model.clips)
     skins = []
+    rigid_bindings = 0
     for index, mesh in enumerate(model.geometry.meshes):
         if mesh.id in model.weights:
             skin = model.weights[mesh.id]
             metrics = validate_skin(skin, mesh, skeleton, limits)
-            skins.append(dict(mesh=index, joints=len(skin.joints), metrics=metrics,
-                              inverse_bind_sha256=hashlib.sha256(skin.inverse_bind.tobytes()).hexdigest()))
+            if skin.method == 'rigid':
+                rigid_bindings += 1
+            elif skin.method == 'imported':
+                skins.append(dict(mesh=index, joints=len(skin.joints), metrics=metrics,
+                                  inverse_bind_sha256=hashlib.sha256(skin.inverse_bind.tobytes()).hexdigest()))
+            else:
+                raise RigError('ASSET_TECHNICAL_SKIN', 'Unknown native GLB binding classification.')
     clips = []
     keys = 0
     for clip in model.clips.values():
@@ -165,8 +171,11 @@ def _measure_rig(model, limits):
                        keys=len(track['times']), first_key_exact=_ratio(track['times'][0]),
                        last_key_exact=_ratio(track['times'][-1]),
                        key_times_sha256=object_hash(track['times'])) for track in clip['tracks']]
-        clips.append(dict(duration_exact=_ratio(clip['duration']), metrics=metrics, tracks=tracks))
-    return summary, skins, clips
+        source_end = max(track['times'][-1] for track in clip['tracks'])
+        clips.append(dict(source_end_exact=_ratio(source_end),
+                          native_playback_duration_exact=_ratio(clip['duration']),
+                          metrics=metrics, tracks=tracks))
+    return summary, skins, rigid_bindings, clips
 
 
 def _native_report(path, record, limits):
@@ -194,14 +203,14 @@ def _native_report(path, record, limits):
     for image, (width, height) in zip(model.geometry.images, dimensions, strict=True):
         textures.append(dict(width=width, height=height, mime_type=image.mime_type,
                              sha256=hashlib.sha256(image.data).hexdigest()))
-    skeleton, skins, clips = _measure_rig(model, limits)
+    skeleton, skins, rigid_bindings, clips = _measure_rig(model, limits)
     capabilities = ['mesh']
     for capability, observed in (('material', materials), ('texture', textures), ('skin', skins),
                                  ('animation', clips), ('morph', any(m['morph_targets'] for m in meshes))):
         if observed:
             capabilities.append(capability)
     return dict(geometry=geometry, meshes=meshes, hierarchy=hierarchy, authored_materials=materials,
-                textures=textures, skeleton=skeleton, skins=skins, clips=clips,
+                textures=textures, skeleton=skeleton, skins=skins, native_rigid_bindings=rigid_bindings, clips=clips,
                 capabilities=sorted(capabilities),
                 independent_validation=dict(status='passed', asset_sha256=record['sha256'],
                                             errors=0, warnings=independent['issues']['numWarnings']))

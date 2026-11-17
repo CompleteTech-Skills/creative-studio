@@ -21,9 +21,12 @@ AssetLibrary's integrity check.
 The report identifies the normalized payload by logical path, byte length and
 SHA-256. It includes selected-scene parentage and world transforms, measured
 base-mesh geometry, authored material count, texture dimensions and digests,
-and validated skeleton, skin and clip summaries where present. Animation
-summaries include key counts, exact rational endpoints and a SHA-256 of each
-complete decoded key-time sequence in the native canonical JSON encoding.
+and validated skeleton, authored skin and clip summaries where present. The
+verifier counts native rigid fallback bindings separately from authored skins.
+Animation summaries distinguish the exact source key-time endpoint from the
+native playback duration. Each track includes a key count, rational endpoints
+and a SHA-256 of its complete decoded key-time sequence in the native canonical
+JSON encoding.
 Skeleton hierarchy and rest measurements are represented as digests. The
 report omits embedded names and arbitrary validator messages. Errors retain
 typed codes, retryability and applicable integer counts.
