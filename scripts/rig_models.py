@@ -13,7 +13,7 @@ from typing import Any
 import zipfile
 import numpy as np
 
-from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
+from rig_contracts import COORDINATES, DEFAULT_LIMITS, valid_import_scale, validate_contract
 from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, require,
                         safe_path, sha256, normalize_root)
 
@@ -522,7 +522,8 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
             and type(identity['approved_artwork']) is bool
             and isinstance(identity['attribution'], str) and 0 < len(identity['attribution']) <= 4096
             and identity['coordinate_system'] == COORDINATES
-            and type(identity['import_scale']) in (int, float) and 0 < identity['import_scale'] <= 10000,
+            # Older writers could persist True for unit scale. Its exact bytes remain hash-bound.
+            and (identity['import_scale'] is True or valid_import_scale(identity['import_scale'])),
             'RIG_IDENTITY_SCHEMA', 'Identity fields do not match the supported source contract.')
     require(identity['id']==manifest['character']['id']==manifest['id'] and identity['fixture']==manifest['source']['fixture']
             and identity['source_sha256']==manifest['source']['sha256'] and identity['origin']==manifest['source']['origin'],
