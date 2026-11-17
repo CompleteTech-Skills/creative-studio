@@ -187,6 +187,61 @@ class EditorContractTests(unittest.TestCase):
                 self.assertFalse(validator.is_valid(wrong))
                 with self.assertRaises(RigError): validate_contract(wrong)
 
+    def test_asset_discriminators_reject_valid_manifests_of_the_wrong_role(self):
+        model = example('asset')['native']
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        for asset_type in ('rig', 'image2d', 'reference2d', 'material', 'texture', 'camera', 'animation'):
+            doc = example('asset'); doc['asset_type'] = asset_type
+            original = deepcopy(doc)
+            with self.subTest(asset_type=asset_type):
+                self.assertFalse(validator.is_valid(doc))
+                with self.assertRaises(RigError): validate_contract(doc)
+                self.assertEqual(doc, original)
+        # A valid material/texture/camera/clip is not a model either.
+        for name, owner in [('examples/lookdev-contracts/ceramic.json', 'lookdev'),
+                            ('examples/lookdev-contracts/albedo.json', 'lookdev'),
+                            ('examples/camera3d/main-camera.json', 'camera3d'),
+                            ('examples/scene3d-contracts/example-animation.json', 'scene3d')]:
+            payload = (ROOT / name).read_bytes(); native = json.loads(payload)
+            doc = example('asset')
+            doc['native'] = dict(owner=owner, id=native['id'], version=native['version'],
+                native_kind=native['kind'], file=dict(path=name, sha256=hashlib.sha256(payload).hexdigest(),
+                    bytes=len(payload), media_type='application/json'))
+            with self.subTest(wrong_model=name):
+                self.assertEqual(verify_native_reference(doc['native'], ROOT)['status'], 'valid-native-contract')
+                self.assertFalse(validator.is_valid(doc))
+                with self.assertRaises(RigError): validate_contract(doc)
+
+    def test_asset_discriminators_admit_actual_current_native_owners(self):
+        cases = [('model3d', 'model3d', 'examples/model3d-contracts/robotic.json', None),
+                 ('model3d', 'scene3d', 'examples/scene3d-contracts/triangle.json', None),
+                 ('rig', 'rig', 'examples/rig-3d/humanoid/rig.json', 'Rig'),
+                 ('image2d', 'production2d', 'examples/production-pilot/cast.json', None),
+                 ('reference2d', 'production2d', 'examples/production-pilot/cast.json', None),
+                 ('material', 'lookdev', 'examples/lookdev-contracts/ceramic.json', None),
+                 ('material', 'lookdev', 'examples/lookdev-contracts/blue-coat.json', None),
+                 ('material', 'lookdev', 'examples/lookdev-contracts/graph.json', None),
+                 ('texture', 'lookdev', 'examples/lookdev-contracts/albedo.json', None),
+                 ('camera', 'camera3d', 'examples/camera3d/main-camera.json', None),
+                 ('animation', 'scene3d', 'examples/scene3d-contracts/example-animation.json', None)]
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        for asset_type, owner, name, kind_override in cases:
+            payload = (ROOT / name).read_bytes(); native = json.loads(payload)
+            doc = example('asset'); doc['asset_type'] = asset_type
+            doc['native'] = dict(owner=owner, id=native['id'],
+                version=native.get('version', str(native['schema_version']) + '.0.0'),
+                native_kind=kind_override or native['kind'], file=dict(path=name,
+                    sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload), media_type='application/json'))
+            with self.subTest(asset_type=asset_type, name=name):
+                self.assertEqual(verify_native_reference(doc['native'], ROOT)['status'], 'valid-native-contract')
+                original = deepcopy(doc)
+                validator.validate(doc); validate_contract(doc)
+                self.assertEqual(doc, original)
+        # The generated TS keeps the paired discriminator, not independent enums.
+        generated = generated_files()[ROOT / 'assets/editor3d/contracts.ts']
+        self.assertIn(' & (', generated)
+        self.assertIn('"asset_type": "texture"; "native":', generated)
+
     def test_async_response_identity_and_partial_outputs_are_closed(self):
         validator = Draft202012Validator(schemas()['editor3d.schema.json'])
         response = example('response'); response.update(status='accepted', diagnostics=[])

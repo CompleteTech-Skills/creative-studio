@@ -105,6 +105,19 @@ uses the same definitions. The following roles bind current native documents:
 | `project.characters` | `rig` / `Rig`; `model3d` / `model3d-asset`; `scene3d` / `scene3d-asset`; `production2d` / `cast` |
 | `project.source_projects` | `scene3d` / `scene3d-project`; `production2d` / `project` |
 
+The `asset.asset_type` discriminator also narrows its `native` reference:
+`model3d` uses Model3D assets or Scene3D imported assets; `rig` uses a native
+`Rig`; `material` uses LookDev material/instance/variant/graph resources;
+`texture` uses LookDev `texture3d`; `camera` uses Camera3D `camera3d-camera`;
+and `animation` uses the animation role above. The existing 2D manifest adapter
+binds `image2d` and `reference2d` to the authoritative production `cast` manifest,
+which retains its actual character/prop image references. It does not reinterpret
+a project, shot, raster byte stream or model manifest as a single image. This
+binding verifies the cast manifest only, not its transitive pixels. Legacy 2D
+production documents and their loaders remain unchanged. The generated asset
+type is a discriminated intersection/union with the same closed base fields;
+`dependencies` and `previous` retain generic exact native references.
+
 Generic dependency references remain inventories, not permission to reinterpret
 those resources as a clip, shot, color configuration or rendering preset. An
 unavailable reference may retain its exact intended role without claiming the

@@ -134,6 +134,21 @@ def _definitions():
         dependencies=arr(native, 0, 4096), thumbnails=arr(file, 0, 32),
         validation_status={'enum': ['unvalidated', 'valid', 'invalid']},
         previous=nullable(native)))
+    asset_roles = dict(
+        model3d=native_role(('model3d', ('model3d-asset',)), ('scene3d', ('scene3d-asset',))),
+        rig=native_role(('rig', ('Rig',))),
+        image2d=native_role(('production2d', ('cast',))),
+        reference2d=native_role(('production2d', ('cast',))),
+        material=native_role(('lookdev', ('material3d', 'material-instance3d',
+            'material-variant3d', 'material-graph3d'))),
+        texture=native_role(('lookdev', ('texture3d',))),
+        camera=native_role(('camera3d', ('camera3d-camera',))),
+        animation=animation_native)
+    # The base closes all fields. These partial alternatives narrow the paired
+    # discriminator and native reference without copying the whole asset root.
+    asset = {'allOf': [asset, {'anyOf': [dict(type='object',
+        properties=dict(asset_type={'const': name}, native=role),
+        required=['asset_type', 'native']) for name, role in asset_roles.items()]}]}
     animation = _doc('animation', dict(id=ident, native=animation_native,
         targets=ids, frame_rate=fps, interval=interval))
     from rig_contracts import definitions as rig_definitions
@@ -471,6 +486,8 @@ def _ts(schema):
         return ' | '.join(json.dumps(x) for x in schema['enum'])
     if 'anyOf' in schema:
         return '(' + ' | '.join(_ts(x) for x in schema['anyOf']) + ')'
+    if 'allOf' in schema and 'type' not in schema:
+        return '(' + ' & '.join(_ts(x) for x in schema['allOf']) + ')'
     kind = schema.get('type')
     if kind == 'object':
         fields = schema.get('properties', {})
