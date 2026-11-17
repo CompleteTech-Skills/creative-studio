@@ -77,6 +77,11 @@
   "foundation_review": {
     "report": "foundation-independent-review.md",
     "report_sha256": "bb092ae69161dea395299390eb201149087fdaacb3674de98047c2f68448010f",
+    "report_redaction": {
+      "sha256": "cbd61399f5189abeecacece2130def916b23fba777eff26129eac3b250b398bc",
+      "bytes": 3224,
+      "change": "Two absolute local machine paths (reviewer agent root and Python interpreter) were replaced with the placeholders <agent-root> and <rig-py312-venv>. report_sha256 above is the hash of the original pre-redaction report; every recorded result is unchanged."
+    },
     "newly_spawned_whole_feature": "PASS",
     "focused_passed": 59,
     "schema_math_passed": 178,
@@ -4931,6 +4936,13 @@
       "tests/test_render3d_job_binding.py:JobBindingTests.test_cache_stage_reservation_is_bound_to_its_native_job",
       "tests/test_render3d_job_binding.py:JobBindingTests.test_older_stage_table_migrates_without_losing_unattributed_reservations"
     ],
+    "retained_test_source": {
+      "path": "job-binding-source/test_render3d_job_binding.py.txt",
+      "source_path": "tests/test_render3d_job_binding.py",
+      "bytes": 7140,
+      "sha256": "e7222dfe1ab61a6fa3e0a3b443e44e9296eab9656ef65cfeca7e42f3d1f342b7",
+      "purpose": "Exact bytes of the job-binding tests at the revision above, retained so test addresses resolve without that unmerged revision; validate.py also cross-checks git when the revision is available."
+    },
     "observed_focused_passed": 6,
     "scope": "Actual SQLite/native owner workflow, synthetic decoded PNG fixtures; not Blender/remote scheduling.",
     "remaining": "Integrate exact owner source, newly spawned whole-final-head review, current hosted and postmerge verification."

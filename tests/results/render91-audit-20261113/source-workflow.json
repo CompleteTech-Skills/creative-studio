@@ -9,16 +9,17 @@
   },
   "native_capture_relocated_verify_equal": true,
   "scene_capture_verify_equal": true,
+  "path_redaction": "Absolute local machine paths in argv were replaced with the placeholders <rig-py312-venv>, <audit-worktree> (a checkout of source_revision) and <local-coordination-dir>; commands, return codes and artifact hashes are unchanged.",
   "commands": [
     {
       "argv": [
-        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
-        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "<rig-py312-venv>/bin/python",
+        "<audit-worktree>/scripts/render3d.py",
         "snapshot-rig",
         "--source",
-        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/original-source/render91-fixture",
+        "<local-coordination-dir>/render91-source-workflow/original-source/render91-fixture",
         "--destination",
-        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/native-snapshot"
+        "<local-coordination-dir>/render91-source-workflow/native-snapshot"
       ],
       "returncode": 0,
       "stdout": "native-capture.stdout.json",
@@ -26,10 +27,10 @@
     },
     {
       "argv": [
-        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
-        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "<rig-py312-venv>/bin/python",
+        "<audit-worktree>/scripts/render3d.py",
         "verify-snapshot",
-        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/relocated-native-snapshot"
+        "<local-coordination-dir>/render91-source-workflow/relocated-native-snapshot"
       ],
       "returncode": 0,
       "stdout": "native-relocated-verify.stdout.json",
@@ -37,13 +38,13 @@
     },
     {
       "argv": [
-        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
-        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "<rig-py312-venv>/bin/python",
+        "<audit-worktree>/scripts/render3d.py",
         "snapshot-scene",
         "--source",
-        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/scene-source",
+        "<local-coordination-dir>/render91-source-workflow/scene-source",
         "--destination",
-        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/scene-snapshot"
+        "<local-coordination-dir>/render91-source-workflow/scene-snapshot"
       ],
       "returncode": 0,
       "stdout": "scene-capture.stdout.json",
@@ -51,10 +52,10 @@
     },
     {
       "argv": [
-        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
-        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "<rig-py312-venv>/bin/python",
+        "<audit-worktree>/scripts/render3d.py",
         "verify-snapshot",
-        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/scene-snapshot",
+        "<local-coordination-dir>/render91-source-workflow/scene-snapshot",
         "--adapter",
         "scene3d"
       ],

@@ -3,7 +3,7 @@
 Exact reviewed head: `c809829debf565f2030feebad3b6066b50dc43c4`.
 Comparison base: `4d83833` (current main physics integration).
 Fresh detached tree: `reviews/render-core-c809`.
-Reviewer: newly spawned `/root/recover_render_scene/recover_render/review_core_c809`.
+Reviewer: newly spawned `<agent-root>/recover_render_scene/recover_render/review_core_c809`.
 
 Reviewed the entire 20-file feature difference: contracts and all six generated schemas, snapshot adapters/capture/reverification, request/frame and cache selection binding, exact rational/coordinate operations, source-only CLI, shared JSON decoder change, schema and test registration, independent and author tests, historical receipts, documentation, and preserved source/main ancestry. Inspected the reused native owner, JSON, path and exclusive-publication boundaries. No source edits or merges.
 
@@ -17,7 +17,7 @@ Project/scene/shot versions remain bound into emitted FrameSpec and cache identi
 
 ## Verification
 
-Python: `/home/complete/.cache/hatch-fleet/rig-py312/bin/python`; owned TMPDIR: `render-review-tmp`.
+Python: `<rig-py312-venv>/bin/python`; owned TMPDIR: `render-review-tmp`.
 
 - Focused Render3D discovery: **59 passed**, 66.646 seconds.
 - Full combined schema/math gate: **178 passed**, 66.011 seconds. Compatibility discovery observed 955 legacy 2D tests; discovery is not execution of those tests.
