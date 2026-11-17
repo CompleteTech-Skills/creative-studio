@@ -164,6 +164,14 @@ class NativeClosureRegressionTests(unittest.TestCase):
         self.assertIn('morph budget', rejected.exception.report['message'])
         self.assertEqual(geometry_loads.call_count, 1)
 
+        self.project['budgets'].update(max_morph_targets=100, max_vertices=first.geometry.vertex_count)
+        with patch('rig_models.load_geometry', wraps=load_geometry) as geometry_loads:
+            with self.assertRaises(RigError) as rejected:
+                self.check()
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        self.assertIn('vertex/morph budget', rejected.exception.report['message'])
+        self.assertEqual(geometry_loads.call_count, 1)
+
     def test_json_object_capacity_is_admitted_before_dependency_decode(self):
         from unittest.mock import patch
         from animation3d_assets import Snapshot

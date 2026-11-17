@@ -181,8 +181,11 @@ class Snapshot:
             remaining_morphs = None
             if self.project_budgets is not None:
                 budgets = self.project_budgets
+                remaining_vertices = int(budgets['max_vertices']) - self.native_vertices
+                require(remaining_vertices > 0, 'ANIMATION_LIMIT',
+                        'Native geometry exceeds project vertex/morph budget.')
                 limits.update(bones=min(DEFAULT_LIMITS['bones'], int(budgets['max_bones_per_rig'])),
-                              vertices=min(DEFAULT_LIMITS['vertices'], max(1, int(budgets['max_vertices']) - self.native_vertices)))
+                              vertices=min(DEFAULT_LIMITS['vertices'], remaining_vertices))
                 remaining_morphs = int(budgets['max_morph_targets']) - self.native_morphs
             require(path.name == 'rig.json', 'ANIMATION_OWNER', 'Rig source must be a native rig.json.')
             try:
@@ -196,7 +199,7 @@ class Snapshot:
                 if self.project_budgets is not None:
                     if code == 'RIG_LIMIT_BONES' and budgets['max_bones_per_rig'] <= value['limits']['bones']:
                         message = 'Rig exceeds project bone budget.'
-                    elif code == 'RIG_LIMIT_VERTICES' and budgets['max_vertices'] - self.native_vertices <= value['limits']['vertices']:
+                    elif code == 'RIG_LIMIT_VERTICES' and remaining_vertices <= value['limits']['vertices']:
                         message = 'Native geometry exceeds project vertex/morph budget.'
                     elif code == 'RIG_LIMIT_MORPHS' and exc.report['expected'] == remaining_morphs:
                         message = 'Native geometry exceeds project vertex/morph budget.'
