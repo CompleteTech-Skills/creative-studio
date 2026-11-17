@@ -365,7 +365,8 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         with self.assertRaises(RigError):
             self.library.recover()
         self.assertIn(orphan, self.library.list_references())
-        self.assertEqual(self.library.resolve(orphan)['version'], '2.0.0')
+        with self.assertRaises(RigError):
+            self.library.resolve(orphan)
 
     def test_gc_refuses_while_index_only_version_depends_on_orphan_blobs(self):
         reference = self.register()
@@ -389,7 +390,9 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
             self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
         for f in self.fixture.files:
             self.assertTrue((storage.root / 'blobs' / f['sha256']).exists())
-        self.assertEqual(self.library.inspect(reference), self.fixture.manifest)
+        self.assertIn(reference, self.library.list_references())
+        with self.assertRaises(RigError):
+            self.library.inspect(reference)
 
     def test_gc_refuses_index_only_version_sharing_uncommitted_blobs(self):
         # Interrupted durable registration: blobs published, no commit record.
@@ -408,7 +411,9 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         with self.assertRaises(RigError) as raised:
             self.library.analyze_gc()
         self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
-        self.assertEqual(self.library.resolve(other)['version'], '9.0.0')
+        self.assertIn(other, self.library.list_references())
+        with self.assertRaises(RigError):
+            self.library.resolve(other)
 
     def test_missing_canonical_blob_is_a_typed_durability_error(self):
         reference = self.register()
@@ -518,6 +523,123 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
         self.assertEqual(self.library.list_references(), [])
         self.assertEqual(list((self.library.storage.root / 'staging').iterdir()), [])
+
+    def test_registration_retries_directory_sync_for_reused_blob(self):
+        from asset_library_storage import _sync_directory
+        directory = self.library.storage.root / 'blobs'
+
+        def fail_blob_sync(path):
+            if path == directory:
+                raise OSError('simulated failure after blob rename')
+            _sync_directory(path)
+
+        for _ in range(2):
+            with patch('asset_library_storage._sync_directory', side_effect=fail_blob_sync):
+                with self.assertRaises(RigError) as raised:
+                    self.register()
+            self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+            self.assertEqual(self.library.list_references(), [])
+            self.assertEqual(len(list(directory.iterdir())), 1)
+        self.assertEqual(self.library.resolve(self.register()), self.fixture.manifest)
+
+    def test_upgrade_retries_directory_sync_for_published_ready_marker(self):
+        from asset_library_storage import _sync_directory
+        reference, (migrator, stale, *_rest) = self.legacy_handles()
+        records = self.library.root / 'records'
+        marker = records / 'READY'
+
+        def fail_ready_sync(path):
+            if path == records and marker.exists():
+                raise OSError('simulated failure after marker rename')
+            _sync_directory(path)
+
+        def append_during_migration():
+            stale.append_event('lifecycle', expected_revision=0, document={'kind': 'pin'})
+
+        for operation in (migrator.upgrade_storage, append_during_migration, stale.upgrade_storage):
+            with patch('asset_library_storage._sync_directory', side_effect=fail_ready_sync):
+                with self.assertRaises(RigError) as raised:
+                    operation()
+            self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+            self.assertTrue(marker.is_file())
+            with closing(sqlite3.connect(self.library.database)) as db:
+                self.assertFalse(stale._durable_flag(db))
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM asset_events').fetchone(), (0,))
+        self.assertTrue(stale.upgrade_storage()['durable'])
+        self.assertEqual(stale.resolve(reference), self.fixture.manifest)
+
+    def test_recovery_syncs_published_commit_before_indexing_it(self):
+        from asset_library_storage import _sync_directory
+        directory = self.library.storage.root / 'commits'
+
+        def fail_commit_sync(path):
+            if path == directory:
+                raise OSError('simulated failure after commit rename')
+            _sync_directory(path)
+
+        with patch('asset_library_storage._sync_directory', side_effect=fail_commit_sync):
+            with self.assertRaises(RigError):
+                self.register()
+            self.assertEqual(len(list(directory.iterdir())), 1)
+            with self.assertRaises(RigError):
+                self.library.recover()
+        self.assertEqual(self.library.list_references(), [])
+        self.assertEqual(self.library.recover()['versions'], 1)
+
+    def test_verified_reads_require_exact_canonical_version_commit(self):
+        reference = self.register()
+        commit, = (self.library.storage.root / 'commits').iterdir()
+        payload = commit.read_bytes()
+        operations = (
+            lambda: self.library.resolve(reference),
+            lambda: self.library.inspect(reference),
+            lambda: self.library.inspect(reference, verify_payloads=False),
+            lambda: self.library.read_file(reference, 'mesh/triangle.obj'),
+            lambda: self.library.read_own_file(reference, 'mesh/triangle.obj'),
+        )
+        commit.unlink()
+        for damage in ('missing', 'substituted'):
+            if damage == 'substituted':
+                commit.write_bytes(payload.replace(b'"kind":"version"', b'"kind":"invalid"'))
+            for operation in operations:
+                with self.subTest(damage=damage, operation=operation), self.assertRaises(RigError) as raised:
+                    operation()
+                self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        commit.write_bytes(payload)
+        self.assertEqual(self.library.resolve(reference), self.fixture.manifest)
+
+    def test_backup_rejects_index_only_event_history(self):
+        self.register()
+        first = self.library.append_event('lifecycle', expected_revision=0, document={'kind': 'pin'})
+        with closing(sqlite3.connect(self.library.database)) as db, db:
+            db.execute('INSERT INTO asset_events VALUES(?,?,?)',
+                       ('lifecycle', 2, canonical_bytes({'kind': 'retire'})))
+        destination = self.root / 'backup'
+        with self.assertRaises(RigError) as raised:
+            self.library.backup(destination)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(self.root.glob('.backup-backup-*')), [])
+        with closing(sqlite3.connect(self.library.database)) as db, db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM asset_events').fetchone(), (2,))
+            db.execute('DELETE FROM asset_events WHERE revision=2')
+        self.library.backup(destination)
+        self.assertEqual(AssetLibrary(destination).events('lifecycle'), [first])
+
+    def test_prefetched_legacy_handles_refresh_for_durable_operations(self):
+        reference, (migrator, *_rest) = self.legacy_handles()
+        recover, append, analyze, apply, backup = [AssetLibrary(self.library.root) for _ in range(5)]
+        migrator.upgrade_storage()
+        event = append.append_event('lifecycle', expected_revision=0, document={'kind': 'pin'})
+        plan = analyze.analyze_gc()
+        self.assertEqual(apply.apply_gc(plan)['deleted'], 0)
+        destination = self.root / 'backup'
+        backup.backup(destination)
+        self.assertEqual(recover.recover()['versions'], 1)
+        restored = AssetLibrary(destination)
+        for handle in (recover, restored):
+            self.assertEqual(handle.resolve(reference), self.fixture.manifest)
+            self.assertEqual(handle.events('lifecycle'), [event])
 
     def test_verified_reads_share_access_while_writer_lock_is_held(self):
         reference = self.register()

@@ -98,16 +98,15 @@ class Storage:
     def _publish(self, directory, name, payload):
         self._check()
         destination = directory / name
-        try:
-            present = os.path.lexists(destination)
-        except OSError as exc:
-            _os_fail('Canonical record publication failed', exc)
-        if present:
-            if self._read(destination, max(len(payload), 1)) != payload:
-                _fail('Existing immutable content differs from its digest.')
-            return
         temporary = None
         try:
+            if os.path.lexists(destination):
+                if self._read(destination, max(len(payload), 1)) != payload:
+                    _fail('Existing immutable content differs from its digest.')
+                # A previous attempt may have renamed the file before failing
+                # to flush its directory entry.
+                _sync_directory(directory)
+                return
             fd, temporary = tempfile.mkstemp(prefix='write-', dir=self.root / 'staging')
             temporary = Path(temporary)
             with os.fdopen(fd, 'wb') as stream:
@@ -136,6 +135,17 @@ class Storage:
     def validate_ready(self):
         if self._read(self.root / 'READY', 128) != b'asset-library-canonical-storage-v1\n':
             _fail('Canonical storage readiness marker is invalid.')
+
+    def check_version(self, manifest):
+        self._check()
+        encoded = canonical_bytes(dict(schema_version=1, kind='version', value=manifest))
+        name = hashlib.sha256(encoded).hexdigest() + '.json'
+        try:
+            payload = self._read(self.root / 'commits' / name, len(encoded))
+        except RigError as exc:
+            raise RigError('LIBRARY_DURABILITY', 'Exact canonical version commit is missing or unreadable.') from exc
+        if payload != encoded:
+            _fail('Canonical version commit differs from the indexed manifest.')
 
     def check_projection(self, db, *, pending=None):
         """Reject a split commit instead of silently discarding durable history.
@@ -231,6 +241,8 @@ class Storage:
             record = decode_json(payload)
             if not isinstance(record, dict) or set(record) != {'schema_version', 'kind', 'value'} or type(record['schema_version']) is not int or record['schema_version'] != 1:
                 _fail('Malformed canonical commit.')
+            if canonical_bytes(record) != payload:
+                _fail('Canonical commit encoding differs.')
             value = record['value']
             if record['kind'] == 'version':
                 value = load_manifest(canonical_bytes(value))
@@ -280,8 +292,10 @@ class Storage:
     def event_records(self):
         return self._records()[3]
 
-    def materialize(self):
-        manifests, annotations, snapshot = self.records()
+    def materialize(self, *, db=None):
+        manifests, annotations, snapshot, events = self._records()
+        if db is not None:
+            self.check_index_backed(db, manifests, annotations, events)
         blobs = {}
         current_annotations = {}
         for key, manifest in manifests.items():
@@ -308,9 +322,11 @@ class Storage:
 
     def rebuild(self, db):
         """Verify the whole canonical closure before replacing query rows."""
-        manifests, blobs, annotations, snapshot = self.materialize()
-        _, history, _, events = self._records()
-        self.check_index_backed(db, manifests, history, events)
+        manifests, blobs, annotations, snapshot = self.materialize(db=db)
+        try:
+            _sync_directory(self.root / 'commits')
+        except OSError as exc:
+            _os_fail('Canonical commit directory could not be synced before rebuilding the index', exc)
         db.execute('DELETE FROM annotations')
         db.execute('DELETE FROM versions')
         db.execute('DELETE FROM blobs')
@@ -336,9 +352,7 @@ class Storage:
         Index-only history blocks GC exactly as it blocks writes and recovery:
         an indexed version may depend on a blob canonical history lacks.
         """
-        manifests, blobs, _, snapshot = self.materialize()
-        _, history, _, events = self._records()
-        self.check_index_backed(db, manifests, history, events)
+        manifests, blobs, _, snapshot = self.materialize(db=db)
         # Defense in depth: never offer a digest the index still stores.
         indexed = {digest for (digest,) in db.execute('SELECT sha256 FROM blobs')}
         try:

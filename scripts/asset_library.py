@@ -234,7 +234,7 @@ class AssetLibrary:
         # Migration and ordinary publication use this same SQLite lock.
         # Loading after acquisition also covers writers that waited while
         # a migration was in progress.
-        self._refresh_mode(db)
+        self._refresh_mode(db, writer=True)
 
     def _begin_reader(self, db):
         """Take a consistent shared snapshot for self-verifying reads.
@@ -253,16 +253,21 @@ class AssetLibrary:
         durable_flag = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durability'").fetchone()
         return bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
 
-    def _refresh_mode(self, db):
+    def _refresh_mode(self, db, *, writer=False):
         # A published READY marker makes durable mode required even if the
         # migration crashed before its SQLite flag committed: a stale legacy
         # handle must never add index-only history after canonical publication.
-        required = self._durable_flag(db) or os.path.lexists(self.root / 'records' / 'READY')
+        flagged = self._durable_flag(db)
+        required = flagged or os.path.lexists(self.root / 'records' / 'READY')
         if required and self.storage is None:
             from asset_library_storage import Storage
             storage = Storage(self)
             storage.validate_ready()
             self.storage = storage
+        if writer and required and not flagged:
+            # A failed migration may have renamed READY before its directory
+            # was synced. Seal that publication before any further write.
+            self.storage.ready()
 
     def register(self, manifest, sources):
         """Register all inventoried logical files from explicit source paths.
@@ -347,6 +352,8 @@ class AssetLibrary:
             _fail('HASH', 'Exact version hash does not match the stored manifest.')
         if (manifest['identity']['id'], manifest['version']) != (reference['id'], reference['version']):
             _fail('IDENTITY', 'Stored identity/version is inconsistent.')
+        if self.storage:
+            self.storage.check_version(manifest)
         return manifest
 
     def _verify_payloads(self, db, manifest):
@@ -403,7 +410,7 @@ class AssetLibrary:
         if not f: _fail('MISSING', 'Logical file is not in this exact version.', path)
         with self._connect() as db:
             self._begin_reader(db)
-            self._verify_payloads(db, manifest)
+            self._verify_payloads(db, self._lookup(db, reference))
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
                 _fail('CORRUPT', 'Payload changed during retrieval.', path)
@@ -564,10 +571,10 @@ class AssetLibrary:
             return self._storage_status_locked()
 
     def recover(self):
-        if not self.storage:
-            _fail('DURABILITY', 'Legacy library requires explicit upgrade before canonical recovery.')
         with self._connect() as db:
             self._begin_writer(db)
+            if not self.storage:
+                _fail('DURABILITY', 'Legacy library requires explicit upgrade before canonical recovery.')
             return self.storage.rebuild(db)
 
     def events(self, stream):
@@ -587,8 +594,6 @@ class AssetLibrary:
         from asset_library_storage import validate_stream
         validate_stream(stream)
         expected_revision = _bounded_integer(expected_revision, 0, 65535, code='REVISION', label='Event revision')
-        if not self.storage:
-            _fail('DURABILITY', 'Upgrade legacy storage before appending durable events.')
         if not isinstance(document, dict):
             _fail('REQUEST', 'Event document must be a mapping.')
         payload = canonical_bytes(document)
@@ -597,6 +602,8 @@ class AssetLibrary:
         value = dict(stream=stream, revision=expected_revision + 1, document=decode_json(payload))
         with self._connect() as db:
             self._begin_writer(db)
+            if not self.storage:
+                _fail('DURABILITY', 'Upgrade legacy storage before appending durable events.')
             current = db.execute('SELECT COALESCE(MAX(revision),0) FROM asset_events WHERE stream=?', (stream,)).fetchone()[0]
             if current != expected_revision:
                 _fail('CONFLICT', 'Event revision is stale.')
@@ -608,17 +615,17 @@ class AssetLibrary:
         return value
 
     def analyze_gc(self):
-        if not self.storage:
-            _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
         with self._connect() as db:
             self._begin_writer(db)
+            if not self.storage:
+                _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
             return self.storage.gc_plan(db)
 
     def apply_gc(self, plan):
-        if not self.storage:
-            _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
         with self._connect() as db:
             self._begin_writer(db)
+            if not self.storage:
+                _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
             return self.storage.apply_gc(db, plan)
 
     def backup(self, destination):
@@ -627,18 +634,18 @@ class AssetLibrary:
         import tempfile
         from atomic_publish import _rename_no_replace
         from asset_library_storage import Storage, _sync_directory
-        if not self.storage:
-            _fail('DURABILITY', 'Upgrade legacy storage before making a canonical backup.')
-        destination = Path(destination).absolute()
-        if destination.exists() or destination.is_symlink():
-            _fail('EXISTS', 'Backup requires a new destination.')
-        parent = destination.parent.resolve(strict=True)
-        destination = parent / destination.name
-        stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-backup-', dir=parent))
+        stage = None
         try:
             with self._connect() as db:
                 self._begin_writer(db)
-                manifests, blobs, annotations, snapshot = self.storage.materialize()
+                if not self.storage:
+                    _fail('DURABILITY', 'Upgrade legacy storage before making a canonical backup.')
+                destination = Path(destination).absolute()
+                if destination.exists() or destination.is_symlink():
+                    _fail('EXISTS', 'Backup requires a new destination.')
+                parent = destination.parent.resolve(strict=True)
+                destination = parent / destination.name
+                manifests, blobs, annotations, snapshot = self.storage.materialize(db=db)
                 versions = {(a, v): digest for a, v, digest in db.execute('SELECT id,version,sha256 FROM versions')}
                 if versions != {key: value['manifest_sha256'] for key, value in manifests.items()}:
                     _fail('DURABILITY', 'Recover the split index before backing it up.')
@@ -646,6 +653,7 @@ class AssetLibrary:
                     row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?', key).fetchone()
                     if row is None or decode_json(row[0]) != value:
                         _fail('DURABILITY', 'Recover split annotation history before backing it up.')
+                stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-backup-', dir=parent))
                 holder = type('BackupRoot', (), {'root': stage})()
                 storage = Storage(holder, create=True)
                 for digest, payload in blobs.items():
@@ -668,7 +676,7 @@ class AssetLibrary:
             _sync_directory(parent)
             return receipt
         finally:
-            if stage.exists():
+            if stage is not None and stage.exists():
                 shutil.rmtree(stage)
 
     def recover_blob(self, digest, payload, *, expected_bytes):

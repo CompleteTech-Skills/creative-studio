@@ -7,9 +7,11 @@ query projection. Existing SQLite-only libraries remain readable. Call
 garbage collection on an old library. Migration preserves manifest and payload
 bytes, exact references, and the latest annotation revision. A legacy annotation
 checkpoint identifies the actual retained revision without inventing lost history.
-Once `records/READY` is published every handle writes durably, even if the
-migration crashed before its SQLite flag; rerunning `upgrade_storage()` verifies
-both directions and then records the flag.
+After acquiring the SQLite writer lock, existing handles refresh canonical mode
+before writing, recovering, backing up, or running GC. When a migration stopped
+after renaming `records/READY`, the next writer syncs its directory before
+proceeding. Rerunning `upgrade_storage()` verifies both directions and then records
+the SQLite flag.
 
 ## Publication and failure boundaries
 
@@ -19,8 +21,8 @@ bytes are staged in a private directory, flushed, exclusively renamed and read
 back. A content-addressed immutable commit then binds the manifest. Only after
 that durable commit does the SQLite transaction finish. Metadata and event writes
 use the same ordering. POSIX directory entries are fsynced; Windows uses flushed
-files and its exclusive rename semantics, without claiming unsupported directory
-fsync.
+files and its exclusive rename semantics. Publication retries also sync the
+directory when reusing matching bytes from an earlier attempt.
 
 These are two explicit commit boundaries, not a claim of cross-filesystem/database
 atomicity. A process killed between them leaves durable history ahead of the
@@ -50,8 +52,9 @@ plan = library.analyze_gc()              # inspect exact immutable plan
 library.apply_gc(plan)                   # fails if records/candidates changed
 ```
 
-`backup()` copies only verified committed records, rebuilds the destination index,
-and publishes to a new directory. Move it elsewhere and reopen it with
+`backup()` verifies that existing index history is backed by canonical records,
+including event revisions and documents. It copies verified committed records,
+rebuilds the destination index, and publishes to a new directory. Move it elsewhere and reopen it with
 `AssetLibrary`: no absolute source path or original library is required. Original
 source files are never changed. All registered versions, dependencies, source and
 license evidence, previews, annotation history and durable events remain protected.
@@ -69,8 +72,10 @@ Canonical payloads plus commit records fit within 1 GiB; each commit is at most
 bounded closure before changing indexed records. The implementation materializes
 that bounded closure in memory; it does not claim arbitrary-size streaming.
 
-`inspect(reference, verify_payloads=True)` and `read_own_file(reference, path)`
-verify only the exact version's own content. Dependency-aware consumers must
+In durable mode `resolve()`, `inspect()`, and the file readers require the exact
+canonical version commit. `inspect(reference, verify_payloads=False)` still
+verifies the commit. `inspect(reference, verify_payloads=True)` and
+`read_own_file(reference, path)` verify the exact version's own content. Dependency-aware consumers must
 perform their own closure admission before considering a production ready.
 `list_references(limit=4096)` returns bounded exact references in stable ID/version
 order. These APIs never resolve `latest` or silently substitute another library.
@@ -105,4 +110,5 @@ Local Linux tests are implementation evidence, not hosted cross-platform results
 The broader job scheduler, library search, lifecycle policy and importer remain
 their respective owners' responsibilities.
 
-Existing handles refresh the canonical-storage mode after acquiring the SQLite writer lock. A legacy handle that waits for another handle to migrate therefore publishes its subsequent versions and annotation changes to canonical history. Successful migration is idempotent across handles. Staged recovered SQLite indexes are synchronized through a writable descriptor, as required on Windows.
+Successful migration is idempotent across handles. Staged recovered SQLite
+indexes are synchronized through a writable descriptor, as required on Windows.
