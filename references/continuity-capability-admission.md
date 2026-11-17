@@ -10,7 +10,7 @@ Broader #115 and #108 acceptance remain open.
 ## Discovery and admission
 
 `python scripts/continuity_capabilities.py discover` reports installed package
-metadata, tool paths, and thirteen semantic capabilities. Their initial status
+metadata, tool names, and thirteen semantic capabilities. Their initial status
 is `untested`. An explicit, source-bound owner probe is required before a
 capability can be admitted.
 
@@ -32,7 +32,8 @@ result = Admission(project_root, policy=policy, owners=[owner]).run(request)
 Include `owner.bound` in the check's `inputs` and provide an exact project
 revision pointer. This rig adapter uses input type `hatch-3d-rig`, output type
 `native-inspection`, and contract version `1.0.0`. Creating an owner executes
-its probe and writes evidence. The trusted host provides the evidence directory,
+its probe and writes evidence. Public rig and image pointers are copies of the
+owner's pinned source bindings. The trusted host provides the evidence directory,
 asset rights, owner allowlist, offline policy, and resource ceilings.
 
 The request, result, and snapshot schemas live in the corresponding
@@ -47,7 +48,10 @@ Every admitted check runs again under its owner reservation.
 
 All request pointers must resolve to their exact bytes, even for unavailable
 checks. A final deduplicated hash pass rechecks request, snapshot, and
-evidence pointers. Changed or missing referenced bytes fail the integrity gate.
+evidence pointers. `integrity_coverage` describes this closure and the native
+dependency checks reached during execution. Missing, changed, or malformed
+evidence and native dependency refusals fail the aggregate integrity gate.
+Reports and CLI errors use fixed public messages with typed refusal codes.
 The host must supply the project root and caller-owned evidence directory.
 Portable path checks and stable reads bind observed files. Treat untrusted
 executable formats as separate native worker jobs.
@@ -64,9 +68,12 @@ ceilings apply to each serial check. The engine checks process-lifetime peak
 memory before reservation, after reservation, and after execution. Historical
 memory peaks can reject a check, and unavailable measurements fail closed.
 Image decoding is limited to four million pixels per image and sixteen million
-pixels total. Per-check and aggregate report payloads are bounded at 1 MiB and
-4 MiB. The engine accounts for wall time across validation, hashing, execution,
-and report generation. Synchronous native calls can run until they return, so
+pixels total. Image master preflight checks the 128-item count, 8 MiB per-file
+size, and aggregate dependency bytes before reading source contents. Per-check
+and complete report payloads are bounded at 1 MiB and 4 MiB. Admission returns a
+typed report-limit refusal when the required rows exceed the complete cap. The
+engine accounts for wall time across validation, hashing, execution, and report
+generation. Synchronous native calls can run until they return, so
 hard preemption and allocation enforcement belong to the native worker.
 
 ## Fallback matrix

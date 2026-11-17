@@ -5,13 +5,14 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from continuity_capabilities import Admission, Policy, MATRIX, schemas, validate, discover
+from continuity_capabilities import Admission, CapabilityRefusal, Policy, MATRIX, schemas, validate, discover
 from continuity_capability_owners import RigOwner, ImageMastersOwner, pointer
 from continuity_contracts import VERSION, canonical_bytes, digest
 from rig_errors import RigError
@@ -250,3 +251,119 @@ class CapabilityTest(unittest.TestCase):
             result = self.engine(owner).run(request)
         self.assertEqual(result['outcome'], 'partial', result)
         self.assertEqual(native_load.call_count, 2)
+
+
+    def image_owner_and_request(self):
+        from PIL import Image
+
+        Image.new('RGB', (8, 8), 'red').save(self.root / 'master.png')
+        owner = ImageMastersOwner(self.root, ['master.png'], 'evidence')
+        request = self.request('video-encoding')
+        request['checks'][0].update(inputs=owner.images, input_types=['image-master'],
+                                    output_types=['verified-image-masters'])
+        return owner, request
+
+    def test_exposed_owner_bindings_are_read_only_copies(self):
+        from PIL import Image
+
+        rig, rig_request = self.bound('geometry-inspection')
+        baseline = rig.bound
+        alternate = self.root / 'other-rig.json'
+        shutil.copyfile(self.root / rig.rig_path, alternate)
+        rig_request['checks'][0]['inputs'][0].update(pointer(self.root, alternate, kind='hatch-3d-rig'))
+        self.assertEqual(rig.bound, baseline)
+        self.assertEqual(self.engine(rig).run(rig_request)['checks'][0]['unsatisfied_gates'],
+                         ['canonical-reference'])
+        for field in ('bound', 'root', 'rig_path', 'capability'):
+            with self.subTest(field=field), self.assertRaises(AttributeError):
+                setattr(rig, field, 'replacement')
+        images, request = self.image_owner_and_request()
+        alternate = self.root / 'other-master.png'
+        Image.new('RGB', (8, 8), 'blue').save(alternate)
+        request['checks'][0]['inputs'][0].update(pointer(self.root, alternate, kind='image-master'))
+        self.assertNotEqual(images.images, request['checks'][0]['inputs'])
+        self.assertEqual(self.engine(images).run(request)['checks'][0]['unsatisfied_gates'],
+                         ['canonical-reference'])
+        exposed = images.images
+        exposed.clear()
+        self.assertEqual(len(images.images), 1)
+        for field in ('images', 'root'):
+            with self.subTest(field=field), self.assertRaises(AttributeError):
+                setattr(images, field, 'replacement')
+
+    def test_native_refusal_codes_keep_their_gates_with_redacted_messages(self):
+        owner, request = self.bound('geometry-inspection')
+        for code, gate, integrity in (
+            ('RIG_BUSY', 'ownership', 'verified'),
+            ('RIG_LIMIT_MEMORY', 'resource-memory_bytes', 'verified'),
+            ('RIG_HASH', 'integrity', 'failed'),
+            ('RIG_SOURCE_CHANGED', 'integrity', 'failed'),
+        ):
+            with self.subTest(code=code), patch(
+                'rig_models.load_rig', side_effect=RigError(code, f'Native input at {self.root}'),
+            ):
+                result = self.engine(owner).run(request)
+                self.assertEqual(result['integrity'], integrity)
+                self.assertEqual(result['checks'][0]['unsatisfied_gates'], [gate])
+                self.assertTrue(result['checks'][0]['error'].startswith(code + ':'))
+                self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_missing_native_dependency_fails_report_integrity(self):
+        owner, request = self.bound('geometry-inspection')
+        (self.root / 'rig/source/demo-robotic-input.glb').unlink()
+        result = self.engine(owner).run(request)
+        self.assertEqual(result['integrity'], 'failed')
+        self.assertEqual(result['checks'][0]['unsatisfied_gates'], ['integrity'])
+        self.assertTrue(result['checks'][0]['error'].startswith('RIG_MISSING_ASSET:'))
+        self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_unverified_execution_artifacts_fail_integrity(self):
+        owner, request = self.image_owner_and_request()
+        report_path = self.root / 'reported.json'
+        report_path.write_text('{"frame": 1}')
+        stale_pointer = pointer(self.root, report_path)
+        report_path.write_text('{"frame": 2}')
+        for evidence, code in (([stale_pointer], 'CONTINUITY_HASH'),
+                               (['invalid pointer'], 'CONTINUITY_CAPABILITY_EVIDENCE')):
+            with self.subTest(code=code), patch.object(owner, 'execute', return_value=dict(
+                outcome='partial', evidence=evidence, measurements={},
+                verified_fields=['image-masters'], limitations=[],
+            )):
+                result = self.engine(owner).run(request)
+                self.assertEqual(result['integrity'], 'failed')
+                self.assertEqual(result['checks'][0]['unsatisfied_gates'], ['integrity'])
+                self.assertTrue(result['checks'][0]['error'].startswith(code + ':'))
+
+    def test_image_master_preflight_refuses_count_and_size_before_reading(self):
+        first = self.root / 'small-master.png'
+        first.write_bytes(b'placeholder')
+        oversized = self.root / 'oversized-master.png'
+        with oversized.open('wb') as stream:
+            stream.truncate(8 * 1024 * 1024 + 1)
+
+        with patch('continuity_capability_owners._read_regular_bytes') as read:
+            for paths in ([first.name] * 129, [first.name, oversized.name]):
+                with self.subTest(count=len(paths)), self.assertRaises(CapabilityRefusal) as refusal:
+                    ImageMastersOwner(self.root, paths, 'evidence')
+                self.assertEqual(refusal.exception.gate, 'resource-admission')
+            read.assert_not_called()
+
+    def test_aggregate_report_limit_includes_failure_rows(self):
+        request = self.request('physics-continuation', 'graphical-editor', 'historical-media')
+        self.engine().run(request)
+        with patch('continuity_capabilities.MAX_REPORT_BYTES', 768):
+            with self.assertRaises(CapabilityRefusal) as refusal:
+                self.engine().run(request)
+        self.assertEqual(refusal.exception.code, 'CONTINUITY_CAPABILITY_REPORT_LIMIT')
+
+    def test_cli_and_discovery_omit_private_paths(self):
+        with patch('continuity_capabilities.shutil.which', return_value=str(self.root / 'private/tool')):
+            result = discover()
+        self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertIn('blender', [row['tool_name'] for row in result['capabilities']])
+        command = [sys.executable, str(REPO / 'scripts/continuity_capabilities.py'),
+                   'admit', '--root', str(self.root), '--request', str(self.root / 'missing.json')]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(json.loads(completed.stdout)['code'], 'CONTINUITY_REFERENCE_MISSING')
+        self.assertNotIn(str(self.root), completed.stdout + completed.stderr)

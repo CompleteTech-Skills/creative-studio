@@ -9,19 +9,29 @@ from datetime import datetime, timezone, timedelta
 import hashlib
 import io
 import platform
+import stat
+import threading
 from pathlib import Path
+from itertools import islice
+from types import MappingProxyType
 import uuid
 
-from continuity_capabilities import OwnerAdapter, MATRIX, RESOURCES
-from continuity_contracts import VERSION, canonical_bytes, portable_path, _read_regular_bytes, verify_references
+from continuity_capabilities import CapabilityRefusal, OwnerAdapter, owner_reference_check
+from continuity_contracts import (
+    MAX_DEPENDENCY_BYTES, VERSION, canonical_bytes, portable_path, _read_regular_bytes, verify_references,
+)
 
 
-def pointer(root, path, *, kind='evidence'):
+IMAGE_MASTER_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_MASTERS = 128
+
+
+def pointer(root, path, *, kind='evidence', limit=128*1024*1024):
     relative = Path(path).relative_to(root).as_posix()
     portable_path(relative)
-    data = _read_regular_bytes(path, limit=128*1024*1024)
-    return dict(id='evidence-' + hashlib.sha256(data).hexdigest()[:24], version=VERSION,
-                path=relative, sha256=hashlib.sha256(data).hexdigest(), kind=kind)
+    sha256 = hashlib.sha256(_read_regular_bytes(path, limit=limit)).hexdigest()
+    return dict(id='evidence-' + sha256[:24], version=VERSION,
+                path=relative, sha256=sha256, kind=kind)
 
 
 def _write_new(root, folder, payload, extension='json'):
@@ -45,26 +55,42 @@ class RigOwner(OwnerAdapter):
     Reuses native rig job lock/limits. This adapter does not implement scene
     constraints, calibrated camera mapping, retargeting or PBR rendering.
     """
-    SUPPORTED = {
+    SUPPORTED = MappingProxyType({
         'geometry-inspection': ('independent-geometry-parser', ('geometry', 'materials', 'skins', 'morphs', 'extensions-and-channels')),
         'scene-animation-evaluation': ('bounded-native-evaluator', ('rig-pose', 'deformed-vertices')),
         'rig-compatibility': ('exact-rig-data', ('hierarchy', 'rest-pose', 'bind-matrices', 'skin-weights')),
         'visual-reference': ('tested-geometry-renderer', ('reference-render',)),
         'gpu-rendering': ('tested-cpu-renderer', ('reference-render',)),
-    }
+    })
+
+    @property
+    def root(self):
+        return self._root
+
+    @property
+    def rig_path(self):
+        return self._rig_path
+
+    @property
+    def capability(self):
+        return self._capability
+
+    @property
+    def bound(self):
+        return dict(self._bound)
 
     def __init__(self, root, rig_path, evidence_folder, capability, *, expiry_seconds=300):
         if capability not in self.SUPPORTED:
             raise ValueError('CONTINUITY_CAPABILITY_OWNER: unsupported rig capability')
         if type(expiry_seconds) is not int or not 1 <= expiry_seconds <= 3600:
             raise ValueError('CONTINUITY_CAPABILITY_EXPIRY: use 1..3600 seconds')
-        self.root = Path(root).resolve(strict=True)
-        self.rig_path = portable_path(rig_path)
+        self._root = Path(root).resolve(strict=True)
+        self._rig_path = portable_path(rig_path)
         if Path(self.rig_path).name != 'rig.json':
             raise ValueError('CONTINUITY_CAPABILITY_SOURCE: native rig manifest must be rig.json')
         self.folder = portable_path(evidence_folder)
-        self.capability = capability
-        self.bound = pointer(self.root, self.root / self.rig_path, kind='hatch-3d-rig')
+        self._capability = capability
+        self._bound = MappingProxyType(pointer(self.root, self.root / self.rig_path, kind='hatch-3d-rig'))
         self._disk_remaining = 64*1024*1024
         self._evidence = []
         # A real probe is required before advertising availability. It produces
@@ -99,35 +125,50 @@ class RigOwner(OwnerAdapter):
         reservation = min(512*1024*1024, check['resources']['memory_bytes']) if check is not None else 512*1024*1024
         baseline = _peak_memory_bytes()
         if baseline is None:
-            raise ValueError('CONTINUITY_CAPABILITY_LIMIT: process memory measurement unavailable')
+            raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-memory_bytes',
+                                        'Process memory measurement unavailable')
         workspace = 32*1024*1024
         def native_limits(retained=0):
             peak = _peak_memory_bytes()
             if peak is None:
-                raise ValueError('CONTINUITY_CAPABILITY_LIMIT: process memory measurement unavailable')
+                raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-memory_bytes',
+                                        'Process memory measurement unavailable')
             available = reservation - max(peak, baseline + retained) - workspace
             if available <= 0:
-                raise ValueError('CONTINUITY_CAPABILITY_LIMIT: no native load memory remains in reservation')
+                raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-memory_bytes',
+                                        'No native load memory remains in reservation')
             return dict(memory_bytes=available, vertices=100000, triangles=100000)
         rig_root = (self.root / self.rig_path).parent
-        manifest_sha256 = self.bound['sha256']
+        manifest_sha256 = self._bound['sha256']
+
+        def load_pinned_rig(retained=0):
+            limits = native_limits(retained)
+            try:
+                return load_rig(rig_root, limits=limits, expected_manifest_sha256=manifest_sha256)
+            except FileNotFoundError as exc:
+                raise CapabilityRefusal('RIG_MISSING_ASSET', 'integrity',
+                                        'Native dependency could not be verified') from exc
+
         with job_lock(rig_root):
-            verify_references(self.root, dict(source=self.bound))
-            if check is not None and self.bound not in check['inputs']:
-                raise ValueError('CONTINUITY_CAPABILITY_SOURCE: request does not bind probed rig bytes')
-            rig = load_rig(rig_root, limits=native_limits(), expected_manifest_sha256=manifest_sha256)
+            with owner_reference_check():
+                verify_references(self.root, dict(source=self.bound))
+            if check is not None and self._bound not in check['inputs']:
+                raise CapabilityRefusal('CONTINUITY_CAPABILITY_SOURCE', 'canonical-reference',
+                                        'Request does not bind the probed rig bytes')
+            rig = load_pinned_rig()
             # Native limits remain authoritative. No token or lease is forged;
             # the native owner's actual exclusive OS lock is held throughout.
             self._disk_remaining = check['resources']['disk_bytes'] if check is not None else 64*1024*1024
             self._rig = rig
             try:
                 yield
-                verify_references(self.root, dict(source=self.bound))
+                with owner_reference_check():
+                    verify_references(self.root, dict(source=self.bound))
                 # The first rig and returned measurements remain live during
                 # source revalidation. Charge its conservative load estimate in
                 # addition to the baseline before materializing a second rig.
                 retained = rig.resource_usage['estimated_memory_bytes']
-                load_rig(rig_root, limits=native_limits(retained), expected_manifest_sha256=manifest_sha256)
+                load_pinned_rig(retained)
             finally:
                 self._rig = None
 
@@ -135,7 +176,8 @@ class RigOwner(OwnerAdapter):
 
     def _emit(self, payload, extension='json'):
         if len(payload) > self._disk_remaining:
-            raise ValueError('CONTINUITY_CAPABILITY_LIMIT: evidence exceeds disk reservation')
+            raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-disk_bytes',
+                                    'evidence exceeds disk reservation')
         self._disk_remaining -= len(payload)
         return _write_new(self.root, self.folder, payload, extension)
 
@@ -195,15 +237,43 @@ class ImageMastersOwner(OwnerAdapter):
     The native encoder is unavailable; validated image masters remain useful but
     the requested video gate remains partial. No audio or video is fabricated.
     """
+    @property
+    def root(self):
+        return self._root
+
+    @property
+    def images(self):
+        return [dict(item) for item in self._images]
+
     def __init__(self, root, images, evidence_folder, *, expiry_seconds=300):
         if type(expiry_seconds) is not int or not 1 <= expiry_seconds <= 3600:
             raise ValueError('CONTINUITY_CAPABILITY_EXPIRY: use 1..3600 seconds')
-        self.root = Path(root).resolve(strict=True)
+        self._root = Path(root).resolve(strict=True)
         self.folder = portable_path(evidence_folder)
-        self.images = [pointer(self.root, self.root/portable_path(p), kind='image-master') for p in images]
-        if not 1 <= len(self.images) <= 128:
-            raise ValueError('CONTINUITY_CAPABILITY_LIMIT: use 1..128 image masters')
-        self._lock = __import__('threading').Lock()
+        paths = tuple(islice(images, MAX_IMAGE_MASTERS + 1))
+        if not 1 <= len(paths) <= MAX_IMAGE_MASTERS:
+            raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-admission', 'Use 1..128 image masters')
+        sources = []
+        total_bytes = 0
+        with owner_reference_check():
+            for path in paths:
+                source = self.root
+                for part in portable_path(path).split('/'):
+                    source /= part
+                    if source.is_symlink():
+                        raise ValueError('CONTINUITY_PATH: image master symlink is forbidden')
+                status = source.lstat()
+                if not stat.S_ISREG(status.st_mode):
+                    raise ValueError('CONTINUITY_PATH: image master must be a regular file')
+                total_bytes += status.st_size
+                if status.st_size > IMAGE_MASTER_BYTES or total_bytes > MAX_DEPENDENCY_BYTES:
+                    raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-admission',
+                                            'Image masters exceed their byte budget')
+                sources.append(source)
+            self._images = tuple(MappingProxyType(pointer(
+                self.root, source, kind='image-master', limit=IMAGE_MASTER_BYTES,
+            )) for source in sources)
+        self._lock = threading.Lock()
         # Process reservation includes the host Python runtime; image decode
         # remains independently capped at four million pixels per image.
         self._resources = dict(memory_bytes=256*1024*1024, disk_bytes=8*1024*1024)
@@ -225,14 +295,18 @@ class ImageMastersOwner(OwnerAdapter):
     @contextmanager
     def reserve(self, check):
         if not self._lock.acquire(blocking=False):
-            raise ValueError('CONTINUITY_CAPABILITY_OWNERSHIP: image inspection already active')
+            raise CapabilityRefusal('CONTINUITY_CAPABILITY_OWNERSHIP', 'ownership',
+                                    'Image inspection already active')
         try:
-            if check is not None and any(p not in check['inputs'] for p in self.images):
-                raise ValueError('CONTINUITY_CAPABILITY_SOURCE: every original master must be bound')
+            if check is not None and any(p not in check['inputs'] for p in self._images):
+                raise CapabilityRefusal('CONTINUITY_CAPABILITY_SOURCE', 'canonical-reference',
+                                        'Every original master must be bound')
             self._resources = check['resources'] if check is not None else dict(memory_bytes=256*1024*1024, disk_bytes=8*1024*1024)
-            verify_references(self.root, dict(images=self.images))
+            with owner_reference_check():
+                verify_references(self.root, dict(images=self.images))
             yield
-            verify_references(self.root, dict(images=self.images))
+            with owner_reference_check():
+                verify_references(self.root, dict(images=self.images))
         finally: self._lock.release()
 
     def _execute(self):
@@ -240,13 +314,15 @@ class ImageMastersOwner(OwnerAdapter):
         records = []
         total_pixels = 0
         for item in self.images:
-            payload = _read_regular_bytes(self.root/item['path'], limit=8*1024*1024,
-                                          expected_sha256=item['sha256'])
+            with owner_reference_check():
+                payload = _read_regular_bytes(self.root/item['path'], limit=IMAGE_MASTER_BYTES,
+                                              expected_sha256=item['sha256'])
             with Image.open(io.BytesIO(payload)) as image:
                 pixels = image.width*image.height
                 if (pixels > 4_000_000 or total_pixels+pixels > 16_000_000
                         or pixels*8 + len(payload) > self._resources['memory_bytes']):
-                    raise ValueError('CONTINUITY_CAPABILITY_LIMIT: image decode exceeds pixel budget')
+                    raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-memory_bytes',
+                                            'Image decode exceeds pixel budget')
                 image.load()
                 total_pixels += pixels
                 records.append(dict(source=item, width=image.width, height=image.height,
@@ -256,7 +332,8 @@ class ImageMastersOwner(OwnerAdapter):
                             video_exported=False, audio_inspected=False, originals_preserved=True)
         payload = canonical_bytes(measurements)
         if len(payload) > self._resources['disk_bytes']:
-            raise ValueError('CONTINUITY_CAPABILITY_LIMIT: evidence exceeds disk reservation')
+            raise CapabilityRefusal('CONTINUITY_CAPABILITY_LIMIT', 'resource-disk_bytes',
+                                    'evidence exceeds disk reservation')
         evidence = _write_new(self.root, self.folder, payload)
         return dict(outcome='partial', evidence=[evidence], measurements=measurements,
                     verified_fields=['image-masters'],

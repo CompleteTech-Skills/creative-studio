@@ -25,7 +25,7 @@ import time
 from continuity_contracts import (ID, SHA, SEMVER, TEXT, PATH, STAMP, VERSION,
     arr, obj, enum, nullable, ref, integer, canonical_bytes, digest,
     portable_path, verify_references, _read_regular_bytes, MAX_DEPENDENCY_BYTES)
-from rig_errors import decode_json
+from rig_errors import RigError, decode_json
 
 OUTCOMES = ('executed', 'supported_fallback', 'partial', 'blocked_missing_capability',
             'needs_visual_review', 'failed', 'canceled')
@@ -64,6 +64,9 @@ MANDATORY_FIELDS = {
  'historical-media': ('original-media',),
 }
 RESOURCES = ('memory_bytes', 'disk_bytes', 'cpu_seconds', 'gpu_bytes', 'concurrency')
+MAX_CHECK_BYTES = 1024 * 1024
+MAX_REPORT_BYTES = 4 * 1024 * 1024
+INTEGRITY_COVERAGE = 'Request references and reported evidence plus native dependency checks reached during execution.'
 
 
 def definitions():
@@ -86,7 +89,8 @@ def definitions():
         expires_at=STAMP, limitations=arr(TEXT, maximum=128)))
     result = obj(dict(schema_version=dict(const=VERSION), kind=dict(const='continuity-capability-result'),
         request_sha256=SHA, request_id=ID, outcome=enum(*OUTCOMES), checks=arr(ref('check-result'), maximum=128),
-        integrity=enum('verified', 'failed'), visual_approval=dict(const=False), host_policy=ref('host-policy'),
+        integrity=enum('verified', 'failed'), integrity_coverage=dict(const=INTEGRITY_COVERAGE),
+        visual_approval=dict(const=False), host_policy=ref('host-policy'),
         admission_resources=ref('admission-resources'),
         report_sha256=SHA))
     check_result = obj(dict(id=ID, capability=enum(*MATRIX), outcome=enum(*OUTCOMES),
@@ -125,7 +129,10 @@ def validate(value, kind):
     schema = {'$defs':definitions(), '$ref':'#/$defs/'+kind}
     errors = list(Draft202012Validator(schema).iter_errors(value))
     if errors:
-        raise ValueError('CONTINUITY_CAPABILITY_SCHEMA: ' + errors[0].message)
+        if kind == 'execution-result' and any(list(error.path)[:1] == ['evidence'] for error in errors):
+            raise CapabilityRefusal('CONTINUITY_CAPABILITY_EVIDENCE', 'integrity',
+                                    'Execution evidence references did not match their contract')
+        raise ValueError('CONTINUITY_CAPABILITY_SCHEMA: document does not match its schema')
     # Traverse schema types, not arbitrary data-key names, and normalize only
     # declared integer positions. Metadata measurements remain opaque JSON.
     def normalize(item, schema):
@@ -135,7 +142,12 @@ def validate(value, kind):
                     return normalize(item,branch)
         if '$ref' in schema:
             name = schema['$ref'].split('/')[-1]
-            if name == 'pointer': portable_path(item['path'])
+            if name == 'pointer':
+                if kind == 'execution-result':
+                    with owner_reference_check():
+                        portable_path(item['path'])
+                else:
+                    portable_path(item['path'])
             schema = definitions()[name]
         if schema.get('type') == 'integer':
             return int(item)
@@ -199,8 +211,83 @@ class OwnerAdapter:
     def execute(self, check): raise NotImplementedError
 
 
-def _message(exc, maximum=3000):
-    return str(exc).encode('utf-8',errors='backslashreplace').decode('utf-8')[:maximum]
+class CapabilityRefusal(ValueError):
+    """Typed refusal with a fixed public message and an unsatisfied gate."""
+
+    def __init__(self, code, gate, message):
+        super().__init__(f'{code}: {message}')
+        self.code = code
+        self.gate = gate
+        self.message = message
+
+
+_NATIVE_INTEGRITY_CODES = frozenset({
+    'RIG_DIRECTORY_CHANGED', 'RIG_EVIDENCE_CHANGED', 'RIG_HASH', 'RIG_IDENTITY_CHANGED',
+    'RIG_ANIMATION', 'RIG_ASSET_INVENTORY', 'RIG_MISSING_ASSET', 'RIG_PATH', 'RIG_PAYLOAD_CHANGED',
+    'RIG_REVIEW_MISSING', 'RIG_SOURCE_CHANGED', 'RIG_SOURCE_INVENTORY', 'RIG_SYMLINK',
+})
+_NATIVE_RESOURCE_CODES = frozenset({
+    'RIG_LIMITS', 'RIG_LIMIT_ANIMATION', 'RIG_LIMIT_BINARY', 'RIG_LIMIT_BONES', 'RIG_LIMIT_CLIPS',
+    'RIG_LIMIT_INFLUENCES', 'RIG_LIMIT_JSON', 'RIG_LIMIT_KEYFRAMES', 'RIG_LIMIT_MEMORY',
+    'RIG_LIMIT_MORPHS', 'RIG_LIMIT_TRIANGLES', 'RIG_LIMIT_VERTICES',
+})
+
+
+def _execution_refusal(exc):
+    if isinstance(exc, CapabilityRefusal):
+        return exc
+    if isinstance(exc, RigError):
+        code = exc.report['code']
+        if code == 'RIG_BUSY':
+            return CapabilityRefusal(code, 'ownership', 'Another writer owns the native rig')
+        if code in _NATIVE_INTEGRITY_CODES:
+            return CapabilityRefusal(code, 'integrity', 'Native dependency could not be verified')
+        if code in _NATIVE_RESOURCE_CODES:
+            gate = 'resource-memory_bytes' if code == 'RIG_LIMIT_MEMORY' else 'resource-admission'
+            return CapabilityRefusal(code, gate, 'Native resource limit refused admission')
+    return CapabilityRefusal('CONTINUITY_CAPABILITY_EXECUTION', 'execution', 'Native owner operation failed')
+
+
+def _reference_refusal(exc):
+    if isinstance(exc, CapabilityRefusal):
+        return exc
+    if isinstance(exc, FileNotFoundError):
+        code = 'CONTINUITY_REFERENCE_MISSING'
+    elif isinstance(exc, OSError):
+        code = 'CONTINUITY_REFERENCE_IO'
+    else:
+        code = str(exc).partition(':')[0]
+        if code not in {'CONTINUITY_HASH', 'CONTINUITY_CHANGED', 'CONTINUITY_PATH', 'CONTINUITY_LIMIT',
+                        'CONTINUITY_CAPABILITY_PATH', 'CONTINUITY_CAPABILITY_REFERENCE',
+                        'CONTINUITY_CAPABILITY_LIMIT'}:
+            code = 'CONTINUITY_CAPABILITY_INTEGRITY'
+    return CapabilityRefusal(code, 'integrity', 'Exact reference could not be verified')
+
+
+@contextmanager
+def owner_reference_check():
+    try:
+        yield
+    except CapabilityRefusal:
+        raise
+    except (ValueError, OSError) as exc:
+        raise _reference_refusal(exc) from exc
+
+
+def _check_report_size(output):
+    try:
+        size = len(canonical_bytes(output))
+    except ValueError as exc:
+        if str(exc).startswith('CONTINUITY_LIMIT:'):
+            raise _report_limit() from exc
+        raise
+    if size > MAX_REPORT_BYTES:
+        raise _report_limit()
+
+
+def _report_limit():
+    return CapabilityRefusal('CONTINUITY_CAPABILITY_REPORT_LIMIT', 'resource-admission',
+                             'Complete result exceeds the four MiB report limit')
 
 
 def _failure(check, message=None):
@@ -235,6 +322,10 @@ class ReferencePass:
         return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,value.st_ctime_ns)
 
     def verify(self, pointers, *, force=False):
+        with owner_reference_check():
+            return self._verify(pointers, force=force)
+
+    def _verify(self, pointers, *, force):
         selected={}
         for pointer in pointers:
             key=portable_path(pointer['path']).casefold()
@@ -328,7 +419,7 @@ class Admission:
         references=ReferencePass(self.root)
         output = dict(schema_version=VERSION, kind='continuity-capability-result', request_sha256=digest(request),
             request_id=request['request_id'], outcome='blocked_missing_capability', checks=[],
-            integrity='verified', visual_approval=False, host_policy=dict(offline=self.policy.offline,
+            integrity='verified', integrity_coverage=INTEGRITY_COVERAGE, visual_approval=False, host_policy=dict(offline=self.policy.offline,
                 asset_rights=self.policy.asset_rights, allowed_owners=sorted(self.policy.allowed_owners),
                 limits={key:getattr(self.policy,'max_'+key) for key in RESOURCES}),
             admission_resources=dict(wall_seconds=0.,process_cpu_seconds=0.,reserved_cpu_seconds=reserved,
@@ -337,10 +428,10 @@ class Admission:
         # refs even when a requested capability is missing/canceled.
         try:
             references.verify([request['project_revision'],*[p for c in request['checks'] for p in c['inputs']]])
-        except (ValueError, OSError) as exc:
+        except CapabilityRefusal as exc:
             output['integrity'] = 'failed'
             for check in request['checks']:
-                item = _failure(check, 'CONTINUITY_CAPABILITY_INTEGRITY: ' + _message(exc))
+                item = _failure(check, str(exc))
                 item.update(outcome='failed', unsatisfied_gates=['integrity'])
                 output['checks'].append(item)
             return self._finish(output,meter)
@@ -366,40 +457,53 @@ class Admission:
                     try:
                         references.verify([request['project_revision'],*check['inputs']])
                         item = self._check(check, clock, canceled,references,meter)
-                    except Exception as exc:
-                        item = _failure(check, 'CONTINUITY_CAPABILITY_OWNER: ' + _message(exc))
+                    except CapabilityRefusal as exc:
+                        item = _failure(check, str(exc))
+                        item.update(outcome='failed', unsatisfied_gates=[exc.gate])
+                    except Exception:
+                        item = _failure(check, 'CONTINUITY_CAPABILITY_OWNER: Owner contract failed')
                         item.update(outcome='failed', unsatisfied_gates=['owner-contract'])
                 try:
                     item = validate(item, 'check-result')
-                    encoded_bytes=len(canonical_bytes(item))
-                    if encoded_bytes > 1024*1024:
-                        raise ValueError('CONTINUITY_CAPABILITY_REPORT_LIMIT: check exceeds 1 MiB')
-                    if report_bytes + encoded_bytes > 4*1024*1024:
-                        raise ValueError('CONTINUITY_CAPABILITY_REPORT_LIMIT: cumulative checks exceed 4 MiB')
+                    encoded_bytes = len(canonical_bytes(item))
+                    if encoded_bytes > MAX_CHECK_BYTES:
+                        raise CapabilityRefusal('CONTINUITY_CAPABILITY_REPORT_LIMIT', 'resource-admission',
+                                                'Complete check exceeds the one MiB check limit')
+                    if report_bytes + encoded_bytes > MAX_REPORT_BYTES:
+                        raise _report_limit()
                 except Exception as exc:
-                    item = _failure(check, _message(exc))
-                    item.update(outcome='failed', unsatisfied_gates=['owner-contract'])
-                report_bytes+=len(canonical_bytes(item))
+                    refusal = exc if isinstance(exc, CapabilityRefusal) else CapabilityRefusal(
+                        'CONTINUITY_CAPABILITY_OWNER', 'owner-contract', 'Owner result did not match its contract')
+                    integrity_failure = 'integrity' in item['unsatisfied_gates']
+                    error = item['error'] if integrity_failure else str(refusal)
+                    gates = ['integrity'] if integrity_failure else [refusal.gate]
+                    item = _failure(check, error)
+                    item.update(outcome='failed', unsatisfied_gates=gates)
+                report_bytes += len(canonical_bytes(item))
+                if report_bytes > MAX_REPORT_BYTES:
+                    raise _report_limit()
                 output['checks'].append(item)
+                if 'integrity' in item['unsatisfied_gates']:
+                    self._invalidate(output, item['error'])
                 try:
                     references.verify([request['project_revision'],*check['inputs']])
                     references.verify(item['evidence'])
                     if item['snapshot'] is not None:references.verify(item['snapshot']['evidence'])
-                except (ValueError,OSError) as exc:
-                    self._invalidate(output,exc)
+                except CapabilityRefusal as exc:
+                    self._invalidate(output, str(exc))
             try:
                 references.final()
-            except (ValueError,OSError) as exc:
-                self._invalidate(output,exc)
+            except CapabilityRefusal as exc:
+                self._invalidate(output, str(exc))
         finally:
             self._busy.release()
         return self._finish(output,meter)
 
     @staticmethod
-    def _invalidate(output,exc):
+    def _invalidate(output, error):
         output['integrity']='failed'
         for previous in output['checks']:
-            previous.update(outcome='failed',error='CONTINUITY_CAPABILITY_INTEGRITY: '+_message(exc),
+            previous.update(outcome='failed',error=previous['error'] or error,
                 unsatisfied_gates=sorted(set(previous['unsatisfied_gates'])|{'integrity'}))
 
     def _finish(self, output,meter):
@@ -412,6 +516,7 @@ class Admission:
         elif any(s in ('executed', 'supported_fallback', 'partial') for s in statuses): result = 'partial'
         else: result = 'blocked_missing_capability'
         output['outcome'] = result
+        _check_report_size(output)
         output['report_sha256'] = digest({k:v for k,v in output.items() if k != 'report_sha256'})
         output=validate(output,'result')
         wall=time.monotonic()-meter['wall_start'];cpu=time.process_time()-meter['cpu_start']
@@ -419,7 +524,7 @@ class Admission:
         if wall>meter['reserved_cpu_seconds'] or cpu>meter['reserved_cpu_seconds']:
             output['outcome']='failed'
             for check in output['checks']:
-                check.update(outcome='failed',error='CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
+                check.update(outcome='failed', error=check['error'] or 'CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
                     unsatisfied_gates=sorted(set(check['unsatisfied_gates'])|{'resource-admission'}))
         output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
         # Enforce once more after the bounded final digest. Measurements are
@@ -428,9 +533,10 @@ class Admission:
                 or time.process_time()-meter['cpu_start']>meter['reserved_cpu_seconds']):
             output['outcome']='failed'
             for check in output['checks']:
-                check.update(outcome='failed',error='CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
+                check.update(outcome='failed', error=check['error'] or 'CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
                     unsatisfied_gates=sorted(set(check['unsatisfied_gates'])|{'resource-admission'}))
             output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
+        _check_report_size(output)
         return output
 
     def _check(self, check, clock, canceled,references,meter):
@@ -449,8 +555,8 @@ class Admission:
             if exhausted():return item
             try:
                 snapshot = validate(adapter.snapshot(), 'snapshot')
-            except Exception as exc:
-                owner_errors.append('Invalid owner snapshot: ' + _message(exc,1000))
+            except Exception:
+                owner_errors.append('Owner snapshot did not match its contract.')
                 continue
             if snapshot['capability_id'] == check['capability']:
                 candidates.append((adapter, snapshot))
@@ -461,7 +567,6 @@ class Admission:
             if exhausted():return item
             fallback = snap['implementation_id'] != check['capability']
             label = snap['owner'] + '/' + snap['backend'] + '@' + (snap['backend_version'] or 'unknown')
-            reason = None
             if fallback and not check['allow_fallback']:
                 rejected.append(label + ': fallback disabled'); continue
             if snap['status'] != 'available' or check['capability'] not in snap['tested_operations']:
@@ -523,8 +628,9 @@ class Admission:
                 elapsed = time.monotonic()-start
                 cpu_used = time.process_time()-cpu_start
                 result = validate(result, 'execution-result')
-                if len(canonical_bytes(result)) > 1024*1024:
-                    raise ValueError('CONTINUITY_CAPABILITY_REPORT_LIMIT: native result exceeds 1 MiB')
+                if len(canonical_bytes(result)) > MAX_CHECK_BYTES:
+                    raise CapabilityRefusal('CONTINUITY_CAPABILITY_REPORT_LIMIT', 'resource-admission',
+                                            'Native result exceeds the one MiB check limit')
                 if set(result) != {'evidence', 'measurements', 'verified_fields', 'limitations', 'outcome'}:
                     raise ValueError('CONTINUITY_CAPABILITY_OWNER: malformed execution result')
                 if result['outcome'] not in ('executed', 'partial', 'needs_visual_review', 'failed', 'canceled'):
@@ -576,8 +682,8 @@ class Admission:
             except Exception as exc:
                 # An executing backend failure must never silently select another
                 # implementation or be renamed a successful fallback.
-                item.update(outcome='failed', error='CONTINUITY_CAPABILITY_EXECUTION: '+_message(exc),
-                    unsatisfied_gates=['execution'])
+                refusal = _execution_refusal(exc)
+                item.update(outcome='failed', error=str(refusal), unsatisfied_gates=[refusal.gate])
                 return item
         if owner_errors:
             item.update(outcome='failed', unsatisfied_gates=['owner-contract'])
@@ -592,10 +698,13 @@ def discover():
     """Named owner discovery without subprocess/network/credential inspection."""
     packages = {}
     for name in ('numpy', 'jsonschema', 'Pillow'):
-        try: packages[name] = importlib.metadata.version(name)
-        except importlib.metadata.PackageNotFoundError: packages[name] = None
+        try:
+            importlib.metadata.distribution(name)
+            packages[name] = True
+        except importlib.metadata.PackageNotFoundError:
+            packages[name] = False
     from rig_errors import VERSION as native_version
-    tools = {'blender':shutil.which('blender'), 'ffmpeg':shutil.which('ffmpeg')}
+    tools = {name: name if shutil.which(name) else None for name in ('blender', 'ffmpeg')}
     owners = {
         'geometry-inspection':('hatch-rig','native-rig-cpu',native_version),
         'blender-native-inspection':('hatch-rig','blender',None),
@@ -616,10 +725,10 @@ def discover():
         owner,backend,version = owners[cap]
         rows.append(dict(capability_id=cap, owner=owner, backend=backend, backend_version=version,
             contract_version=VERSION, operations=[cap], limits=None, status='untested',
-            probe_executed=False, tool_path=tools.get(backend), permitted_fallbacks=list(fallbacks),
+            probe_executed=False, tool_name=tools.get(backend), permitted_fallbacks=list(fallbacks),
             unavailable_fields=list(fields)))
     return dict(schema_version=VERSION, kind='continuity-capability-discovery', packages=packages,
-        capabilities=rows, note='Metadata/path discovery only. Unknown versions/limits remain null; no operation or visual approval executed.')
+        capabilities=rows, note='Local metadata discovery only. Each capability remains untested.')
 
 
 def main(argv=None):
@@ -636,12 +745,24 @@ def main(argv=None):
         # CLI has no implicit authority to reserve native resources or invoke
         # tools. Use the documented trusted Python/native service adapter API.
         result = Admission(args.root, policy=Policy()).run(request)
-    print(json.dumps(result, sort_keys=True, indent=2, allow_nan=False))
+    if args.command == 'admit':
+        sys.stdout.buffer.write(canonical_bytes(result) + b'\n')
+    else:
+        print(json.dumps(result, sort_keys=True, indent=2, allow_nan=False))
     return 0
 
 
 if __name__ == '__main__':
-    try: raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except CapabilityRefusal as exc:
+        print(json.dumps(dict(error=exc.message, code=exc.code)))
+        raise SystemExit(2)
     except (ValueError, OSError) as exc:
-        print(json.dumps(dict(error=str(exc))))
+        if isinstance(exc, OSError):
+            refusal = _reference_refusal(exc)
+            print(json.dumps(dict(error=refusal.message, code=refusal.code)))
+        else:
+            print(json.dumps(dict(error='Admission input did not match its contract',
+                                  code='CONTINUITY_CAPABILITY_INPUT')))
         raise SystemExit(2)
