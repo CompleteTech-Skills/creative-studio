@@ -47,6 +47,8 @@ promotion adds a warning to the returned report, and the verified bundle stays
 published. Only owned staging contents are cleaned. The empty wrappers remain for
 owned maintenance under the shared publication contract. Other platforms receive
 a typed unsupported diagnostic when that adapter is unavailable.
+CLI failures include the typed error code and a path-free message. The Python
+API provides the original structured error details.
 
 Decoded source geometry is limited to 12,000 vertices and 24,000 triangles
 across the four assets. The complete bundle, including the registry and native

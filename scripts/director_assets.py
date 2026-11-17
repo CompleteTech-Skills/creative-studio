@@ -363,7 +363,9 @@ def _main(argv=None):
     try:
         print(json.dumps(build_assets(args.destination, seed=args.seed), indent=2))
     except RigError as exc:
-        print(json.dumps({'status': 'failed', 'diagnostic': exc.report}))
+        diagnostic = {'code': exc.report['code'],
+                      'message': 'Asset generation or publication could not complete. Use the error code to diagnose the failure.'}
+        print(json.dumps({'status': 'failed', 'diagnostic': diagnostic}))
         return 1
     except OSError:
         diagnostic = {'code': 'DIRECTOR_ASSET_IO',

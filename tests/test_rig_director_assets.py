@@ -298,3 +298,18 @@ class DirectorAssetTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertEqual(json.loads(output.getvalue())['diagnostic']['code'], 'DIRECTOR_ASSET_IO')
         self.assertNotIn(str(self.parent), output.getvalue())
+
+    def test_cli_wrapped_io_failure_preserves_code_without_private_details(self):
+        private_path = str(self.parent/'private')
+        cause = OSError(13, 'Permission denied', private_path)
+        failure = RigError('LIBRARY_STORAGE', str(cause), asset=private_path, preserved=private_path)
+        failure.__cause__ = cause
+        output = io.StringIO()
+        with patch.object(da, 'build_assets', side_effect=failure), redirect_stdout(output):
+            result = da._main(['--destination', str(self.parent/'unused'), '--seed', '42'])
+        self.assertEqual(result, 1)
+        diagnostic = json.loads(output.getvalue())['diagnostic']
+        self.assertEqual(diagnostic['code'], 'LIBRARY_STORAGE')
+        self.assertEqual(set(diagnostic), {'code', 'message'})
+        self.assertNotIn(private_path, output.getvalue())
+        self.assertNotIn('Permission denied', output.getvalue())
