@@ -159,7 +159,8 @@ def blend_reader(blender):
     return '''import json
 from rig_import import load_character_model
 a=load_character_model('triangle.blend',blender=%r)
-print('DIRECTOR_PROBE='+json.dumps({'vertices':a.geometry.vertex_count,'triangles':a.geometry.triangle_count}))
+print('DIRECTOR_PROBE='+json.dumps({'vertices':a.geometry.vertex_count,'triangles':a.geometry.triangle_count,
+ 'importing_blender_version':a.report['blender']['blender_version']}))
 ''' % str(blender)
 
 

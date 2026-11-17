@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import director_capabilities as cap
+import director_contracts
 import director_inventory as inventory
 from rig_errors import RigError, object_hash
 from test_director_capabilities import request
@@ -33,6 +34,26 @@ class InventoryTests(unittest.TestCase):
                 for field in ('backend', 'supported_formats', 'supported_operations',
                               'required_permissions', 'performance', 'policy_limits'):
                     self.assertIn(field, receipt)
+
+    def test_dependency_observation_cannot_substitute_for_execution(self):
+        if not director_contracts.artifact_reads_supported():
+            self.skipTest('exact receipt comparisons need secure Director artifact reads')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()/'evidence'
+            result = cap.probe(request(['runtime.python']), root)
+            receipt = self.receipt(root, result, 'runtime.python')
+            self.assertIn('python', receipt['dependencies'])
+            self.assertIn('python_version', receipt['dependencies'])
+            self.assertEqual(receipt['dependency_fingerprint'], object_hash(receipt['dependencies']))
+            self.assertIsNone(receipt['version'])
+
+            snapshot = result['value']
+            snapshot['capabilities'][0].update(status='available', execution_verified=True)
+            snapshot['digest'] = object_hash({key: value for key, value in snapshot.items()
+                                              if key != 'digest'})
+            with self.assertRaises(RigError) as error:
+                cap.assert_admission(snapshot, ['runtime.python'], evidence_root=root)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_EVIDENCE')
 
     def test_actual_interpreter_and_destination_filesystem_are_measured(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -82,7 +103,7 @@ class InventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.object(inventory, 'memory_observation', return_value=observation):
             root = Path(directory).resolve()/'evidence'
             result = cap.probe(request(['resource.memory'], ['resource.memory']), root)
-            if not (hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+            if not (director_contracts.artifact_reads_supported()):
                 with self.assertRaises(RigError) as error:
                     cap.assert_admission(result, ['resource.memory'], evidence_root=root)
                 self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
@@ -147,7 +168,7 @@ class InventoryTests(unittest.TestCase):
                     probe_evidence=[reference])],
                     expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
                 snapshot['digest'] = object_hash(snapshot)
-                if not (hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+                if not (director_contracts.artifact_reads_supported()):
                     with self.assertRaises(RigError) as error:
                         cap.assert_admission(snapshot, [operation], evidence_root=root)
                     self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
@@ -219,10 +240,25 @@ class PublicationTests(unittest.TestCase):
     def test_publication_lands_in_pinned_parent_without_worker_scratch(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()/'proof'
-            result = cap.probe(request(['importer.obj'], ['importer.obj']), root)
+            result = cap.probe(request(['runtime.python'], ['runtime.python']), root)
             self.assertTrue(result['value']['capabilities'][0]['execution_verified'], result['diagnostics'])
             names = {p.relative_to(root).parts[0] for p in root.rglob('*')}
             self.assertEqual(names, {'payloads', 'receipts', 'result.json'})
+            receipt = json.loads((root/result['artifacts'][0]['path']).read_bytes())
+            self.assertEqual(receipt['execution']['version'], receipt['version'])
+            self.assertEqual(receipt['version_scope'], 'reported-during-probe')
+            self.assertEqual(list((root/'payloads').iterdir()), [])
+
+    def test_publication_does_not_admit_without_secure_reader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()/'proof'
+            result = cap.probe(request(['runtime.python'], ['runtime.python']), root)
+            self.assertTrue((root/'result.json').is_file())
+            self.assertTrue(result['value']['capabilities'][0]['execution_verified'])
+            with patch.object(director_contracts, 'artifact_reads_supported', return_value=False), \
+                    self.assertRaises(RigError) as error:
+                cap.assert_admission(result, ['runtime.python'], evidence_root=root)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
 
 
 class InitializationTests(unittest.TestCase):
@@ -340,10 +376,36 @@ class MissingDependencyTests(unittest.TestCase):
                 self.assertIn(('geometry.provider', 'CAPABILITY_PRICE_UNKNOWN'), codes)
                 for receipt in receipts.values():
                     self.assertEqual(receipt['dependency_fingerprint'], object_hash(receipt['dependencies']))
+                    self.assertEqual(receipt['dependency_scope'], 'separately-observed-selected-dependencies')
                 evidence = _evidence_bytes(root)
                 self.assertNotIn(secret.encode(), evidence)
                 self.assertNotIn(str(base).encode(), evidence)
             self.assertEqual(fingerprints[0], fingerprints[1])
+
+    def test_codec_execution_does_not_get_version_from_separate_command(self):
+        import sys
+
+        def worker(argv, directory, timeout):
+            arguments = [str(value) for value in argv]
+            if '-count_frames' in arguments:
+                return {'success': True}, json.dumps({'streams': [
+                    {'codec_type': 'video', 'nb_read_frames': 1}]})
+            self.assertIn('libx264', arguments)
+            Path(argv[-1]).write_bytes(b'synthetic codec fixture')
+            return {'success': True}, ''
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(cap, '_worker', side_effect=worker) as run:
+            root = Path(directory).resolve()/'proof'
+            result = cap.probe(request(['codec.h264'], ['codec.h264']), root,
+                               configuration={'ffmpeg': sys.executable, 'ffprobe': sys.executable})
+            receipt = self.receipts(root, result)['codec.h264']
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(receipt['execution']['decoded_frames'], 1)
+            self.assertIsNone(receipt['version'])
+            self.assertIsNone(result['value']['capabilities'][0]['version'])
+            self.assertEqual(receipt['version_scope'], 'unknown')
+            self.assertEqual(receipt['dependency_fingerprint'], object_hash(receipt['dependencies']))
+            self.assertEqual(receipt['dependency_scope'], 'separately-observed-selected-dependencies')
 
     def test_missing_gpu_is_a_precise_diagnostic_with_explicit_fallback(self):
         import sys
@@ -375,7 +437,7 @@ class MissingDependencyTests(unittest.TestCase):
             source = (Path(directory)/'probe.py').read_text()
             self.assertIn('load_character_model', source)
             self.assertIn(repr(str(Path(sys.executable).resolve())), source)
-            return {'success': True, 'reason': None, 'exit_code': 0}, 'DIRECTOR_PROBE={"vertices": 3, "triangles": 1}\n'
+            return {'success': True, 'reason': None, 'exit_code': 0}, 'DIRECTOR_PROBE={"vertices": 3, "triangles": 1, "importing_blender_version": "4.5.4 LTS"}\n'
 
         with tempfile.TemporaryDirectory() as directory, patch.object(cap, '_worker', side_effect=worker):
             root = Path(directory).resolve()/'evidence'
@@ -383,7 +445,11 @@ class MissingDependencyTests(unittest.TestCase):
                                configuration={'blender': sys.executable})
             receipt = self.receipts(root, result)['importer.blend']
             self.assertTrue(receipt['execution_verified'], result['diagnostics'])
-            self.assertEqual(receipt['version'], '4.5.3 LTS')
+            self.assertIsNone(receipt['version'])
+            self.assertIsNone(result['value']['capabilities'][0]['version'])
+            self.assertEqual(receipt['version_scope'], 'unknown')
+            self.assertEqual(receipt['execution']['authoring_blender_version'], '4.5.3 LTS')
+            self.assertEqual(receipt['execution']['importing_blender_version'], '4.5.4 LTS')
             self.assertEqual(receipt['supported_formats'], ['BLEND'])
             self.assertEqual([p['media_type'] for p in receipt['payloads']], ['application/x-blender'])
             self.assertIn('rig_blender_worker.py', receipt['dependencies'])

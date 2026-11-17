@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime,timedelta,timezone
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -25,22 +26,56 @@ class NativeCapabilityTests(unittest.TestCase):
             self.assertEqual(geometry.vertex_count, receipt['execution']['vertices'])
             self.assertEqual(geometry.triangle_count, receipt['execution']['triangles'])
 
-    def test_real_blend_import_through_native_blender_worker(self):
+    def test_real_blender_capabilities(self):
+        required = os.environ.get('HATCH_DIRECTOR_BLENDER_TEST') == '1'
+        if required:
+            self.assertTrue(os.environ.get('HATCH_BLENDER'),
+                            'The required gate must configure the trusted Blender executable')
         if cap._executable('blender', {}) is None:
-            self.skipTest('Blender is not installed; importer.blend is covered by mocked worker tests')
+            if required:
+                self.fail('The configured Blender executable is unavailable')
+            self.skipTest('Blender is unavailable; worker orchestration has synthetic coverage')
+        from PIL import Image
         from rig_import import load_character_model
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()/'proof'
-            result = cap.probe(request(['importer.blend'], ['importer.blend']), root,
+
+        def verify(root):
+            operations = ['blender.cpu', 'blender.engines', 'importer.blend']
+            result = cap.probe(request(operations, operations), root,
                                configuration={'timeout_seconds': 120})
-            self.assertTrue(result['value']['capabilities'][0]['execution_verified'], result['diagnostics'])
-            receipt = json.loads((root/result['artifacts'][0]['path']).read_text())
-            self.assertEqual((receipt['execution']['vertices'], receipt['execution']['triangles']), (3, 1))
-            payload = receipt['payloads'][0]
+            self.assertTrue(all(entry['execution_verified'] for entry in
+                                result['value']['capabilities']), result['diagnostics'])
+            cap.assert_admission(result, operations, evidence_root=root)
+            receipts = {entry['operation']: json.loads((root/entry['probe_evidence'][0]['path']).read_bytes())
+                        for entry in result['value']['capabilities']}
+
+            render = receipts['blender.cpu']
+            self.assertEqual(render['execution']['device'], 'CPU')
+            self.assertEqual(render['version_scope'], 'reported-during-probe')
+            with Image.open(root/render['payloads'][0]['path']) as image:
+                image.load()
+                self.assertEqual(image.size, (8, 8))
+
+            engines = receipts['blender.engines']
+            self.assertIn('CYCLES', engines['execution']['engines'])
+            self.assertIs(engines['execution']['rendered'], False)
+            self.assertEqual(engines['version'], render['version'])
+
+            blend = receipts['importer.blend']
+            self.assertEqual((blend['execution']['vertices'], blend['execution']['triangles']), (3, 1))
+            self.assertEqual(blend['execution']['authoring_blender_version'], render['version'])
+            self.assertEqual(blend['execution']['importing_blender_version'], render['version'])
+            self.assertIsNone(blend['version'])
+            payload = blend['payloads'][0]
             self.assertEqual(payload['media_type'], 'application/x-blender')
-            cap.assert_admission(result, ['importer.blend'], evidence_root=root)
             geometry = load_character_model(root/payload['path']).geometry
             self.assertEqual((geometry.vertex_count, geometry.triangle_count), (3, 1))
+
+        retained = os.environ.get('HATCH_DIRECTOR_EVIDENCE') if required else None
+        if retained:
+            verify(Path(retained).absolute())
+        else:
+            with tempfile.TemporaryDirectory() as directory:
+                verify(Path(directory).resolve()/'proof')
 
     def test_three_real_native_importers_and_exact_evidence(self):
         operations=['importer.obj','importer.glb','importer.gltf']

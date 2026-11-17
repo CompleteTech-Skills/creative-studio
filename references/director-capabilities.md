@@ -84,8 +84,9 @@ configuration is an assertion supplied by the caller, never authenticated
 credential or live-provider proof. Unknown price is recorded as unknown.
 
 Worker probes have a separate timeout, bounded output, one compute thread,
-process-group termination, no stdin and a minimal environment without secrets.
-On POSIX they also have CPU/output/core limits. They execute only fixed trusted
+no stdin and a minimal environment without secrets. On POSIX they also have
+process-group termination and CPU/output/core limits. On Windows the worker
+timeout terminates the launched process. They execute only fixed trusted
 code in an owned temporary directory; failure text from executables is not
 copied into public receipts. Worker scratch directories live outside the
 evidence stage. Required files are hash-bound and published through the shared
@@ -93,14 +94,15 @@ evidence stage. Required files are hash-bound and published through the shared
 write (`pinned_directory`/`private_stage` on Linux, the descriptor-only
 `pinned_directory_fd`/`private_stage_fd` on other POSIX hosts, and the
 handle-pinned `atomic_windows` stage on Windows), and the payload is published
-by exclusive rename into that pinned directory. If the parent pathname was
-swapped for another directory between staging and publication, the probe
-refuses with `DIRECTOR_CAPABILITY_DESTINATION` and publishes nothing; on
-Windows the held handles prevent the swap. Hosts without one of these adapters
-fail closed with `DIRECTOR_CAPABILITY_PLATFORM`. A racing or existing destination
-is preserved. As in the shared primitive, an empty private `.director-probe-*`
-wrapper remains in the parent after publication. Retained payloads are
-explicitly synthetic engineering fixtures.
+by exclusive rename. On POSIX a parent identity check immediately before the
+rename reports `DIRECTOR_CAPABILITY_DESTINATION` if it detects a swap. The
+rename uses the held directory capability even if the public name changes
+after the check. On Windows the held handles prevent renaming the parent
+while publication is in progress. Hosts without a pinned publication adapter
+fail closed with `DIRECTOR_CAPABILITY_PLATFORM`. Exclusive rename preserves a
+racing or existing destination. The shared primitive retains an empty private
+`.director-probe-*` wrapper after successful publication. Retained payloads
+are synthetic engineering fixtures.
 
 The production admission policy defaults to 3,600 CPU/GPU seconds, 1.5 GiB RAM,
 1 GiB storage and zero provider calls. Callers may configure positive bounded
@@ -111,7 +113,12 @@ worker must enforce its own limits and measure execution separately.
 `assert_admission(snapshot_or_result, required_operations, evidence_root=...,
 resources=...)` verifies the capability snapshot digest and expiry, requires
 available/execution-verified operation entries, and requires the evidence root to check exact retained
-receipt/payload bytes. Resource estimates
+receipt/payload bytes. Admission uses the canonical secure descriptor-relative
+Director reader. A platform without that reader fails closed with
+`DIRECTOR_PLATFORM` even if it can publish receipts through another adapter.
+The Windows handle-pinned adapter currently covers publication. Windows
+end-to-end admission would require a secure Director reader and native tests.
+Resource estimates
 use the canonical budget keys (`max_cpu_seconds`, `max_memory_bytes`,
 `max_storage_bytes`, `max_provider_calls`, etc.) and must fit every required
 capability's policy. An expired snapshot, mutated payload, missing operation,
@@ -124,9 +131,21 @@ must establish that independently.
 The snapshot digest is the canonical `object_hash` of its value without the
 `digest` field, including its expiry. Each receipt separately records a stable
 dependency fingerprint over selected executable hashes, native source hashes
-and package versions. Reordered requests produce the same ordered capability
-entries and fingerprints; a new expiry intentionally changes the snapshot hash.
-Do not treat a receipt as a cryptographic signature or a production visual review.
+and installed package metadata. These observations are separate from execution
+and can include dependencies that a worker did not load. Version scope is
+recorded as reported during the probe, reported by an initialized component,
+a probe protocol label, or unknown. The codec smoke tests have an unknown
+execution version. The BLEND receipt records the versions reported during
+authoring and native import as separate execution details. The combined
+authoring/import operation has an unknown version. Matching receipt and snapshot versions verifies
+their recorded agreement. Admission evaluates the retained smoke test and
+its expiry. Establishing the identity of dependencies in the running process,
+their deployed versions, or the current execution host requires separate
+verification.
+Reordered requests produce the same ordered capability entries and
+fingerprints when the observed inputs stay the same. A new expiry changes the
+snapshot hash. Do not treat a receipt as a cryptographic signature or a
+production visual review.
 
 ```bash
 PYTHONPATH=scripts:tests python -m unittest test_director_capabilities -v
@@ -152,3 +171,9 @@ All 17 focused tests passed. The 14 ordinary tests also passed with optional
 3D imports blocked. Three native importer/evidence tests are registered only in
 the optional native schema/math gate, preserving the 2D dependency boundary.
 No provider calls or production film acceptance is claimed.
+
+The [November 17 inventory](../tests/results/director-inventory-20261117/verification.json)
+records the exact earlier revision it exercised. Its one-hour snapshot has
+expired. It includes the runtime, resource, PNG and real native geometry
+probes plus initialization-only results. It includes no execution evidence
+for Blender, codecs or providers.

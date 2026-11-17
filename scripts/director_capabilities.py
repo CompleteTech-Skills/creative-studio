@@ -198,9 +198,7 @@ def _codec_probe(ffmpeg, ffprobe, operation, directory, timeout):
         if not verified['success']:return verified
         streams=decode_json(text)['streams'];video=[s for s in streams if s['codec_type']=='video']
         _need(len(streams)==len(video)==1 and int(video[0]['nb_read_frames'])==1,'DECODE','Codec probe did not independently decode one silent frame.')
-        version_result,version_text=_worker([ffmpeg,'-version'],directory,timeout)
-        version=version_text.splitlines()[0].split()[2] if version_result['success'] and version_text.startswith('ffmpeg version ') else None
-        result.update(codec=codec[0],version=version,decoded_frames=1,audio_streams=0,output_sha256=sha256(output))
+        result.update(codec=codec[0],decoded_frames=1,audio_streams=0,output_sha256=sha256(output))
     return result
 
 
@@ -220,7 +218,7 @@ def _blend_import_probe(executable, directory, timeout):
     outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1',
                           '--python-exit-code','1','--python',author],directory,timeout)
     if not outcome['success']:return {**outcome,'reason':'blend-authoring-failed'}
-    version=_marker(text,'Missing Blender authoring result.').get('version')
+    author_version=_marker(text,'Missing Blender authoring result.').get('version')
     source=directory/'triangle.blend'
     _need(source.is_file() and not source.is_symlink(),'WORKER','Blender did not save the probe project.')
     reader=directory/'probe.py';reader.write_text(inventory.blend_reader(executable),encoding='utf-8')
@@ -228,7 +226,10 @@ def _blend_import_probe(executable, directory, timeout):
     if not outcome['success']:return {**outcome,'reason':'native-blend-import-failed'}
     value=_marker(text,'Missing native .blend import result.')
     _need(value.get('vertices')==3 and value.get('triangles')==1,'GEOMETRY','Native .blend import did not decode triangle geometry.')
-    outcome.update(vertices=3,triangles=1,version=version if isinstance(version,str) else None,
+    importer_version=value.get('importing_blender_version')
+    outcome.update(vertices=3,triangles=1,
+                   authoring_blender_version=author_version if isinstance(author_version,str) else None,
+                   importing_blender_version=importer_version if isinstance(importer_version,str) else None,
                    source_sha256=sha256(source),importer='rig_import.load_character_model',formats=['BLEND'])
     return outcome
 
@@ -323,8 +324,8 @@ def _same_parent(parent, parent_fd, pin):
         with pin(parent) as current:
             same=os.path.samestat(os.fstat(current),os.fstat(parent_fd))
     except (OSError,ValueError) as error:
-        raise RigError('DIRECTOR_CAPABILITY_DESTINATION','Evidence parent was replaced during probing; nothing was published.',stage='capability') from error
-    _need(same,'DESTINATION','Evidence parent was replaced during probing; nothing was published.')
+        raise RigError('DIRECTOR_CAPABILITY_DESTINATION','Evidence parent no longer named the pinned directory at the prepublication check.',stage='capability') from error
+    _need(same,'DESTINATION','Evidence parent no longer named the pinned directory at the prepublication check.')
 
 
 def _copy_tree_fd(source, parent_fd, name, depth=0):
@@ -504,8 +505,17 @@ def probe(request, evidence_root, *, configuration=None):
                 diagnostics.append(_diagnostic('CAPABILITY_PRICE_UNKNOWN',operation,'Provider price is unknown; admission requires explicit allowance and reservation.'))
             if operation=='blender.gpu' and not record['execution_verified']:record['fallback']='blender.cpu-requires-separate-probe-and-explicit-policy'
             record['dependency_fingerprint']=object_hash(record['dependencies'])
+            record['dependency_scope']='separately-observed-selected-dependencies'
             record['fixture']=True
             record['version']=version
+            if version is None:
+                record['version_scope']='unknown'
+            elif operation in inventory.INITIALIZED:
+                record['version_scope']='initialized-component'
+            elif operation in ('resource.memory', 'resource.storage', 'procedural.native') or operation.startswith('importer.'):
+                record['version_scope']='probe-protocol'
+            else:
+                record['version_scope']='reported-during-probe'
             record['policy_limits']={**deepcopy(LIMITS),**config.get('production_limits',{})}
             record['payloads']=payloads
             path=stage/'receipts'/(object_hash(record)+'.json');path.write_text(json.dumps(record,sort_keys=True,indent=2)+'\n',encoding='utf-8')
@@ -544,7 +554,11 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                      budget_reservation_id=None, allow_unknown_price=False,
                      budget_currency=None, budget_amount=None, paid_policy='deny', allowed_providers=(),
                      verified_provider_costs=None):
-    """Fail closed for missing/stale/unexecuted native capabilities or resources."""
+    """Verify retained smoke-test evidence and policy on a supported reader.
+
+    Admission checks recorded execution and expiry. It does not identify the
+    current dependencies, executing process, or execution host.
+    """
     _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
     if snapshot.get('kind')=='director-result':
         validate_method_result('CapabilityRegistry.probe',snapshot)
