@@ -19,13 +19,27 @@ jobs:
           mkdir -p foreground-inputs
           curl --fail --location --retry 2 https://download.pytorch.org/models/maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth -o foreground-inputs/model.pth
           echo 'bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0  foreground-inputs/model.pth' | sha256sum -c -
-          curl --fail --location --retry 2 https://www.cis.upenn.edu/~jshi/ped_html/PennFudanPed.zip -o foreground-inputs/data.zip
+          curl --fail --location --retry 2 --max-filesize 134217728 https://www.cis.upenn.edu/~jshi/ped_html/PennFudanPed.zip -o foreground-inputs/data.zip
           python - <<'PY'
+          from hashlib import sha256
           from pathlib import Path
           from zipfile import ZipFile
+
+          members = {
+              'PNGImages/FudanPed00001.png': '130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343',
+              'PedMasks/FudanPed00001_mask.png': '21ce5211d6745a43c0d1a31d2574810bb592971e1207b0b4a0b22e350daa6671',
+          }
+          limit = 8 * 1024 * 1024
           with ZipFile('foreground-inputs/data.zip') as archive:
-              for relative in ('PNGImages/FudanPed00001.png', 'PedMasks/FudanPed00001_mask.png'):
-                  Path('foreground-inputs', Path(relative).name).write_bytes(archive.read('PennFudanPed/' + relative))
+              for relative, expected in members.items():
+                  member = archive.getinfo('PennFudanPed/' + relative)
+                  if member.file_size > limit:
+                      raise ValueError('Foreground evaluation fixture exceeds the member budget')
+                  with archive.open(member) as source:
+                      data = source.read(limit + 1)
+                  if len(data) > limit or sha256(data).hexdigest() != expected:
+                      raise ValueError('Foreground evaluation fixture did not match the pinned digest')
+                  Path('foreground-inputs', Path(relative).name).write_bytes(data)
           PY
       - name: Strict contracts and actual model masks
         run: |
