@@ -1,0 +1,50 @@
+{
+  "backend": "local",
+  "dependencies": {
+    "Pillow": "13.0.0",
+    "inventory_source": "315b275fbf8fffd471a5c41f73a8e9620876c23b3ddc596335711f23ef066c31",
+    "jsonschema": "4.25.1",
+    "native_module": "7a318877c9b58581e6729479d23792f7388d40fb962d279c5294a3d24c3909ff",
+    "probe_source": "ede1752998119ebcd6f1261805f3bfbaad09c70c9f206d515cbfe1818aa1c6d7"
+  },
+  "dependency_fingerprint": "83e691a95f3e97f65158ec83504193c96e3035012275a0014242d7c499ec5409",
+  "discovered": true,
+  "execution": {
+    "call": "render3d_contracts.schemas",
+    "executed": false,
+    "exit_code": 0,
+    "initialization_only": true,
+    "reason": null,
+    "schemas_checked": 6,
+    "success": true,
+    "version": "1.0.0"
+  },
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "module.render3d",
+  "payloads": [],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "initialized-not-executed",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "untested",
+  "supported_formats": [],
+  "supported_operations": [
+    "module.render3d"
+  ],
+  "version": "1.0.0"
+}

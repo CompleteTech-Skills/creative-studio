@@ -1,0 +1,285 @@
+{
+  "capabilities": {
+    "blender.cpu": [
+      "unavailable",
+      false
+    ],
+    "blender.engines": [
+      "unavailable",
+      false
+    ],
+    "blender.gpu": [
+      "unavailable",
+      false
+    ],
+    "format.image": [
+      "available",
+      true
+    ],
+    "importer.blend": [
+      "unavailable",
+      false
+    ],
+    "importer.glb": [
+      "available",
+      true
+    ],
+    "importer.gltf": [
+      "available",
+      true
+    ],
+    "importer.obj": [
+      "available",
+      true
+    ],
+    "module.animation3d": [
+      "untested",
+      false
+    ],
+    "module.camera3d": [
+      "untested",
+      false
+    ],
+    "module.editor3d": [
+      "untested",
+      false
+    ],
+    "module.lookdev3d": [
+      "untested",
+      false
+    ],
+    "module.render3d": [
+      "untested",
+      false
+    ],
+    "module.scene3d": [
+      "untested",
+      false
+    ],
+    "native.acquisition": [
+      "untested",
+      false
+    ],
+    "planning.provider": [
+      "unavailable",
+      false
+    ],
+    "procedural.native": [
+      "available",
+      true
+    ],
+    "resource.memory": [
+      "available",
+      true
+    ],
+    "resource.storage": [
+      "available",
+      true
+    ],
+    "runtime.python": [
+      "available",
+      true
+    ]
+  },
+  "diagnostics": [
+    [
+      "blender.cpu",
+      "CAPABILITY_MISSING_BLENDER"
+    ],
+    [
+      "blender.engines",
+      "CAPABILITY_MISSING_BLENDER"
+    ],
+    [
+      "blender.gpu",
+      "CAPABILITY_MISSING_BLENDER"
+    ],
+    [
+      "importer.blend",
+      "CAPABILITY_MISSING_BLENDER"
+    ],
+    [
+      "module.animation3d",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "module.camera3d",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "module.editor3d",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "module.lookdev3d",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "module.render3d",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "module.scene3d",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "native.acquisition",
+      "CAPABILITY_INITIALIZED_NOT_EXECUTED"
+    ],
+    [
+      "planning.provider",
+      "CAPABILITY_MISSING_PLANNING_CREDENTIALS"
+    ],
+    [
+      "planning.provider",
+      "CAPABILITY_PRICE_UNKNOWN"
+    ]
+  ],
+  "discovery_only": [
+    "blender.cpu",
+    "blender.gpu",
+    "blender.engines",
+    "importer.blend",
+    "planning.provider"
+  ],
+  "executed_head": "9e578ebcf708d75faf8c84e8028a9a9e361ab5f6",
+  "files": {
+    "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj": {
+      "bytes": 32,
+      "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+    },
+    "payloads/707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913.glb": {
+      "bytes": 588,
+      "sha256": "707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913"
+    },
+    "payloads/70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526.png": {
+      "bytes": 77,
+      "sha256": "70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526"
+    },
+    "payloads/771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1.gltf": {
+      "bytes": 617,
+      "sha256": "771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1"
+    },
+    "payloads/ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5.glb": {
+      "bytes": 42212,
+      "sha256": "ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5"
+    },
+    "receipts/0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54.json": {
+      "bytes": 1449,
+      "sha256": "1cb1c5184921b645f46d93f658ac4d8524749a09615319e28ef52d285fb65ea0"
+    },
+    "receipts/18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715.json": {
+      "bytes": 1396,
+      "sha256": "43cd782f294268db696134d14dc353b2fbff20c426131b7418c337f0734b7c36"
+    },
+    "receipts/20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d.json": {
+      "bytes": 4317,
+      "sha256": "2c51a56bcc1417db4db3b9d90932c7c1aa530d0959f4053914644322f450cb79"
+    },
+    "receipts/2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a.json": {
+      "bytes": 5084,
+      "sha256": "0061bcf6a3623a4a3f19237fb5b8e283c2b262284a35875f02fa308954f63055"
+    },
+    "receipts/29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759.json": {
+      "bytes": 1392,
+      "sha256": "ec52404d7979a395005e0407102dda371a45a8d2f3e142521b536e39f6ad2f6b"
+    },
+    "receipts/3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64.json": {
+      "bytes": 1125,
+      "sha256": "2cebc17f02b977c4d7d0fa763d2d40a6e9b66c758c83e09ccb69783739c7bf47"
+    },
+    "receipts/437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced.json": {
+      "bytes": 5354,
+      "sha256": "64b86c6163366b65391594b9c3c4aaa917f82c865291826231aceeb28e5b9316"
+    },
+    "receipts/43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27.json": {
+      "bytes": 1894,
+      "sha256": "2bc57b896d31a03ae15b2a88d58a4a93be0c0e5fbd84c74026b08135d23d45dd"
+    },
+    "receipts/6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770.json": {
+      "bytes": 1387,
+      "sha256": "1d35c0671786716f3780e0bc407d334a232d7ddee481aed8300d4a1ea5540e7d"
+    },
+    "receipts/7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603.json": {
+      "bytes": 1008,
+      "sha256": "ac46e85dc8b83781e9f7de46823bd9e5ba217c59fcf55b9138a7b55b0aaa7b33"
+    },
+    "receipts/8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc.json": {
+      "bytes": 1477,
+      "sha256": "98915c8ca2186dfdf5c82cf3ade99383baeff7ba3ff6720c59d5163581b40708"
+    },
+    "receipts/8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957.json": {
+      "bytes": 5092,
+      "sha256": "6461b5862ae1ce3865df47efb55d64006d3ae8916deeec69d249a2ca20d8dd29"
+    },
+    "receipts/98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe.json": {
+      "bytes": 1016,
+      "sha256": "14203401d2f626af03ac177cf3f9469a2b6f1684ac7489f95098105657b1fde1"
+    },
+    "receipts/9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96.json": {
+      "bytes": 1425,
+      "sha256": "8f1c24fba4bf4b3e1eb5f998cbec2d49da2f546f0331b29ef72193da1e3dbbc9"
+    },
+    "receipts/a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800.json": {
+      "bytes": 1387,
+      "sha256": "a757b633ead2c2feb6d697bd0f7f09df14ea8c8e682837f799881ed65d26aab5"
+    },
+    "receipts/ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6.json": {
+      "bytes": 1475,
+      "sha256": "42c6c372f8a8aaee8db447ac04f44b0f33259b770b408e457075a4ecbfdccd3e"
+    },
+    "receipts/b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c.json": {
+      "bytes": 5094,
+      "sha256": "e6920e89b60fbaf26231b5b14fd49e20a3a27a5f394c2ab3f4c8b75095b7b5cf"
+    },
+    "receipts/b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7.json": {
+      "bytes": 1383,
+      "sha256": "cfa2bfd4de27942e15039b517cf107008353dc7e70fc5e2e0fb79204a83c1da3"
+    },
+    "receipts/d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e.json": {
+      "bytes": 1061,
+      "sha256": "7ac72c14874e718d25b44c0c8c72e6d3607c1314bce7ac449874e1944a116df2"
+    },
+    "receipts/ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0.json": {
+      "bytes": 1392,
+      "sha256": "5a0beffdfdbd106eef3bd012c5d0c52c1fae0f17c3aedeec80a8e58bdce3428c"
+    },
+    "result.json": {
+      "bytes": 60217,
+      "sha256": "d5d3fd51fe48bbe68143edf288f8ddf25d40b6c15a246d0d3bec2ee26c28cb60"
+    }
+  },
+  "implementation": {
+    "scripts/director_capabilities.py": "ede1752998119ebcd6f1261805f3bfbaad09c70c9f206d515cbfe1818aa1c6d7",
+    "scripts/director_inventory.py": "315b275fbf8fffd471a5c41f73a8e9620876c23b3ddc596335711f23ef066c31"
+  },
+  "kind": "director-capability-inventory-execution",
+  "limitations": [
+    "No Blender run on this host (Blender absent; blender.* and importer.blend record missing-blender); hosted CI covers native Blender gates",
+    "No remote provider execution; planning.provider is discovery-only",
+    "Module and native.acquisition probes are dry initialization only, never execution verification",
+    "Host memory/free filesystem observations are transient, not reservations or quota guarantees",
+    "Procedural geometry and triangles are synthetic engineering fixtures, not artistic approval",
+    "Retained one-hour snapshot expires and cannot authorize future execution"
+  ],
+  "local_probes": [
+    "runtime.python",
+    "resource.memory",
+    "resource.storage",
+    "format.image",
+    "procedural.native",
+    "importer.obj",
+    "importer.glb",
+    "importer.gltf",
+    "module.scene3d",
+    "module.camera3d",
+    "module.lookdev3d",
+    "module.animation3d",
+    "module.render3d",
+    "module.editor3d",
+    "native.acquisition"
+  ],
+  "platform": "linux",
+  "python": "3.12.15",
+  "schema_version": 1
+}
