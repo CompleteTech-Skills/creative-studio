@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "kind": "director-result",
+  "method": "CapabilityRegistry.probe",
+  "status": "succeeded",
+  "operation_id": "CapabilityRegistry-probe-fixture",
+  "input_digest": "4cfef21662aafa47f9168fdbb20d0bce073c4c549a4ebcd68282c8a71a935df6",
+  "value": {
+    "capabilities": [
+      {
+        "operation": "importer.obj",
+        "version": "native-rig-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+            "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689",
+            "byte_size": 4696,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": [
+              {
+                "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+                "kind": "capability-probe-evidence",
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+                "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+                "byte_size": 32,
+                "media_type": "text/plain",
+                "provenance_ref": null,
+                "fixture": true,
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "execution_verified": true
+      }
+    ],
+    "expires_at": "2026-11-13T03:55:08.045388+00:00",
+    "digest": "784a0b2417fc625de5417ea77f0425f9c6e44affeae412b1a48d5fb7e8edba93"
+  },
+  "artifacts": [
+    {
+      "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+      "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689",
+      "byte_size": 4696,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "usage": {
+    "classification": "unavailable",
+    "provider_calls": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "input_tokens": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "output_tokens": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "cpu_seconds": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "gpu_seconds": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "storage_bytes": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "amount": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "currency": null,
+    "measurement_source": "director-local-probe-v1"
+  },
+  "provenance_receipts": [
+    {
+      "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+      "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689",
+      "byte_size": 4696,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    }
+  ]
+}

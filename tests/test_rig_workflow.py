@@ -1,5 +1,7 @@
 from copy import deepcopy
+from contextlib import contextmanager
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +24,78 @@ from rig_states import map_states
 
 class RigWorkflowTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
+    def test_load_rig_retains_explicit_directory_authority_after_root_replacement(self):
+        from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
+        original=self.rig.root
+        fd=os.open(original,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(fd) as cap:
+                original.rename(original.with_name('retained'));original.mkdir()
+                (original/'rig.json').write_text('{}')
+                loaded=load_rig(cap.path)
+                self.assertEqual(loaded.root,cap.path)
+                self.assertEqual(rig_signature(loaded.manifest),rig_signature(self.rig.manifest))
+                self.assertEqual((original/'rig.json').read_text(),'{}')
+        finally:os.close(fd)
+
+    def test_model_readers_retain_explicit_parent_authority(self):
+        from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
+        from rig_gltf import read_gltf
+        from rig_obj import import_obj
+        root=Path(self.temp.name)/'models';root.mkdir()
+        (root/'model.gltf').write_text('{"asset":{"version":"2.0"}}')
+        (root/'model.obj').write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(fd) as cap:
+                root.rename(root.with_name('retained-models'));root.mkdir()
+                (root/'model.gltf').write_text('{}');(root/'model.obj').write_text('foreign')
+                gltf=read_gltf(cap.path/'model.gltf')
+                obj=import_obj(cap.path/'model.obj')
+                self.assertEqual(gltf.path,cap.path/'model.gltf')
+                self.assertEqual(gltf.json['asset']['version'],'2.0')
+                self.assertEqual(len(obj.geometry.meshes),1)
+                self.assertEqual(obj.geometry.meshes[0].positions.tolist(),[[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]])
+        finally:os.close(fd)
+
+    def test_create_run_and_job_lock_retain_scoped_source_and_destination(self):
+        from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
+        import shutil
+        root=Path(self.temp.name)/'stage';root.mkdir()
+        source=self.rig.root/self.rig.manifest['source']['path']
+        expected=source.read_bytes();shutil.copyfile(source,root/'model.glb')
+        fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(fd) as cap:
+                root.rename(root.with_name('retained-stage'));root.mkdir()
+                (root/'model.glb').write_bytes(b'foreign')
+                created=create_run(cap.path/'model.glb',cap.path/'imported',fixture=True)
+                self.assertEqual(created.root,cap.path/'imported')
+                self.assertEqual((created.root/created.manifest['source']['path']).read_bytes(),expected)
+                self.assertFalse((root/'imported').exists())
+                self.assertEqual((root/'model.glb').read_bytes(),b'foreign')
+                with job_lock(created.root):
+                    with self.assertRaises(RigError) as caught:
+                        with job_lock(created.root):self.fail('concurrent writer admitted')
+                self.assertEqual(caught.exception.report['code'],'RIG_BUSY')
+                self.assertEqual(load_rig(created.root).manifest['id'],created.manifest['id'])
+        finally:os.close(fd)
+
     def correction(self,edits):
         r=self.rig;return dict(schema_version=1,kind='hatch-3d-rig-correction',rig_id=r.manifest['id'],rig_version=r.manifest['version'],
             expected_sha256=rig_signature(r.manifest),author='unit fixture',reason='Explicit test correction',created_at=timestamp(),edits=edits)
@@ -32,7 +106,8 @@ class RigWorkflowTests(unittest.TestCase):
     def test_hash_consistent_malformed_identity_has_structured_diagnostics(self):
         original=read_json(self.rig.root/'identity.json')
         malformed=[{},[],None,dict(original,schema_version=2),dict(original,fixture=1),
-                   dict(original,import_scale=True),dict(original,import_scale=-1),
+                   dict(original,import_scale=False),dict(original,import_scale=-1),
+                   dict(original,import_scale=10001),dict(original,import_scale='1'),
                    dict(original,coordinate_system={}),dict(original,attribution='')]
         for value in malformed:
             with self.subTest(value=value):
@@ -42,6 +117,36 @@ class RigWorkflowTests(unittest.TestCase):
                 atomic_json(self.rig.root/'rig.json',manifest)
                 with self.assertRaises(RigError) as caught:load_rig(self.rig.root)
                 self.assertEqual(caught.exception.report['code'],'RIG_IDENTITY_SCHEMA')
+    def test_historical_unit_scale_remains_hash_bound(self):
+        root = self.rig.root
+        path = root/'identity.json'
+        identity = read_json(path)
+        identity['import_scale'] = True
+        atomic_json(path, identity)
+        original_bytes = path.read_bytes()
+        with self.assertRaises(RigError) as caught:
+            load_rig(root)
+        self.assertEqual(caught.exception.report['code'], 'RIG_IDENTITY_CHANGED')
+
+        manifest = deepcopy(self.rig.manifest)
+        manifest['character']['identity_sha256'] = sha256(path)
+        atomic_json(root/'rig.json', manifest)
+        self.assertEqual(load_rig(root).manifest, manifest)
+        self.assertEqual(path.read_bytes(), original_bytes)
+
+    def test_writer_persists_numeric_unit_scale_for_true(self):
+        source = self.rig.root/self.rig.manifest['source']['path']
+        root = Path(self.temp.name)/'unit-scale'
+        with self.assertRaises(RigError) as caught:
+            create_run(source, root, scale=False)
+        self.assertEqual(caught.exception.report['code'], 'RIG_SCALE')
+        self.assertFalse(root.exists())
+
+        created = create_run(source, root, scale=True)
+        scale = read_json(root/'identity.json')['import_scale']
+        self.assertIs(type(scale), int)
+        self.assertEqual(scale, 1)
+        self.assertEqual(load_rig(root).manifest, created.manifest)
     def test_strict_schema_rejects_unknown_and_nonfinite(self):
         for mutate in (lambda v:v.update(extra=True),lambda v:v['skeleton']['bones'][0]['head'].__setitem__(0,float('nan'))):
             value=deepcopy(self.rig.manifest);mutate(value)
@@ -88,6 +193,165 @@ class RigWorkflowTests(unittest.TestCase):
         with zipfile.ZipFile(Path(self.temp.name)/'bad.zip','w') as z:z.writestr('../escape','bad')
         with self.assertRaises(RigError):restore_rig(Path(self.temp.name)/'bad.zip',Path(self.temp.name)/'bad')
         self.assertFalse((Path(self.temp.name)/'escape').exists())
+    def test_package_preserves_existing_destination(self):
+        destination = Path(self.temp.name) / 'existing.zip'
+        destination.write_bytes(b'user-owned archive')
+        before = destination.stat()
+        with self.assertRaises(RigError) as error:
+            package_rig(self.rig.root, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_EXISTS')
+        self.assertEqual(destination.read_bytes(), b'user-owned archive')
+        self.assertEqual(destination.stat().st_ino, before.st_ino)
+
+    def test_package_exclusive_publication_preserves_racing_file(self):
+        destination = Path(self.temp.name) / 'racing.zip'
+        original = rig_package._rename_no_replace
+        def race(stage, target):
+            if Path(target) == destination:
+                target.write_bytes(b'concurrent writer')
+            return original(stage, target)
+        with patch.object(rig_package, '_rename_no_replace', side_effect=race):
+            with self.assertRaises(FileExistsError):
+                package_rig(self.rig.root, destination)
+        self.assertEqual(destination.read_bytes(), b'concurrent writer')
+        self.assertFalse(list(Path(self.temp.name).glob('.rig-package-*')))
+
+    def test_package_holds_run_writer_lock(self):
+        with job_lock(self.rig.root):
+            with self.assertRaises(RigError) as error:
+                package_rig(self.rig.root, Path(self.temp.name) / 'busy.zip')
+        self.assertEqual(error.exception.report['code'], 'RIG_BUSY')
+
+    def test_package_rejects_source_change_after_inventory(self):
+        extra = self.rig.root / 'extra.bin'
+        extra.write_bytes(b'original')
+        original = rig_package._write_package_entry
+        def changed(archive, root, entry):
+            if entry['path'] == 'extra.bin':
+                extra.write_bytes(b'modified')
+            return original(archive, root, entry)
+        destination = Path(self.temp.name) / 'changed.zip'
+        with patch.object(rig_package, '_write_package_entry', side_effect=changed):
+            with self.assertRaises(RigError) as error:
+                package_rig(self.rig.root, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_CHANGED')
+        self.assertFalse(destination.exists())
+        self.assertFalse(list(Path(self.temp.name).glob('.rig-package-*')))
+
+    def test_package_rejects_new_file_during_capture(self):
+        original = rig_package._write_package_entry
+        def changed(archive, root, entry):
+            result = original(archive, root, entry)
+            (root / 'racing-addition.bin').write_bytes(b'new')
+            return result
+        destination = Path(self.temp.name) / 'changed.zip'
+        with patch.object(rig_package, '_write_package_entry', side_effect=changed):
+            with self.assertRaises(RigError) as error:
+                package_rig(self.rig.root, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_CHANGED')
+        self.assertFalse(destination.exists())
+
+    def test_package_streams_payloads_and_is_deterministic(self):
+        extra = self.rig.root / 'large.bin'
+        extra.write_bytes(b'bounded streaming payload' * 100000)
+        original = Path.read_bytes
+        def read(path):
+            self.assertNotEqual(path, extra, 'Archive payload must be streamed')
+            return original(path)
+        first, second = (Path(self.temp.name) / name for name in ('one.zip', 'two.zip'))
+        with patch.object(Path, 'read_bytes', read):
+            package_rig(self.rig.root, first)
+            package_rig(self.rig.root, second)
+        self.assertEqual(sha256(first), sha256(second))
+        restored = Path(self.temp.name) / 'streamed'
+        restore_rig(first, restored)
+        self.assertEqual(sha256(extra), sha256(restored / 'large.bin'))
+
+    def test_package_rejects_special_files_without_blocking(self):
+        if not hasattr(os, 'mkfifo'):
+            self.skipTest('POSIX named pipes are unavailable')
+        os.mkfifo(self.rig.root / 'fifo')
+        with self.assertRaises(RigError) as error:
+            package_rig(self.rig.root, Path(self.temp.name) / 'pipe.zip')
+        self.assertEqual(error.exception.report['code'], 'RIG_MISSING_ASSET')
+
+    def test_restore_rejects_malformed_inventory_with_structured_error(self):
+        values = [[], {'schema_version': True, 'kind': 'hatch-3d-rig-package',
+                       'rig_sha256': '0' * 64, 'files': []},
+                  {'schema_version': 1, 'kind': 'hatch-3d-rig-package',
+                   'rig_sha256': '0' * 64, 'files': [None]},
+                  {'schema_version': 1, 'kind': 'hatch-3d-rig-package',
+                   'rig_sha256': '0' * 64, 'files': [{'path': 1, 'sha256': '0' * 64, 'bytes': 0}]}]
+        for index, value in enumerate(values):
+            archive = Path(self.temp.name) / ('bad-inventory-%s.zip' % index)
+            with zipfile.ZipFile(archive, 'w') as output:
+                output.writestr('inventory.json', json.dumps(value))
+            with self.subTest(value=value), self.assertRaises(RigError) as error:
+                restore_rig(archive, Path(self.temp.name) / ('bad-restore-%s' % index))
+            self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
+
+    def test_package_directory_scan_stops_at_budget(self):
+        root = Path(self.temp.name) / 'many-files'
+        root.mkdir()
+        for index in range(100):
+            (root / str(index)).write_bytes(b'')
+        original = os.scandir
+        consumed = []
+        @contextmanager
+        def counted(path):
+            with original(path) as entries:
+                def iterate():
+                    for entry in entries:
+                        consumed.append(entry.name)
+                        yield entry
+                yield iterate()
+        limits = dict(self.rig.manifest['limits'], archive_files=2)
+        with patch.object(rig_package.os, 'scandir', counted):
+            with self.assertRaises(RigError) as error:
+                rig_package._package_entries(root, limits)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_LIMIT')
+        self.assertLessEqual(len(consumed), 3)
+
+    def test_restore_rejects_aliased_inventory_name(self):
+        archive = Path(self.temp.name) / 'aliased-inventory.zip'
+        with zipfile.ZipFile(archive, 'w') as output:
+            output.writestr('INVENTORY.JSON', '{}')
+        with self.assertRaises(RigError) as error:
+            restore_rig(archive, Path(self.temp.name) / 'aliased-restore')
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
+
+    def test_restore_bounds_inventory_before_decompression(self):
+        archive = Path(self.temp.name) / 'oversized-inventory.zip'
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as output:
+            output.writestr('inventory.json', b' ' * 65)
+        with patch.object(rig_package, 'MAX_JSON_BYTES', 64):
+            with self.assertRaises(RigError) as error:
+                restore_rig(archive, Path(self.temp.name) / 'too-large')
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
+
+    def test_repeated_demo_verification_preserves_retained_archives(self):
+        import verify_rig_demos
+        root = Path(self.temp.name) / 'demo-verification'
+        root.mkdir()
+        for name in ('humanoid-retarget', 'quadruped-retarget'):
+            fixture(root, name=name)
+        packages = root / 'packages'
+        packages.mkdir()
+        retained = packages / 'humanoid-retarget.zip'
+        retained.write_bytes(b'previous retained archive')
+        with patch.object(verify_rig_demos, 'ARCHETYPES', ()):
+            first = verify_rig_demos.verify(root, archives=True)
+            second = verify_rig_demos.verify(root, archives=True)
+        self.assertEqual(retained.read_bytes(), b'previous retained archive')
+        first_paths = [item['archive']['path'] for item in first['fixtures']]
+        second_paths = [item['archive']['path'] for item in second['fixtures']]
+        self.assertTrue(set(first_paths).isdisjoint(second_paths))
+        for report in (first, second):
+            for item in report['fixtures']:
+                path = root / item['archive']['path']
+                self.assertEqual(sha256(path), item['archive']['sha256'])
+                self.assertTrue(item['archive']['restored_and_evaluated'])
+
     def test_restore_rejects_dangling_destination_symlink_before_extraction(self):
         home = Path(self.temp.name)
         archive = home / 'rig.zip'

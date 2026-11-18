@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "continuity-identity",
+  "identity_id": "robot",
+  "namespace": "test",
+  "display_name": "Fixture robot",
+  "description": "Synthetic engineering fixture, not production art.",
+  "archetype": "robot",
+  "canonical_revision": null,
+  "visual_spec": {
+    "description": "fixture",
+    "constraints": [],
+    "approved_variations": [],
+    "default_pose": null,
+    "default_expressions": []
+  },
+  "permitted_variations": [],
+  "approved_costumes": [],
+  "rig_requirements": null,
+  "scale_m": 1,
+  "proportions": {},
+  "reference_images": [],
+  "provenance": {
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "attribution": "fixture",
+    "license": "fixture",
+    "created_at": "2026-10-24T00:00:00Z",
+    "native_receipts": []
+  },
+  "approval_status": "unreviewed",
+  "created_at": "2026-10-24T00:00:00Z"
+}

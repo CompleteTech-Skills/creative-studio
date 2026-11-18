@@ -1,0 +1,20 @@
+{
+  "reason": "Shorten historical evidence paths for Windows checkout without changing evidence bytes. Original records and embedded paths remain historical.",
+  "files": [
+    {
+      "original": "tests/results/scene3d-service-20261024/final-integration-823/independent/review-scene60-823-native-evidence/test_rig_scene3d_service.RealSceneImportTests.test_actual_imported_scene_clip_aliases_drive_reduced_motion/browser-mapped.json",
+      "relocated": "tests/results/scene3d-service-20261024/final-integration-823/independent/native-evidence/clip-aliases/browser-mapped.json",
+      "sha256": "6c81ebac255062768e6ab1a103400121d32fe944528ab839d31e34c4f13cdae8"
+    },
+    {
+      "original": "tests/results/scene3d-service-20261024/final-integration-823/independent/review-scene60-823-native-evidence/test_rig_scene3d_service.RealSceneImportTests.test_actual_imported_service_asset_blender_reopens_and_deforms/blender.json",
+      "relocated": "tests/results/scene3d-service-20261024/final-integration-823/independent/native-evidence/blender-reopen/blender.json",
+      "sha256": "284a22b0b99a318c44a1a1f31c61945fd163e3e75b87a50a6814f506fab451fd"
+    },
+    {
+      "original": "tests/results/scene3d-service-20261024/final-integration-823/independent/review-scene60-823-native-evidence/test_rig_scene3d_service.RealSceneImportTests.test_actual_imported_service_asset_threejs_vertex_comparison/browser-rest.json",
+      "relocated": "tests/results/scene3d-service-20261024/final-integration-823/independent/native-evidence/browser-vertices/browser-rest.json",
+      "sha256": "6d4e82c89549250140bed61149a1fae7b07d0124e829a0a555b87aba3f306304"
+    }
+  ]
+}
