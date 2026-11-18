@@ -136,23 +136,46 @@ def _worker(argv, directory, timeout):
         resource.setrlimit(resource.RLIMIT_CORE,(0,0))
         resource.setrlimit(resource.RLIMIT_FSIZE,(16*1024**2,16*1024**2))
         resource.setrlimit(resource.RLIMIT_CPU,(timeout,timeout+1))
-    with output.open('wb') as stream:
-        process=subprocess.Popen([str(a) for a in argv],cwd=directory,env=env,stdin=subprocess.DEVNULL,
-                                 stdout=stream,stderr=subprocess.STDOUT,start_new_session=os.name!='nt',
-                                 preexec_fn=limits if os.name=='posix' else None)
-        started=time.monotonic();reason=None
-        while process.poll() is None:
-            if time.monotonic()-started>timeout:reason='timeout'
-            elif output.stat().st_size>1024**2:reason='output-limit'
-            if reason:
-                if os.name=='posix':os.killpg(process.pid,signal.SIGKILL)
-                else:process.kill()
-                break
-            time.sleep(.02)
-        process.wait()
-    raw=output.read_bytes()[:1024**2];output.unlink()
-    if reason or process.returncode:
-        return {'success':False,'reason':reason or 'worker-failed','exit_code':process.returncode},''
+    process=None;reason=None
+    try:
+        with output.open('wb') as stream, ExitStack() as cleanup:
+            if os.name=='nt':
+                from director_worker_windows import WindowsJob
+                try:
+                    job=cleanup.enter_context(WindowsJob())
+                    process=job.start([str(a) for a in argv],directory,env,stream)
+                except OSError:
+                    reason='worker-containment-failed'
+            else:
+                process=subprocess.Popen([str(a) for a in argv],cwd=directory,env=env,stdin=subprocess.DEVNULL,
+                                         stdout=stream,stderr=subprocess.STDOUT,start_new_session=True,
+                                         preexec_fn=limits if os.name=='posix' else None)
+            started=time.monotonic()
+            if process is not None:
+                while process.poll() is None:
+                    if time.monotonic()-started>timeout:reason='timeout'
+                    elif output.stat().st_size>1024**2:reason='output-limit'
+                    if reason:
+                        if os.name=='posix':os.killpg(process.pid,signal.SIGKILL)
+                        elif os.name!='nt':process.kill()
+                        # WindowsJob closes on every exit, including exceptions
+                        # and normal completion with residual descendants.
+                        break
+                    time.sleep(.02)
+                if os.name!='nt':process.wait()
+        # ExitStack has terminated/drained the Windows job before reading or
+        # unlinking its output. Check fast writers that exited between polls.
+        if reason is None and output.stat().st_size>1024**2:reason='output-limit'
+        with output.open('rb') as stream:
+            raw=stream.read(1024**2)
+    except (OSError,subprocess.TimeoutExpired):
+        if os.name!='nt':raise
+        reason='worker-containment-failed';raw=b''
+    finally:
+        output.unlink(missing_ok=True)
+    exit_code=process.returncode if process is not None else None
+    if reason or exit_code:
+        return {'success':False,'reason':reason or 'worker-failed','exit_code':exit_code},''
     return {'success':True,'reason':None,'exit_code':0},raw.decode('utf-8','replace')
 
 

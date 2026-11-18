@@ -88,9 +88,21 @@ Invalid descriptors raise `DIRECTOR_CAPABILITY_CONFIG` before staging.
 
 Worker probes have a separate timeout, bounded output, one compute thread,
 no stdin and a minimal environment without secrets. On POSIX they also have
-process-group termination and CPU/output/core limits. On Windows the worker
-timeout terminates the launched process. They execute only fixed trusted
-code in an owned temporary directory; failure text from executables is not
+process-group termination and CPU/output/core limits. On Windows each worker
+tree belongs to a private native Job Object with kill-on-close and no breakaway
+permission. A trusted Python launcher starts with isolated/no-site flags and
+waits on a private parent gate; the requested tool cannot start until job
+assignment succeeds. The tool retains null stdin, the minimal environment and
+its own exit status. Timeout, output overflow, exceptions and normal completion
+all terminate remaining job descendants, including a native importer's Blender
+grandchild. Cleanup waits at most five seconds for the job to become empty and
+the launcher to exit. Job creation, configuration, assignment or cleanup failure
+fails the probe closed (`worker-containment-failed`); an incompatible enclosing
+Windows job is not permission to run without containment. The controller alone
+owns the non-inheritable job handle, so controller exit also terminates assigned
+descendants. These jobs are process-lifetime containment, not a filesystem or
+network sandbox. They execute only fixed trusted code in an owned temporary
+directory; failure text from executables is not
 copied into public receipts. Worker scratch directories live outside the
 evidence stage. Required files are hash-bound and published through the shared
 `atomic_publish` primitives. The pinned authority must match the parent directory
