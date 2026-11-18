@@ -331,7 +331,7 @@ class WorkflowTests(unittest.TestCase):
         data = build_run(self.root, validate=False)
         hatch.repair(self.root, data, 'rest', 'Fixture regeneration test.')
         handoff = hatch.claim(self.root, data, 'rest')
-        receipt = self.base / 'receipt.json'
+        receipt = self.base.resolve() / 'receipt.json'
         hatch.atomic(receipt, handoff)
         decoded = self.root / 'decoded/rest.png'
         before = decoded.read_bytes()
