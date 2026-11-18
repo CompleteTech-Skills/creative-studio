@@ -1,0 +1,58 @@
+name: Scene3D service native acceptance
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: scene3d-service-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  native-acceptance:
+    # Playwright 1.55 supports Ubuntu 24.04, not the new ubuntu-latest image.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: npm ci --ignore-scripts --prefix tools/rig
+      - run: python -m playwright install --with-deps chromium
+      - name: Install checksum-verified Blender 4.5.3
+        run: |
+          curl -fL --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz -o /tmp/blender.tar.xz
+          echo '975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845  /tmp/blender.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/blender.tar.xz -C /tmp
+      - name: Native source contracts and real interoperability
+        run: |
+          mkdir -p scene3d-evidence
+          git rev-parse HEAD | tee scene3d-evidence/head.txt
+          python scripts/generate_schemas.py --check 2>&1 | tee scene3d-evidence/schemas.log
+          python scripts/generate_rig_templates.py --check 2>&1 | tee scene3d-evidence/templates.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service -v 2>&1 | tee scene3d-evidence/service.log
+        env:
+          HATCH_SCENE3D_EVIDENCE: ${{ github.workspace }}/scene3d-evidence/native
+          HATCH_RIG_BLENDER_TEST: '1'
+          HATCH_RIG_BROWSER_TEST: '1'
+          HATCH_RIG_INTEROP_TEST: '1'
+          HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+      - name: Real robotic scene and portable snapshot
+        run: python scripts/demonstrate_scene3d_service.py --destination scene3d-evidence/demo 2>&1 | tee scene3d-evidence/demo.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: scene3d-service-evidence-${{ github.sha }}
+          path: scene3d-evidence/
+          retention-days: 14

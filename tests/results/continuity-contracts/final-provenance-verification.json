@@ -1,0 +1,29 @@
+{
+  "source_head": "ddbdcc1c18e215af52f0247053e8eed0498c0645",
+  "shared205_head": "91d14b8339eb16a6285969d9bc772b11bdfec3ec",
+  "completed_at": "2026-10-24T04:31:56.729824+00:00",
+  "python": "3.12.15",
+  "command": "PYTHONPATH=tests:scripts /tmp/hatch-continuity113-venv/bin/python -B -m unittest test_continuity_contracts -v",
+  "tests_run": 31,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "seconds": 5.193,
+  "log": {
+    "path": "tests/results/continuity-contracts/final-provenance-focused.log",
+    "sha256": "6e8ee9ff405841d5500f523730720e0d0f41380d209e9a1e6aa2ce0d9fa36556",
+    "byte_size": 5450
+  },
+  "crlf_proof": {
+    "path": "tests/results/continuity-contracts/final-provenance-crlf-proof.json",
+    "sha256": "794397ad84f898d0637b147efd7267b3b73d6aeebf688ffdb77085e12d7896a0",
+    "byte_size": 19896
+  },
+  "runtime_and_test_source_equal_reviewed_dd5a330": true,
+  "receipt_bound_sources_verified": 114,
+  "protected_checkout_files_verified": 32,
+  "schema_parity_native_linux": "passed",
+  "schema_parity_actual_core_autocrlf_checkout": "passed",
+  "actual_crlf_cli_fixture_validation": "passed",
+  "limits": "Actual Git CRLF conversion on Linux, not native Windows. No larger legacy suite rerun. Fresh exact-head model reviews and CI remain merge gates."
+}
