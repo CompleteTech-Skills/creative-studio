@@ -35,6 +35,16 @@ numbers fail with typed diagnostics. Progress/cancellation/time/storage checks
 are cooperative checkpoints, not sandboxing or process preemption. Adapters must
 bound native operations independently. File-fsync/atomic replacement supports
 process-exit recovery; no machine-power-loss durability claim is made.
+Before replacement, admission measures the exact indented UTF-8 JSON plus newline
+written by the existing atomic writer. An oversized stage result leaves the prior
+record readable for failure recording and explicit resume. Public identifiers are
+validated before constructing paths or taking locks, including JobContext IDs.
+Under the journal lock, inventory scans recognize only the atomic writer's exact
+record-temporary spelling, bounded size and single-link regular-file shape (plus
+private ownership/mode on POSIX). They retain those bytes without interpreting
+them as committed state or publication. Enumeration permits at most the configured
+job count plus 4096 retained temporaries; other entries, links or unsafe temporary
+shapes fail closed. No automatic cleanup deletes diagnostic evidence.
 
 Retained staged bytes are hash checked before reuse and publication. Even at the
 attempt ceiling, an authoritative published receipt can complete recovery without
@@ -51,7 +61,9 @@ Original test blob: `773ee7c3e6d359d4fdc29310c3d1f3a160b24267`.
 Fresh base: `e1258d26302d264c60dae017ef0617b251914540`.
 All 13 standalone source cases/assertions are retained in
 `tests/test_asset_library_job_journal.py`, with subprocess imports renamed and
-one additional numeric-limit regression. There are no new skips.
+six additional regression cases (numeric limits, persisted byte admission,
+atomic-write interruption, temporary recognition/bounds, and identifier safety).
+There are no new skips.
 The original 14-case suite and old branches/PRs are unchanged.
 The exact deferred case is
 `tests/test_asset_library_jobs.py::JobTests.test_actual_staged_library_verify_and_final_publication_keep_inventory`
@@ -61,7 +73,10 @@ that implementation is absent here. This is an explicit scope split, not passed
 native-integration evidence or removed coverage for delivered adapter code.
 
 Proposed commands: `PYTHONPATH=scripts:tests python -m unittest test_asset_library_job_journal -v`
-and `python scripts/test_rig_gate.py compatibility`. Both are **NOT RUN** locally:
+and `python scripts/test_rig_gate.py compatibility`. The suite now contains 19 cases, including a subprocess that exits after the
+atomic temporary is written but before replacement, then exercises reopened
+listing, unrelated publication and explicit interrupted-job resume. Both commands
+are **NOT RUN** locally:
 the executor is unavailable. Evidence is source inspection/API readback until
 exact-head hosted CI reports otherwise. The filename enters existing compatibility
 discovery. Full #150 still needs executed native interruptions/recovery, CLI/API

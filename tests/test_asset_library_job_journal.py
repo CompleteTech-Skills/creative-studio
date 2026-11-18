@@ -323,6 +323,124 @@ root=Path(sys.argv[1]);JobManager(root/'jobs').run('first',Blocking(root/'publis
                     return {}
             self.error('ASSET_JOB_PATH', lambda: self.manager.run('linked', Linked(self.root / 'published')))
 
+    def test_persisted_json_budget_preserves_recoverable_record(self):
+        self.manager.submit('preview', {'text': 'retained'}, key='oversized')
+        path = self.root / 'jobs/records/oversized.json'
+        before = path.read_bytes()
+        record = self.manager.status('oversized')
+        nested = [0] * 60000
+        for _ in range(10):
+            nested = [nested]
+        record['staged'] = {'data': {'nested': nested}, 'inventory': []}
+        self.assertLess(len(json.dumps(record).encode()), self.manager.limits['journal_bytes'])
+        encoded = (json.dumps(record, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode()
+        self.assertGreater(len(encoded), self.manager.limits['journal_bytes'])
+        self.error('ASSET_JOB_LIMIT', lambda: self.manager._write(record))
+        self.assertEqual(path.read_bytes(), before)
+        class Oversized(FileAdapter):
+            def stage(self, context):
+                super().stage(context)
+                return {'nested': nested}
+        self.error('ASSET_JOB_LIMIT', lambda: self.manager.run('oversized', Oversized(self.root / 'published')))
+        reopened = JobManager(self.root / 'jobs')
+        self.assertEqual(reopened.status('oversized')['status'], 'failed')
+        self.assertLessEqual(path.stat().st_size, reopened.limits['journal_bytes'])
+        reopened.resume('oversized')
+        self.assertEqual(reopened.run('oversized', self.adapter)['status'], 'published')
+
+    def test_process_exit_during_atomic_write_keeps_jobs_usable(self):
+        self.manager.submit('preview', {'text': 'interrupted write'}, key='crash-write')
+        code = """
+import json,os,sys
+from pathlib import Path
+import rig_errors
+from asset_library_jobs import JobManager
+from test_asset_library_job_journal import FileAdapter
+original_replace = rig_errors.os.replace
+def interrupted_replace(source, destination):
+ if Path(destination).name == 'crash-write.json' and json.loads(Path(source).read_text())['status'] == 'staged':
+  os._exit(74)
+ return original_replace(source, destination)
+rig_errors.os.replace = interrupted_replace
+root=Path(sys.argv[1])
+JobManager(root/'jobs').run('crash-write',FileAdapter(root/'published'))
+"""
+        child = subprocess.run([sys.executable, '-c', code, str(self.root)],
+                               check=False, env=child_environment(), timeout=15)
+        self.assertEqual(child.returncode, 74)
+        temporaries = list((self.root / 'jobs/records').glob('.crash-write.json-*.tmp'))
+        self.assertEqual(len(temporaries), 1)
+        retained = temporaries[0].read_bytes()
+        self.assertEqual(json.loads(retained)['status'], 'staged')
+        reopened = JobManager(self.root / 'jobs')
+        self.assertEqual([r['id'] for r in reopened.list()], ['crash-write'])
+        self.assertEqual(reopened.status('crash-write')['status'], 'interrupted')
+        reopened.submit('preview', {'text': 'independent'}, key='independent')
+        self.assertEqual(reopened.run('independent', self.adapter)['status'], 'published')
+        reopened.resume('crash-write')
+        result = reopened.run('crash-write', self.adapter)
+        self.assertEqual(result['status'], 'published')
+        self.assertEqual((self.adapter.destination / result['receipt']['file']).read_bytes(), b'interrupted write')
+        self.assertEqual(temporaries[0].read_bytes(), retained)
+        self.assertEqual(len(reopened.list()), 2)
+
+    def test_atomic_temporary_recognition_rejects_unrelated_entries(self):
+        records = self.root / 'jobs/records'
+        malformed = records / '.unrelated.tmp'
+        malformed.write_bytes(b'unrelated')
+        self.error('ASSET_JOB_CORRUPT', self.manager.list)
+        self.assertEqual(malformed.read_bytes(), b'unrelated')
+        malformed.unlink()
+        temporary = records / '.pending.json-abcdefgh.tmp'
+        temporary.mkdir()
+        self.error('ASSET_JOB_CORRUPT', self.manager.list)
+        temporary.rmdir()
+        if os.name == 'posix':
+            outside = self.root / 'original'
+            outside.write_bytes(b'original')
+            temporary.symlink_to(outside)
+            self.error('ASSET_JOB_PATH', self.manager.list)
+            self.assertEqual(outside.read_bytes(), b'original')
+            temporary.unlink()
+            temporary.write_bytes(b'unfinished')
+            temporary.chmod(0o644)
+            self.error('ASSET_JOB_CORRUPT', self.manager.list)
+            self.assertEqual(temporary.read_bytes(), b'unfinished')
+
+    def test_atomic_temporary_enumeration_is_bounded_and_non_destructive(self):
+        from unittest.mock import patch
+        records = self.root / 'jobs/records'
+        for suffix in ('aaaaaaaa', 'bbbbbbbb'):
+            path = records / ('.pending.json-' + suffix + '.tmp')
+            path.write_bytes(b'partial')
+            path.chmod(0o600)
+        with patch('asset_library_jobs.MAX_ATOMIC_TEMPORARIES', 1):
+            self.error('ASSET_JOB_LIMIT', self.manager.list)
+        self.assertEqual(self.manager.list(), [])
+        self.assertEqual(sorted(p.read_bytes() for p in records.iterdir()), [b'partial', b'partial'])
+        self.manager.submit('preview', {'text': 'still usable'}, key='new')
+        self.assertEqual(self.manager.run('new', self.adapter)['status'], 'published')
+
+    def test_invalid_identifiers_have_no_filesystem_side_effects(self):
+        from asset_library_jobs import JobContext
+        invalid = (str(self.root / 'outside' / 'absolute'), '../../outside/traversal',
+                   '../outside', '', 'UPPER', 'bad.name', None, 1)
+        operations = (
+            self.manager.status, self.manager.cancel, self.manager.resume,
+            lambda identifier: self.manager.run(identifier, self.adapter),
+            lambda identifier: JobContext(self.manager, identifier, time.monotonic() + 10),
+        )
+        before = {p.relative_to(self.root) for p in self.root.rglob('*')}
+        for identifier in invalid:
+            for operation in operations:
+                with self.subTest(identifier=identifier, operation=operation):
+                    self.error('ASSET_JOB_ID', lambda: operation(identifier))
+                    self.assertEqual({p.relative_to(self.root) for p in self.root.rglob('*')}, before)
+        for identifier in invalid[:6]:
+            self.error('ASSET_JOB_ID', lambda: self.manager.submit('preview', {}, key=identifier))
+            self.assertEqual({p.relative_to(self.root) for p in self.root.rglob('*')}, before)
+        self.assertEqual(self.adapter.calls, [])
+
 
 if __name__ == '__main__':
     unittest.main()

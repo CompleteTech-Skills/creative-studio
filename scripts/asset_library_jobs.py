@@ -29,6 +29,8 @@ ACTIVE = {'running', 'staged', 'verified', 'publishing'}
 STATUSES = {'queued', 'interrupted', 'running', 'staged', 'verified', 'publishing',
             'published', 'failed', 'cancelled'}
 _IDENTIFIER = re.compile(r'^[a-z0-9][a-z0-9_-]{0,95}$')
+_ATOMIC_TEMP = re.compile(r'^\.([a-z0-9][a-z0-9_-]{0,95})\.json-[a-z0-9_]{8}\.tmp$')
+MAX_ATOMIC_TEMPORARIES = 4096
 
 
 class JobRecord(TypedDict):
@@ -143,6 +145,9 @@ class JobContext:
     manager: 'JobManager'
     id: str
     deadline: float
+
+    def __post_init__(self):
+        _identifier(self.id)
 
     @property
     def token(self) -> str:
@@ -260,17 +265,38 @@ class JobManager:
 
     def _write(self, record):
         _json(record, self.limits['journal_bytes'])
+        # Match rig_errors.atomic_json exactly, before it can replace valid state.
+        encoded = (json.dumps(record, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
+        if len(encoded) > self.limits['journal_bytes']:
+            fail('LIMIT', 'Persisted job JSON exceeds its byte budget.')
         atomic_json(self._path(record['id']), record)
 
     def _records(self):
-        paths = sorted((self.root / 'records').iterdir())
-        if len(paths) > self.limits['jobs']:
-            fail('LIMIT', 'Job store exceeds its record ceiling.')
-        result = []
-        for path in paths:
-            if path.suffix != '.json':
-                fail('CORRUPT', 'Unexpected file in the job record inventory.')
-            result.append(self._read(path.stem))
+        """Scan under the journal lock; abandoned atomic writes are not commits."""
+        result, entries, temporaries = [], 0, 0
+        # Bound enumeration before materializing/sorting any directory inventory.
+        with os.scandir(_safe_tree(self.root / 'records')) as paths:
+            for entry in paths:
+                entries += 1
+                if entries > self.limits['jobs'] + MAX_ATOMIC_TEMPORARIES:
+                    fail('LIMIT', 'Job store exceeds its directory entry ceiling.')
+                path = _safe_tree(entry.path)
+                if _ATOMIC_TEMP.fullmatch(path.name):
+                    info = path.lstat()
+                    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                        or info.st_size > self.limits['journal_bytes']
+                        or (os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077))):
+                        fail('CORRUPT', 'Atomic journal temporary is not a bounded private regular file.')
+                    temporaries += 1
+                    if temporaries > MAX_ATOMIC_TEMPORARIES:
+                        fail('LIMIT', 'Too many retained atomic journal temporaries.')
+                    # Leave exact bytes for diagnosis; never infer publication.
+                    continue
+                if path.suffix != '.json' or not _IDENTIFIER.fullmatch(path.stem):
+                    fail('CORRUPT', 'Unexpected file in the job record inventory.')
+                if len(result) >= self.limits['jobs']:
+                    fail('LIMIT', 'Job store exceeds its record ceiling.')
+                result.append(self._read(path.stem))
         return sorted(result, key=lambda value: (value['sequence'], value['id']))
 
     def submit(self, kind: str, parameters: dict, *, resources=('io',), estimates=None,
@@ -312,6 +338,7 @@ class JobManager:
             return [dict(deepcopy(r), queue_position=queued.index(r['id']) + 1 if r['id'] in queued else None) for r in records]
 
     def status(self, identifier: str) -> JobRecord:
+        _identifier(identifier)
         record = self._read(identifier)
         if record['status'] in ACTIVE:
             try:
@@ -328,6 +355,7 @@ class JobManager:
         return deepcopy(record)
 
     def cancel(self, identifier: str) -> JobRecord:
+        _identifier(identifier)
         with _lock(self.root / 'journal'):
             record = self._read(identifier)
             if record['status'] == 'published':
@@ -342,6 +370,7 @@ class JobManager:
             return deepcopy(record)
 
     def resume(self, identifier: str) -> JobRecord:
+        _identifier(identifier)
         with _lock(self.root / 'leases' / identifier):
             with _lock(self.root / 'journal'):
                 record = self._read(identifier)
@@ -357,6 +386,7 @@ class JobManager:
                 return deepcopy(record)
 
     def _inventory(self, identifier, *, hash_contents=True):
+        _identifier(identifier)
         stage = _safe_tree(self.root / 'staging' / identifier)
         if not stage.exists():
             return []
@@ -383,6 +413,7 @@ class JobManager:
         return sorted(inventory, key=lambda r: r['path'])
 
     def _transition(self, identifier, state, **changes):
+        _identifier(identifier)
         with _lock(self.root / 'journal'):
             record = self._read(identifier)
             record.update(status=state, operation=state, **deepcopy(changes))
