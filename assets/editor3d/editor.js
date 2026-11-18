@@ -70,15 +70,62 @@ const overlayState = {
   safe: false,
   thirds: false,
 };
+const MAX_NATIVE_WARNINGS = 64;
+let transientDiagnostic = null;
+let nativeDiagnostics = {epoch: 0, revision: null, sha256: null, records: new Map(), truncated: false};
+function renderDiagnostics() {
+  const container = $("diagnostic"), content = document.createDocumentFragment();
+  if (transientDiagnostic !== null) {
+    const error = document.createElement("p"); error.textContent = transientDiagnostic; content.append(error);
+  }
+  for (const record of nativeDiagnostics.records.values()) {
+    const warning = document.createElement("p");
+    warning.dataset.code = record.code; warning.dataset.nodeId = record.nodeId;
+    warning.textContent = "Warning " + record.code + " — " + record.nodeName + " (" + record.nodeId + "): " + record.message;
+    content.append(warning);
+  }
+  if (nativeDiagnostics.truncated) {
+    const warning = document.createElement("p"); warning.dataset.code = "EDITOR_VIEW_DIAGNOSTIC_LIMIT";
+    warning.textContent = "Additional preview limitations are omitted. Inspect individual scene objects for their native configuration.";
+    content.append(warning);
+  }
+  container.replaceChildren(content);
+  container.hidden = transientDiagnostic === null && !nativeDiagnostics.records.size && !nativeDiagnostics.truncated;
+  container.setAttribute("role", transientDiagnostic === null ? "status" : "alert");
+  container.setAttribute("aria-live", transientDiagnostic === null ? "polite" : "assertive");
+  container.dataset.revision = String(nativeDiagnostics.revision);
+  container.dataset.sha256 = nativeDiagnostics.sha256 || "";
+}
+function beginNativeDiagnostics(snapshot, epoch) {
+  nativeDiagnostics = {epoch, revision: snapshot.revision, sha256: snapshot.sha256, records: new Map(), truncated: false};
+  renderDiagnostics();
+}
+function nativeWarning(code, node, message, epoch) {
+  if (epoch !== loadEpoch || nativeDiagnostics.epoch !== epoch) return;
+  const key = code + ":" + node.id;
+  if (nativeDiagnostics.records.has(key)) return;
+  const text = String(message);
+  errors.push(text);
+  if (nativeDiagnostics.records.size < MAX_NATIVE_WARNINGS) {
+    nativeDiagnostics.records.set(key, {code, nodeId: node.id, nodeName: node.name.slice(0, 128),
+      message: text.length > 2048 ? text.slice(0, 2048) + "…" : text});
+  } else {
+    if (nativeDiagnostics.truncated) return;
+    nativeDiagnostics.truncated = true;
+  }
+  renderDiagnostics();
+  if (transientDiagnostic === null) $("status").textContent = "Preview has limitations; saved state preserved.";
+}
 function diagnostic(error) {
   const text = error?.message || String(error);
   errors.push(text);
-  $("diagnostic").hidden = false;
-  $("diagnostic").textContent = text;
+  transientDiagnostic = text;
+  renderDiagnostics();
   $("status").textContent = "Operation rejected; saved state preserved.";
 }
 function clearDiagnostic() {
-  $("diagnostic").hidden = true;
+  transientDiagnostic = null;
+  renderDiagnostics();
 }
 async function api(path, body) {
   const response = await fetch("/api/" + path, {
@@ -477,6 +524,7 @@ async function install(snapshot) {
   $("redo").disabled = busy || !snapshot.redo_available;
   const epoch = ++loadEpoch,
     assets = snapshot.viewport_assets || {};
+  beginNativeDiagnostics(snapshot, epoch);
   doc = snapshot.scene;
   revision = snapshot.revision;
   sha256 = snapshot.sha256;
@@ -532,14 +580,14 @@ async function install(snapshot) {
           }
           object.add(actual);
         } catch (error) {
-          diagnostic("Asset " + node.asset.id + ": " + error.message);
+          nativeWarning("EDITOR_VIEW_ASSET_UNAVAILABLE", node, "Asset " + node.asset.id + ": " + error.message, epoch);
         }
       } else
-        diagnostic(
-          "Asset " +
+        nativeWarning(
+          "EDITOR_VIEW_ASSET_UNAVAILABLE", node, "Asset " +
             node.asset.id +
             ": " +
-            (asset?.message || "No verified viewport adapter."),
+            (asset?.message || "No verified viewport adapter."), epoch,
         );
     }
     if (node.type === "camera") {
@@ -574,8 +622,8 @@ async function install(snapshot) {
           spot: THREE.SpotLight,
         }[l.type];
       if (!ctor) {
-        diagnostic(
-          "Area-light preview is unavailable: the native scene light has no area dimensions. No point-light substitute was rendered.",
+        nativeWarning(
+          "EDITOR_VIEW_LIGHT_UNAVAILABLE", node, "Area-light preview is unavailable: the native scene light has no area dimensions. No point-light substitute was rendered.", epoch,
         );
         continue;
       }
@@ -1526,7 +1574,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    (e.target === document.body || e.target.closest("#viewport")) && !previewActive && transformSelectionAllowed() &&
+    !e.target.closest("#diagnostic") && (e.target === document.body || e.target.closest("#viewport")) && !previewActive && transformSelectionAllowed() &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();

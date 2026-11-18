@@ -1,5 +1,6 @@
 """Real keyboard and conventional control acceptance; no canvas substitutes."""
 import os
+from copy import deepcopy
 from pathlib import Path
 import tempfile
 import threading
@@ -172,3 +173,99 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
             snapshot=self.repository.snapshot();self.assertEqual(snapshot['revision'],1)
             self.assertEqual(next(node for node in snapshot['scene']['nodes'] if node['id']=='mesh')['transform']['translation'],[3,0,0])
         finally:page.unroute('**/api/commands',hold_command)
+
+    def install_area_fixture(self, count=1):
+        snapshot=self.repository.snapshot();root=next(node for node in snapshot['scene']['nodes'] if node['id']=='root')
+        commands=[]
+        for index in range(count):
+            area=deepcopy(root)
+            area.update(id='area-'+str(index),name='<b>Area key</b>' if index==0 else 'Area '+str(index),type='light',parent='root',
+                        light=dict(type='area',color=[1,1,1],intensity=10))
+            commands.append(dict(operation='create',parameters=dict(node=area)))
+        self.repository.apply(snapshot['revision'],dict(schema_version=1,commands=commands),'area-fixture-'+str(count))
+        self.page.goto('about:blank');self.page.goto(self.server.url)
+        self.page.wait_for_function('() => window.editorReady === true')
+
+    def assert_current_preview_warning(self, revision, count=1):
+        diagnostic=self.page.locator('#diagnostic')
+        self.assertFalse(diagnostic.is_hidden())
+        self.assertEqual(diagnostic.get_attribute('data-revision'),str(revision))
+        self.assertEqual(diagnostic.get_attribute('data-sha256'),self.repository.snapshot()['sha256'])
+        self.assertEqual(diagnostic.locator('[data-code="EDITOR_VIEW_LIGHT_UNAVAILABLE"]').count(),count)
+
+    def test_native_warning_survives_save_reload_real_context_restore_and_fresh_reopen_then_recomputes_history(self):
+        page=self.page;self.install_area_fixture()
+        self.assert_current_preview_warning(1)
+        self.assertEqual(page.locator('#diagnostic').get_attribute('role'),'status')
+        self.assertIn('<b>Area key</b>',page.locator('#diagnostic').inner_text())
+        self.assertEqual(page.locator('#diagnostic b').count(),0)
+        page.locator('[data-id="mesh"]').click();field=page.get_by_label('translation X',exact=True)
+        field.fill('3');field.press('Tab')
+        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2 && document.querySelector("#status").textContent.includes("Saved revision")')
+        self.assert_current_preview_warning(2)
+        page.evaluate('window.previousWarningObject = window.hatchEditor.objects.get("area-0")')
+        page.click('#refresh');page.wait_for_function('() => window.hatchEditor.objects.get("area-0") !== window.previousWarningObject')
+        self.assert_current_preview_warning(2)
+        supported=page.evaluate('''() => {window.diagnosticContextLoss=window.hatchEditor.renderer.getContext().getExtension('WEBGL_lose_context');return !!window.diagnosticContextLoss;}''')
+        self.assertTrue(supported,'Actual context-loss proof requires WEBGL_lose_context; do not substitute a synthetic event.')
+        page.evaluate('window.diagnosticContextLoss.loseContext()')
+        page.wait_for_function('() => document.querySelector("#diagnostic").textContent.includes("WebGL context lost")')
+        page.evaluate('window.diagnosticContextLoss.restoreContext()')
+        page.wait_for_function('() => document.querySelector("#status").textContent.includes("WebGL restored") && window.editorReady === true')
+        self.assert_current_preview_warning(2)
+        page.goto('about:blank');page.goto(self.server.url);page.wait_for_function('() => window.editorReady === true')
+        self.assert_current_preview_warning(2)
+        page.locator('[data-id="area-0"]').click();page.click('#delete')
+        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
+        self.assertTrue(page.locator('#diagnostic').is_hidden())
+        page.click('#undo');page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
+        self.assert_current_preview_warning(4)
+        page.click('#redo');page.wait_for_function('() => window.hatchEditor.snapshot.revision === 5')
+        self.assertTrue(page.locator('#diagnostic').is_hidden())
+        self.assertEqual(self.repository.snapshot()['revision'],5)
+
+    def test_transient_rejection_clears_after_success_without_hiding_current_native_warning_or_erasing_history(self):
+        page=self.page;self.install_area_fixture()
+        page.locator('[data-id="mesh"]').click();field=page.get_by_label('translation X',exact=True)
+        field.fill('1000001');field.press('Tab')
+        self.assertIn('Enter a finite value',page.locator('#diagnostic').inner_text())
+        self.assertEqual(page.locator('#diagnostic').get_attribute('role'),'alert')
+        self.assert_current_preview_warning(1)
+        self.assertEqual(self.repository.snapshot()['revision'],1)
+        field.fill('3');field.press('Tab')
+        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2 && document.querySelector("#status").textContent.includes("Saved revision")')
+        self.assert_current_preview_warning(2)
+        self.assertNotIn('Enter a finite value',page.locator('#diagnostic').inner_text())
+        self.assertEqual(page.locator('#diagnostic').get_attribute('role'),'status')
+        self.assertTrue(any('Enter a finite value' in error for error in page.evaluate('window.hatchEditor.errors')))
+
+    def test_current_warning_records_are_bounded_deduplicated_and_keyboard_scrollable(self):
+        page=self.page;self.install_area_fixture(70)
+        self.assert_current_preview_warning(1,64)
+        self.assertEqual(page.locator('#diagnostic [data-code="EDITOR_VIEW_DIAGNOSTIC_LIMIT"]').count(),1)
+        page.locator('[data-id="mesh"]').focus();page.keyboard.press('Enter')
+        before=self.repository.snapshot()
+        page.locator('#diagnostic').focus()
+        self.assertTrue(page.locator('#diagnostic').evaluate('element => element === document.activeElement'))
+        page.evaluate("""() => {
+            window.diagnosticArrowTrace=[];
+            window.addEventListener('keydown',event=>{
+                if(event.target.closest('#diagnostic') && event.key.startsWith('Arrow'))
+                    window.diagnosticArrowTrace.push({key:event.key,prevented:event.defaultPrevented});
+            });
+        }""")
+        page.keyboard.press('ArrowDown')
+        page.wait_for_function('() => document.querySelector("#diagnostic").scrollTop > 0 || window.hatchEditor.snapshot.revision !== 1')
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        self.assertEqual(self.repository.snapshot()['revision'],1)
+        for key in ['ArrowUp','ArrowLeft','ArrowRight']:page.keyboard.press(key)
+        self.assertEqual(page.evaluate('window.diagnosticArrowTrace'),[
+            dict(key=key,prevented=False) for key in ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight']])
+        self.assertEqual(page.evaluate('window.hatchEditor.selection'),['mesh'])
+        page.keyboard.press('End');page.wait_for_function('() => document.querySelector("#diagnostic").scrollTop > 0')
+        self.assertGreater(page.locator('#diagnostic').evaluate('element => element.scrollTop'),0)
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        page.evaluate('window.previousWarningObject = window.hatchEditor.objects.get("area-0")')
+        page.click('#refresh');page.wait_for_function('() => window.hatchEditor.objects.get("area-0") !== window.previousWarningObject')
+        self.assert_current_preview_warning(1,64)
+        self.assertEqual(page.locator('#diagnostic [data-code="EDITOR_VIEW_DIAGNOSTIC_LIMIT"]').count(),1)
