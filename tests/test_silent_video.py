@@ -311,6 +311,21 @@ class SilentContracts(unittest.TestCase):
                 video.verify_export(artifact, self.request)
         self.assertTrue(failed.exception.evidence['decode']['stderr_truncated'])
 
+    def test_simulated_native_text_uses_public_tool_roles(self):
+        marker = 'SYNTHETIC_PRIVATE_TOOL_BASENAME'
+        for stage, role in (('probe', 'ffprobe'), ('timeline', 'ffprobe'), ('decode', 'ffmpeg')):
+            # Synthetic transcript text checks redaction only. The separate
+            # native suite verifies the real executable and JSON entry points.
+            executable = str(self.root / (marker + '-' + role))
+            raw = {'command': [executable], 'exit_status': 1,
+                   'stdout': '', 'stderr': 'cannot run ' + executable}
+            with self.subTest(stage=stage):
+                evidence, message = video._failure_diagnostics({stage: raw}, 'cannot run ' + executable, 1024)
+                self.assertEqual(evidence[stage]['command'][0], role)
+                self.assertNotIn(marker, json.dumps(evidence) + message)
+                self.assertIn('cannot run', evidence[stage]['stderr'])
+                self.assertIn('cannot run', message)
+
     def test_truncated_command_path_prefixes_are_redacted_at_capture_boundary(self):
         marker = 'SYNTHETIC_PRIVATE_PATH_FRAGMENT'
         path = str(self.root / marker / 'nested-folder' / 'artifact.mp4')

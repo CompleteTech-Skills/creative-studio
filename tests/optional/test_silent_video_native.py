@@ -345,6 +345,102 @@ class SilentMedia(core.SilentContracts):
             self.assertNotIn(private.name, json.dumps(evidence) + str(failed.exception))
         self.assertEqual(artifact.read_bytes(), before)
 
+    def _failed_verification_reports(self, artifact, request, *, root=None, ffprobe=None, env=None):
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, request, root=root, ffprobe=ffprobe)
+        python_report = {**failed.exception.evidence, 'error': str(failed.exception)}
+        request_path = self.root / 'diagnostic-contract-request.json'
+        request_path.write_text(json.dumps(request))
+        command = [sys.executable, video.__file__, 'verify-export', str(artifact),
+                   '--request', str(request_path), '--require-silent']
+        if root is not None:
+            command += ['--root', str(root)]
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        return {'python': python_report, 'cli': json.loads(result.stdout)}
+
+    def test_real_probe_executable_basename_is_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_EXECUTABLE'
+        artifact = self.root / 'corrupt.mp4'
+        artifact.write_bytes(b'synthetic non-media')
+        installed = Path(shutil.which('ffprobe')).resolve()
+        for variant in ('public-name', 'private-target'):
+            directory = self.root / variant
+            directory.mkdir()
+            executable = directory / 'ffprobe'
+            target = executable if variant == 'public-name' else directory / (marker + '-ffprobe')
+            shutil.copy2(installed, target)
+            self.assertEqual(video.file_hash(target), video.file_hash(installed))
+            if target != executable:
+                executable.symlink_to(target.name)
+            reports = self._failed_verification_reports(
+                artifact, self.request, ffprobe=executable,
+                env=dict(os.environ, PATH=str(directory) + os.pathsep + os.environ['PATH']))
+            for interface, report in reports.items():
+                with self.subTest(variant=variant, interface=interface):
+                    self.assertFalse(report['verified'])
+                    self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+                    self.assertNotIn('video_stream_count', report)
+                    for key in ('probe', 'command_failure'):
+                        self.assertNotEqual(report[key]['exit_status'], 0)
+                        self.assertTrue(report[key]['stderr'])
+                        self.assertEqual(report[key]['command'][0], 'ffprobe')
+                    self.assertNotIn(marker, json.dumps(report))
+
+    @unittest.skipUnless(os.name == 'posix' and os.geteuid() != 0,
+                         'actual unreadable-file check requires an unprivileged POSIX process')
+    def test_unreadable_source_omits_private_frame_basename_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_FRAME'
+        renamed = self.root / (marker + '.png')
+        (self.root / self.paths[0]).rename(renamed)
+        source = video.build_source(self.root, [renamed.name, *self.paths[1:]], self.source['fps'])
+        request = video.make_request(source)
+        artifact = self.root / 'six-frames.mp4'
+        video.encode(request, self.root, artifact)
+        self.assert_receipt(video.verify_export(artifact, request, root=self.root), artifact)
+        original_mode = renamed.stat().st_mode
+        try:
+            renamed.chmod(0)
+            with self.assertRaises(PermissionError):
+                renamed.read_bytes()
+            reports = self._failed_verification_reports(artifact, request, root=self.root)
+        finally:
+            renamed.chmod(original_mode)
+        for interface, report in reports.items():
+            with self.subTest(interface=interface):
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+                self.assertEqual(report['request_sha256'], video._digest(request))
+                self.assertEqual(report['source_manifest_sha256'], video._digest(source))
+                for stage in ('probe', 'timeline', 'decode'):
+                    self.assertEqual(report[stage]['exit_status'], 0)
+                self.assertNotIn(marker, json.dumps(report))
+
+    @unittest.skipUnless(os.name == 'posix' and os.geteuid() != 0,
+                         'actual unreadable-file check requires an unprivileged POSIX process')
+    def test_unreadable_artifact_has_only_available_identity_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_ARTIFACT'
+        artifact = self.root / (marker + '.mp4')
+        video.encode(self.request, self.root, artifact)
+        self.assert_receipt(video.verify_export(artifact, self.request), artifact)
+        original_mode = artifact.stat().st_mode
+        try:
+            artifact.chmod(0)
+            with self.assertRaises(PermissionError):
+                artifact.read_bytes()
+            reports = self._failed_verification_reports(artifact, self.request)
+        finally:
+            artifact.chmod(original_mode)
+        for interface, report in reports.items():
+            with self.subTest(interface=interface):
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['request_sha256'], video._digest(self.request))
+                self.assertEqual(report['source_manifest_sha256'], video._digest(self.source))
+                for unavailable in ('artifact_sha256', 'artifact_bytes', 'probe', 'timeline', 'decode'):
+                    self.assertNotIn(unavailable, report)
+                self.assertNotIn(marker, json.dumps(report))
+
     @unittest.skipUnless(os.name == 'posix', 'actual ENOEXEC fixture requires POSIX executable semantics')
     def test_actual_decode_launch_failure_preserves_two_successful_probes(self):
         artifact = self.root / 'launch-evidence.mp4'
@@ -608,6 +704,41 @@ class SilentMedia(core.SilentContracts):
                 self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
 
     def test_filesystem_byte_workdir_is_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_NON_UTF8_WORKDIR'
+        # POSIX exercises an actual non-UTF-8 filename byte. Windows uses its
+        # actual Unicode replacement-character filename as a native control.
+        suffix = os.fsdecode(b'\xff') if os.name == 'posix' else '\ufffd'
+        artifact = self.root / 'byte-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        request_path = self.root / 'byte-path-request.json'
+        request_path.write_text(json.dumps(request))
+        for long_path in (False, True):
+            private = self.root / (marker + suffix + str(long_path))
+            if long_path:
+                for index in range(6):
+                    private /= str(index) + 'x' * 180
+            private.mkdir(parents=True)
+            with self.subTest(long_path=long_path):
+                with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                self.assertEqual(failed.exception.evidence['probe']['exit_status'], 1)
+                self.assertEqual(bool(failed.exception.evidence['probe'].get('stderr_truncated')), long_path)
+                self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['probe']['exit_status'], 1)
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_filesystem_byte_workdir_records_native_termination_and_evidence_budget(self):
         marker = 'SYNTHETIC_NON_UTF8_WORKDIR'
         # POSIX exercises an actual non-UTF-8 filename byte. Windows uses its
         # actual Unicode replacement-character filename as a native control.

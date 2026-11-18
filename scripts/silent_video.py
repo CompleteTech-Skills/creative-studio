@@ -300,18 +300,33 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
-def _failure_diagnostics(evidence, message, limit):
+def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
     """Export bounded diagnostics with stable aliases for command-owned paths."""
     result = copy.deepcopy(evidence)
-    records = [value for value in result.values() if isinstance(value, dict) and
-               isinstance(value.get('command'), list)]
+    roles = {'probe': 'ffprobe', 'timeline': 'ffprobe', 'decode': 'ffmpeg',
+             'pixel_decode': 'ffmpeg', 'encode': 'ffmpeg',
+             'ffprobe': 'ffprobe', 'ffmpeg': 'ffmpeg'}
+    records = []
+    for name, value in result.items():
+        if not isinstance(value, dict) or not isinstance(value.get('command'), list):
+            continue
+        role = roles.get(name, tool_role)
+        if role not in ('ffmpeg', 'ffprobe'):
+            # Encoding and verification supply their verifier-owned role.
+            # Generic subprocess/capability helpers retain the historical
+            # basename contract for other local tools.
+            role = Path(value['command'][0]).name if value['command'] else 'media-tool'
+        records.append((value, role))
     substitutions = {}
-    for record in records:
+    for record, role in records:
         for index, argument in enumerate(record['command']):
             if not isinstance(argument, str) or not Path(argument).is_absolute():
                 continue
             path = Path(argument)
-            substitutions[argument] = path.name if index == 0 else '<media-workdir>/' + path.name
+            if index == 0:
+                substitutions[argument] = role
+            else:
+                substitutions[argument] = '<media-workdir>/' + path.name
             if path.parent != path.parent.parent:
                 substitutions.setdefault(str(path.parent), '<media-tool-dir>' if index == 0 else '<media-workdir>')
     # Native diagnostics use filesystem bytes decoded through the transcript's
@@ -323,6 +338,11 @@ def _failure_diagnostics(evidence, message, limit):
             substitutions.setdefault(spelling.replace('\\', '/'), alias)
             substitutions.setdefault(json.dumps(spelling)[1:-1], alias)
     ordered = sorted(substitutions, key=len, reverse=True)
+    # Match known absolute path tokens, including a directory followed by a
+    # separator. A prefix inside some other name is not that command-owned path.
+    path_tokens = re.compile(r'(?<![\w./\\-])(?:' +
+                             '|'.join(re.escape(path) for path in ordered) +
+                             r')(?![\w.-])') if ordered else None
     def redact(value, truncated=False):
         if truncated:
             # Capture can end inside a known path, before its complete name or
@@ -335,32 +355,59 @@ def _failure_diagnostics(evidence, message, limit):
                         value = value[:position] + '<media-path-truncated>'
                         break
                     position = value.find(path[0], position + 1)
-        for path in ordered:
-            value = value.replace(path, substitutions[path])
+        if path_tokens is not None:
+            value = path_tokens.sub(lambda match: substitutions[match.group()], value)
         return value
     def bounded(value, truncated=False):
         encoded = redact(value, truncated).encode('utf-8')
         return encoded[:limit].decode('utf-8', 'ignore'), len(encoded) > limit
-    for record in records:
-        record['command'] = [redact(value) if isinstance(value, str) else value
-                             for value in record['command']]
+    for record, role in records:
+        original_command = record['command']
+        # argv[0] is executable identity, not a search term for its transcript.
+        # A physical executable may be named 'video', 'h264', 'streams', etc.;
+        # replacing that basename in raw probe JSON would falsify observed facts.
+        record['command'] = list(original_command)
+        if original_command:
+            if Path(original_command[0]).is_absolute():
+                record['command'][0] = role
+            record['command'][1:] = [
+                redact(value) if isinstance(value, str) else value
+                for value in original_command[1:]]
         for field in ('stdout', 'stderr'):
             if field not in record:
                 continue  # A failed launch has no observed process transcript.
-            record[field], clipped = bounded(record[field], record.get(field + '_truncated', False))
+            transcript = record[field]
+            if field == 'stderr' and original_command:
+                # Native tools may prefix an error line with their program
+                # basename. Only this labelled diagnostic position denotes the
+                # executable; the same text elsewhere remains observed data.
+                basename = Path(original_command[0]).name
+                if basename and basename != role:
+                    transcript = re.sub(r'(?m)^' + re.escape(basename) + r'(?=: )',
+                                        lambda match: role, transcript)
+            record[field], clipped = bounded(transcript, record.get(field + '_truncated', False))
             if clipped:
                 record[field + '_truncated'] = True
     return result, bounded(message, truncated=True)[0]
 
 
-def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
+def _run(command, limits, *, cancel=None, output=None, pass_fds=(), tool_role=None):
     """Bound process duration and retain bounded observed failure transcripts."""
     start = time.monotonic()
     failure = None
     termination_requested = False
+    # This boundary serves only media capability, encode and verification
+    # commands. Inherited reporting can write or disclose an unrelated path;
+    # forced ANSI color can split diagnostic path tokens. Keep their native
+    # diagnostics plain and report-free without changing the parent's environment.
+    environment = dict(os.environ)
+    environment.pop('FFREPORT', None)
+    environment.pop('AV_LOG_FORCE_COLOR', None)
+    environment['AV_LOG_FORCE_NOCOLOR'] = '1'
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
-            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                                       pass_fds=pass_fds, env=environment)
         except OSError as exc:
             # Popen never returned a media process. An errno is an observed
             # launch failure, not an exit status or a tool transcript; do not
@@ -368,7 +415,8 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
             record = {'command': list(command), 'started': False,
                       'launch_error': {'errno': exc.errno}, 'stdout': '', 'stderr': ''}
             evidence, message = _failure_diagnostics({'command_failure': record},
-                'media command launch failed: could not start (OS error '+str(exc.errno)+')', limits['max_log_bytes'])
+                'media command launch failed: could not start (OS error '+str(exc.errno)+')', limits['max_log_bytes'],
+                tool_role=tool_role)
             failure = ValueError(message)
             failure.evidence = evidence
             raise failure from None
@@ -423,7 +471,8 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
             record['timed_out'] = True
         if str(failure) == 'media command exceeded evidence byte budget':
             record['evidence_limit_exceeded'] = True
-        evidence, message = _failure_diagnostics({'command_failure': record}, str(failure), limits['max_log_bytes'])
+        evidence, message = _failure_diagnostics({'command_failure': record}, str(failure), limits['max_log_bytes'],
+                                                tool_role=tool_role)
         failure.args = (message,)
         failure.evidence = evidence
         raise failure
@@ -561,7 +610,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     encoder, probe = _binary('ffmpeg', ffmpeg), _binary('ffprobe', ffprobe)
     def execute(stage, command, **options):
         try:
-            observed = _run(command, limits, cancel=cancel, **options)
+            observed = _run(command, limits, cancel=cancel,
+                            tool_role='ffprobe' if stage in ('probe', 'timeline') else 'ffmpeg', **options)
         except ValueError as exc:
             failed = getattr(exc, 'evidence', {}).get('command_failure')
             if diagnostics is not None and failed is not None:
@@ -841,7 +891,7 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         if _input_snapshot_state(inputs, expected_inputs, hash_bytes=False) != input_state:
             raise ValueError('private encoder inputs changed before encoding')
         execution = _run(command, request['limits'], cancel=cancel, output=output,
-                         pass_fds=(source_fd, input_authority.fd))
+                         pass_fds=(source_fd, input_authority.fd), tool_role='ffmpeg')
         if cancel is not None and cancel():
             raise ValueError('silent export cancelled before verification')
         receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)

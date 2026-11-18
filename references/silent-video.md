@@ -294,6 +294,26 @@ and no exit status. Empty buffers do not claim that a process ran; prior
 completed verification stages and available identity hashes remain attached.
 Each transcript stays
 within the request's `max_log_bytes` byte limit, including UTF-8 replacement.
+
+Failure aliases for encoding and verification use the logical `ffmpeg` or
+`ffprobe` role, including when an installed executable symlink resolves to a
+privately named binary. They do not expose the resolved filename in command
+arrays or known command-path text. Generic local subprocess helpers retain
+their existing basename contract; this is not a general sanitizer for arbitrary
+substituted executable output. Source-frame descriptor errors also omit caller
+filenames. If the artifact cannot be captured at all, failure evidence retains
+only the request and source-manifest hashes; it does not invent an artifact
+hash, byte count or tool execution record.
+
+Independent regressions reproduced private executable and unreadable-source
+names in both Python and CLI on `db3e36bc`, using a byte-identical copy of actual
+ffprobe and real POSIX permission failures. An additional root-authored native
+case covers unreadable artifact capture and its available identity fields.
+The corrected optional native suite ran 78 cases in 143.717 seconds, exit 0,
+zero skips, on unprivileged Linux with FFmpeg/ffprobe 7.1.5. Its cases include
+inherited portable checks; this is not 78 distinct codec executions. The new
+permission checks explicitly skip where real unprivileged POSIX semantics
+cannot be exercised. Existing test methods and earlier negative evidence remain.
 Truncated streams carry an explicit truncation flag; timeout failures carry
 `timed_out: true` and the observed terminated-process status.
 If the operating system cannot launch a media executable, the attempted command
