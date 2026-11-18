@@ -8,6 +8,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zlib
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -31,6 +32,65 @@ def output(format='png',depth=8,alpha='straight',passes=None):
     return dict(format=format,bit_depth=depth,alpha=alpha,passes=passes or ['combined'],color_space='srgb' if format=='png' else 'linear')
 
 
+class EXREnvelopeAdmission(unittest.TestCase):
+    """Header refusals must happen without constructing any native decoder."""
+
+    def reject_before_decoder(self, payload, message, **options):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'envelope.exr'
+            path.write_bytes(payload)
+            decoder=mock.Mock()
+            with mock.patch.dict(sys.modules, {'OpenEXR':decoder}):
+                for decode in (verify_image,decode_image):
+                    with self.subTest(decode=decode.__name__):
+                        with self.assertRaisesRegex(Render3DError,message):
+                            decode(path,output=output('exr',32),resolution=[3,2],**options)
+                decoder.InputFile.assert_not_called()
+                decoder.File.assert_not_called()
+
+    def test_unsupported_flags_and_versions_reject_before_native_constructor(self):
+        # Flags from pinned OpenEXR 3.5.4 ImfVersion.h; unknown bits fail closed.
+        for flags in (0x200,0x800,0x1000,0x1800,0x600,0x100,0x2000,0x80000000):
+            with self.subTest(flags=flags):
+                self.reject_before_decoder(struct.pack('<II',20000630,2|flags), 'unsupported flags')
+        for version in (0,1,3,255):
+            with self.subTest(version=version):
+                self.reject_before_decoder(struct.pack('<II',20000630,version), 'format version')
+        self.reject_before_decoder(b'notexr!!', 'Not an EXR')
+        for size in range(1,8):
+            self.reject_before_decoder(struct.pack('<II',20000630,2)[:size], 'Truncated EXR envelope')
+
+    def test_storage_attributes_cannot_bypass_flags(self):
+        prefix=struct.pack('<II',20000630,2)
+        for storage in (b'deepscanline',b'deeptile',b'tiledimage',b'unknown'):
+            attribute=b'type\x00string\x00'+struct.pack('<i',len(storage))+storage+b'\x00'
+            self.reject_before_decoder(prefix+attribute, 'Only EXR scanlineimage')
+        # Tile level modes: ONE_LEVEL=0, MIPMAP_LEVELS=1, RIPMAP_LEVELS=2.
+        # These tiny malformed envelopes deliberately omit the tiled flag.
+        for mode in (0,1,2):
+            tiles=b'tiles\x00tiledesc\x00'+struct.pack('<iIIB',9,2,2,mode)+b'\x00'
+            self.reject_before_decoder(prefix+tiles, 'Tiled and multilevel')
+
+    def test_malformed_and_overbudget_header_rejects_before_native_constructor(self):
+        prefix=struct.pack('<II',20000630,2)
+        attribute=b'comment\x00string\x00'+struct.pack('<i',1)+b'x'
+        cases=(
+            (prefix, 'Truncated EXR header'),
+            (prefix+b'x'*32+b'\x00', 'name exceeds'),
+            (prefix+b'x\x00\x00', 'Empty EXR attribute type'),
+            (prefix+b'x\x00string\x00'+struct.pack('<i',-1), 'Invalid EXR attribute size'),
+            (prefix+b'x\x00string\x00'+struct.pack('<i',100), 'Invalid EXR attribute size'),
+            (prefix+attribute+attribute+b'\x00', 'Duplicate EXR header attribute'),
+        )
+        for payload,message in cases:
+            with self.subTest(message=message):
+                self.reject_before_decoder(payload,message)
+        self.reject_before_decoder(prefix+attribute+b'\x00', 'EXR header exceeds',memory_bytes=16)
+        payload=b'x'*(1024**2)
+        self.reject_before_decoder(prefix+b'x\x00string\x00'+struct.pack('<i',len(payload))+payload+b'\x00',
+                                   'EXR header exceeds')
+
+
 @unittest.skipUnless(DEPENDENCIES,'optional OpenEXR/pypng decoder packages unavailable')
 class ImageVerification(unittest.TestCase):
     def png(self,path,depth=8,alpha=True):
@@ -44,6 +104,70 @@ class ImageVerification(unittest.TestCase):
         data=np.array([[0,2,10],[.25,.5,1]],dtype=dtype)
         values=channels or dict(R=data,G=data,B=data,A=np.ones((2,3),dtype=dtype))
         OpenEXR.File(header or {},values).write(str(path))
+
+    def test_scanline_long_names_hdr_alpha_and_precision_remain_supported(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (16,32):
+                path=Path(temporary)/f'long-{depth}.exr'
+                self.exr(path,depth,header={'synthetic_attribute_name_longer_than_thirty_one_bytes':'fixture'})
+                self.assertTrue(struct.unpack('<I',path.read_bytes()[4:8])[0]&0x400)
+                for decode in (verify_image,decode_image):
+                    decoded=decode(path,output=output('exr',depth),resolution=[3,2])
+                    report=decoded[0] if decode is decode_image else decoded
+                    self.assertEqual(report['channels']['R']['maximum'],10)
+                    self.assertEqual(report['channels']['A']['minimum'],1)
+                    self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+                    if decode is decode_image:
+                        self.assertEqual(float(decoded[1]['R'][0,2]),10)
+                    with self.assertRaisesRegex(Render3DError,'precision or sampling'):
+                        decode(path,output=output('exr',32 if depth==16 else 16),resolution=[3,2])
+
+    def test_actual_multipart_rejects_valid_first_part_with_invalid_second(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (16,32):
+                dtype=np.float16 if depth==16 else np.float32
+                rgba={name:np.ones((2,3),dtype=dtype) for name in 'RGBA'}
+                for invalid in (np.full((2,3),np.inf,dtype=dtype),np.ones((2,3),dtype=np.uint32)):
+                    with self.subTest(depth=depth,second_dtype=invalid.dtype):
+                        path=Path(temporary)/'multipart.exr'
+                        parts=[OpenEXR.Part({},rgba,'valid-beauty'),
+                               OpenEXR.Part({},dict(Z=invalid),'invalid-extra')]
+                        OpenEXR.File(parts).write(str(path))
+                        with OpenEXR.File(str(path),separate_channels=True) as fixture:
+                            self.assertEqual(len(fixture.parts),2)
+                            self.assertEqual(set(fixture.channels(0)),set('RGBA'))
+                            self.assertEqual(fixture.channels(1)['Z'].pixels.dtype,invalid.dtype)
+                            np.testing.assert_array_equal(fixture.channels(1)['Z'].pixels,invalid)
+                        for decode in (verify_image,decode_image):
+                            with mock.patch.object(OpenEXR,'InputFile') as constructor:
+                                with self.assertRaisesRegex(Render3DError,'unsupported flags'):
+                                    decode(path,output=output('exr',depth),resolution=[3,2])
+                                constructor.assert_not_called()
+
+    def test_actual_tiled_and_deep_exrs_reject_before_native_constructor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'unsupported.exr'
+            values={name:np.ones((2,3),dtype=np.float32) for name in 'RGBA'}
+            tiled={'type':OpenEXR.tiledimage,'tiles':OpenEXR.TileDescription()}
+            self.exr(path,channels=values,header=tiled)
+            tiled_bytes=path.read_bytes()
+            deep=np.empty((2,3),dtype=object)
+            for index in np.ndindex(deep.shape):
+                deep[index]=np.array([.25,.75],dtype=np.float32)
+            self.exr(path,channels={name:deep.copy() for name in 'RGBA'},
+                     header={'type':OpenEXR.deepscanline,'compression':OpenEXR.ZIPS_COMPRESSION})
+            deep_bytes=path.read_bytes()
+            for label,payload in (('tiled',tiled_bytes),('deep',deep_bytes)):
+                for flags_intact in (True,False):
+                    # Cleared flags produce an intentionally inconsistent envelope;
+                    # the storage attributes still must reject before native code.
+                    path.write_bytes(payload if flags_intact else payload[:4]+struct.pack('<I',2)+payload[8:])
+                    for decode in (verify_image,decode_image):
+                        with self.subTest(storage=label,flags_intact=flags_intact,decode=decode.__name__):
+                            with mock.patch.object(OpenEXR,'InputFile') as constructor:
+                                with self.assertRaisesRegex(Render3DError,'unsupported flags|Tiled and multilevel|Only EXR scanlineimage'):
+                                    decode(path,output=output('exr',32),resolution=[3,2])
+                                constructor.assert_not_called()
 
     def test_png8_and_png16_decode_true_precision(self):
         with tempfile.TemporaryDirectory() as temporary:
