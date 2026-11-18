@@ -230,10 +230,10 @@ class SemanticTests(unittest.TestCase):
         changed=deepcopy(self.asset.geometry);changed.by_id()['body'].positions=changed.by_id()['body'].positions.copy()+[10,0,0]
         descriptor=save_geometry(self.root/'changed',changed);different=(self.root/'changed'/descriptor['data']['path']).read_bytes()
         native_read=rig_models._read_bundle
-        def race(private_path,limits):
+        def race(private_path,limits,*args,**kwargs):
             original_path.write_bytes(different)
             self.assertNotEqual(Path(private_path),original_path)
-            return native_read(private_path,limits)
+            return native_read(private_path,limits,*args,**kwargs)
         with patch.object(rig_models,'_read_bundle',side_effect=race):loaded=load_asset(self.root/'saved')
         np.testing.assert_array_equal(loaded.geometry.by_id()['body'].positions,self.asset.geometry.by_id()['body'].positions)
         self.assertNotEqual(sha256(original_path),manifest['geometry']['data']['sha256'])
