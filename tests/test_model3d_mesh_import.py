@@ -275,6 +275,44 @@ class MeshImportTests(unittest.TestCase):
         with patch.object(library,'read_file',return_value=b'corrupt'):
             with self.assertRaises(RigError):import_canonical(library,ref)
 
+    def test_generic_canonical_geometry_with_blender_named_evidence(self):
+        from asset_library import file_record
+        from asset_library_contracts import seal
+
+        library, manifest, ref = self.canonical()
+        glb = self.root/'model.glb'
+        export_geometry(self.geometry(), glb)
+        original = self.root/'fixture.blend'
+        original.write_bytes(b'Synthetic converter evidence')
+        license_path = self.root/'license.txt'
+        license_path.write_bytes(library.read_file(ref, 'source/license.txt'))
+        obj = self.root/'mesh.obj'
+        obj.write_text('o mesh\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n', encoding='utf-8')
+        source = file_record(original, 'source/fixture.blend', 'source')
+        evidence = file_record(glb, 'source/model.glb', 'evidence')
+        manifest['provenance']['sources'] = [source]
+        manifest['provenance']['tools'] = [dict(name='Blender', version='4.5.3')]
+        manifest['provenance']['conversions'] = [
+            dict(tool='Blender', version='4.5.3', timestamp=manifest['identity']['created_at'],
+                 operation='Reopen packed triangle and export GLB', inputs=[source], outputs=[evidence])
+        ]
+
+        for version, path in [('1.1.0', obj), ('1.2.0', glb)]:
+            entry = 'runtime/' + path.name
+            geometry = file_record(path, entry, 'geometry')
+            manifest['version'] = version
+            manifest['files'] = [geometry, manifest['files'][1], source, evidence]
+            manifest['compatibility']['formats'] = [geometry['format']]
+            manifest['publication']['inventory'] = [record['path'] for record in manifest['files']]
+            registered = library.register(seal(manifest), {
+                entry: path, 'source/license.txt': license_path, source['path']: original, evidence['path']: glb,
+            })
+            for selection in (None, entry):
+                with (self.subTest(entry=entry, selection=selection),
+                      import_canonical(library, registered, entry=selection) as imported):
+                    self.assertEqual(imported.provenance['source_entry'], entry)
+                    self.assertEqual(imported.model.geometry.triangle_count, 1)
+
     def test_manual_normalized_filename_keeps_legacy_explicit_entry(self):
         from asset_library import file_record
         from asset_library_contracts import seal
@@ -475,6 +513,21 @@ class NormalizedCanonicalImportTests(unittest.TestCase):
             self.assertNotIn('source_unit_scale', imported.provenance)
             np.testing.assert_array_equal(imported.model.geometry.meshes[0].positions,
                                           [[0, 0, 0], [1, 0, 0], [0, 1, 0]])
+
+    def test_native_gltf_with_auxiliary_blender_tool_retains_entry_selection(self):
+        from asset_library_contracts import seal
+
+        ref = self.register('1.1.0', 1.0)
+        manifest = self.library.resolve(ref)
+        manifest['provenance']['tools'].append(dict(name='Blender', version='4.5.3'))
+        manifest = seal(manifest)
+        exact_ref = dict(ref, sha256=manifest['manifest_sha256'])
+        reader = SimpleNamespace(resolve=lambda _: manifest, read_file=lambda _, name: self.library.read_file(ref, name))
+
+        for entry, expected in [(None, 'normalized.glb'), ('source/model.gltf', 'source/model.gltf')]:
+            with self.subTest(entry=entry), import_canonical(reader, exact_ref, entry=entry) as imported:
+                self.assertEqual(imported.provenance['source_entry'], expected)
+                self.assertEqual(imported.model.geometry.triangle_count, 1)
 
     def test_real_glb_retains_skin_morphs_and_exact_clip_provenance(self):
         self.source = native_import_fixture.ROOT/'examples/rig-3d/humanoid/exports/character.glb'

@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from model3d_validation import validate_file
 from rig_errors import RigError, object_hash
 from rig_gltf import export_geometry
 from model3d_primitives import primitive
+import test_rig_asset_library_import as native_import_fixture
 
 
 def record(root,name,media):
@@ -110,6 +112,88 @@ class MeshAsset(unittest.TestCase):
             (self.root/'canonical.json').write_text(json.dumps({'canonical_ref':ref,'manifest':manifest}))
             with self.subTest(digest=malformed), self.assertRaises(RigError):
                 self.build(geometry,canonical_evidence=record(self.root,'canonical.json','application/json'))
+
+    @unittest.skipUnless(shutil.which('node') and (native_import_fixture.VALIDATOR/'package.json').is_file(),
+                         'Requires the pinned offline Khronos glTF validator')
+    def test_build_from_registered_native_normalized_geometry(self):
+        from asset_library import AssetLibrary
+        from asset_library_contracts import seal
+        from asset_library_import import ImportPipeline
+        from model3d_mesh_import import import_canonical
+
+        library_path = self.root/'library'
+        library = AssetLibrary(library_path, create=True)
+        library.upgrade_storage()
+        original = native_import_fixture.NativeImportTests.external_source(self)
+        original = original.rename(original.with_name('Géométrie.gltf'))
+        license_path = self.root/'license.txt'
+        license_path.write_text('Synthetic test fixture. CC0-1.0.\n')
+        ref = ImportPipeline(library).import_asset(
+            original, identity=native_import_fixture.IDENTITY, version='1.0.0',
+            metadata=native_import_fixture.METADATA, license_file=license_path,
+            fixture=True, unit_scale=2.5)
+        reopened = AssetLibrary(library_path)
+        with import_canonical(reopened, ref) as imported:
+            root = imported.root
+            manifest = imported.provenance['manifest']
+            geometry = record(root, imported.provenance['source_entry'], 'model/gltf-binary')
+            texture = record(root, 'source/resources/paint.png', 'image/png')
+            source_mesh = record(root, 'source/model.gltf', 'model/gltf+json')
+            retained_source = source(source_mesh)
+
+            def evidence_for(reference, registry_manifest):
+                (root/'canonical.json').write_text(json.dumps(
+                    dict(canonical_ref=reference, manifest=registry_manifest)))
+                return record(root, 'canonical.json', 'application/json')
+
+            evidence = evidence_for(ref, manifest)
+            build_options = dict(asset_id='normalized-triangle', version='1.0.0', category='prop')
+            document = build_asset(root, geometry, sources=[retained_source], provenance=provenance(),
+                                   files=[geometry, texture], canonical_evidence=evidence, **build_options)
+            self.assertEqual(document['geometry'], geometry)
+            self.assertEqual(document['sources'], [retained_source])
+            self.assertEqual(document['measurements']['bounds'], dict(minimum=[0, 0, 0], maximum=[2.5, 2.5, 0]))
+            self.assertEqual(document['extensions'], [dict(namespace='asset-library-canonical', payload=evidence)])
+            self.assertEqual(document['provenance']['evidence'], [evidence])
+            self.assertEqual(document['review'], dict(status='pending', evidence=[]))
+            (root/'asset.json').write_text(json.dumps(document))
+            self.assertTrue(validate_file(root/'asset.json', root)['payloads_verified'])
+
+            with self.assertRaisesRegex(RigError, 'Canonical normalized entry'):
+                build_asset(root, source_mesh, sources=[source(source_mesh)], provenance=provenance(),
+                            canonical_evidence=evidence, **build_options)
+
+            export_geometry(primitive('box').geometry(), root/'other.glb')
+            other = record(root, 'other.glb', 'model/gltf-binary')
+            with self.assertRaisesRegex(RigError, 'inventory does not bind'):
+                build_asset(root, other, sources=[source(other)], provenance=provenance(),
+                            canonical_evidence=evidence, **build_options)
+
+            wrong_role = deepcopy(manifest)
+            changed = next(item for item in wrong_role['files'] if item['path'] == 'normalized.glb')
+            changed['role'] = 'evidence'
+            wrong_role['provenance']['conversions'][0]['outputs'][0] = changed
+            wrong_role = seal(wrong_role)
+            wrong_ref = dict(ref, sha256=wrong_role['manifest_sha256'])
+            with self.assertRaisesRegex(RigError, 'native glTF conversion'):
+                build_asset(root, geometry, sources=[source(geometry)], provenance=provenance(),
+                            files=[geometry, texture], canonical_evidence=evidence_for(wrong_ref, wrong_role),
+                            **build_options)
+
+            claimed = dict(provenance(), fixture=False, origin='imported')
+            with self.assertRaisesRegex(RigError, 'Canonical fixture provenance'):
+                build_asset(root, geometry, sources=[source(geometry)], provenance=claimed,
+                            files=[geometry, texture], canonical_evidence=evidence_for(ref, manifest),
+                            **build_options)
+            for fixture_file, role in ((geometry, 'geometry'), (source_mesh, 'geometry'), (texture, 'texture')):
+                with self.subTest(fixture_file=fixture_file['path']):
+                    claimed_source = dict(source(fixture_file), role=role, provenance=claimed)
+                    if role == 'texture':
+                        claimed_source['dimensions_px'] = [2, 2]
+                    with self.assertRaisesRegex(RigError, 'Canonical fixture sources must remain fixtures'):
+                        build_asset(root, geometry, sources=[claimed_source], provenance=provenance(),
+                                    files=[geometry, texture], canonical_evidence=evidence, **build_options)
+
     def test_actual_material_texture_binding(self):
         import io
         from PIL import Image

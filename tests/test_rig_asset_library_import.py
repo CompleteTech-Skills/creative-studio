@@ -283,6 +283,78 @@ class NativeImportTests(unittest.TestCase):
             self.assertEqual(validation['validator'], '2.0.0-dev.3.10')
             self.assertTrue(validation['ok'])
 
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit',
+    )
+    def test_reopens_pinned_blender_derivatives_and_loads_only_normalized_geometry(self):
+        from copy import deepcopy
+        from asset_library_contracts import seal
+        import model3d_mesh_import
+        import rig_interop
+
+        ref = self.pipeline.import_blender_fixture(identity=IDENTITY, version='1.0.0',
+            metadata=METADATA, license_file=self.license)
+        reopened = AssetLibrary(self.library_path)
+        manifest = reopened.resolve(ref)
+        export, normalization = manifest['provenance']['conversions']
+        original, = export['inputs']
+        intermediate, = export['outputs']
+        normalized = normalization['outputs'][0]
+        self.assertEqual(normalization['inputs'], [intermediate])
+        self.assertEqual([record['path'] for record in (original, intermediate, normalized)],
+                         ['source/fixture.blend', 'source/model.glb', 'normalized.glb'])
+        payloads = {record['path']: reopened.read_file(ref, record['path']) for record in manifest['files']}
+        for record in (original, intermediate, normalized):
+            self.assertEqual(hashlib.sha256(payloads[record['path']]).hexdigest(), record['sha256'])
+        self.assertNotEqual(intermediate['sha256'], normalized['sha256'])
+
+        with (patch('asset_import_blender._run', side_effect=AssertionError('Consumer started Blender')),
+              patch.object(model3d_mesh_import, '_load', wraps=model3d_mesh_import._load) as load,
+              patch.object(rig_interop, 'validate_gltf', wraps=rig_interop.validate_gltf) as validate,
+              model3d_mesh_import.import_canonical(reopened, ref) as imported):
+            self.assertEqual(imported.provenance['canonical_ref'], ref)
+            self.assertEqual(imported.provenance['manifest'], manifest)
+            self.assertEqual(imported.provenance['normalized_sha256'], normalized['sha256'])
+            load.assert_called_once()
+            self.assertEqual(load.call_args.args[0], imported.root/'normalized.glb')
+            self.assertEqual([call.args[0] for call in validate.call_args_list],
+                             [imported.root/'source/model.glb', imported.root/'normalized.glb'])
+            self.assertEqual(imported.model.source_files, [imported.root/'normalized.glb'])
+            self.assertEqual(imported.model.report['source_sha256'], normalized['sha256'])
+            mesh, = imported.model.geometry.meshes
+            vertices = [tuple(mesh.positions[index]) for index in mesh.triangles[0]]
+            expected = [(0, 0, 0), (1, 0, 0), (0, 1, -2)]
+            self.assertIn(vertices, [expected[i:] + expected[:i] for i in range(3)])
+
+        with self.assertRaises(RigError) as caught:
+            model3d_mesh_import.import_canonical(reopened, ref, entry=intermediate['path'])
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_ENTRY')
+
+        for record in (original, intermediate, normalized):
+            with self.subTest(corrupt=record['path']):
+                corrupt = dict(payloads)
+                data = corrupt[record['path']]
+                corrupt[record['path']] = data[:-1] + bytes([data[-1] ^ 1])
+                reader = SimpleNamespace(resolve=lambda _: manifest, read_file=lambda _, name: corrupt[name])
+                with self.assertRaises(RigError) as caught:
+                    model3d_mesh_import.import_canonical(reader, ref, entry=normalized['path'])
+                self.assertEqual(caught.exception.report['code'], 'MODEL3D_HASH')
+
+        # Each surviving producer claim still requires the complete staged conversion.
+        for field, value in [('outputs', [normalized]), ('operation', 'Generic Blender export'),
+                             ('origin', 'Generic Blender conversion')]:
+            with self.subTest(lineage_field=field):
+                altered = deepcopy(manifest)
+                provenance = altered['provenance']
+                target = provenance if field == 'origin' else provenance['conversions'][0]
+                target[field] = value
+                altered = seal(altered)
+                reader = SimpleNamespace(resolve=lambda _: altered, read_file=lambda _, name: payloads[name])
+                with self.assertRaises(RigError) as caught:
+                    model3d_mesh_import.import_canonical(reader, dict(ref, sha256=altered['manifest_sha256']))
+                self.assertEqual(caught.exception.report['code'], 'MODEL3D_NORMALIZATION')
+
     def test_regular_import_rejects_blender_paths_without_worker(self):
         with patch('asset_import_blender.create_fixture') as worker:
             with self.assertRaises(RigError) as error:
