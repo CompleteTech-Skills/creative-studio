@@ -12,14 +12,14 @@ independent visual approval. `report.json` records exact source/runtime hashes;
 Run from the repository root with requirements-delivery installed:
 
 ```sh
-/home/complete/.cache/hatch-coordination-20261112/verifier-venv/bin/python scripts/continuity_contracts.py --generate-schemas profiles --check
-flock /home/complete/.cache/hatch-coordination-20261112/heavy-tests.lock /home/complete/.cache/hatch-coordination-20261112/verifier-venv/bin/python -m unittest discover -s tests -p 'test_*continuity*.py' -v
-flock /home/complete/.cache/hatch-coordination-20261112/heavy-tests.lock /home/complete/.cache/hatch-coordination-20261112/verifier-venv/bin/python -c 'import sys,unittest; sys.path[:0]=["tests","scripts"]; names=["test_scene3d_contracts.py","test_rig_scene3d_math.py","test_production_contracts.py","test_production_performance.py"]; suite=unittest.TestSuite(unittest.defaultTestLoader.discover("tests",pattern=name) for name in names); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(not result.wasSuccessful())'
-/home/complete/.cache/hatch-coordination-20261112/verifier-venv/bin/python tests/continuity_temporal_probe.py NEW_OUTPUT_DIRECTORY
+<local-work-dir>/.cache/hatch-coordination-20261112/verifier-venv/bin/python scripts/continuity_contracts.py --generate-schemas profiles --check
+flock <local-work-dir>/.cache/hatch-coordination-20261112/heavy-tests.lock <local-work-dir>/.cache/hatch-coordination-20261112/verifier-venv/bin/python -m unittest discover -s tests -p 'test_*continuity*.py' -v
+flock <local-work-dir>/.cache/hatch-coordination-20261112/heavy-tests.lock <local-work-dir>/.cache/hatch-coordination-20261112/verifier-venv/bin/python -c 'import sys,unittest; sys.path[:0]=["tests","scripts"]; names=["test_scene3d_contracts.py","test_rig_scene3d_math.py","test_production_contracts.py","test_production_performance.py"]; suite=unittest.TestSuite(unittest.defaultTestLoader.discover("tests",pattern=name) for name in names); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(not result.wasSuccessful())'
+<local-work-dir>/.cache/hatch-coordination-20261112/verifier-venv/bin/python tests/continuity_temporal_probe.py NEW_OUTPUT_DIRECTORY
 ```
 
 The original output directory was
-`/home/complete/.cache/hatch-coordination-20261112/continuity116-probe-final`.
+`<local-work-dir>/.cache/hatch-coordination-20261112/continuity116-probe-final`.
 The probe requires a new output directory. Its SQLite sidecar is disposable and
 is omitted from this source-controlled evidence; the exact authored history and
 native closure required to reconstruct it are retained as JSON/native files.

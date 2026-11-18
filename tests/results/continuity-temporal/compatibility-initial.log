@@ -65,12 +65,12 @@ ERROR: test_scene3d_contracts (unittest.loader._FailedTest.test_scene3d_contract
 ----------------------------------------------------------------------
 ImportError: Failed to import test module: test_scene3d_contracts
 Traceback (most recent call last):
-  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
+  File "<local-work-dir>/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
     module = self._get_module_from_name(name)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
+  File "<local-work-dir>/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
     __import__(name)
-  File "/home/complete/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_scene3d_contracts.py", line 22, in <module>
+  File "<local-work-dir>/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_scene3d_contracts.py", line 22, in <module>
     from rig_errors import RigError, decode_json
 ModuleNotFoundError: No module named 'rig_errors'
 
@@ -80,12 +80,12 @@ ERROR: test_rig_scene3d_math (unittest.loader._FailedTest.test_rig_scene3d_math)
 ----------------------------------------------------------------------
 ImportError: Failed to import test module: test_rig_scene3d_math
 Traceback (most recent call last):
-  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
+  File "<local-work-dir>/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
     module = self._get_module_from_name(name)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
+  File "<local-work-dir>/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
     __import__(name)
-  File "/home/complete/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_rig_scene3d_math.py", line 8, in <module>
+  File "<local-work-dir>/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_rig_scene3d_math.py", line 8, in <module>
     from rig_errors import RigError
 ModuleNotFoundError: No module named 'rig_errors'
 

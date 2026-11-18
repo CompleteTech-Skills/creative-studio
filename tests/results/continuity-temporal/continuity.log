@@ -52,7 +52,7 @@ test_scene_boundary_native_world_mapping_and_cli (test_continuity_temporal.Tempo
 test_schema_roundtrip (test_continuity_temporal.TemporalTests.test_schema_roundtrip) ... ok
 test_stale_cache_native_mutation_recovery_and_restart (test_continuity_temporal.TemporalTests.test_stale_cache_native_mutation_recovery_and_restart) ... ok
 test_strict_typed_operations_and_normalized_transform (test_continuity_temporal.TemporalTests.test_strict_typed_operations_and_normalized_transform) ... ok
-test_actual_cpu_reference_does_not_grant_visual_approval (test_rig_continuity_capabilities.CapabilityTest.test_actual_cpu_reference_does_not_grant_visual_approval) ... /home/complete/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_rig_continuity_capabilities.py:96: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+test_actual_cpu_reference_does_not_grant_visual_approval (test_rig_continuity_capabilities.CapabilityTest.test_actual_cpu_reference_does_not_grant_visual_approval) ... <local-work-dir>/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_rig_continuity_capabilities.py:96: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
   self.assertEqual(pic.size,(64,64));self.assertGreater(len(set(pic.getdata())),10)
 ok
 test_actual_owner_disk_budget_cannot_be_waived (test_rig_continuity_capabilities.CapabilityTest.test_actual_owner_disk_budget_cannot_be_waived) ... ok

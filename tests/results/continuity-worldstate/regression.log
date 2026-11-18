@@ -73,4 +73,4 @@ test_v1_shape_rejects_rich_fields_and_v11_rejects_legacy_operations (test_rig_co
 Ran 70 tests in 94.470s
 
 OK
-{"destination": "/home/complete/.cache/hatch-coordination-20261112/continuity117-evidence/trace-merged-d523", "head_sha256": "d53896851d50928c223f3ee526f811a1efc1b9179c80ef93805c0d0e88758f36", "fixture": true}
+{"destination": "<local-work-dir>/.cache/hatch-coordination-20261112/continuity117-evidence/trace-merged-d523", "head_sha256": "d53896851d50928c223f3ee526f811a1efc1b9179c80ef93805c0d0e88758f36", "fixture": true}

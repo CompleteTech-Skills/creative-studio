@@ -1,11 +1,11 @@
 # Independent review: native rig loading resource admission
 
 - Verdict: **CHANGES_REQUIRED**.
-- Reviewer: independent `gpt-6-astra`, high reasoning, agent `/root/rig_resource_limits/review_corrected_loader`; separate from the implementer.
+- Reviewer: independent `gpt-6-astra`, high reasoning, agent `<local-work-dir>/rig_resource_limits/review_corrected_loader`; separate from the implementer.
 - Exact reviewed HEAD: `dffbf6f22b59e46378c712babf62449b728fb569`.
 - Base: `d932d08a781e5c37a472a595b238972799f8bbf4`.
 - Branch supplied for review: `agent/rig-resource-limits-fleet`.
-- Frozen review checkout: `/home/complete/.cache/hatch-fleet/review-rig-load-limits-corrected-tree` (detached at the exact HEAD).
+- Frozen review checkout: `<local-work-dir>/.cache/hatch-fleet/review-rig-load-limits-corrected-tree` (detached at the exact HEAD).
 - Scope: shared native loader only. This is neither full issue #115 acceptance nor approval of the complete #107 continuity mission.
 
 ## Findings
@@ -18,7 +18,7 @@ The new admission code accounts for encoded archive bytes and four times the mem
 
 Consequently, a small admitted bundle can require materially more decoder memory than its reported loading estimate. This is an admission-accounting defect, independent of whether the operating system enforces RSS. The existing native writer uses deflate, so a narrow stored/deflated native profile is a practical correction. Reject other methods before any member is opened/read, or explicitly admit and enforce decoder workspace. Add bounded tests that prove unsupported methods are rejected before decoder construction; a large-memory reproduction is unnecessary.
 
-Evidence: complete `scan_bundle` review plus `/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/zipfile/__init__.py`, `LZMADecompressor`, `_check_compression`, and `_get_decompressor`. This finding was established by code inspection; no new malformed archive program or oversized decoder run was executed.
+Evidence: complete `scan_bundle` review plus `<local-work-dir>/.local/share/mise/installs/python/3.12.15/lib/python3.12/zipfile/__init__.py`, `LZMADecompressor`, `_check_compression`, and `_get_decompressor`. This finding was established by code inspection; no new malformed archive program or oversized decoder run was executed.
 
 ### P1 — Image.open performs unaccounted metadata expansion during admission
 
@@ -54,7 +54,7 @@ The first three findings were delivered to the implementation owner promptly. Th
 
 Reviewed the complete source/documentation/test changes from the base to the exact HEAD: the new `rig_load_limits.py`, all modified `rig_models.py` paths and their surrounding models/material/geometry validation and binary writer, the CI gate registration, the resource-admission guide, and every one of the 15 added tests and their fixture construction. Inspected retained validation/error artifacts, source inventories, command logs, and their recorded digests.
 
-Read repository README, SKILL.md and DELIVERY_STATUS.md, the exact cached #115 request, the full #107 body and continuation, and its scope/fallback addendum and reopening history. The issue context is retained under `/home/complete/.cache/hatch-fleet/rig-resource-issue-context/`. These require actual bounded behavior and honest unavailable states; a test log or file's existence cannot establish acceptance.
+Read repository README, SKILL.md and DELIVERY_STATUS.md, the exact cached #115 request, the full #107 body and continuation, and its scope/fallback addendum and reopening history. The issue context is retained under `<local-work-dir>/.cache/hatch-fleet/rig-resource-issue-context/`. These require actual bounded behavior and honest unavailable states; a test log or file's existence cannot establish acceptance.
 
 Traced native loader use through CLI, job, HTTP and archive paths, and inspected the separate historical/current local `RigOwner` caller in `/tmp/hatch-continuity115/scripts/continuity_capability_owners.py`. That caller loads before its vertex/triangle-only reservation check and loads again afterward. This helper change does not update that caller or establish its overall operation reservation, resident interpreter budget, output budget, deadline, or post-operation pins. The helper documentation appropriately leaves those responsibilities with callers.
 
@@ -77,15 +77,15 @@ Executed only the existing bounded local suites and their ordinary Python CLI/in
 
 ```text
 PYTHONPATH=scripts:tests OPENBLAS_NUM_THREADS=1 \
-TMPDIR=/home/complete/.cache/hatch-fleet/review-rig-load-limits-corrected-tmp \
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python -m unittest \
+TMPDIR=<local-work-dir>/.cache/hatch-fleet/review-rig-load-limits-corrected-tmp \
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python -m unittest \
 test_rig_load_limits test_rig_skinning test_rig_material_validation \
 test_rig_contracts test_model3d_contracts test_rig_compatibility -v
 ```
 
 Result: **109 tests, 21.377 seconds, zero failures, zero errors, zero skips**, exit code 0. The 809 legacy 2D cases were **discovered only**, not executed by this run. Retained Blender report schema coverage is not a fresh Blender execution.
 
-Independent log: `/home/complete/.cache/hatch-fleet/review-rig-load-limits-corrected-tests.log`.
+Independent log: `<local-work-dir>/.cache/hatch-fleet/review-rig-load-limits-corrected-tests.log`.
 SHA-256: `5a6dc75bc7e545617ecccd1cf5c7b6ebb7ef97d0723e66c0d1d96c9a79bfef53`.
 
 All artifact digests in `validation.json` and `correction-validation.json` match their retained files. All 150 entries in `corrected-source-before.json` match the exact reviewed checkout after tests. The older 150-file inventory differs only in `scripts/rig_load_limits.py` and `tests/test_rig_load_limits.py`, consistent with the directory correction. The older evidence accurately reports 108 tests at its earlier source commit; corrected retained evidence reports 109 tests in 20.343 seconds at `6d327e439fef47de19d289d8a33cee0839c2effe`. These are distinct from this independent run.

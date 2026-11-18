@@ -12,7 +12,8 @@ from character_decomposition import (create_decomposition, load_decomposition, r
     recompose, recover_decomposition, rebuild_from_annotation, validate_decomposition)
 
 COMMANDS = ('decompose', 'decompose-status', 'decompose-analyze', 'decompose-annotate',
-    'decompose-validate', 'decompose-recompose', 'decompose-review-ui', 'decompose-review',
+    'decompose-analysis-status', 'decompose-analysis-run', 'decompose-analysis-ingest',
+    'decompose-analysis-apply', 'decompose-analysis-retry', 'decompose-validate', 'decompose-recompose', 'decompose-review-ui', 'decompose-review',
     'decompose-restore', 'decompose-export', 'decompose-import', 'decompose-prepare',
     'decompose-reconstruction-request', 'decompose-reconstruction-ingest',
     'decompose-reconstruction-fail', 'decompose-edit')
@@ -22,6 +23,9 @@ def add_arguments(parser):
     for flag in ('annotations', 'foreground-mask', 'origin', 'select', 'hidden-mask', 'author',
                  'operation', 'operation-note', 'color', 'offset'):
         parser.add_argument('--' + flag)
+    parser.add_argument('--analysis-backend', choices=('opencv-haar', 'external'), help='Optional real analysis: fixed local face/eye cascade or attributed external result; disabled by default')
+    parser.add_argument('--enable-analysis', action='store_true', help='Explicitly permit local no-cost image analysis; never grants semantic approval')
+    parser.add_argument('--analysis-taxonomy', action='append', help='Allowed proposed semantic category; repeat for several')
     parser.add_argument('--component', action='append', default=[])
     parser.add_argument('--decomposition-mode', choices=('faithful', 'assisted'), default='faithful')
     parser.add_argument('--review-revision', type=int)
@@ -123,7 +127,19 @@ def dispatch(root, args):
             result['reconstruction_handoffs'] = _jobs(root)
         return result
     if command == 'decompose-analyze':
+        if args.analysis_backend:
+            from decomposition_analysis import prepare, run
+            prepared = prepare(root, args.analysis_backend, enabled=args.enable_analysis, taxonomy=args.analysis_taxonomy)
+            return run(root, prepared['job']) if args.analysis_backend == 'opencv-haar' else prepared
         return read_json(root / 'analysis-request.json')
+    if command.startswith('decompose-analysis-'):
+        _require(args, 'job')
+        import decomposition_analysis as analysis
+        action = command.removeprefix('decompose-analysis-')
+        if action == 'ingest':
+            _require(args, 'receipt')
+            return analysis.ingest(root, args.job, args.receipt)
+        return getattr(analysis, action)(root, args.job)
     if command == 'decompose-annotate':
         _require(args, 'annotations', 'author', 'note')
         value = rebuild_from_annotation(root, args.annotations, reason=args.note, author=args.author)
