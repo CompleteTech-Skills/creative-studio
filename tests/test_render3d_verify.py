@@ -103,7 +103,64 @@ class ImageVerification(unittest.TestCase):
         dtype=np.float16 if depth==16 else np.float32
         data=np.array([[0,2,10],[.25,.5,1]],dtype=dtype)
         values=channels or dict(R=data,G=data,B=data,A=np.ones((2,3),dtype=dtype))
-        OpenEXR.File(header or {},values).write(str(path))
+        with OpenEXR.File(header or {},values) as fixture:
+            fixture.write(str(path))
+
+    def test_unverified_compressions_reject_actual_files_before_decoder(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'new-compression.exr'
+            for name in ('HTJ2K32_COMPRESSION','HTJ2K256_COMPRESSION','LJ2K_COMPRESSION','ZSTD_COMPRESSION'):
+                self.exr(path,header={'compression':getattr(OpenEXR,name)})
+                original=path.read_bytes()
+                # Genuine codec output and trailing bytes both require refusal:
+                # native decode support alone does not verify the chunk envelope.
+                for payload in (original,original+b'unreferenced'):
+                    path.write_bytes(payload)
+                    for decode in (verify_image,decode_image):
+                        with self.subTest(compression=name,decode=decode.__name__,trailing=payload!=original):
+                            with mock.patch.object(OpenEXR,'InputFile') as constructor:
+                                with self.assertRaisesRegex(Render3DError,'compression envelope'):
+                                    decode(path,output=output('exr',32),resolution=[3,2])
+                                constructor.assert_not_called()
+
+    def test_standalone_contract_rejects_before_file_capture(self):
+        import render3d_verify
+        invalid=[(output('exr',depth),[3,2],'combined') for depth in (8,17,True,32.0)]
+        invalid += [(dict(output('exr',32),alpha='premultiplied'),[3,2],'combined'),
+                    (dict(output('exr',32),color_space='srgb'),[3,2],'combined'),
+                    (dict(output(),passes=['depth']),[3,2],'depth'),
+                    (dict(output('exr',32),passes=['combined','invented']),[3,2],'combined'),
+                    (dict(output('exr',32),passes=['combined','combined']),[3,2],'combined'),
+                    (output(),[0,2],'combined'),(output(),[3,2,1],'combined'),
+                    (output(),[True,2],'combined'),(output(),[3,16385],'combined'),
+                    (output(),[3,2],'depth'),({},[3,2],'combined')]
+        for contract,resolution,selected in invalid:
+            for decode in (verify_image,decode_image):
+                with self.subTest(output=contract,resolution=resolution,pass_name=selected,decode=decode.__name__):
+                    with mock.patch.object(render3d_verify,'_captured') as capture:
+                        with self.assertRaises(Render3DError):
+                            decode('must-not-open',output=contract,resolution=resolution,pass_name=selected)
+                        capture.assert_not_called()
+
+    def test_invalid_verification_budgets_reject_before_file_capture(self):
+        import render3d_verify
+        for option in ('max_bytes','memory_bytes'):
+            for value in (-2,-1,0,True,False,1.0,float('nan'),float('inf'),2**40+1):
+                for decode in (verify_image,decode_image):
+                    with self.subTest(option=option,value=value,decode=decode.__name__):
+                        with mock.patch.object(render3d_verify,'_captured') as capture:
+                            with self.assertRaises(Render3DError):
+                                decode('must-not-open',output=output(),resolution=[3,2],**{option:value})
+                            capture.assert_not_called()
+
+    def test_float_exr_cannot_claim_unsupported_precision(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'float.exr';self.exr(path)
+            for depth in (8,17):
+                for decode in (verify_image,decode_image):
+                    with self.subTest(depth=depth,decode=decode.__name__):
+                        with self.assertRaises(Render3DError):
+                            decode(path,output=output('exr',depth),resolution=[3,2])
 
     def test_scanline_long_names_hdr_alpha_and_precision_remain_supported(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -132,7 +189,8 @@ class ImageVerification(unittest.TestCase):
                         path=Path(temporary)/'multipart.exr'
                         parts=[OpenEXR.Part({},rgba,'valid-beauty'),
                                OpenEXR.Part({},dict(Z=invalid),'invalid-extra')]
-                        OpenEXR.File(parts).write(str(path))
+                        with OpenEXR.File(parts) as fixture_writer:
+                            fixture_writer.write(str(path))
                         with OpenEXR.File(str(path),separate_channels=True) as fixture:
                             self.assertEqual(len(fixture.parts),2)
                             self.assertEqual(set(fixture.channels(0)),set('RGBA'))
@@ -238,9 +296,10 @@ class ImageVerification(unittest.TestCase):
                 path.write_bytes(original[:33]+struct.pack('>I',len(key))+payload+
                                  struct.pack('>I',zlib.crc32(payload)&0xffffffff)+original[33:])
                 # The fixture really displays transparent pixels in a PNG decoder.
-                _,_,rows,metadata=png.Reader(filename=str(path)).asRGBA()
-                self.assertEqual(metadata['planes'],4)
-                self.assertTrue(all(sample == 0 for row in rows for sample in row[3::4]))
+                with path.open('rb') as fixture_stream:
+                    _,_,rows,metadata=png.Reader(file=fixture_stream).asRGBA()
+                    self.assertEqual(metadata['planes'],4)
+                    self.assertTrue(all(sample == 0 for row in rows for sample in row[3::4]))
                 for alpha in ('opaque','straight'):
                     for decode in (verify_image,decode_image):
                         with self.subTest(depth=depth,alpha=alpha,decode=decode.__name__):
@@ -350,6 +409,32 @@ class ImageVerification(unittest.TestCase):
             usage={'elapsed_seconds':0,'peak_memory_bytes':None,'output_bytes':None,'measurement':'unavailable'},logs=[],manifest=None,
             verification={'status':'not-run','verifier':None,'evidence':None})
         return request,result,destination,snapshot_root,backend
+
+    def test_result_enforces_requested_engine_device_and_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            cases=[('cpu',None,False,'cpu','eevee',False),
+                   ('cpu',None,False,'cuda','cycles',False),
+                   ('gpu-required','cuda',False,'cpu','cycles',False),
+                   ('gpu-required','cuda',False,'metal','cycles',False),
+                   ('gpu-required','cuda',False,'cuda','cycles',True),
+                   ('gpu-required',None,False,'cuda','cycles',True),
+                   ('gpu-preferred','cuda',False,'cpu','cycles',False),
+                   ('gpu-preferred','cuda',True,'cpu','cycles',True),
+                   ('gpu-preferred','cuda',True,'metal','cycles',False),
+                   ('gpu-preferred','cuda',False,'cuda','cycles',True),
+                   ('cpu',None,False,'cpu','cycles',True)]
+            for policy,device,fallback,actual,engine,accepted in cases:
+                req=deepcopy(request);res=deepcopy(result);observed=deepcopy(backend)
+                req['settings'].update(device_policy=policy,device=device,allow_cpu_fallback=fallback)
+                observed.update(device=actual,engine=engine)
+                res.update(request_sha256=object_hash(req),backend=observed)
+                with self.subTest(policy=policy,device=device,actual=actual,engine=engine,fallback=fallback):
+                    if accepted:
+                        self.assertEqual(verify_result(req,res,root,snapshot_root=snapshot,expected_backend=observed)['status'],'passed')
+                    else:
+                        with self.assertRaises(Render3DError):
+                            verify_result(req,res,root,snapshot_root=snapshot,expected_backend=observed)
 
     def test_result_full_decode_provisional_status_and_input_bindings(self):
         with tempfile.TemporaryDirectory() as temporary:

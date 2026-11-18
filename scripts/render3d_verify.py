@@ -16,7 +16,7 @@ import struct
 import tempfile
 import zlib
 
-from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational
+from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational, definitions, _validator
 from rig_errors import RigError, object_hash, open_payload, safe_path, scoped_directory_descriptor
 
 
@@ -193,6 +193,8 @@ def _exr_envelope(stream, resolution, memory_bytes):
     require({b'compression', b'dataWindow', b'displayWindow'} <= seen,
             'corrupt-output', 'EXR is missing its compression or full-frame window attributes.')
     block_rows = {0: 1, 1: 1, 2: 1, 3: 16, 4: 32, 5: 16, 6: 32, 7: 32, 8: 32, 9: 256}
+    require(compression in block_rows, 'unsupported-feature',
+            'EXR compression envelope is not independently verified.')
     if compression in block_rows:
         rows = block_rows[compression]
         height = int(resolution[1])  # Both encoded windows matched the requested dimensions above.
@@ -258,9 +260,43 @@ def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
         reader.close()
 
 
+def _image_contract(output, resolution, pass_name, max_bytes, memory_bytes):
+    """Use native field contracts; one EXR image need not include beauty."""
+    properties = definitions()['RenderSettings']['properties']
+    schema = deepcopy(properties['output'])
+    # The native aggregate requires a combined pass across a render job. A
+    # standalone depth/normal image retains the same element/format constraints
+    # without requiring that separate image in this one-file operation.
+    del schema['allOf'][0]['else']['properties']['passes']['contains']
+    resources = properties['resources']['properties']
+    for value, contract in ((output, schema), (resolution, properties['resolution']),
+                            (max_bytes, resources['storage_bytes']),
+                            (memory_bytes, resources['memory_bytes'])):
+        error = next(iter(_validator('RenderSettings').evolve(schema=contract).iter_errors(value)), None)
+        require(error is None, 'invalid-input', error.message if error else '')
+    require(isinstance(pass_name, str) and pass_name in output['passes'],
+            'invalid-input', 'Unsupported output/pass selection.')
+
+
+def _requested_backend(settings, backend):
+    """Check observed identity against validated native engine/device intent."""
+    validate(backend, 'BackendIdentity')
+    require(backend['engine'] == settings['engine'], 'unsupported-backend',
+            'Executed engine differs from the requested engine.')
+    actual, selected, policy = backend['device'], settings['device'], settings['device_policy']
+    if policy == 'cpu':
+        require(actual == 'cpu', 'unsupported-device', 'CPU policy requires CPU execution.')
+    elif actual == 'cpu':
+        require(policy == 'gpu-preferred' and settings['allow_cpu_fallback'],
+                'unsupported-device', 'CPU execution is not permitted by the requested GPU policy.')
+    else:
+        require(selected is None or actual == selected, 'unsupported-device',
+                'Executed device differs from the explicitly selected device.')
+
+
 def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=1024**3, memory_bytes=1024**3, _pixels=False):
     """Decode one actual output. Pixel ranges do not establish scene correctness."""
-    require(output['format'] in ('png','exr') and pass_name in output['passes'], 'invalid-input','Unsupported output/pass selection.')
+    _image_contract(output, resolution, pass_name, max_bytes, memory_bytes)
     try:
         with _captured(path,max_bytes) as (stream,identity):
             report=(_png if output['format']=='png' else _exr)(stream,resolution,output['bit_depth'],memory_bytes,_pixels)
@@ -314,6 +350,7 @@ class RenderArtifactVerifier:
         """
         import render3d_snapshot as snapshot_owner
         validate(request,'RenderRequest')
+        _requested_backend(request['settings'], self.expected_backend)
         require(isinstance(result,dict) and result.get('status') in ('partial','complete'),
                 'incomplete-output','Only a complete candidate sequence can be verified.')
         validate(result.get('verification'),'Verification')
