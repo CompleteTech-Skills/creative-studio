@@ -8,7 +8,7 @@ import numpy as np
 from rig_contracts import validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import require
-from rig_math import (decompose, qangle, qbetween, qinverse, qmul, quaternion, unit, vector)
+from rig_math import (decompose, qangle, qbetween, qinverse, qmatrix, qmul, quaternion, unit, vector)
 from rig_skeleton import evaluate_fk
 
 
@@ -144,7 +144,38 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
-    if chain['solver'] == 'two-bone':
+    pole_delta = pole-origin
+    matched_fold = (distance <= 1e-9 and np.linalg.norm(points[-1]-origin) <= 1e-9
+                    and np.linalg.norm(points[-1]-target) <= tolerance
+                    and np.linalg.norm(pole_delta) > 1e-9
+                    and np.linalg.norm(unit(pole_delta)-unit(points[1]-origin)) <= 8*np.finfo(float).eps)
+    if matched_fold:
+        # A closed chain has no endpoint axis from which to reconstruct its
+        # interior. Keep its authoritative matched seed, then run the same
+        # constraint/orientation pass and residual checks as every other solve.
+        result, changes = apply_pass(result)
+    elif (distance <= 1e-9 and np.linalg.norm(points[-1]-origin) <= 1e-9
+          and np.linalg.norm(points[-1]-target) <= tolerance
+          and np.linalg.norm(pole_delta) > 1e-9):
+        # A closed seed can have no usable neighbouring-joint axes at all.
+        # Reorient its existing shape toward the explicit pole before the
+        # ordinary native orientation/constraint pass, retaining its lengths.
+        rotation = qmatrix(qbetween(points[1]-origin, pole_delta))
+        points = origin + (points-origin) @ rotation.T
+        result = _orient_chain(skeleton, result, names, points)
+        result, changes = apply_pass(result)
+        iterations = 1
+    elif (len(names) == 3 and distance <= 1e-9
+          and abs(lengths[0]-lengths[1]) <= 1e-9):
+        # The equal-length folded limit applies to either solver. The pole
+        # names the elbow direction directly, without an invented world axis.
+        bend = pole_delta if np.linalg.norm(pole_delta) > 1e-9 else points[1]-origin
+        points[1] = origin + unit(bend)*lengths[0]
+        points[2] = target
+        result = _orient_chain(skeleton, result, names, points)
+        result, changes = apply_pass(result)
+        iterations = 1
+    elif chain['solver'] == 'two-bone':
         d = float(np.clip(distance, max(lower, 1e-9), lengths.sum()))
         a, b = lengths
         x = (d*d+a*a-b*b)/(2*d)
@@ -191,9 +222,15 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
 
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     validate_chain(skeleton, chain)
+    points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
     world = evaluate_fk(skeleton, pose)
-    points = [world[name][:3, 3] for name in chain['bones']]
-    axis = unit(points[-1]-points[0])
-    bend = _pole_perpendicular(axis, points[0], points[1])
-    return dict(target=points[-1].tolist(), pole=(points[0]+bend*np.linalg.norm(points[-1]-points[0])).tolist(),
+    reach = float(np.linalg.norm(points[-1]-points[0]))
+    if reach <= 1e-9:
+        # A valid fully folded chain has a measurable first segment even
+        # though its endpoint coincides with its root.
+        pole = points[1]
+    else:
+        bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
+        pole = points[0]+bend*reach
+    return dict(target=points[-1].tolist(), pole=pole.tolist(),
                 orientation=decompose(world[chain['bones'][-1]])['rotation'])
