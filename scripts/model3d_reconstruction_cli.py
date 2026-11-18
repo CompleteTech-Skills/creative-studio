@@ -201,13 +201,13 @@ def main(argv=None):
     run.add_argument('--export-format',choices=['glb','gltf','obj'],help='Explicit override of the request export format.')
     run.add_argument('--report',action='store_true',help='Print the full actual reconstruction/acceptance report, not only a summary.')
     args=parser.parse_args(argv)
-    from rig_errors import RigError,require,open_payload,decode_json
+    from rig_errors import RigError,require,normalize_root,open_payload,decode_json
     try:
         if args.command=='schema':value=schema()
         elif args.command=='capabilities':value=capabilities()
         else:
             source=Path(args.file).absolute()
-            with open_payload(source.parent,source.name) as (stream,info):
+            with open_payload(normalize_root(source.parent),source.name) as (stream,info):
                 require(0<info.st_size<=MAX_REQUEST_BYTES,'RECON_REQUEST_LIMIT','Request file exceeds4MiB.')
                 payload=stream.read(info.st_size+1);require(len(payload)==info.st_size,'RECON_REQUEST_CHANGED','Request changed while reading.')
             request=validate_request(decode_json(payload))
