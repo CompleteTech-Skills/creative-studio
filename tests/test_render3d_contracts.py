@@ -344,7 +344,7 @@ class OutputBoundaryRegressions(unittest.TestCase):
 
     def test_frame_output_compatibility_cannot_be_bypassed_by_rehashing(self):
         from render3d_contracts import frame_hash
-        frame=dict(schema_version=1,kind='render3d-frame',index=0,local_index=0,presentation_time=dict(numerator=0,denominator=1),source_time=dict(numerator=0,denominator=1),camera='camera',snapshot_sha256='0'*64,settings_sha256='1'*64,dependencies=['2'*64],output=settings()['output'],destination='out',cache_key='0'*64)
+        frame=dict(schema_version=1,kind='render3d-frame',project=request()['project'],scene=request()['scene'],shot=request()['shot'],index=0,local_index=0,presentation_time=dict(numerator=0,denominator=1),source_time=dict(numerator=0,denominator=1),camera='camera',snapshot_sha256='0'*64,settings_sha256='1'*64,dependencies=['2'*64],output=settings()['output'],destination='out',cache_key='0'*64)
         frame['cache_key']=frame_hash(frame);validate(frame)
         for values in (dict(format='png',bit_depth=32),dict(format='exr',bit_depth=8,color_space='srgb')):
             bad=deepcopy(frame);bad['output'].update(values);bad['cache_key']=frame_hash(bad)
@@ -442,3 +442,56 @@ class SceneSnapshot(unittest.TestCase):
                 str(destination),'--adapter','scene3d'],capture_output=True,text=True)
             self.assertEqual(verify.returncode,0,verify.stderr+verify.stdout)
             self.assertEqual(json.loads(capture.stdout),json.loads(verify.stdout))
+
+    def test_shot_selection_changes_frame_identity_and_cache_key(self):
+        from scene3d_example import build_example
+        from scene3d_contracts import canonical_bytes,load_project
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';build_example(source)
+            def write(name,document):
+                payload=canonical_bytes(document);(source/name).write_bytes(payload)
+                return dict(id=document['id'],version=document['version'],kind=document['kind'],
+                            path=name,sha256=hashlib.sha256(payload).hexdigest())
+            scene=json.loads((source/'example-scene.json').read_bytes())
+            scene['shots'].append('second-shot');scene_ref=write('example-scene.json',scene)
+            shot=json.loads((source/'example-shot.json').read_bytes());shot['scene']=scene_ref
+            first_ref=write('example-shot.json',shot)
+            shot['id']='second-shot'
+            shot['tracks']=[dict(target='mesh',property='translation',interpolation='linear',
+                keys=[dict(frame=0,value=[100,0,0]),dict(frame=24,value=[200,0,0])])]
+            second_ref=write('second-shot.json',shot)
+            render=json.loads((source/'example-render.json').read_bytes());render['shot']=first_ref
+            render_ref=write('example-render.json',render)
+            project=json.loads((source/'project.json').read_bytes())
+            project['scenes']=[scene_ref];project['shots']=[first_ref,second_ref]
+            replacements={ref['path']:ref for ref in (scene_ref,first_ref,second_ref,render_ref)}
+            project['dependency_lock']=[replacements.get(ref['path'],ref)
+                for ref in project['dependency_lock']]+[second_ref]
+            write('project.json',project);load_project(source)
+            create_snapshot(source,root/'snapshot',Scene3DAdapter())
+            value=request();value['scene']['id']='example-scene';value['shot']['id']='example-shot'
+            value['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            first=make_frame_spec(value,5,root/'snapshot/snapshot.json')
+            value['shot']['id']='second-shot';second=make_frame_spec(value,5,root/'snapshot/snapshot.json')
+            self.assertNotEqual(first['cache_key'],second['cache_key'])
+            self.assertEqual(first['shot'],{'id':'example-shot','version':'1.0.0'})
+            self.assertEqual(second['shot'],{'id':'second-shot','version':'1.0.0'})
+            for key in ('project','scene','shot'):
+                missing=deepcopy(first);missing.pop(key)
+                with self.subTest(key=key),self.assertRaises(Render3DError):validate(missing)
+
+    def test_removal_during_request_binding_has_typed_error(self):
+        from scene3d_example import build_example
+        from unittest.mock import patch
+        import shutil
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);build_example(root/'source')
+            create_snapshot(root/'source',root/'snapshot',Scene3DAdapter())
+            value=request();value['scene']['id']='example-scene';value['shot']['id']='example-shot'
+            value['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            def remove_after_verification(*args):
+                document=verify_snapshot(*args);shutil.rmtree(root/'snapshot');return document
+            with patch('render3d_snapshot.verify_snapshot',side_effect=remove_after_verification):
+                with self.assertRaises(Render3DError) as caught:
+                    make_frame_spec(value,5,root/'snapshot/snapshot.json')
+            self.assertEqual(caught.exception.report['category'],'stale-asset')

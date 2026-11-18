@@ -6,11 +6,14 @@ image correctness, hardware availability, or production visual approval.
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
 from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 import math
+import os
+import stat
 import hashlib
 import unicodedata
 
@@ -111,7 +114,8 @@ def definitions():
                    max_attempts=dict(type='integer', minimum=1, maximum=16),
                    cache_policy={'enum': ['verify-reuse', 'refresh']},
                    destination=obj(dict(path=path, owner_token=identifier))))
-    frame = doc('frame', dict(index=count, local_index=count, presentation_time=time,
+    frame = doc('frame', dict(project=identity, scene=identity, shot=identity,
+                 index=count, local_index=count, presentation_time=time,
                  source_time=time, camera=identifier, snapshot_sha256=digest, settings_sha256=digest,
                  dependencies=arr(digest, 1, MAX_FILES), output=output, destination=path, cache_key=digest))
     counts = obj({name: count for name in ('requested', 'queued', 'active', 'completed', 'failed')})
@@ -298,13 +302,24 @@ def _settings(value):
             'unsupported-feature', 'Scene-linear masters cannot bake a display view transform.')
 
 
+@contextmanager
+def open_regular(path, limit):
+    """Open bounded caller-owned bytes without blocking on replaced special files."""
+    flags = (os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+             | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode), 'missing-asset', 'Expected a regular file.', path=path)
+        require(info.st_size <= limit, 'invalid-input', 'File exceeds bounded size.', path=path)
+        yield stream
+
+
 def load(path, kind=None):
     try:
         path = Path(path)
-        size=path.stat().st_size
         limit=MAX_RESULT_JSON_BYTES if kind in (None,'RenderResult') else 32*1024**2
-        require(size <= limit, 'invalid-input', 'JSON exceeds the bounded document size.')
-        with path.open('rb') as stream:
+        with open_regular(path, limit) as stream:
             payload=stream.read(limit+1)
         value=decode_json(payload,max_bytes=limit)
         is_result=isinstance(value,dict) and value.get('kind')=='render3d-result'
@@ -344,7 +359,7 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     try:
         require(not snapshot_path.is_symlink() and snapshot_path.is_file(),
                 'missing-asset', 'Expected a regular snapshot file.')
-        with snapshot_path.open('rb') as stream:
+        with open_regular(snapshot_path, 32*1024**2) as stream:
             payload=stream.read(32*1024**2+1)
     except OSError as exc:
         raise Render3DError('missing-asset',str(exc),path=snapshot_path) from exc
@@ -363,10 +378,12 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     if isinstance(adapter, Scene3DAdapter):
         try:
             adapter.validate_request(snapshot_path.parent, request, snapshot)
-        except RigError as exc:
+        except (RigError, OSError) as exc:
             raise Render3DError('stale-asset', str(exc)) from exc
     presentation, source = frame_times(request, index)
-    frame = dict(schema_version=1, kind='render3d-frame', index=index,
+    frame = dict(schema_version=1, kind='render3d-frame',
+                 project=deepcopy(request['project']), scene=deepcopy(request['scene']),
+                 shot=deepcopy(request['shot']), index=index,
                  local_index=index - request['frame_range']['start'],
                  presentation_time=rational(presentation), source_time=rational(source),
                  camera=request['camera'], snapshot_sha256=snapshot['snapshot_sha256'],

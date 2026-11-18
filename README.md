@@ -42,6 +42,10 @@ Deterministic scripts preserve motion, validate provenance, compose the atlas, a
 </tr>
 </table>
 
+## Animation3D foundation
+
+Validate separately versioned animation documents with `python scripts/animation3d.py validate --file FILE`; inspect supported operations with `python scripts/animation3d.py capabilities`. The [foundation guide](references/3d-animation-contracts.md) covers exact rational time, strict contracts and native rig channel sampling. Full timeline, scene evaluation and cinematic rendering remain downstream work.
+
 ## Model3D contract and payload verification
 
 The additive [Model3D foundation](references/model3d-contracts.md) validates strict
@@ -57,6 +61,12 @@ python scripts/model3d.py validate --file examples/model3d-contracts/robotic.jso
 Use the existing optional rig dependencies below. The [executable example](examples/model3d-contracts/README.md)
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
+
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
+
+## Explicit silent video exports
+
+The [silent-video API](references/silent-video.md) encodes exact opaque PNG inventories to independently verified video-only H.264 MP4 or VP9 WebM. It rejects every audio stream, checks actual decoded frames and timestamps, and publishes exclusively after verification. Existing H.264/AAC production review movies retain their audio behavior. This media layer does not claim completed 3D rendering or HDR/EXR delivery.
 
 ## Real 3D rigs and animation
 
@@ -76,7 +86,7 @@ Read the [complete 3D guide](references/3d-rigging.md) for fitting uncertainty, 
 
 The 3D contracts are additive. Existing Codex atlas geometry/timing, 2D profiles/playback, decomposition and the 416-state catalog retain their original contracts. Selected actual clips map to catalog definitions; missing anatomy or animation remains explicit. Blender, WebGL and the optional 3D Python packages are unnecessary for ordinary 2D use.
 
-The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. Scene construction, editing and rendering remain separate unfinished work; the included triangle is an engineering fixture.
+The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. The [Scene3D service](references/scene3d-service.md) adds transactional hierarchy editing, real GLB/glTF import, immutable nested prefabs and complete dependency snapshots through CLI/API. Interactive editing, scene geometry construction and scene rendering remain separate work; included geometry is an engineering fixture.
 
 The [physics integration audit](references/physics-3d-audit.md) records current subsystem ownership, coordinate and timing decisions, and the executed compatibility baseline for future simulation work. No physics solver is implemented by that audit.
 
@@ -145,6 +155,10 @@ python scripts/validate_atlas.py assets/pet/spritesheet.webp
 
 That check does not recreate generation provenance or prove current app integration. New runs use the review and packaging gates described in [the workflow](references/workflow.md).
 
+## Optional image analysis
+
+[Resumable decomposition analysis](references/decomposition-analysis.md) can run a local OpenCV human face/eye detector or validate externally supplied proposals. It preserves original pixels and pending review. The local detector produces coarse photographic regions, not complete semantic character segmentation; the existing offline manual route remains available.
+
 ## Character state library
 
 Build custom character profiles from **416 canonical states across 16 categories**, with 408 aliases, sixteen composable packs, fifteen archetype presets, nine animation recipes and nine event/transition recipes. Discover states by action, emotion, family or tags, inspect their key poses and generation requirements, then compile only the states you need. The fixed Codex atlas above remains byte-for-byte unchanged; additional states are for custom profiles and exported consumers.
@@ -199,10 +213,15 @@ The [style validation record](references/style-validation.md) documents the styl
 
 ## 🚀 Hatch your own
 
+This repository is **Creative Studio**. The installed skill remains **`hatch-pet`**
+for compatibility with existing invocations, profiles and local installations.
+The repository name does not imply that the planned Director, general 3D scene
+editor or physics production programs are complete.
+
 Install the skill into Codex:
 
 ```bash
-git clone https://github.com/CompleteDotTech/hatch-pet "${CODEX_HOME:-$HOME/.codex}/skills/hatch-pet"
+git clone https://github.com/CompleteTech-Skills/creative-studio "${CODEX_HOME:-$HOME/.codex}/skills/hatch-pet"
 ```
 
 Then just ask:
@@ -385,7 +404,12 @@ More detail lives in [`SKILL.md`](SKILL.md), [`references/animation-rows.md`](re
 
 Run `python -m unittest discover -s tests -v` for the complete local regression suite, including model-free reconstruction checks against retained non-fixture pilot sources. These tests do not call imagegen or confer artwork approval. `python tests/fixture_workflow.py --output-dir C:/work/hatch-fixture-demo --profile examples/web-status.json` creates a clearly labeled legacy demonstration without calling imagegen or installing a pet.
 
-The complete development suite uses `requirements-test.txt` and a local Playwright Chromium binary. Install them if missing with `python -m pip install -r requirements-test.txt` and `python -m playwright install chromium`. The standalone `scripts/doctor.py` reports local capabilities without requiring browser tools.
+For the existing 2D suite, use a separate environment with `requirements-delivery.txt` and a local Playwright Chromium binary, then run `HATCH_DECOMPOSITION_BROWSER_TEST=1 python scripts/test_rig_gate.py compatibility`. For complete discovery including the optional 3D tests, install `requirements-test.txt` and `requirements-rig-test.txt` in another environment and run `python -m unittest discover -s tests -v`. These environments have different pinned dependency versions; do not combine the delivery and rig requirement files. Install Chromium separately inside **each** environment with its own `python -m playwright install chromium`; the pinned Playwright versions require different browser builds. Set `HATCH_DECOMPOSITION_BROWSER_TEST=1` when running either suite to opt into the decomposition browser regression. Blender, the Khronos validator and opt-in browser checks have separate setup and release gates in [the 3D guide](references/3d-rigging.md); an optional-tool skip is not an interoperability pass. The standalone `scripts/doctor.py` reports local capabilities without requiring browser tools.
+
+See [contributor and triage guidance](CONTRIBUTING.md) for evidence terminology,
+label governance and the separation between local tests, CI and production review.
+The [24 October repository audit](docs/audits/2026-10-24/README.md) records the
+complete issue/PR inventory, subsystem findings and verified governance changes.
 
 ### Director engineering baseline
 
