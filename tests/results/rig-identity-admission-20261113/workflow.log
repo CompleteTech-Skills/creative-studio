@@ -1,0 +1,21 @@
+test_archive_restore_relocates_and_rejects_traversal (test_rig_workflow.RigWorkflowTests.test_archive_restore_relocates_and_rejects_traversal) ... ok
+test_bad_edit_is_transactional (test_rig_workflow.RigWorkflowTests.test_bad_edit_is_transactional) ... ok
+test_bone_correction_invalidates_dependents_and_retains_original (test_rig_workflow.RigWorkflowTests.test_bone_correction_invalidates_dependents_and_retains_original) ... ok
+test_duplicate_archive_names_and_tamper_are_rejected (test_rig_workflow.RigWorkflowTests.test_duplicate_archive_names_and_tamper_are_rejected) ... ok
+test_failed_attempts_are_bounded_and_error_preserved (test_rig_workflow.RigWorkflowTests.test_failed_attempts_are_bounded_and_error_preserved) ... ok
+test_hash_consistent_malformed_identity_has_structured_diagnostics (test_rig_workflow.RigWorkflowTests.test_hash_consistent_malformed_identity_has_structured_diagnostics) ... ok
+test_job_cache_bound_to_artifacts_and_single_writer (test_rig_workflow.RigWorkflowTests.test_job_cache_bound_to_artifacts_and_single_writer) ... ok
+test_rename_remaps_hierarchy_and_ik (test_rig_workflow.RigWorkflowTests.test_rename_remaps_hierarchy_and_ik) ... ok
+test_restore_preserves_empty_destination_racing_publication (test_rig_workflow.RigWorkflowTests.test_restore_preserves_empty_destination_racing_publication) ... ok
+test_restore_rejects_dangling_destination_symlink_before_extraction (test_rig_workflow.RigWorkflowTests.test_restore_rejects_dangling_destination_symlink_before_extraction) ... ok
+test_source_bytes_identity_and_fixture_cannot_silently_drift (test_rig_workflow.RigWorkflowTests.test_source_bytes_identity_and_fixture_cannot_silently_drift) ... ok
+test_state_catalog_is_selective_and_missing_capability_is_explicit (test_rig_workflow.RigWorkflowTests.test_state_catalog_is_selective_and_missing_capability_is_explicit) ... ok
+test_strict_schema_rejects_unknown_and_nonfinite (test_rig_workflow.RigWorkflowTests.test_strict_schema_rejects_unknown_and_nonfinite) ... ok
+test_structural_validation_requires_real_skin_and_motion (test_rig_workflow.RigWorkflowTests.test_structural_validation_requires_real_skin_and_motion) ... ok
+test_synthetic_receipt_cannot_approve_and_stale_evidence_fails (test_rig_workflow.RigWorkflowTests.test_synthetic_receipt_cannot_approve_and_stale_evidence_fails) ... ok
+test_weight_edit_locks_vertex_without_removing_clips (test_rig_workflow.RigWorkflowTests.test_weight_edit_locks_vertex_without_removing_clips) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.991s
+
+OK
