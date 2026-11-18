@@ -479,6 +479,99 @@ these are scaled-policy executions, not full 64 MiB payload or provider evidence
 Exact-head full gates, independent correctness/security review and hosted
 platform checks remain required.
 
+### Complete retained identity and readable recovery journals
+
+Every native usage or release observation is checked against its complete
+immutable retained proof before replay: operation, observation ID, token, usage,
+outcome, original evidence, measurement source and uncertainty resolutions.
+The journal's event key must derive from that same operation and observation.
+Changing a mutable journal cannot rename an unknown observation or manufacture
+a resolution. Direct generic evidence stays generic unless the reserve key and
+proof both identify that reservation's own native operation; another operation's
+authentic proof cannot block an unrelated native run.
+
+Native cancellation runs the ledger's own eligibility check before retaining a
+new cancellation intent, and the ledger repeats it inside its mutation lock.
+A deterministically refused historical `unstarted` cancellation therefore does
+not poison subsequent explicit measured recovery. This does not infer zero
+usage or discard an existing durable accounting intent after a transient error.
+
+Generation prompt paths must match the job's prepared primary and retry paths
+before claiming or augmenting either prompt. Row claims compare the captured
+canonical-base digest with its approved review, in addition to the captured
+calibration digest. Descriptor and byte checks are repeated at publication;
+validating an earlier version of a path does not approve its replacement.
+
+Native journal publication bounds the exact encoded UTF-8 JSON, including
+escaping, metadata and all accumulated history, by the same `MAX_SOURCE_BYTES`
+limit used for reopening it. A refusal retains the preceding readable journal.
+If reservation admission already committed, its original pending intent remains
+for explicit recovery or cancellation; no handoff is returned and no history is
+deleted to make the payload fit.
+
+Two independently authored modules add 28 regression/control methods. On the
+preceding published `1e9aa0fa`, the identity/recovery module ran 13 methods with
+10 assertion failures, and the retained-payload module ran 15 methods with 31
+failure/subtest assertions, with no errors or skips. With the correction all
+28 passed in 31.260 seconds, exit 0, zero skips. Fixtures use actual local native
+journals, immutable ledger revisions and synthetic image bytes. The journal-size
+cases use a consistently lowered 128 KiB policy with real JSON encode/save/read;
+these are scaled-policy executions, not full 64 MiB payload or provider evidence.
+Exact-head full gates, independent correctness/security review and hosted
+platform checks remain required.
+
+### Preserved enrollment, accounting and terminal journal capacity
+
+Enrollment uses one captured request digest for both the pending journal and
+immutable owner, then checks that original identity again before publication.
+Returned attachment paths keep their captured lexical run name; publication
+pins that name without resolving a replacement alias. Captured malformed
+settings reject before a legacy convenience reader can reopen them.
+
+Generic terminal accounting cannot discard unresolved token-bound native
+observations. A durable native cancellation may acknowledge an independently
+committed generic release only when reservation, outcome and the ordered
+original evidence agree exactly. Recovery retains that release's actual receipt,
+key and revision; it does not invent a native ledger event or erase its intent.
+Conflicting outcomes, evidence or reservations still reject.
+
+New handoff identities bind `@journal-headroom` to
+`native-terminal-recovery-v1`. Before returning a token, and on subsequent
+journal saves, a pure in-memory size calculation reserves a terminal path for
+every active token sharing that journal. It includes 127 canonical retained
+evidence references, a 128-character observation ID, all pending uncertainty
+IDs, a 1024-codepoint measurement source at its worst JSON-escaped width,
+bounded seven-metric quantities, the actual-shaped receipt, and concise native
+finalization. Placeholder sizing values are never persisted as evidence.
+The raw measurement source, before stripping, is limited to 1024 codepoints.
+
+Each save uses the same exact UTF-8 encoder for its current data and its future
+terminal envelope. If ordinary indentation exceeds the existing reader cap,
+compact JSON preserves every decoded field and history entry. If even compact
+encoding cannot fit the required envelope, the write refuses before publication.
+Larger optional annotations and further observations may be refused while the
+reserved concise terminal path remains available. Historical tokens retain
+their recovery writes and can benefit from compact encoding; this policy does
+not retroactively promise capacity for earlier admissions. The separate ledger
+revision, snapshot-byte and attempt bounds continue to apply.
+
+Ledger evidence limits apply to each individual accounting operation. Snapshot
+reopening verifies every distinct retained path/hash pair across the bounded
+history in batches of at most 128, so valid operations cannot cumulatively make
+their own ledger unreadable. Conflicting pairs remain visible to verification.
+
+Two additional independent modules retain 26 regression/control methods. Their
+authors did not inspect the corrective implementation. On published `7a15059e`,
+the 12 claim-boundary methods produced five assertion failures and three errors;
+the 14 recovery/capacity methods produced nine assertion failures, zero errors.
+All had zero skips. The latter includes five additive maximal-envelope methods
+which independently found the aggregate-evidence reopening defect. Tests use
+actual local journals, canonical retained proofs, native claims, exact JSON
+reopening and synthetic images under a consistently scaled 128 KiB policy.
+They are not full 64 MiB payload or provider execution evidence. The historical
+compact-save case is explicitly a decoded-value-preserving JSON recovery fixture.
+Exact-head full gates and independent reviews must establish the final result.
+
 ### Owned receipt paths and platform checks
 
 The production wrapper writes an operation-owned temporary receipt before
@@ -501,3 +594,37 @@ macOS hosted runs must independently establish those platform outcomes on the
 integrated PR head; the earlier failing artifacts remain historical evidence.
 
 A committed historical cancellation also binds the ordered claim/failure history and attempt-token list during recovery. Exact receipt replay cannot acknowledge a changed history. A subsequent explicit native repair may reset current job status and attempt count; its separate repair record leaves the attested original claim/failure history unchanged. Independent synthetic lost-acknowledgement and repair controls distinguish that permitted replay from changed failure details or reordered/extra attempt identities.
+
+
+### Durable owner finalization and interruption capacity
+
+A generic terminal observation can still record real measured expenditure,
+including an overrun, while an independent native owner is unfinished. Its
+receipt remains reserved; it does not release the native remainder or discard
+a native observation that has been saved but not yet charged. Unresolved native
+unknowns still require their token-bound reconciliation. Cancellation requires
+immutable evidence that the published native token has finalized.
+
+For a measured retry, Hatch first saves the original failed owner and only then
+retains a `native-finalize` ledger event. That event binds the token, exact
+observation, retained evidence and ordered original claim/failure history. A
+crash before the owner save leaves the running token able to report later
+uncertainty. A crash after that save replays closure without charging another
+delta. An already terminal native settlement supplies its own closure and does
+not acquire an extra ledger revision. Later repair records may coexist with the
+unchanged original history; rollback or edits to retained finalization reject.
+
+Capacity calculation also covers a pending reservation acknowledgement, every
+missing observation receipt, and a concise cancellation path before a handoff
+is published. A journal that cannot retain those facts refuses before the
+corresponding irreversible accounting mutation. The future envelope preserves
+all existing fields and history; it never persists placeholder measurements.
+
+Earlier descriptor formats without `@journal-headroom` remain recovery-only.
+For an original unstarted reservation, retain nonexecution evidence and call
+`hatch.release_budget` under `hatch.ownership`, using the original recovery
+manifest, original job and `outcome='unstarted'`. Start fresh work in a separate
+newly prepared and enrolled run. Do not rewrite the original admission hashes,
+append a capacity marker retroactively, or delete its ledger/history. Published
+or uncertain historical work must follow its measured recovery and explicit
+owner attestation instead.

@@ -64,7 +64,8 @@ def claim_settings_identity(root):
 def claim_job_identity(job):
     """Bind attachment order/descriptors and the primary/retry prompt roles."""
     return {'@generation-job': object_hash({key: job.get(key) for key in
-            ('input_images', 'prompt_file', 'retry_prompt_file')})}
+            ('input_images', 'prompt_file', 'retry_prompt_file')}),
+            '@journal-headroom': object_hash('native-terminal-recovery-v1')}
 
 
 def claim_handoff_identity(root, job=None):
@@ -382,11 +383,30 @@ def source_origin(job):
     return 'import' if origin == 'import_receipt' else 'derived'
 
 
+def _journal_payload(data):
+    payload = (json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
+    if len(payload) > MAX_SOURCE_BYTES:
+        # Existing near-limit journals can retain every decoded field while
+        # recovering. Compact encoding never removes history or weakens reads.
+        payload = (json.dumps(data, ensure_ascii=False, allow_nan=False,
+                              separators=(',', ':')) + '\n').encode('utf-8')
+    return payload
+
+
 def save(root, data):
     # Retain the exact reader bound after JSON escaping and accumulated history.
     # Refusal keeps the preceding journal readable and cannot publish a claim.
-    payload = (json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
-    atomic_bytes(Path(root).resolve() / 'imagegen-jobs.json', payload)
+    payload = _journal_payload(data)
+    if 'director_budget' in data:
+        from director_budget import native_recovery_envelope
+        future = native_recovery_envelope(data)
+        if future is not data:
+            bounded = _journal_payload(future)
+            if len(bounded) > MAX_SOURCE_BYTES:
+                raise ValueError('native journal needs reserved space for terminal accounting and recovery')
+    # Callers retain their admitted absolute run name. Resolving it again here
+    # would follow a replacement alias before the no-follow parent pin opens.
+    atomic_bytes(Path(os.path.abspath(root)) / 'imagegen-jobs.json', payload)
 
 
 def validate_prompt_paths(job):
@@ -720,15 +740,16 @@ def claim(root, data, name):
     handoff_identity = {**settings_identity, 'profile.json': hashlib.sha256(captured[root / 'profile.json']).hexdigest(),
                         **claim_job_identity(job)}
     settings = json.loads(settings_payload) if settings_payload is not None else request.get('extraction', {})
+    if not isinstance(settings, dict) or not isinstance(request.get('extraction', {}), dict):
+        raise ValueError('captured extraction settings must be an object')
     if name != 'base' and job.get('prompt_settings_hash') != settings_identity['extraction-settings.json']:
         raise ValueError('captured calibration differs from the approved row prompt')
     if name != 'base' and data.get('base_review', {}).get('canonical_hash') != hashes.get('references/canonical-base.png'):
         raise ValueError('captured canonical base differs from its approved review')
     warnings = style_warnings(root, request=request, profile=profile, settings=settings)
-    input_images = []
-    for attachment in job['input_images']:
-        inside(root, attachment['path'])  # Validate containment without caching a resolved alias.
-        input_images.append({**attachment, 'path': str(root / attachment['path'])})
+    # These exact lexical descriptors already passed containment and the
+    # bounded no-follow reads. A second resolve could capture a transient alias.
+    input_images = [{**x, 'path': str(root / x['path'])} for x in job['input_images']]
     tool_arguments = {'transparent_background':
                       (settings if name != 'base' else request['extraction']).get('background') != 'chroma'}
     job.pop('stale', None)
@@ -944,6 +965,8 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
     job.pop('token', None)
     job.pop('stale', None)
     save(root, data)
+    if budget is not None:
+        budget.retain_finalization(job)
     return {'failed': name, 'remaining_attempts': max(0, data.get('limits', {}).get('attempts_per_job', RETRIES) - job['attempts'])}
 
 def repair(root, data, name, reason):

@@ -26,6 +26,7 @@ COUNTS = frozenset(('provider_calls', 'input_tokens', 'output_tokens', 'storage_
 MAX_REVISIONS = 2048
 MAX_RESERVATIONS = 512
 MAX_BYTES = 4 * 1024**2
+NATIVE_RECOVERY_POLICY = object_hash('native-terminal-recovery-v1')
 
 
 def _exact(function):
@@ -112,10 +113,22 @@ def _validate_state(state):
     for index,event in enumerate(state['events']):
         _need(isinstance(event,dict) and set(event)=={'idempotency_key','action','input_digest','payload','receipt'}, 'CORRUPT', 'Invalid event record.')
         _id(event['idempotency_key'])
-        _need(event['action'] in ('reserve','settle','release','native-claim') and isinstance(event['payload'],dict) and isinstance(event['receipt'],dict), 'CORRUPT', 'Invalid event action.')
+        _need(event['action'] in ('reserve','settle','release','native-claim','native-finalize') and isinstance(event['payload'],dict) and isinstance(event['receipt'],dict), 'CORRUPT', 'Invalid event action.')
         _need(event['input_digest']==object_hash({'action':event['action'],'payload':event['payload']}), 'CORRUPT', 'Event inputs changed.')
         _need(event['receipt'].get('revision')==index+1 and event['receipt'].get('idempotency_key')==event['idempotency_key'], 'CORRUPT', 'Event receipt changed.')
         _evidence(event['payload'].get('evidence'))
+        if event['action'] == 'native-finalize':
+            final = event['payload']
+            _need(set(final) == {'reservation_id', 'operation_id', 'token', 'observation_key', 'owner_history_sha256', 'evidence'} and
+                  isinstance(final['owner_history_sha256'], str) and
+                  re.fullmatch(r'[0-9a-f]{64}', final['owner_history_sha256']) and
+                  isinstance(final['token'], str) and re.fullmatch(r'[0-9a-f]{32}', final['token']),
+                  'CORRUPT', 'Invalid native finalization record.')
+            for field in ('reservation_id', 'operation_id', 'observation_key'):
+                _id(final[field])
+            _need(all(event['receipt'].get(key) == final[key] for key in
+                      ('reservation_id', 'operation_id', 'token', 'observation_key', 'owner_history_sha256')),
+                  'CORRUPT', 'Native finalization receipt changed.')
         if event['action'] == 'native-claim':
             claim = event['payload']
             _need(set(claim) == {'reservation_id', 'operation_id', 'run_id', 'run_location_sha256',
@@ -251,8 +264,15 @@ class BudgetLedger:
                 _need(state['events'][:-1]==latest['events'] and all(state[key]==latest[key] for key in ('limits','provider_limits','currency')), 'CORRUPT', 'Immutable history or budget policy changed.')
             prior, latest = digest, state
         _need(latest is not None, 'CORRUPT', 'No valid ledger snapshot.')
-        proofs = {item['path']: item for event in latest['events'] for item in event['payload']['evidence']}
-        _verify_evidence(self.root, list(proofs.values()))
+        # The 128-reference bound applies to one accounting operation. A valid
+        # append-only history may retain more distinct proofs across operations.
+        # Keep conflicting path/hash pairs visible so deduplication cannot hide
+        # a noncanonical reference from an earlier event.
+        proofs = list({(item['path'], item['sha256']): item
+                       for event in latest['events']
+                       for item in event['payload']['evidence']}.values())
+        for start in range(0, len(proofs), 128):
+            _verify_evidence(self.root, proofs[start:start + 128])
         return {'sha256': prior, 'state': deepcopy(latest)}
 
     def _change(self, expected_revision, key, action, payload, mutate):
@@ -309,8 +329,17 @@ class BudgetLedger:
             _need(len(row['attempts']) < 128, 'LIMIT', 'Too many usage attempts.')
             incoming = dict(usage=amounts, outcome=outcome, evidence=proof, idempotency_key=idempotency_key)
             native = _native_usage(self, row, incoming)
-            if outcome != 'uncertain' and native is not None:
-                _require_generic_reconciliation(self, row)
+            keep_native_open = False
+            if native is not None:
+                _need(not _native_finalized(state, row, native.get('token')), 'STATE',
+                      'A finalized native token cannot report another observation.')
+                if outcome != 'uncertain':
+                    _require_generic_reconciliation(self, row)
+            elif outcome in ('complete', 'failed'):
+                _require_native_reconciliation(self, row)
+                # Retain actual generic spend, including overruns, without
+                # closing an independently active native worker's accounting.
+                keep_native_open = _unfinished_native(state, row)
             if outcome in ('complete', 'failed'):
                 _need(not _native_pending_usage(self, row, native), 'UNCERTAIN',
                       'Resolve every token-bound native unknown before final ledger settlement.')
@@ -320,7 +349,7 @@ class BudgetLedger:
                     row['spent'][key] = str(spent)
                     row['held'][key] = str(max(Decimal(row['reserved'][key]) - spent, Decimal(0)))
             row['attempts'].append(dict(usage=amounts,outcome=outcome,evidence=proof,idempotency_key=idempotency_key))
-            if outcome in ('complete','failed'):
+            if outcome in ('complete','failed') and not keep_native_open:
                 row['state']='settled';row['held']={key:'0' for key in METRICS}
             else:row['state']='uncertain' if outcome=='uncertain' else 'reserved'
             return {'reservation_id':reservation_id,'state':row['state'],'spent':deepcopy(row['spent']),'held':deepcopy(row['held']),
@@ -337,6 +366,7 @@ class BudgetLedger:
         _need(outcome != 'unstarted' or not (row['attempts'] or published),
               'STATE', 'Started or published work cannot be released as unstarted.')
         if published:
+            _require_native_finalization(state, row)
             _require_generic_reconciliation(self, row)
             _need(_native_remainder_known(self, row, published[-1]['token']), 'UNCERTAIN',
                   'The latest published native attempt needs reconciled usage before cancellation.')
@@ -464,8 +494,8 @@ def _native_owner_identity(owner, ledger_root, genesis):
 
 def _native_enrollment(root, data, *, recovery=False, policy=None):
     import hatch
-    if recovery:
-        config = data.get('director_budget')
+    if recovery or policy is not None:
+        config = data.get('director_budget') if policy is None else policy
         _need(isinstance(config, dict) and
               isinstance(config.get('request_sha256'), str) and
               re.fullmatch(r'[0-9a-f]{64}', config['request_sha256']),
@@ -553,15 +583,91 @@ def _native_operation_id(run_id, job, hashes, fixture, policy, handoff=None):
 
 def _handoff_hashes(value):
     fields = {'extraction-settings.json', 'profile.json'}
-    _need(isinstance(value, dict) and set(value) in (fields, fields | {'@generation-job'}) and
+    _need(isinstance(value, dict) and set(value) in (
+          fields, fields | {'@generation-job'}, fields | {'@generation-job', '@journal-headroom'}) and
           isinstance(value['profile.json'], str) and re.fullmatch(r'[0-9a-f]{64}', value['profile.json']) and
           ('@generation-job' not in value or isinstance(value['@generation-job'], str) and
            re.fullmatch(r'[0-9a-f]{64}', value['@generation-job'])) and
+          ('@journal-headroom' not in value or value['@journal-headroom'] == NATIVE_RECOVERY_POLICY) and
           (value['extraction-settings.json'] is None or
            isinstance(value['extraction-settings.json'], str) and
            re.fullmatch(r'[0-9a-f]{64}', value['extraction-settings.json'])),
           'BINDING', 'Invalid captured native handoff identity.')
     return deepcopy(value)
+
+
+def native_recovery_envelope(data):
+    """Size a terminal recovery path without changing or persisting any field.
+
+    Current admissions bind this policy in their immutable handoff identity.
+    Historical tokens retain their existing recovery writes and do not acquire
+    a new capacity promise retroactively. The ledger's own bounds still apply.
+    """
+    active = [index for index, job in enumerate(data['jobs'])
+              if job.get('budget_operation', {}).get('handoff_hashes', {}).get('@journal-headroom') == NATIVE_RECOVERY_POLICY]
+    if not active:
+        return data
+    result = deepcopy(data)
+    reference = {'path': 'evidence/' + 'f' * 64, 'sha256': 'f' * 64}
+    # Maximum accepted normalized delta and cumulative receipt decimal widths.
+    delta = '1000000000000000.' + '0' * 64
+    aggregate = '128000000000000000.' + '0' * 64
+    for index in active:
+        job = result['jobs'][index]
+        operation = job['budget_operation']
+        # A lost reservation acknowledgment is an existing recoverable state.
+        # Reserve its fixed-width identity too; only reconciliation may restore
+        # the actual immutable receipt in the real journal.
+        operation.setdefault('reservation_id', 'reservation-' + 'f' * 24)
+        def reserve_receipt(event):
+            if 'receipt' not in event:
+                event['receipt'] = dict(reservation_id=operation['reservation_id'], state='reserved',
+                                       spent={key: aggregate for key in METRICS},
+                                       held={key: aggregate for key in METRICS}, over_budget=False,
+                                       revision=MAX_REVISIONS - 1, idempotency_key=event['key'])
+        # Every pending acknowledgment must fit before another observation can
+        # replay, including an uncertain intent preceding its final resolution.
+        for event in operation['events']:
+            reserve_receipt(event)
+        if job.get('status') != 'running':
+            # Reserve a concise cancellation path before committing admission,
+            # not only after a provider token has already been published.
+            final = operation['events'][-1] if operation['events'] else None
+            if final is None or final['payload']['outcome'] not in ('complete', 'failed', 'unstarted', 'canceled-known'):
+                payload = dict(token=None, id='x' * 128, outcome='canceled-known',
+                               evidence=[deepcopy(reference)])
+                final = dict(key='native-release-' + 'f' * 64, payload=payload,
+                             evidence=[deepcopy(reference), deepcopy(reference)])
+                operation['events'].append(final)
+                reserve_receipt(final)
+            continue
+        token = job['token']
+        observations = [event for event in operation['events'] if event['payload']['token'] == token]
+        terminal = (observations[-1] if observations and
+                    observations[-1]['payload']['outcome'] in ('complete', 'failed', 'retry') else None)
+        if terminal is None:
+            pending = set()
+            for event in observations:
+                payload = event['payload']
+                pending.difference_update(payload['resolves'])
+                if payload['outcome'] == 'uncertain':
+                    pending.add(payload['id'])
+            proofs = [deepcopy(reference) for _ in range(127)]
+            payload = dict(token=token, id='x' * 128, outcome='complete',
+                           usage={key: delta for key in METRICS}, evidence=proofs,
+                           measurement_source='\0' * 1024, resolves=sorted(pending))
+            terminal = dict(key='native-observation-' + 'f' * 64, payload=payload,
+                            evidence=proofs + [deepcopy(reference)])
+            operation['events'].append(terminal)
+        reserve_receipt(terminal)
+        # A concise failure/finalization remains available even if the caller
+        # cannot provide an output artifact. Larger annotations may be refused.
+        job['history'].append(dict(event='failed', time=1.7976931348623157e308,
+                                   reason='accounted', token=token))
+        job['status'] = 'failed'
+        job.pop('token', None)
+        job.pop('stale', None)
+    return result
 
 
 def _native_proof(ledger, references, kinds):
@@ -606,6 +712,39 @@ def _require_generic_reconciliation(ledger, row):
             unresolved = attempt['outcome'] == 'uncertain'
     _need(not unresolved, 'UNCERTAIN',
           'Reconcile direct ledger uncertainty explicitly before known native usage or another claim.')
+
+
+def _require_native_reconciliation(ledger, row):
+    """A generic terminal settlement cannot erase token-bound unknown usage."""
+    pending = set()
+    for attempt in row['attempts']:
+        proof = _native_usage(ledger, row, attempt)
+        if proof is None:
+            continue
+        token = proof.get('token')
+        pending.difference_update((token, identity) for identity in proof.get('resolves', []))
+        if proof['outcome'] == 'uncertain':
+            pending.add((token, proof['id']))
+    _need(not pending, 'UNCERTAIN',
+          'Resolve native uncertainty with its original token before terminal generic accounting.')
+
+
+def _native_finalized(state, row, token):
+    return any(event['action'] == 'native-finalize' and
+               event['payload']['reservation_id'] == row['id'] and
+               event['payload']['operation_id'] == row['operation_id'] and
+               event['payload']['token'] == token for event in state['events'])
+
+
+def _unfinished_native(state, row):
+    publications = [event['payload'] for event in state['events'] if
+                    event['action'] == 'native-claim' and event['payload']['reservation_id'] == row['id']]
+    return bool(publications and not _native_finalized(state, row, publications[-1]['token']))
+
+
+def _require_native_finalization(state, row):
+    _need(not _unfinished_native(state, row),
+          'UNCERTAIN', 'Finalize the published native token before canceling its reservation.')
 
 
 def _native_remainder_known(ledger, row, token):
@@ -842,8 +981,11 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
                 previous = NativeBudget(bound, bound_data)
                 _need(previous.owner == owner and previous.ledger.root == ledger_root,
                       'BINDING', 'Existing project acquisition uses a different ledger.')
+        enrollment = _native_enrollment(root, data, policy=config)
+        _need(hatch.input_digest(root / 'pet_request.json') == config['request_sha256'], 'BINDING',
+              'Captured enrollment request changed before owner publication.')
         _native_owner_binding(owner, ledger_root, config['genesis'], create=True,
-                              enrollment=_native_enrollment(root, data, policy=config))
+                              enrollment=enrollment)
         if project_state is not None and 'director_budget' not in project_state:
             project_state['director_budget'] = association
             workflow._save(owner, project_state)
@@ -1011,6 +1153,19 @@ class NativeBudget:
                   event['key'] not in retained_events,
                   'BINDING', 'Native observation differs from its complete retained proof.')
             retained_events[event['key']] = event
+        transitions = [entry for entry in job['history'] if entry.get('event') in ('claim', 'failed')]
+        for closure in ledger_events:
+            final = closure['payload']
+            if closure['action'] != 'native-finalize' or final['operation_id'] != operation['operation_id']:
+                continue
+            index = next((index for index, entry in enumerate(transitions) if
+                          entry['event'] == 'failed' and entry.get('token') == final['token']), None)
+            observation = retained_events.get(final['observation_key'])
+            _need(final['reservation_id'] == reservation_id and final['token'] in claimed and
+                  index is not None and object_hash(transitions[:index + 1]) == final['owner_history_sha256'] and
+                  observation is not None and observation['payload']['token'] == final['token'] and
+                  observation['payload']['outcome'] == 'retry' and observation['evidence'] == final['evidence'],
+                  'BINDING', 'Native journal lost or changed its retained owner finalization.')
         for ledger_event in ledger_events:
             payload = ledger_event['payload']
             if (ledger_event['action'] not in ('settle', 'release') or
@@ -1122,6 +1277,62 @@ class NativeBudget:
         return self._ledger_retry(lambda: self.ledger._change(self.ledger.snapshot()['sha256'], key,
                                    'native-claim', payload, mutate))
 
+    def _finalize_claim(self, operation, token, latest, owner_history_sha256):
+        """Retain closure after the original owner finalization is durable.
+
+        A measured retry alone does not end an active handoff: another measured
+        delta may already be durable in its journal. The original failed owner
+        must be saved first. Lost closure acknowledgments replay idempotently.
+        """
+        payload = dict(reservation_id=operation['reservation_id'],
+                       operation_id=operation['operation_id'], token=token,
+                       observation_key=latest['key'], owner_history_sha256=owner_history_sha256,
+                       evidence=deepcopy(latest['evidence']))
+        _need(latest['payload']['outcome'] == 'retry', 'STATE',
+              'Only a measured retry needs an additional native accounting closure.')
+        def mutate(state):
+            row = state['reservations'].get(operation['reservation_id'])
+            _need(row is not None and row['operation_id'] == operation['operation_id'],
+                  'BINDING', 'Native finalization requires its original reservation.')
+            publications = [event['payload'] for event in state['events'] if
+                            event['action'] == 'native-claim' and
+                            event['payload']['reservation_id'] == row['id']]
+            _need(not publications or publications[-1]['token'] == token,
+                  'STATE', 'Only the current native token can close its accounting.')
+            _require_generic_reconciliation(self.ledger, row)
+            native = [attempt for attempt in row['attempts'] if
+                      (proof := _native_usage(self.ledger, row, attempt)) is not None and proof.get('token') == token]
+            _need(_native_remainder_known(self.ledger, row, token) and
+                  row['state'] == 'reserved' and native and
+                  native[-1]['idempotency_key'] == latest['key'],
+                  'UNCERTAIN', 'Current native uncertainty prevents finalization of its original owner.')
+            return {field: payload[field] for field in
+                    ('reservation_id', 'operation_id', 'token', 'observation_key', 'owner_history_sha256')}
+        key = 'native-finalize-' + object_hash([operation['operation_id'], token])
+        return self._ledger_retry(lambda: self.ledger._change(self.ledger.snapshot()['sha256'], key,
+                                   'native-finalize', payload, mutate))
+
+    def retain_finalization(self, job):
+        """Authenticate a durable failed owner before closing its retry token."""
+        if job['status'] != 'failed' or 'token' in job:
+            return
+        operation = self._check_claim_bindings(job)
+        if operation is None:
+            return
+        publications = self._published_claims(operation)
+        if not publications:
+            return  # Historical ownership uses explicit all-attempt attestation.
+        token = publications[-1]['token']
+        transitions = [entry for entry in job['history'] if entry.get('event') in ('claim', 'failed')]
+        if (len(transitions) < 2 or [(entry['event'], entry.get('token')) for entry in transitions[-2:]] !=
+                [('claim', token), ('failed', token)]):
+            return
+        events = [event for event in operation['events'] if event['payload']['token'] == token]
+        if not events or events[-1]['payload']['outcome'] != 'retry':
+            return  # Native terminal settlement already closes the row.
+        self._require_current_journal()
+        self._finalize_claim(operation, token, events[-1], object_hash(transitions))
+
     def _save(self):
         import hatch
         hatch.save(self.root, self.data)
@@ -1163,7 +1374,7 @@ class NativeBudget:
         import hatch
         current = hatch.manifest(self.root, recovery=True)
         _need(object_hash(current) == object_hash(self.data), 'BINDING',
-              'Legacy cancellation requires the current on-disk native journal.')
+              'Native finalization requires the current on-disk owner journal.')
 
     def _legacy_release_witness(self, job, row):
         """Bind the owner's all-attempt attestation to verifiable retained history."""
@@ -1198,6 +1409,23 @@ class NativeBudget:
     def _apply(self, job, event):
         operation = job['budget_operation']
         payload = event['payload']
+        def matching_release():
+            snapshot = self.ledger.snapshot()['state']
+            if any(item['idempotency_key'] == event['key'] for item in snapshot['events']):
+                return None  # The ledger's normal idempotency check owns this key.
+            row = snapshot['reservations'].get(operation['reservation_id'])
+            if row is None or row['state'] != 'released':
+                return None
+            expected = dict(reservation_id=operation['reservation_id'], outcome=payload['outcome'],
+                            evidence=payload['evidence'])
+            matches = [item for item in snapshot['events'] if item['action'] == 'release' and
+                       item['payload'] == expected]
+            _need(row['operation_id'] == operation['operation_id'] and len(matches) == 1 and
+                  matches[0]['receipt'].get('reservation_id') == row['id'] and
+                  matches[0]['receipt'].get('state') == 'released' and
+                  matches[0]['receipt'].get('spent') == row['spent'], 'BINDING',
+                  'A different terminal cancellation cannot acknowledge this native intent.')
+            return deepcopy(matches[0]['receipt'])
         options = dict(outcome=payload['outcome'], evidence=event['evidence'],
                        idempotency_key=event['key'], expected_revision=self.ledger.snapshot()['sha256'])
         if 'nonexecution_attestation' in payload:
@@ -1206,7 +1434,16 @@ class NativeBudget:
                       'BINDING', 'Historical cancellation differs from its retained attestation.')
             receipt = self.ledger._release(operation['reservation_id'], check_legacy=check_legacy, **options)
         elif payload['outcome'] in ('unstarted', 'canceled-known'):
-            receipt = self.ledger.release(operation['reservation_id'], **options)
+            receipt = matching_release()
+            if receipt is None:
+                try:
+                    receipt = self.ledger.release(operation['reservation_id'], **options)
+                except RigError as exc:
+                    if exc.report['code'] not in ('DIRECTOR_BUDGET_STALE', 'DIRECTOR_BUDGET_STATE', 'DIRECTOR_BUDGET_UNCERTAIN'):
+                        raise
+                    receipt = matching_release()
+                    if receipt is None:
+                        raise
         else:
             receipt = self.ledger.settle(operation['reservation_id'], usage=payload['usage'], **options)
         if event.get('receipt') != receipt:
@@ -1240,6 +1477,7 @@ class NativeBudget:
                 self._save()
             for event in operation['events']:
                 self._apply(job, event)
+            self.retain_finalization(job)
 
     @_exact
     def before_claim(self, job, input_hashes):
@@ -1346,7 +1584,8 @@ class NativeBudget:
         _need(observation['outcome'] in ('complete', 'failed', 'retry', 'uncertain'),
               'INPUT', 'Unsupported native budget outcome.')
         _need(isinstance(observation['measurement_source'], str) and
-              0 < len(observation['measurement_source'].strip()) <= 1024,
+              0 < len(observation['measurement_source'].strip()) and
+              len(observation['measurement_source']) <= 1024,
               'EVIDENCE', 'Describe the actual usage measurement source.')
         _need(isinstance(observation['resolves'], list) and
               all(isinstance(value, str) for value in observation['resolves']) and
@@ -1368,7 +1607,10 @@ class NativeBudget:
             return deepcopy(existing['receipt'])
         _need(job['status'] == 'running' and job.get('token') == token, 'STATE',
               'New usage observations require the original active native claim.')
-        row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
+        state = self.ledger.snapshot()['state']
+        row = state['reservations'][operation['reservation_id']]
+        _need(not _native_finalized(state, row, token), 'STATE',
+              'Finalized native accounting permits exact replay, not another observation.')
         _need(row['state'] in ('reserved', 'uncertain'), 'STATE',
               'Final accounting requires exact outcome replay, not another observation.')
         if observation['outcome'] != 'uncertain':
@@ -1449,9 +1691,13 @@ class NativeBudget:
             pending.difference_update(payload['resolves'])
             if payload['outcome'] == 'uncertain':
                 pending.add(payload['id'])
+        _need(not pending, 'UNCERTAIN',
+              'Resolve every native observation before finalizing its owner.')
+        # This is a read-only authorization. If saving the owner's finalized
+        # state fails, its still-running token may report a later observation.
         row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
         expected = 'reserved' if observation['outcome'] == 'retry' else 'settled'
-        _need(not pending and row['state'] == expected and row['attempts'] and
+        _need(row['state'] == expected and row['attempts'] and
               row['attempts'][-1]['idempotency_key'] == latest['key'],
               'UNCERTAIN', 'Current uncertainty or later ledger usage prevents native finalization.')
 
