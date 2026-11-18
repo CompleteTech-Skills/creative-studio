@@ -38,7 +38,7 @@ let renderer,
 const collapsed = new Set();
 const extensions = [];
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
-let activeNativeCameraId = null;
+let activeNativeCameraId = null, focusedOutlinerKey = null;
 const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
@@ -650,7 +650,7 @@ async function reload(frame = false) {
   return displayed;
 }
 function buildOutliner() {
-  const root = $("outliner");
+  const root = $("outliner"), hadFocus = root.contains(document.activeElement);
   root.replaceChildren();
   const query = $("filter").value.toLowerCase();
   function add(node, depth) {
@@ -662,6 +662,7 @@ function buildOutliner() {
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.id = node.id;
+      button.tabIndex = -1;
       button.dataset.hidden = String(!evaluatedStates.get(node.id).editor_visible);
       button.setAttribute("role", "treeitem");
       button.setAttribute("aria-level", String(depth + 1));
@@ -693,6 +694,8 @@ function buildOutliner() {
           row.textContent = "Bone · " + bone.name;
           row.style.paddingLeft = 22 + depth * 14 + "px";
           row.dataset.bone = boneId;
+          row.tabIndex = -1;
+          row.setAttribute("aria-disabled", String(!nodeSelectable(node.id)));
           row.setAttribute("role", "treeitem");
           row.setAttribute("aria-level", String(depth + 2));
           row.setAttribute("aria-selected", String(selectedBone === boneId));
@@ -704,6 +707,37 @@ function buildOutliner() {
       add(child, depth + 1);
   }
   for (const node of doc.nodes.filter((n) => !n.parent)) add(node, 0);
+  const rows = [...root.querySelectorAll('[role="treeitem"]')];
+  const key = row => row.dataset.bone || row.dataset.id;
+  const tabstop = rows.find(row => key(row) === focusedOutlinerKey) || rows[0];
+  if (tabstop) { tabstop.tabIndex = 0; if (hadFocus) tabstop.focus(); }
+  root.onfocusin = event => {
+    const row = event.target.closest('[role="treeitem"]');
+    if (!row) return;
+    focusedOutlinerKey = key(row);
+    rows.forEach(item => { item.tabIndex = item === row ? 0 : -1; });
+  };
+  root.onkeydown = event => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const row = event.target.closest('[role="treeitem"]');
+    if (!row) return;
+    const index = rows.indexOf(row);
+    let target;
+    if (event.key === "ArrowDown") target = rows[Math.min(index + 1, rows.length - 1)];
+    else if (event.key === "ArrowUp") target = rows[Math.max(index - 1, 0)];
+    else if (event.key === "Home") target = rows[0];
+    else if (event.key === "End") target = rows.at(-1);
+    else if (event.key === "ArrowLeft") {
+      const parent = row.dataset.bone ? boneObjects.get(row.dataset.bone).userData.ownerId : nodes.get(row.dataset.id)?.parent;
+      target = rows.find(item => item.dataset.id === parent);
+    } else if (event.key === "ArrowRight") {
+      target = rows.find(item => item.dataset.bone && boneObjects.get(item.dataset.bone).userData.ownerId === row.dataset.id ||
+        item.dataset.id && nodes.get(item.dataset.id)?.parent === row.dataset.id);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault(); event.stopPropagation(); row.click(); return;
+    } else return;
+    event.preventDefault(); event.stopPropagation(); target?.focus();
+  };
 }
 function buildCollections() {
   $("collections").replaceChildren();
@@ -1418,12 +1452,71 @@ function initialize() {
     diagnostic("WebGL initialization failed: " + e.message);
   }
 }
+const shortcuts = [
+  ["?", "Open keyboard reference"],
+  ["Ctrl/Cmd+Z", "Undo the last saved command"],
+  ["Ctrl/Cmd+Shift+Z", "Redo a saved command"],
+  ["G / R / S", "Choose move, rotate or scale tool"],
+  ["F", "Frame the selected objects"],
+  ["Escape", "Cancel a transform drag and clear selection"],
+  ["Viewport/page arrows", "Move selected editable objects by 0.1 meter; Shift moves by 1 meter"],
+  ["Outliner Up / Down / Home / End", "Focus previous, next, first or last object"],
+  ["Outliner Left / Right", "Focus parent or first child"],
+  ["Outliner Enter / Space", "Select the focused object; native visibility and locks still apply"],
+  ["Tab / Shift+Tab", "Move between controls, then edit transforms through the numeric inspector"],
+];
+let shortcutReturnFocus = null, shortcutReturnKey = null;
+function filterShortcuts() {
+  const query = $("shortcut-search").value.toLocaleLowerCase().trim();
+  const matches = shortcuts.filter(entry => entry.join(" ").toLocaleLowerCase().includes(query));
+  $("shortcut-results").replaceChildren(...matches.map(([keys, action]) => {
+    const item = document.createElement("li"), label = document.createElement("strong");
+    label.textContent = keys; item.append(label, document.createTextNode(" — " + action)); return item;
+  }));
+  $("shortcut-count").textContent = matches.length + " matching shortcuts";
+}
+function showShortcutHelp() {
+  if ($("shortcut-dialog").open) return;
+  shortcutReturnFocus = document.activeElement;
+  const row = shortcutReturnFocus?.closest('#outliner [role="treeitem"]');
+  shortcutReturnKey = row?.dataset.bone ? {bone: row.dataset.bone} :
+    row?.dataset.id ? {node: row.dataset.id} : null;
+  $("shortcut-search").value = ""; filterShortcuts();
+  $("shortcut-dialog").showModal(); $("shortcut-search").focus();
+}
+$("keyboard-help").onclick = showShortcutHelp;
+$("shortcut-search").oninput = filterShortcuts;
+$("shortcut-close").onclick = () => $("shortcut-dialog").close();
+$("shortcut-dialog").onkeydown = event => {
+  if (event.key !== "Tab") return;
+  const first = $("shortcut-search"), last = $("shortcut-close");
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault(); last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault(); first.focus();
+  }
+};
+$("shortcut-dialog").onclose = () => {
+  let target = shortcutReturnFocus?.isConnected ? shortcutReturnFocus : null;
+  if (!target && shortcutReturnKey) {
+    target = [...$("outliner").querySelectorAll('[role="treeitem"]')].find(row =>
+      shortcutReturnKey.bone ? row.dataset.bone === shortcutReturnKey.bone : row.dataset.id === shortcutReturnKey.node);
+  }
+  if (!target || target.disabled) target = $("keyboard-help");
+  target.focus();
+  shortcutReturnFocus = null; shortcutReturnKey = null;
+};
 window.addEventListener("keydown", (e) => {
-  if (e.target.matches("input,textarea,select")) return;
+  if (e.defaultPrevented || $("shortcut-dialog").open ||
+      e.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return;
+  if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault(); showShortcutHelp(); return;
+  }
+  if (e.altKey || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() !== "z")) return;
   if (e.key === "Escape") {
     cancelDrag();
     select(null);
-  } else if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
     e.preventDefault();
     historyCommand(e.shiftKey ? "redo" : "undo");
   } else if (e.key.toLowerCase() === "f") $("frame").click();
@@ -1433,7 +1526,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    !previewActive && transformSelectionAllowed() &&
+    (e.target === document.body || e.target.closest("#viewport")) && !previewActive && transformSelectionAllowed() &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();

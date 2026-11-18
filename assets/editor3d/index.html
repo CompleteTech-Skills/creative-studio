@@ -15,7 +15,7 @@
       ><span class="approximation">WebGL preview · not an offline render</span>
     </header>
     <nav aria-label="Scene tools">
-      <button id="undo">Undo</button><button id="redo">Redo</button
+      <button id="undo" title="Undo (Ctrl/Cmd+Z)" aria-keyshortcuts="Control+Z Meta+Z">Undo</button><button id="redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z">Redo</button
       ><button id="refresh">Reload saved state</button
       ><select id="tool" aria-label="Transform tool">
         <option value="translate">Move (G)</option>
@@ -53,6 +53,7 @@
         <option value="wireframe">Wireframe</option>
         <option value="normals">Normals</option>
       </select>
+      <button id="keyboard-help" aria-haspopup="dialog" aria-keyshortcuts="Shift+/" title="Keyboard reference (?)">Keyboard reference (?)</button>
     </nav>
     <main>
       <aside aria-label="Scene hierarchy">
@@ -71,7 +72,8 @@
           <button id="duplicate">Duplicate selection</button>
           <button id="delete">Delete selection</button>
         </div>
-        <div id="outliner" role="tree" aria-label="Scene objects"></div>
+        <p id="outliner-help" class="note">Arrow keys navigate objects. Enter or Space selects. Use the numeric inspector to edit without the canvas.</p>
+        <div id="outliner" role="tree" aria-label="Scene objects" aria-describedby="outliner-help" aria-multiselectable="true"></div>
         <div id="asset-browser"></div>
         <h2>Collections</h2>
         <div id="collections"></div>
@@ -83,7 +85,7 @@
       </section>
       <aside id="inspector" aria-label="Object inspector">
         <div id="base-inspector">
-          <h2 id="selected-name">Select an object</h2>
+          <h2 id="selected-name" aria-live="polite" aria-atomic="true">Select an object</h2>
           <p id="selected-type"></p>
           <label>Name <input id="name" maxlength="4096" /></label
           ><label
@@ -129,8 +131,17 @@
         </p>
       </aside>
     </main>
+    <dialog id="shortcut-dialog" aria-labelledby="shortcut-title" aria-describedby="shortcut-note">
+      <h2 id="shortcut-title">Keyboard reference</h2>
+      <p id="shortcut-note">Changes save after the server accepts each command. Unsupported operations have no shortcut.</p>
+      <label for="shortcut-search">Find a shortcut</label>
+      <input id="shortcut-search" type="search" maxlength="200" />
+      <ul id="shortcut-results"></ul>
+      <p id="shortcut-count" role="status" aria-live="polite" aria-atomic="true"></p>
+      <button id="shortcut-close">Close keyboard reference</button>
+    </dialog>
     <footer>
-      <span id="status" role="status">Loading saved scene…</span
+      <span id="status" role="status" aria-live="polite" aria-atomic="true">Loading saved scene…</span
       ><span id="stats"></span>
     </footer>
     <script type="module" src="/editor/editor.js"></script>
