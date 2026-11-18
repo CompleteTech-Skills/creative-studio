@@ -117,12 +117,26 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--scene', required=True, help='Exact project-relative scene manifest')
-    parser.add_argument('--commands', type=Path, help='Bounded nonexecutable JSON batch')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--commands', type=Path, help='Bounded nonexecutable JSON batch')
+    mode.add_argument('--import-collection', help='Version 1 collection manifest relative to --source-root')
+    parser.add_argument('--source-root', type=Path, help='Directory containing the collection manifest and local files')
     parser.add_argument('--destination', type=Path, help='New output snapshot; never an existing project')
     parser.add_argument('--scene-version')
     parser.add_argument('--project-version')
     parser.add_argument('--evaluate', action='store_true', help='Report base-pose matrices, not rendered animation')
     args = parser.parse_args(argv)
+    if args.import_collection is not None:
+        require(args.source_root is not None and args.destination is not None and not args.evaluate,
+                'Collection import requires --source-root and --destination.')
+        from scene3d_import import import_collection
+        output = import_collection(args.project, args.destination, scene_path=args.scene,
+            source_root=args.source_root, manifest_path=args.import_collection, scene_version=args.scene_version,
+            project_version=args.project_version)
+        # Report the committed snapshot even when redirected stdout uses ASCII.
+        print(json.dumps(output, ensure_ascii=True, allow_nan=False, indent=2))
+        return 0
+    require(args.source_root is None, '--source-root requires --import-collection.')
     bundle = load_project(args.project)
     graph = SceneGraph.from_bundle(bundle, args.scene, source_root=args.project)
     library = PrefabLibrary.from_files(args.project, bundle)

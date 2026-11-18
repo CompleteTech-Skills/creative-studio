@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import math
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -22,23 +23,26 @@ import numpy as np
 from PIL import Image
 
 from asset_library import AssetLibrary, file_record, read_source_bytes
-from asset_library_contracts import MAX_FILE_BYTES, portable_path as library_path, seal
+from asset_library_contracts import MAX_FILE_BYTES, MAX_VERSION_BYTES, portable_path as library_path, seal, validate
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, decode_json
 from rig_errors import timestamp
 from rig_gltf import MATERIAL_EXTENSIONS, export_geometry, export_gltf, node_matrix, read_gltf, scene_graph
 from rig_jobs import create_run, save_rig
-from scene3d_contracts import COORDINATES, all_refs, canonical_bytes, portable_path, validate_document
+from scene3d_contracts import COORDINATES, ID, all_refs, canonical_bytes, load_project, portable_path, validate_document
 from scene3d_example import node as make_node
 from scene3d_graph import SceneGraph, _inventories, _inverse, fail, require, transform_for_matrix
 from scene3d_prefabs import _refs, scoped_id
-from scene3d_snapshot import _new_destination
+from scene3d_snapshot import _new_destination, snapshot_project
 from scene3d_materials import native_material_bindings
 from atomic_publish import _rename_no_replace
 
 
 MAX_SOURCE_FILES = 128
 MAX_SOURCE_BYTES = 128*1024*1024
+MAX_COLLECTION_MEMBERS = 8
+MAX_COLLECTION_MANIFEST_BYTES = 64*1024
+MAX_COLLECTION_PACKAGE_FILES = 512
 
 
 def _json(payload, suffix):
@@ -74,10 +78,13 @@ def _local_uri(uri):
     return path
 
 
-def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None):
+def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None,
+                    maximum_files=None):
     """Safely capture local dependencies under the active Scene3D limits."""
     file_limit = MAX_FILE_BYTES if maximum_file_bytes is None else min(MAX_FILE_BYTES, maximum_file_bytes)
     total_limit = MAX_SOURCE_BYTES if maximum_total_bytes is None else min(MAX_SOURCE_BYTES, maximum_total_bytes)
+    files_limit = MAX_SOURCE_FILES if maximum_files is None else min(MAX_SOURCE_FILES, maximum_files)
+    require(files_limit > 0 and total_limit > 0, 'No source budget remains.', 'SCENE3D_IMPORT_LIMIT')
     source = Path(source).absolute()
     require(source.suffix.lower() in ('.glb', '.gltf'), 'Import accepts GLB or glTF.', 'SCENE3D_IMPORT_FORMAT')
     payload = read_source_bytes(source, min(file_limit, total_limit))
@@ -97,7 +104,7 @@ def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_tot
                     resources[path] = source.parent/path
     require(primary not in resources, 'An external resource collides with the private primary filename.',
             'SCENE3D_IMPORT_URI')
-    require(len(resources)+1 <= MAX_SOURCE_FILES, 'Too many external resources.', 'SCENE3D_IMPORT_LIMIT')
+    require(len(resources)+1 <= files_limit, 'Too many external resources.', 'SCENE3D_IMPORT_LIMIT')
     names = [primary, *resources]
     aliases = set()
     for name in names:
@@ -265,7 +272,8 @@ class ImportedScene:
 def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
                 attribution, license_file, unit_scale=1., fixture=False, limits=None,
                 prior_reference=None, derivation=None, clip_aliases=None,
-                license_summary='Evidence retained; distribution restricted pending rights evaluation'):
+                license_summary='Evidence retained; distribution restricted pending rights evaluation',
+                maximum_source_bytes=None, maximum_source_files=None):
     """Decode, independently check an export, then transactionally register bytes.
 
     Supported native format loss is explicit in the returned report. Original
@@ -278,7 +286,6 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
             'Fixture classification and attribution are explicit.')
     require(isinstance(license_summary, str) and 0 < len(license_summary) <= 256,
             'License summary must be bounded text; full evidence is retained separately.')
-    from asset_library_contracts import validate
     # Validate caller identity/version before deriving any destination paths.
     validate(dict(id=asset_id, version=version, sha256='0'*64), 'AssetRef')
     prior = None if prior_reference is None else library.resolve(prior_reference)
@@ -292,7 +299,8 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
     selected_limits = {**DEFAULT_LIMITS, 'influences': 8, **(limits or {})}
     with tempfile.TemporaryDirectory(prefix='scene3d-import-') as temporary:
         private = Path(temporary).resolve()
-        source_info = source_snapshot(source, private/'source')
+        source_info = source_snapshot(source, private/'source', maximum_total_bytes=maximum_source_bytes,
+                                      maximum_files=maximum_source_files)
         from rig_interop import validate_gltf
         source_validation = validate_gltf(source_info['path'])
         require(source_validation['ok'], 'Independent Khronos validation rejected original source declarations.',
@@ -458,6 +466,83 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
             require(hashlib.sha256(library.read_file(reference, r['path'])).hexdigest() == r['sha256'],
                     'Registered payload verification failed.', 'SCENE3D_IMPORT_VALIDATION')
         return ImportedScene(reference, asset_reference, asset, nodes, hierarchy, report)
+
+
+
+def import_collection(source_project, destination, *, scene_path, source_root, manifest_path,
+                      scene_version=None, project_version=None):
+    """Import one bounded v1 local collection into one new Scene3D snapshot."""
+    root = Path(source_root).absolute()
+    manifest = decode_json(read_source_bytes(root/library_path(manifest_path), MAX_COLLECTION_MANIFEST_BYTES))
+    require(isinstance(manifest, dict) and set(manifest) == {'schema_version', 'entries'} and
+            type(manifest['schema_version']) is int and manifest['schema_version'] == 1 and
+            isinstance(manifest['entries'], list) and 1 <= len(manifest['entries']) <= MAX_COLLECTION_MEMBERS,
+            'Expected a version 1 collection manifest with 1–8 entries.', 'SCENE3D_IMPORT_COLLECTION')
+    bundle = load_project(source_project)
+    graph = SceneGraph.from_bundle(bundle, scene_path, source_root=source_project)
+    identities = {(d['id'], d['version']) for d in bundle['documents'].values() if d['kind'] == 'scene3d-asset'}
+    node_ids = {node['id'] for node in graph.document()['nodes']}
+    member_keys = {'source', 'asset_id', 'version', 'license_file', 'attribution', 'node_id'}
+    for entry in manifest['entries']:
+        require(isinstance(entry, dict) and set(entry) == member_keys,
+                'Collection entries require source, asset_id, version, license_file, attribution and node_id.',
+                'SCENE3D_IMPORT_COLLECTION')
+        library_path(entry['source'])
+        library_path(entry['license_file'])
+        validate(dict(id=entry['asset_id'], version=entry['version'], sha256='0'*64), 'AssetRef')
+        identity = (entry['asset_id'], entry['version'])
+        node_id = entry['node_id']
+        require(isinstance(node_id, str) and re.fullmatch(ID['pattern'], node_id) and
+                node_id not in node_ids and identity not in identities,
+                'Collection requires unused scene root IDs and exact asset identities.', 'SCENE3D_IMPORT_COLLECTION')
+        attribution = entry['attribution']
+        require(isinstance(attribution, str) and 0 < len(attribution) <= 256 and attribution.strip(),
+                'Collection attribution must be nonempty bounded text.', 'SCENE3D_IMPORT_COLLECTION')
+        node_ids.add(node_id)
+        identities.add(identity)
+
+    source_bytes, source_files = MAX_SOURCE_BYTES, MAX_SOURCE_FILES
+    budgets = bundle['project']['budgets']
+    package_bytes = min(MAX_VERSION_BYTES, budgets['max_bytes']-sum(r['bytes'] for r in bundle['inventory'].values()))
+    package_files = min(MAX_COLLECTION_PACKAGE_FILES, budgets['max_files']-len(bundle['inventory']))
+    nodes = budgets['max_nodes']-len(graph.document()['nodes'])
+    geometry = {name: DEFAULT_LIMITS[name] for name in ('vertices', 'triangles')}
+    extra_payloads, derived_documents, members = {}, {}, []
+    with tempfile.TemporaryDirectory(prefix='scene3d-collection-') as temporary:
+        library = AssetLibrary(Path(temporary).resolve()/'library', create=True)
+        for entry in manifest['entries']:
+            require(package_bytes > 0 and package_files > 0 and nodes > 1 and min(geometry.values()) > 0,
+                    'No collection import budget remains.', 'SCENE3D_IMPORT_LIMIT')
+            imported = import_gltf(root/entry['source'], library, asset_id=entry['asset_id'],
+                version=entry['version'], attribution=entry['attribution'], license_file=root/entry['license_file'],
+                limits=geometry, maximum_source_bytes=source_bytes, maximum_source_files=source_files)
+            captured = imported.report['source_files']
+            source_bytes -= sum(record['bytes'] for record in captured.values())
+            source_files -= len(captured)
+            for name in geometry:
+                geometry[name] -= imported.report['geometry'][name]
+            nodes -= len(imported.nodes)+1
+            version = library.resolve(imported.library_reference)
+            records = version['files']
+            package_bytes -= sum(record['bytes'] for record in records)
+            package_files -= len(records)
+            require(min(package_bytes, package_files, nodes, *geometry.values()) >= 0,
+                    'Aggregate collection import budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+            asset_path = imported.asset_reference['path']
+            derived_documents[asset_path] = library.read_file(imported.library_reference, asset_path)
+            for path in {reference['path'] for reference in all_refs(imported.asset)}:
+                extra_payloads[path] = library.read_file(imported.library_reference, path)
+            license_record = version['provenance']['license_evidence'][0]
+            placement = add_import(graph, imported, entry['node_id'])
+            members.append(dict(source=entry['source'], asset=imported.asset_reference,
+                                attribution=entry['attribution'],
+                                license=dict(path=license_record['path'], sha256=license_record['sha256']),
+                                root=placement['root'], mapping=placement['mapping']))
+    receipt = snapshot_project(source_project, destination, graph, scene_path=scene_path,
+        scene_version=scene_version, project_version=project_version, extra_payloads=extra_payloads,
+        derived_documents=derived_documents, expected_project_sha256=bundle['inventory']['project.json']['sha256'])
+    receipt['imports'] = members
+    return receipt
 
 
 def materialize(library, reference, destination):

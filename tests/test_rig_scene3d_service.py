@@ -23,7 +23,7 @@ from rig_test_helpers import fixture as rig_fixture
 from scene3d_contracts import canonical_bytes, load_project, schemas, validate_document
 from scene3d_example import build_example, node, TRANSFORM
 from scene3d_graph import SceneGraph, transform_for_matrix
-from scene3d_import import (add_import, evaluate_imported_vertices, import_gltf,
+from scene3d_import import (add_import, evaluate_imported_vertices, import_collection, import_gltf,
                             materialize, source_snapshot, resolve_import, edit_mesh_vertices)
 from scene3d_edit import apply_commands
 from scene3d_prefabs import PrefabLibrary
@@ -1096,6 +1096,119 @@ class RealSceneImportTests(unittest.TestCase):
             document['buffers'][0]['uri'] = 'source-buffer.bin'
             path.write_text(json.dumps(document))
         return path
+
+    def collection_fixture(self):
+        project = self.root/'source-project'
+        build_example(project)
+        entries = [dict(source=self.source(suffix).name, asset_id='local-'+suffix, version=version,
+                        license_file=self.license.name, attribution='Synthetic '+suffix+' author \u00c9lodie',
+                        node_id='placed-'+suffix) for suffix, version in [('glb', '1.2.3'), ('gltf', '2.3.4')]]
+        manifest = self.root/'collection.json'
+        manifest.write_text(json.dumps(dict(schema_version=1, entries=entries)))
+        script = Path(__file__).resolve().parents[1]/'scripts/scene3d_edit.py'
+        command = [sys.executable, str(script), '--project', str(project), '--scene', 'example-scene.json',
+                   '--import-collection', manifest.name, '--source-root', str(self.root)]
+        return project, manifest, entries, command
+
+    def test_actual_cli_mixed_import_collection_reopens_and_edits_independently(self):
+        project, _, entries, command = self.collection_fixture()
+        before = {p.relative_to(project): p.read_bytes() for p in project.rglob('*') if p.is_file()}
+        destination = self.root/'imported-project'
+        run = subprocess.run([*command, '--destination', str(destination)],
+                             env={**os.environ, 'PYTHONIOENCODING': 'ascii'},
+                             capture_output=True, encoding='ascii', timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        receipt = json.loads(run.stdout)
+        bundle = load_project(destination)
+        self.assertEqual(receipt['project_sha256'], bundle['inventory']['project.json']['sha256'])
+        scene_path = receipt['active_scene']['path']
+        graph = SceneGraph.from_bundle(bundle, scene_path, source_root=destination)
+        nodes = {n['id']: n for n in graph.document()['nodes']}
+        self.assertEqual(len(receipt['imports']), 2)
+        for entry, member in zip(entries, receipt['imports']):
+            asset, mapping = member['asset'], member['mapping']
+            self.assertEqual((asset['id'], asset['version'], member['root'], member['attribution']),
+                             (entry['asset_id'], entry['version'], entry['node_id'], entry['attribution']))
+            self.assertEqual(nodes[mapping['node-0']]['parent'], member['root'])
+            self.assertEqual(nodes[mapping['node-1']]['parent'], mapping['node-0'])
+            self.assertTrue(graph.evaluate_base(mapping['node-1'])['selectable'])
+            self.assertEqual(nodes[mapping['node-1']]['asset'], asset)
+            asset_document = bundle['documents'][asset['path']]
+            self.assertEqual(asset_document['provenance']['attribution'], entry['attribution'])
+            self.assertEqual((destination/asset_document['source']['path']).read_bytes(),
+                             (self.root/entry['source']).read_bytes())
+            self.assertEqual((destination/member['license']['path']).read_bytes(), self.license.read_bytes())
+            self.assertEqual(bundle['inventory'][member['license']['path']]['sha256'], member['license']['sha256'])
+        gltf_asset_path = receipt['imports'][1]['asset']['path']
+        buffer_path = Path(gltf_asset_path).parent/'native/source/source-buffer.bin'
+        self.assertEqual((destination/buffer_path).read_bytes(), (self.root/'source-buffer.bin').read_bytes())
+
+        first, second = [m['mapping']['node-1'] for m in receipt['imports']]
+        commands = self.root/'edit-import.json'
+        transform = dict(translation=[9, 2, 0], rotation=[0, 0, 0, 1], scale=[1, 1, 1])
+        commands.write_text(json.dumps(dict(schema_version=1, commands=[dict(operation='transform',
+            parameters=dict(identifier=first, transform=transform))])))
+        edited = self.root/'edited-project'
+        run = subprocess.run([sys.executable, command[1], '--project', str(destination), '--scene', scene_path,
+                              '--commands', str(commands), '--destination', str(edited)],
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        reopened = SceneGraph.from_bundle(load_project(edited), json.loads(run.stdout)['active_scene']['path'])
+        self.assertEqual(reopened.transform(first), transform)
+        self.assertEqual(reopened.transform(second), graph.transform(second))
+        run = subprocess.run([sys.executable, command[1], '--project', str(destination), '--scene', scene_path,
+                              '--evaluate'], capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        evaluated = json.loads(run.stdout)
+        self.assertTrue(evaluated['base_pose_only'])
+        self.assertTrue(evaluated['nodes'][first]['selectable'])
+        self.assertEqual(before, {p.relative_to(project): p.read_bytes() for p in project.rglob('*') if p.is_file()})
+
+    def test_actual_cli_invalid_later_member_leaves_inputs_unchanged_and_no_destination(self):
+        project, manifest, entries, command = self.collection_fixture()
+        broken = self.root/entries[1]['source']
+        document = json.loads(broken.read_bytes())
+        document['buffers'][0]['uri'] = 'missing-local-buffer.bin'
+        broken.write_text(json.dumps(document))
+        inputs = [manifest, self.license, self.root/'source-buffer.bin', broken, self.root/entries[0]['source'],
+                  *(p for p in project.rglob('*') if p.is_file())]
+        before = {p: p.read_bytes() for p in inputs}
+        destination = self.root/'must-not-exist'
+        run = subprocess.run([*command, '--destination', str(destination)],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 2, run.stderr)
+        self.assertEqual(json.loads(run.stderr)['error']['code'], 'LIBRARY_SOURCE')
+        self.assertIn('missing-local-buffer.bin', run.stderr)
+        self.assertFalse(destination.exists())
+        self.assertEqual(before, {p: p.read_bytes() for p in inputs})
+
+    def test_collection_rejects_non_v1_nonlocal_and_colliding_entries(self):
+        project, manifest, entries, _ = self.collection_fixture()
+        destination = self.root/'invalid-manifest-output'
+        for version, members, code in [
+            (True, entries, 'SCENE3D_IMPORT_COLLECTION'),
+            (1, entries*5, 'SCENE3D_IMPORT_COLLECTION'),
+            (1, [dict(entries[0], source='../source.glb')], 'LIBRARY_PATH'),
+            (1, [dict(entries[0], license_file='../license.txt')], 'LIBRARY_PATH'),
+            (1, [entries[0], dict(entries[0], node_id='different')], 'SCENE3D_IMPORT_COLLECTION'),
+            (1, [entries[0], dict(entries[1], node_id=entries[0]['node_id'])], 'SCENE3D_IMPORT_COLLECTION'),
+        ]:
+            with self.subTest(version=version, members=members):
+                manifest.write_text(json.dumps(dict(schema_version=version, entries=members)))
+                with self.assertRaises(RigError) as error:
+                    import_collection(project, destination, scene_path='example-scene.json',
+                                      source_root=self.root, manifest_path=manifest.name)
+                self.assertEqual(error.exception.report['code'], code)
+                self.assertFalse(destination.exists())
+
+    def test_collection_uses_aggregate_source_inventory_budget(self):
+        project, manifest, _, _ = self.collection_fixture()
+        destination = self.root/'budget-output'
+        with patch('scene3d_import.MAX_SOURCE_FILES', 2), self.assertRaises(RigError) as error:
+            import_collection(project, destination, scene_path='example-scene.json',
+                              source_root=self.root, manifest_path=manifest.name)
+        self.assertEqual(error.exception.report['code'], 'SCENE3D_IMPORT_LIMIT')
+        self.assertFalse(destination.exists())
 
     def test_review_malformed_uri_and_mixed_camera_light_declarations(self):
         path = self.source('gltf')

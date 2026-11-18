@@ -164,6 +164,44 @@ Operations include `create`, `delete`, `reparent`, `duplicate`, `reorder`,
 status 2, preserves original bytes, and publishes no destination. Exact prefab
 references must already be known; planned hashes are never invented.
 
+### Import a local asset collection
+
+Use `--import-collection` to add compatible local GLB and glTF assets to an
+existing scene and publish a new portable project.
+
+```bash
+python scripts/scene3d_edit.py --project INPUT --scene example-scene.json \
+  --source-root ASSET_DIRECTORY --import-collection collection.json \
+  --destination NEW_SNAPSHOT
+```
+
+The version 1 manifest contains one to eight entries. The manifest, source and
+license paths are relative to `--source-root`. Each glTF file resolves its local
+resources relative to its own directory.
+
+```json
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "source": "models/table.glb",
+      "asset_id": "table",
+      "version": "1.0.0",
+      "license_file": "licenses/table.txt",
+      "attribution": "Example asset author",
+      "node_id": "imported-table"
+    }
+  ]
+}
+```
+
+Use an unused node ID and exact asset identity for each member. Source, geometry,
+and project limits apply across the whole collection. After every member imports,
+the service publishes one snapshot, with selectable source hierarchies and the
+original source and license evidence. An import error leaves the input project
+and destination unchanged. The receipt identifies `active_scene` and reports
+each member's exact asset reference and node mapping in `imports`.
+
 ## Evaluating a shot
 
 `scene3d_evaluate.evaluate_scene(project, scene, shot, frame)` opens a verified
@@ -234,8 +272,20 @@ leaves the empty outer wrapper for explicit maintenance. Linux publication
 requires protected staging and reports `SCENE3D_STAGING_UNAVAILABLE` when the
 shared adapter is unavailable.
 
-Other platforms retain their existing exclusive publication adapter. Descriptor
-ownership against temporary-wrapper replacement has not been implemented or
-verified there; Linux race-test results do not establish that guarantee on those
-platforms. The explicit Linux CI gate runs
+On macOS, the publisher also pins the destination and writes the staged project
+through directory descriptors. Project and legacy hybrid validation read files
+under that same staged descriptor. The publisher checks the complete inventory
+and payload hashes before exclusive descriptor-relative rename. The macOS job in
+`.github/workflows/atomic-fd-stage.yml` exercises deep dependencies under a low
+descriptor limit, invalid-handle diagnostics, the exact source digest and hybrid
+reopen.
+
+On Windows, the publisher pins the destination parent with a directory handle
+and writes the staged project under a private ACL. The Windows adapter holds the
+staged directory during final readback and exclusive rename, then leaves the
+empty outer wrapper for explicit maintenance. The Windows job in
+`.github/workflows/atomic-windows.yml` runs
+`tests/optional/test_scene3d_snapshot_publication_windows.py`. macOS and Windows
+also report `SCENE3D_STAGING_UNAVAILABLE` if their protected staging capability
+is unavailable. The Linux native cases are in
 `tests/optional/test_scene3d_snapshot_publication_linux.py`.
