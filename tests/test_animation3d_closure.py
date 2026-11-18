@@ -430,12 +430,12 @@ class NativeClosureRegressionTests(unittest.TestCase):
         camera = next(node for node in second['nodes'] if node['type'] == 'camera')
         sequence = self.values['sequence']
 
-        def admit(second_camera_id, active_camera_id):
+        def admit(second_camera_id, active_camera_id, *, register_second=True):
             camera['id'] = second_camera_id
             second['cameras'] = [second_camera_id]
             second_ref = self.put('native/second-scene.json', second)
             second_ref['path'] = 'second-scene.json'
-            native['scenes'] = native['scenes'][:1] + [second_ref]
+            native['scenes'] = native['scenes'][:1] + ([second_ref] if register_second else [])
             native['dependency_lock'] = [ref for ref in native['dependency_lock']
                                          if ref['id'] != second['id']] + [second_ref]
             scene['scene_asset'] = self.put('native/project.json', native, 'scene')
@@ -451,6 +451,14 @@ class NativeClosureRegressionTests(unittest.TestCase):
                 with self.assertRaises(RigError) as rejected:
                     admit(second_camera_id, active_camera_id)
                 self.assertEqual(rejected.exception.report['code'], 'ANIMATION_TARGET')
+
+        admitted = admit('camera', 'camera', register_second=False)
+        self.assertTrue(admitted['source_ready'])
+        self.assertEqual(admitted['inventory']['native/second-scene.json']['sha256'],
+                         native['dependency_lock'][-1]['sha256'])
+        with self.assertRaises(RigError) as unregistered:
+            admit('second-camera', 'second-camera', register_second=False)
+        self.assertEqual(unregistered.exception.report['code'], 'ANIMATION_TARGET')
 
     def test_actor_retarget_profile_pins_its_actual_target_rig(self):
         from rig_errors import object_hash
