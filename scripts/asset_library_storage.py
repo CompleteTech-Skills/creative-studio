@@ -1,0 +1,388 @@
+"""Durable immutable backing records for the canonical AssetLibrary owner.
+
+SQLite serializes writers and is the query projection. A completed record is
+published only after its blob bytes are fsynced and verified. Explicit recovery
+replays completed records; abandoned staging files are never inferred committed.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+import re
+import sqlite3
+import stat
+import tempfile
+
+from asset_library_contracts import canonical_bytes, load_manifest, validate
+from atomic_publish import _rename_no_replace
+from rig_errors import RigError, decode_json, object_hash
+
+MAX_RECORDS = 65536
+MAX_RECORD_BYTES = 2 * 1024 * 1024
+_HASH = re.compile(r'[0-9a-f]{64}\Z')
+
+
+def _fail(message):
+    raise RigError('LIBRARY_DURABILITY', message)
+
+
+def _os_fail(action, exc):
+    raise RigError('LIBRARY_DURABILITY', action + ': ' + str(exc)) from exc
+
+
+def validate_stream(stream):
+    if not isinstance(stream, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,95}', stream):
+        _fail('Event stream must be a bounded portable lowercase identifier.')
+
+
+def _sync_directory(path):
+    # Windows file flush + exclusive rename supplies its supported durability
+    # boundary; opening a directory for fsync is not supported there.
+    if os.name == 'posix':
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+class Storage:
+    def __init__(self, library, *, create=False, resume=False):
+        """create makes a new layout; resume also completes an interrupted one.
+
+        Directories left by an interrupted migration are accepted only after
+        _check confirms they are private, owned, alias-free directories.
+        """
+        self.library = library
+        self.root = library.root / 'records'
+        if create or resume:
+            try:
+                for path in (self.root, *(self.root / n for n in ('blobs', 'commits', 'staging'))):
+                    try:
+                        path.mkdir(mode=0o700)
+                    except FileExistsError:
+                        if not resume:
+                            raise
+                _sync_directory(library.root)
+                _sync_directory(self.root)
+            except OSError as exc:
+                raise RigError('LIBRARY_DURABILITY', 'Canonical storage layout could not be created: ' + str(exc)) from exc
+        self._check()
+
+    def _check(self):
+        # The parent library remains a private owned trust boundary, matching
+        # AssetLibrary._connect. Reject aliases even inside that boundary.
+        for path in (self.library.root, self.root, *(self.root / n for n in ('blobs', 'commits', 'staging'))):
+            try:
+                info = path.lstat()
+            except OSError as exc:
+                raise RigError('LIBRARY_DURABILITY', 'Canonical storage layout is incomplete; run upgrade_storage to finish migration: ' + str(exc)) from exc
+            if path == self.library.root and hasattr(self.library, '_root_identity') and (info.st_dev, info.st_ino) != self.library._root_identity:
+                _fail('Canonical library root was replaced.')
+            if (not stat.S_ISDIR(info.st_mode) or path.is_symlink() or
+                    getattr(info, 'st_file_attributes', 0) & 0x400 or
+                    (os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077))):
+                _fail('Canonical storage directories must remain private, owned and free of aliases.')
+
+    def _read(self, path, limit):
+        from asset_library import read_source_bytes
+        try:
+            info = path.lstat()
+        except OSError as exc:
+            _os_fail('Canonical record is missing or unreadable', exc)
+        if info.st_nlink != 1:
+            _fail('Canonical records cannot be hard links.')
+        return read_source_bytes(path, limit)
+
+    def _publish(self, directory, name, payload):
+        self._check()
+        destination = directory / name
+        temporary = None
+        try:
+            if os.path.lexists(destination):
+                if self._read(destination, max(len(payload), 1)) != payload:
+                    _fail('Existing immutable content differs from its digest.')
+                # A previous attempt may have renamed the file before failing
+                # to flush its directory entry.
+                _sync_directory(directory)
+                return
+            fd, temporary = tempfile.mkstemp(prefix='write-', dir=self.root / 'staging')
+            temporary = Path(temporary)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            _rename_no_replace(temporary, destination)
+            _sync_directory(directory)
+            if self._read(destination, max(len(payload), 1)) != payload:
+                _fail('Published bytes differ from the verified staged bytes.')
+        except OSError as exc:
+            # Disk-full, permission and exclusive-rename failures stay typed.
+            raise RigError('LIBRARY_DURABILITY', 'Canonical record publication failed: ' + str(exc)) from exc
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink()
+                except OSError:
+                    # Absent after rename, or undeletable: never mask the typed
+                    # outcome; leftover staging is reported, never inferred.
+                    pass
+
+    def ready(self):
+        self._publish(self.root, 'READY', b'asset-library-canonical-storage-v1\n')
+
+    def validate_ready(self):
+        if self._read(self.root / 'READY', 128) != b'asset-library-canonical-storage-v1\n':
+            _fail('Canonical storage readiness marker is invalid.')
+
+    def check_version(self, manifest):
+        self._check()
+        encoded = canonical_bytes(dict(schema_version=1, kind='version', value=manifest))
+        name = hashlib.sha256(encoded).hexdigest() + '.json'
+        try:
+            payload = self._read(self.root / 'commits' / name, len(encoded))
+        except RigError as exc:
+            raise RigError('LIBRARY_DURABILITY', 'Exact canonical version commit is missing or unreadable.') from exc
+        if payload != encoded:
+            _fail('Canonical version commit differs from the indexed manifest.')
+
+    def check_projection(self, db, *, pending=None):
+        """Reject a split commit instead of silently discarding durable history.
+
+        Both directions are checked: canonical versions must be indexed, and
+        index rows must be backed by canonical history. ``pending`` names the
+        version registration inserted in this transaction before appending.
+        """
+        manifests, annotations, _, events = self._records()
+        indexed = {(a, v): digest for a, v, digest in db.execute('SELECT id,version,sha256 FROM versions')}
+        if any(indexed.get(key) != m['manifest_sha256'] for key, m in manifests.items()):
+            _fail('A committed version is absent from the index; run recover before writing.')
+        self.check_index_backed(db, manifests, annotations, events, pending=pending)
+
+    def check_index_backed(self, db, manifests, annotations, events, *, pending=None):
+        """Refuse index-only history; recovery must never silently discard it."""
+        message = ('The index holds {} absent from canonical history; refusing to discard it. '
+                   'Preserve the database for diagnosis before any recovery.')
+        for identity, version, digest in db.execute('SELECT id,version,sha256 FROM versions'):
+            if (identity, version) == pending:
+                continue
+            manifest = manifests.get((identity, version))
+            if manifest is None or manifest['manifest_sha256'] != digest:
+                _fail(message.format('a version'))
+        referenced = {f['sha256'] for m in manifests.values() for f in m['files']}
+        if pending is None:
+            for (digest,) in db.execute('SELECT sha256 FROM blobs'):
+                if digest not in referenced:
+                    _fail(message.format('blob content'))
+        for identity, version, revision, document in db.execute('SELECT id,version,revision,document FROM annotations'):
+            if (identity, version) == pending:
+                continue
+            history = {r: v for (a, ver, r), v in annotations.items() if (a, ver) == (identity, version)}
+            expected = history.get(revision)
+            if (revision > max(history, default=-1) or (expected is not None and
+                    {k: v for k, v in expected.items() if k != '_checkpoint'} != decode_json(document))):
+                _fail(message.format('an annotation revision'))
+        durable_events = {(e['stream'], e['revision']): e['document'] for e in events}
+        for stream, revision, document in db.execute('SELECT stream,revision,document FROM asset_events'):
+            if durable_events.get((stream, revision)) != decode_json(document):
+                _fail(message.format('an event'))
+
+    def check_annotation_previous(self, reference, revision):
+        manifests, annotations, _ = self.records()
+        key = (reference['id'], reference['version'])
+        if key not in manifests:
+            _fail('No durable version backs this annotation edit; run recover.')
+        revisions = [r for a, v, r in annotations if (a, v) == key]
+        if max(revisions, default=0) != revision:
+            _fail('Committed annotation revision differs from index; run recover before editing.')
+
+    def append(self, record, payloads=()):
+        """Caller must hold the library's BEGIN IMMEDIATE writer transaction."""
+        encoded = canonical_bytes(record)
+        if len(encoded) > MAX_RECORD_BYTES:
+            _fail('Canonical commit exceeds record budget.')
+        payloads = dict(payloads)
+        try:
+            paths = list((self.root / 'blobs').iterdir())
+            if len(paths) > 1048576:
+                _fail('Canonical blob inventory exceeds bound.')
+            total = sum(p.lstat().st_size for p in paths)
+            commits = list((self.root / 'commits').iterdir())
+            total += sum(p.lstat().st_size for p in commits) + len(encoded)
+            for digest, payload in payloads.items():
+                if not os.path.lexists(self.root / 'blobs' / digest):
+                    total += len(payload)
+        except OSError as exc:
+            _os_fail('Canonical quota scan failed', exc)
+        if total > 1024 ** 3:
+            _fail('Canonical payload quota exceeded; analyze unreferenced content before retrying.')
+        for digest, payload in payloads.items():
+            if not _HASH.fullmatch(digest) or hashlib.sha256(payload).hexdigest() != digest:
+                _fail('Blob digest differs from supplied immutable bytes.')
+            self._publish(self.root / 'blobs', digest, payload)
+        name = hashlib.sha256(encoded).hexdigest() + '.json'
+        if len(commits) >= MAX_RECORDS and not (self.root / 'commits' / name).exists():
+            _fail('Canonical commit history limit exceeded.')
+        self._publish(self.root / 'commits', name, encoded)
+
+    def _records(self):
+        self._check()
+        paths = sorted((self.root / 'commits').iterdir())
+        if len(paths) > MAX_RECORDS:
+            _fail('Canonical commit history limit exceeded.')
+        manifests, annotations, digest_rows, events = {}, {}, [], {}
+        for path in paths:
+            if not re.fullmatch(r'[0-9a-f]{64}\.json', path.name):
+                _fail('Unexpected canonical commit path.')
+            payload = self._read(path, MAX_RECORD_BYTES)
+            if hashlib.sha256(payload).hexdigest() + '.json' != path.name:
+                _fail('Canonical commit hash differs.')
+            record = decode_json(payload)
+            if not isinstance(record, dict) or set(record) != {'schema_version', 'kind', 'value'} or type(record['schema_version']) is not int or record['schema_version'] != 1:
+                _fail('Malformed canonical commit.')
+            if canonical_bytes(record) != payload:
+                _fail('Canonical commit encoding differs.')
+            value = record['value']
+            if record['kind'] == 'version':
+                value = load_manifest(canonical_bytes(value))
+                key = (value['identity']['id'], value['version'])
+                if key in manifests and manifests[key] != value:
+                    _fail('Conflicting immutable version commits.')
+                manifests[key] = value
+                annotations.setdefault((*key, 0), dict(schema_version=1,
+                    asset=dict(id=key[0], version=key[1], sha256=value['manifest_sha256']),
+                    revision=0, tags=[], favorite=False, note=''))
+            elif record['kind'] == 'annotations':
+                value = validate(value, 'AssetAnnotations')
+                key = (value['asset']['id'], value['asset']['version'], value['revision'])
+                if key in annotations and annotations[key] != value:
+                    _fail('Conflicting annotation revision commits.')
+                annotations[key] = value
+            elif record['kind'] == 'annotation-checkpoint':
+                value = validate(value, 'AssetAnnotations')
+                key = (value['asset']['id'], value['asset']['version'], value['revision'])
+                if key in annotations and {k: v for k, v in annotations[key].items() if k != '_checkpoint'} != value:
+                    _fail('Conflicting annotation checkpoint commits.')
+                annotations[key] = {**value, '_checkpoint': True}
+            elif record['kind'] == 'event':
+                if not isinstance(value, dict) or set(value) != {'stream', 'revision', 'document'}:
+                    _fail('Malformed durable event.')
+                validate_stream(value['stream'])
+                revision = value['revision']
+                if type(revision) is not int or not 1 <= revision <= 65536 or not isinstance(value['document'], dict) or len(canonical_bytes(value['document'])) > 65536:
+                    _fail('Event payload or revision exceeds bounds.')
+                key = (value['stream'], revision)
+                if key in events and events[key] != value:
+                    _fail('Conflicting durable event revision.')
+                events[key] = value
+            else:
+                _fail('Unknown canonical commit kind.')
+            digest_rows.append(path.name)
+        streams = {stream for stream, _ in events}
+        for stream in streams:
+            revisions = sorted(revision for name, revision in events if name == stream)
+            if revisions != list(range(1, len(revisions) + 1)):
+                _fail('Durable event stream has missing revisions.')
+        return manifests, annotations, object_hash(digest_rows), [events[key] for key in sorted(events)]
+
+    def records(self):
+        return self._records()[:3]
+
+    def event_records(self):
+        return self._records()[3]
+
+    def materialize(self, *, db=None):
+        manifests, annotations, snapshot, events = self._records()
+        if db is not None:
+            self.check_index_backed(db, manifests, annotations, events)
+        blobs = {}
+        current_annotations = {}
+        for key, manifest in manifests.items():
+            for file in manifest['files']:
+                digest = file['sha256']
+                if digest not in blobs:
+                    payload = self._read(self.root / 'blobs' / digest, file['bytes'])
+                    if len(payload) != file['bytes'] or hashlib.sha256(payload).hexdigest() != digest:
+                        _fail('Required canonical blob is corrupt.')
+                    blobs[digest] = payload
+            revisions = sorted((revision, value) for (a, v, revision), value in annotations.items() if (a, v) == key)
+            checkpoints = [r for r, value in revisions if value.get('_checkpoint')]
+            start = max(checkpoints, default=0)
+            revisions = [(r, value) for r, value in revisions if r >= start]
+            if not revisions or [r for r, _ in revisions] != list(range(start, start + len(revisions))):
+                _fail('Missing/noncontiguous immutable annotation history.')
+            for _, value in revisions:
+                if value['asset']['sha256'] != manifest['manifest_sha256']:
+                    _fail('Annotation history targets a different manifest.')
+            current_annotations[key] = {k: v for k, v in revisions[-1][1].items() if k != '_checkpoint'}
+        if any((a, v) not in manifests for a, v, _ in annotations):
+            _fail('Annotation commit has no canonical version.')
+        return manifests, blobs, current_annotations, snapshot
+
+    def rebuild(self, db):
+        """Verify the whole canonical closure before replacing query rows."""
+        manifests, blobs, annotations, snapshot = self.materialize(db=db)
+        try:
+            _sync_directory(self.root / 'commits')
+        except OSError as exc:
+            _os_fail('Canonical commit directory could not be synced before rebuilding the index', exc)
+        db.execute('DELETE FROM annotations')
+        db.execute('DELETE FROM versions')
+        db.execute('DELETE FROM blobs')
+        db.execute('DELETE FROM asset_events')
+        db.executemany('INSERT INTO blobs VALUES(?,?)', blobs.items())
+        for (identity, version), manifest in manifests.items():
+            db.execute('INSERT INTO versions VALUES(?,?,?,?)', (identity, version, manifest['manifest_sha256'], canonical_bytes(manifest)))
+            value = annotations[(identity, version)]
+            db.execute('INSERT INTO annotations VALUES(?,?,?,?)', (identity, version, value['revision'], canonical_bytes(value)))
+        for value in self.event_records():
+            db.execute('INSERT INTO asset_events VALUES(?,?,?)', (value['stream'], value['revision'], canonical_bytes(value['document'])))
+        # Resolve dependency identity/hash/bytes through the established owner.
+        for manifest in manifests.values():
+            pending = ([d['target'] for d in manifest['dependencies']] + manifest['provenance']['parents'] + manifest['metadata']['style_refs'])
+            for reference in pending:
+                dependency = self.library._lookup(db, reference)
+                self.library._verify_payloads(db, dependency)
+        return dict(snapshot=snapshot, versions=len(manifests), blobs=len(blobs), bytes=sum(map(len, blobs.values())))
+
+    def gc_plan(self, db):
+        """Plan deletion only of content no canonical or indexed history uses.
+
+        Index-only history blocks GC exactly as it blocks writes and recovery:
+        an indexed version may depend on a blob canonical history lacks.
+        """
+        manifests, blobs, _, snapshot = self.materialize(db=db)
+        # Defense in depth: never offer a digest the index still stores.
+        indexed = {digest for (digest,) in db.execute('SELECT sha256 FROM blobs')}
+        try:
+            paths = sorted((self.root / 'blobs').iterdir())
+        except OSError as exc:
+            _os_fail('Canonical blob inventory could not be scanned', exc)
+        if len(paths) > 1048576:
+            _fail('Blob inventory exceeds bounded scan.')
+        candidates = []
+        for path in paths:
+            if not _HASH.fullmatch(path.name):
+                _fail('Unexpected canonical blob path.')
+            if path.name in blobs or path.name in indexed:
+                continue
+            payload = self._read(path, 64 * 1024 * 1024)
+            if hashlib.sha256(payload).hexdigest() != path.name:
+                _fail('Unreachable blob has an invalid digest; retain for diagnosis.')
+            candidates.append(dict(sha256=path.name, bytes=len(payload)))
+        body = dict(schema_version=1, kind='asset-library-gc', snapshot=snapshot,
+                    candidates=candidates, protected_versions=len(manifests),
+                    policy='Retain all committed versions, annotation history, dependencies, source and evidence; staging is never deleted.')
+        return {**body, 'plan_sha256': object_hash(body)}
+
+    def apply_gc(self, db, plan):
+        if not isinstance(plan, dict) or plan != self.gc_plan(db):
+            _fail('GC analysis is stale or altered; analyze again before applying.')
+        try:
+            for candidate in plan['candidates']:
+                (self.root / 'blobs' / candidate['sha256']).unlink()
+            _sync_directory(self.root / 'blobs')
+        except OSError as exc:
+            _os_fail('Unreferenced blob removal failed', exc)
+        return dict(deleted=len(plan['candidates']), bytes=sum(c['bytes'] for c in plan['candidates']), snapshot=plan['snapshot'])
