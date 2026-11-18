@@ -77,6 +77,10 @@ def evaluate_track(track: dict, time: float) -> np.ndarray:
     return values[left]*(1-u)+values[right]*u
 
 
+def contact_is_active(contact: dict, time: float, duration: float) -> bool:
+    return contact['start'] <= time < contact['end'] or (time == duration and contact['end'] == duration)
+
+
 def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=False,
                        contacts=True, constraints=True, _validated=False,
                        _root_offset=None) -> dict:
@@ -117,8 +121,7 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
     if contacts:
         chains = {c['id']: c for c in controller_data['ik']}
         for contact in clip['contacts']:
-            active = contact['start'] <= local_time < contact['end'] or (local_time == duration and contact['end'] == duration)
-            if not active:continue
+            if not contact_is_active(contact, local_time, duration):continue
             target = np.array(contact['target'])+(cycles*root_cycle if clip['root_motion'] == 'embedded' else 0)
             if placement is not None:
                 with np.errstate(over='ignore', invalid='ignore'):
