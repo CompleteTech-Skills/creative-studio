@@ -365,6 +365,64 @@ class SilentMedia(core.SilentContracts):
         self.assertEqual(report['artifact_sha256'],before)
         self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(),before)
 
+    def test_real_probe_truncated_long_workdir_is_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_LONG_WORKDIR'
+        private = self.root / marker
+        for index in range(6):
+            private = private / (str(index) + 'x' * 180)
+        private.mkdir(parents=True)
+        artifact = self.root / 'long-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, request)
+        evidence = failed.exception.evidence
+        self.assertNotIn(marker, str(failed.exception) + json.dumps(evidence))
+        self.assertTrue(evidence['probe']['stderr_truncated'])
+        self.assertIn('<media-path-truncated>', evidence['probe']['stderr'])
+        self.assertLessEqual(len(evidence['probe']['stderr'].encode()), 1024)
+        self.assertEqual(evidence['artifact_sha256'], video.file_hash(artifact))
+        request_path = self.root / 'long-path-request.json'
+        request_path.write_text(json.dumps(request))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertFalse(report['verified'])
+        self.assertTrue(report['probe']['stderr_truncated'])
+        self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_stale_source_failure_does_not_disclose_relative_source_names(self):
+        marker = 'SYNTHETIC_PRIVATE_SOURCE_NAME'
+        folder = self.root / marker
+        folder.mkdir()
+        paths = []
+        for relative in self.paths:
+            (self.root / relative).rename(folder / relative)
+            paths.append(marker + '/' + relative)
+        source = video.build_source(self.root, paths, fps=self.source['fps'], origin='synthetic')
+        request = video.make_request(source)
+        artifact = self.root / 'private-source.mp4'
+        video.encode(request, self.root, artifact)
+        with Image.new('RGB', (64, 48), (250, 0, 0)) as changed:
+            changed.save(self.root / paths[0])
+        with self.assertRaisesRegex(ValueError, 'index 0') as failed:
+            video.verify_export(artifact, request, root=self.root)
+        self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+        self.assertEqual(failed.exception.evidence['decode']['exit_status'], 0)
+        request_path = self.root / 'private-source-request.json'
+        request_path.write_text(json.dumps(request))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent', '--root', str(self.root)],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        self.assertFalse(json.loads(result.stdout)['verified'])
+
     def test_historical_full_probe_receipt_accepts_only_matching_authoritative_facts(self):
         artifact=self.root/'historical-receipt.mp4'
         receipt=video.encode(self.request,self.root,artifact)

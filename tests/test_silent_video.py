@@ -183,6 +183,55 @@ class SilentContracts(unittest.TestCase):
                 video.verify_export(artifact, self.request)
         self.assertTrue(failed.exception.evidence['decode']['stderr_truncated'])
 
+    def test_truncated_command_path_prefixes_are_redacted_at_capture_boundary(self):
+        marker = 'SYNTHETIC_PRIVATE_PATH_FRAGMENT'
+        path = str(self.root / marker / 'nested-folder' / 'artifact.mp4')
+        for cut in (1, 4, len(path) - len('artifact.mp4') - 3, len(path) - 2):
+            raw = dict(command=[sys.executable, path], exit_status=1, stdout='',
+                       stderr='fixture diagnostic: ' + path[:cut], stderr_truncated=True)
+            with self.subTest(cut=cut):
+                evidence, message = video._failure_diagnostics({'probe': raw}, 'failed', 1024)
+                self.assertNotIn(marker, json.dumps(evidence))
+                self.assertNotIn(path[:cut], evidence['probe']['stderr'])
+                self.assertIn('<media-path-truncated>', evidence['probe']['stderr'])
+                self.assertTrue(evidence['probe']['stderr_truncated'])
+                self.assertLessEqual(len(evidence['probe']['stderr'].encode()), 1024)
+
+    def test_probe_and_timeline_nesting_errors_keep_python_and_cli_evidence(self):
+        import contextlib, io
+        artifact = self.root / 'nested-probe.mp4'
+        artifact.write_bytes(b'synthetic parser contract fixture')
+        request_path = self.root / 'nested-request.json'
+        request_path.write_text(json.dumps(self.request))
+        depth = max(10000, 4 * sys.getrecursionlimit())
+        nested = '[' * depth + '0' + ']' * depth
+        self.assertLess(len(nested), self.request['limits']['max_log_bytes'])
+        with self.assertRaises(RecursionError):
+            json.loads(nested)
+        probe = {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p',
+            'width': 64, 'height': 48, 'nb_read_frames': '6', 'sample_aspect_ratio': '1:1',
+            'display_aspect_ratio': '4:3', 'avg_frame_rate': '24/1', 'time_base': '1/12288'}],
+            'format': {'format_name': 'mp4', 'duration': '0.25'}}
+        observed = dict(command=['fixture-probe'], exit_status=0, stdout=json.dumps(probe), stderr='')
+        for stage in ('probe', 'timeline'):
+            raw = dict(command=['fixture-' + stage], exit_status=0,
+                       stdout=nested if stage == 'probe' else '{"frames":' + nested + '}', stderr='')
+            records = [raw] if stage == 'probe' else [observed, raw]
+            with self.subTest(stage=stage), patch.object(video, '_binary', return_value=sys.executable):
+                with patch.object(video, '_run', side_effect=records), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, self.request)
+                self.assertEqual(failed.exception.evidence[stage], raw)
+                self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
+                transcript = io.StringIO()
+                with patch.object(video, '_run', side_effect=records), patch.object(sys, 'argv',
+                        ['silent_video', 'verify-export', str(artifact), '--request', str(request_path), '--require-silent']), \
+                        contextlib.redirect_stdout(transcript), self.assertRaises(SystemExit) as stopped:
+                    video.main()
+                self.assertEqual(stopped.exception.code, 1)
+                report = json.loads(transcript.getvalue())
+                self.assertFalse(report['verified'])
+                self.assertEqual(report[stage], raw)
+
     def test_recognized_unwanted_stream_types_remain_counted_and_rejected(self):
         artifact=self.root/'extra-stream.mp4';artifact.write_bytes(b'synthetic fixture')
         for codec_type in ('subtitle','data','attachment'):

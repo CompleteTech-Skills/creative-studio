@@ -48,8 +48,8 @@ native silent-media workflow. Current-head execution remains pending at authorin
 
 ## Later failure-evidence correction (#525 / #227)
 
-The correction based on main `69304deb3e55a35aa3717e1e6fcd949502c8bb99`
-passed 40 portable tests and 59 tests in the optional native suite locally on
+The correction based on main `3358f0d533984c522e9e8df5c6fe92b6a69bb4af`
+passed 42 portable tests and 63 tests in the optional native suite locally on
 Linux, with no skips. The native suite includes inherited portable contract
 tests and actual FFmpeg/ffprobe 7.1.5 checks on synthetic media. An actual
 corrupt MP4 produced ffprobe exit 1; Python and CLI failures retained the raw
@@ -72,6 +72,13 @@ replace command-owned absolute directory paths with stable aliases. Byte limits
 are reapplied after replacement. A separate contract fixture proves that a
 truncated strict-decode transcript cannot succeed merely because the retained
 prefix contains only whitespace; that fixture is not a native artifact bypass.
+The 42 portable cases combine the core, capabilities and production-adapter
+modules; the core module alone contains 27 cases. A real long temporary path
+that is cut inside ffprobe's stderr is also redacted in Python and CLI evidence.
+Stale source errors identify the frame index without copying relative source
+names. Portable deeply nested JSON fixtures exercise the installed JSON parser's
+actual nesting error at both probe and timeline stages; simulated command results
+are explicitly contract evidence, not native ffprobe behavior.
 
 The original 17 core and 30 native test method bodies remain unchanged. The new
 regressions failed on the preceding source before the correction. Independent

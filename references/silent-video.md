@@ -284,12 +284,17 @@ Truncated streams carry an explicit truncation flag; timeout failures carry
 `timed_out: true` and the observed terminated-process status.
 Failed exported records replace absolute executable and temporary-directory
 paths with stable tool/work-directory aliases in commands, transcripts and the
-error message. Per-stream byte limits apply after this replacement. Strict
-decode requires complete diagnostics and rejects a truncated stderr transcript,
+error message. Per-stream byte limits apply after this replacement. Capture
+also suppresses a partial known path cut at the retained byte boundary.
+Stale source diagnostics identify the frame index rather than its caller-chosen
+directory or filename. Error summaries do not copy unsanitized transcript tails.
+Strict decode requires complete diagnostics and rejects a truncated stderr transcript,
 including one whose retained prefix contains only whitespace.
 
 Successful raw command results are retained before JSON or stream interpretation.
 Malformed ffprobe output therefore leaves inspectable raw evidence. If probing
+or timeline parsing exceeds the JSON parser's nesting limit, the failure retains
+the same structured evidence. If probing
 cannot establish stream counts, the failure does not invent video/audio counts.
 The ffprobe query inventories all streams but requests only fields consumed by
 the verifier; arbitrary tags and unrelated container metadata are not requested.

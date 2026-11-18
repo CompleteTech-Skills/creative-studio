@@ -313,18 +313,29 @@ def _failure_diagnostics(evidence, message, limit):
         substitutions.setdefault(path.replace('\\', '/'), alias)
         substitutions.setdefault(json.dumps(path)[1:-1], alias)
     ordered = sorted(substitutions, key=len, reverse=True)
-    def redact(value):
+    def redact(value, truncated=False):
+        if truncated:
+            # Capture can end inside a known path, before its complete name or
+            # parent is available to replace. Suppress that suffix as well.
+            for path in ordered:
+                start = max(0, len(value) - len(path) + 1)
+                position = value.find(path[0], start)
+                while position >= 0:
+                    if path.startswith(value[position:]):
+                        value = value[:position] + '<media-path-truncated>'
+                        break
+                    position = value.find(path[0], position + 1)
         for path in ordered:
             value = value.replace(path, substitutions[path])
         return value
-    def bounded(value):
-        encoded = redact(value).encode('utf-8')
+    def bounded(value, truncated=False):
+        encoded = redact(value, truncated).encode('utf-8')
         return encoded[:limit].decode('utf-8', 'ignore'), len(encoded) > limit
     for record in records:
         record['command'] = [redact(value) if isinstance(value, str) else value
                              for value in record['command']]
         for field in ('stdout', 'stderr'):
-            record[field], clipped = bounded(record[field])
+            record[field], clipped = bounded(record[field], record.get(field + '_truncated', False))
             if clipped:
                 record[field + '_truncated'] = True
     return result, bounded(message)[0]
@@ -375,7 +386,7 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
                     if not truncated and failure is None:
                         failure = ValueError('media command emitted invalid UTF-8 stdout')
     if failure is None and record['exit_status']:
-        failure = ValueError('media command failed ('+str(record['exit_status'])+'): '+record['stderr'][-2000:])
+        failure = ValueError('media command failed ('+str(record['exit_status'])+')')
     if failure is not None:
         if str(failure) == 'media command exceeded timeout':
             record['timed_out'] = True
@@ -426,7 +437,7 @@ def _snapshot(request, root, directory):
     for frame in source['frames']:
         data = _read_frame(root, frame['path'])
         if len(data) != frame['bytes'] or hashlib.sha256(data).hexdigest() != frame['sha256']:
-            raise ValueError('source frame missing/stale: '+frame['path'])
+            raise ValueError('source frame missing/stale at index '+str(frame['index']))
         im = _image(data, (source['width'], source['height']))
         im.close()
         if directory is not None:
@@ -577,7 +588,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         duration = _fraction(container['duration'], 'duration')
         if abs(duration - Fraction(expected_count, 1)/fps) > 2*tick:
             raise ValueError('encoded presentation duration mismatch')
-    except (KeyError, TypeError, ZeroDivisionError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, ZeroDivisionError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('malformed/incomplete ffprobe evidence') from exc
     timeline = execute('timeline', [probe, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
                      '-show_entries', 'frame=best_effort_timestamp,pkt_duration', '-of', 'json', str(path.resolve())],
@@ -590,7 +601,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         for i, stamp in enumerate(times):
             if abs(stamp-Fraction(i, 1)/fps) > tick or i and stamp <= times[i-1]:
                 raise ValueError('missing/duplicate/out-of-order presentation timestamp')
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('malformed frame timestamp evidence') from exc
     decoded = execute('decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
                     '-err_detect', 'explode', '-i', str(path.resolve()), '-map', '0:v:0',
@@ -598,7 +609,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     if decoded.get('stderr_truncated'):
         raise ValueError('strict decode diagnostics were truncated')
     if decoded['stderr'].strip():
-        raise ValueError('strict decode reported errors: '+decoded['stderr'][-2000:])
+        raise ValueError('strict decode reported errors')
     pixel_checks = []
     if root is not None:
         _snapshot(request, root, None)
