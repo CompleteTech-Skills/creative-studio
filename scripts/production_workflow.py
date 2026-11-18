@@ -708,7 +708,9 @@ def _generation_action(root, binding_id, job, action, **arguments):
                 if value.get('production_context') != _binding_context(binding_id, binding):
                     raise ValueError('ingest receipt must attest the exact bound production coverage context')
                 with tempfile.TemporaryDirectory(prefix='hatch-production-receipt-') as temporary:
-                    receipt_path = Path(temporary) / 'receipt.json'
+                    # This directory is owned by this operation. Normalize OS
+                    # temporary-root aliases before the native no-follow reader.
+                    receipt_path = Path(temporary).resolve() / 'receipt.json'
                     hatch.atomic(receipt_path, value)
                     result = hatch.ingest(run, data, job, used_inputs=receipt_path,
                                           fixture=bundle['project']['fixture'], **arguments)
