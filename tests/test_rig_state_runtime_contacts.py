@@ -163,5 +163,35 @@ class RigStateRuntimeContactTests(unittest.TestCase):
                 self.assert_pose_geometry(runtime.evaluate(time)['pose'], expected['pose'])
 
 
+    def test_authored_contact_cycles_survive_root_translation_limit(self):
+        clip = self.clip('limited-root-travel')
+        self.rig.manifest['controllers']['constraints'] = [
+            dict(schema_version=1, id='root-slide-limit', bone=self.root,
+                 type='translation', axes=[0], minimum=0., maximum=.2)
+        ]
+        runtime = self.runtime({'static-positive': clip['id']})
+        # The authored cycle remains .5 even though the solved endpoint root
+        # is clamped to .2. Contact placement uses the authored displacement.
+        for time in (0., .25, .875, 1., 1.25, 2.25, 2.875, 3.25):
+            with self.subTest(time=time):
+                expected = evaluate_animation(self.rig, clip, time, loop=True)
+                target = [.5*int(time), 1.5, 0.]
+                root = [min(.5*time, .2), 0., 0.]
+                np.testing.assert_allclose(expected['contacts'][0]['target'],
+                                           target, rtol=0, atol=1e-12)
+                np.testing.assert_allclose(
+                    expected['pose']['bones'][self.root]['translation'],
+                    root, rtol=0, atol=1e-12)
+                self.assertTrue(expected['contacts'][0]['converged'])
+                native_fk = evaluate_fk(self.rig.skeleton, expected['pose'])
+                np.testing.assert_allclose(native_fk['b2'][:3, 3], target,
+                                           rtol=0, atol=1e-9)
+                actual = runtime.evaluate(time)['pose']
+                np.testing.assert_allclose(actual['bones'][self.root]['translation'],
+                                           root, rtol=0, atol=1e-12)
+                self.assert_pose_geometry(actual, expected['pose'])
+
+
+
 if __name__ == '__main__':
     unittest.main()
