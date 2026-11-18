@@ -290,7 +290,8 @@ def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offs
         documents.update(prepared['documents']);context['documents'].update(prepared['documents']);conflicts+=prepared['conflicts']
     scene['revision']+=1
     graph=SceneGraph(scene)
-    result=snapshot_project(source,destination,graph,scene_path=scene_path,derived_documents=documents,extra_payloads=payloads)
+    result=snapshot_project(source,destination,graph,scene_path=scene_path,derived_documents=documents,
+                            extra_payloads=payloads,expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     return dict(snapshot=result,conflicts=sorted(set(conflicts)),generated=generated)
 
 
