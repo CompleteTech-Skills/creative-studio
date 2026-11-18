@@ -67,6 +67,13 @@ class RigStateRuntime:
         rest = next(b['rest']['translation'] for b in self.rig.skeleton['bones'] if b['id'] == name)
         return np.asarray(pose['bones'].get(name, {}).get('translation', rest))
 
+    def _authored_root(self, clip, time):
+        # Trajectory uses authored channels, just as native loop accumulation
+        # does. Constraints/IK belong to the final placed pose, not its offset.
+        pose = evaluate_animation(self.rig, clip, time,
+                                  contacts=False, constraints=False)['pose']
+        return self._root(pose)
+
     def _pose(self, now):
         recipe = self.recipes[self.state]
         elapsed = max(0., now-self.entered)
@@ -76,20 +83,20 @@ class RigStateRuntime:
         cycles = elapsed//duration if looping else 0.
         local = elapsed % duration if looping else min(elapsed, duration)
         cycle_delta = np.zeros(3)
-        first_root = self._root(evaluate_animation(self.rig, self.rig.clips[clips[0]], 0)['pose'])
+        first_root = self._authored_root(self.rig.clips[clips[0]], 0)
         for index, name in enumerate(clips):
             clip = self.rig.clips[name]
-            start = evaluate_animation(self.rig, clip, 0)['pose']
-            end = evaluate_animation(self.rig, clip, clip['duration'])['pose']
-            delta = self._root(end)-self._root(start) if clip['root_motion'] == 'embedded' else np.zeros(3)
+            start = self._authored_root(clip, 0)
+            end = self._authored_root(clip, clip['duration'])
+            delta = end-start if clip['root_motion'] == 'embedded' else np.zeros(3)
             if local < clip['duration'] or index == len(clips)-1:
-                pose = evaluate_animation(self.rig, clip, min(local, clip['duration']))['pose']
+                sampled_root = self._authored_root(clip, min(local, clip['duration']))
                 prior_delta = cycle_delta.copy()
                 break
             local -= clip['duration']
             cycle_delta += delta
-        total_delta = sum((self._root(evaluate_animation(self.rig, self.rig.clips[c], self.rig.clips[c]['duration'])['pose'])
-                           - self._root(evaluate_animation(self.rig, self.rig.clips[c], 0)['pose']) for c in clips if self.rig.clips[c]['root_motion'] == 'embedded'), np.zeros(3))
+        total_delta = sum((self._authored_root(self.rig.clips[c], self.rig.clips[c]['duration'])
+                           - self._authored_root(self.rig.clips[c], 0) for c in clips if self.rig.clips[c]['root_motion'] == 'embedded'), np.zeros(3))
         motion_error = 'Requested runtime time exceeds finite root-motion representation.'
         with np.errstate(over='ignore', invalid='ignore'):
             if math.isfinite(cycles):
@@ -102,8 +109,8 @@ class RigStateRuntime:
                     repeated_delta = np.array([float(exact_cycles*Fraction(float(delta))) for delta in total_delta])
                 except OverflowError as exc:
                     raise RigError('RIG_STATE_TIME', motion_error) from exc
-            translation = first_root+self._root(pose)-self._root(start)+self.root_offset+prior_delta+repeated_delta
-            placement = first_root-self._root(start)+self.root_offset+prior_delta+repeated_delta
+            translation = first_root+sampled_root-start+self.root_offset+prior_delta+repeated_delta
+            placement = first_root-start+self.root_offset+prior_delta+repeated_delta
         require(np.isfinite(translation).all() and np.isfinite(placement).all(), 'RIG_STATE_TIME', motion_error)
         # Place the root and contact targets before native constraints and IK.
         # Translating an already solved pose changes its relation to fixed world
@@ -128,8 +135,8 @@ class RigStateRuntime:
                 'Runtime transition budget exhausted; create a new runtime explicitly.')
         self._require_state(state)
         first = self.rig.clips[self.recipes[state]['clips'][0]]
-        start = evaluate_animation(self.rig, first, 0)['pose']
-        offset = self._root(pose)-self._root(start)
+        start = self._authored_root(first, 0)
+        offset = self._root(pose)-start
         self.state, self.entered = state, float(now)
         self.source_pose, self.root_offset = deepcopy(pose), offset
         self.transition_count += 1

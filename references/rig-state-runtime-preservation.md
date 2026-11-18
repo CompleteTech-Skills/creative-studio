@@ -13,9 +13,12 @@ layer. The later integration base is `01edd0913e0119d89d5f9b78298d03dfa1e37855`
 boundaries. Retained controls, retargeting, specialization, estimates, scaled-wing
 correction and role-ID correction remain prerequisites.
 
-The root-placement correction below is prepared against candidate
+The initial root-placement correction was prepared against candidate
 `d19eefe4a0a0decbb84b43e9712719e256685686`
-(tree `8f736ad52071e2a860e1e5913fbbca8f037751f9`).
+(tree `8f736ad52071e2a860e1e5913fbbca8f037751f9`). The authored-trajectory
+correction below is prepared against its reviewed integration candidate
+`02f3f6ce2c4cafe318f90762afee42588a08660f`
+(tree `6eb60290ce627e0683bd0b24d465a5c7aff6fec6`).
 
 | Source | Exact inspected head | Disposition |
 | --- | --- | --- |
@@ -74,14 +77,33 @@ moving a solved chain changes its relation to that pole and can change the
 correct intermediate joints and skinned vertices. World-space constraints also
 need to observe the final placement.
 
-The runtime now computes its existing recipe trajectory and finite placement
-offset, then re-evaluates the selected clip through `evaluate_animation` with
+The runtime computes the recipe trajectory from authored root channels and a
+finite placement offset, then evaluates the selected clip through `evaluate_animation` with
 the private `_root_offset` argument. Native evaluation validates that offset as
 a finite three-vector and applies it to the root and active contact targets
 before constraints and contact IK. Authored world-space poles, constraint
 points and orientation goals remain unchanged. The default evaluator call
 without the offset retains its existing behavior. No separate IK implementation
-or disabled-constraint path is introduced.
+is introduced, and final pose evaluation keeps constraints and contacts enabled.
+
+A second source review identified that the first correction still sampled
+trajectory roots after native constraints. A root translation clamp could then
+reduce the recipe's accumulated contact displacement even though the native
+evaluator derives complete-cycle displacement from authored channels before
+controls. All trajectory and origin samples now use native evaluation with
+`contacts=False, constraints=False`: the first clip origin, each clip's start
+and end, the selected local sample, complete-cycle sums and the target origin
+used at state entry. Only trajectory extraction disables controls. The final
+placed pose goes through full native constraints and contact IK.
+
+For the same one-second 0-to-0.5-meter root motion and contact at `[0, 1.5, 0]`,
+a root X translation clamp of `[0, 0.2]` demonstrates the distinction at 2.25
+seconds: native complete-cycle contact displacement is 1.0 meter on X, while
+constrained-endpoint accumulation gives only 0.4 meter. Both can clamp the root
+itself to 0.2 meter, so checking only root position misses the defect. These
+numbers follow from the source's displacement formulas; no numerical execution
+is claimed. The independent constrained-root regression must compare the
+resulting native pose and deformation as well as contact displacement.
 
 This handles complete embedded cycles, different clip origins and state-entry
 alignment through the same native controls. In-place cycles still do not
@@ -123,7 +145,7 @@ The existing integration has already added `test_rig_state_runtime.py` to the
 byte-for-byte preserved. The direct evaluator contact test remains in the
 existing `test_rig_animation.py` group member. The independent
 `test_rig_state_runtime_contacts.py` regression module is also included in that
-gate without removing other entries. All six new methods use the real native
+gate without removing other entries. The new methods use the real native
 solver and deformation functions; no execution result is inferred from their
 presence.
 Run the focused tests and release gates against the final integrated revision:
