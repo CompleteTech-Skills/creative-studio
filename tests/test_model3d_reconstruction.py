@@ -11,7 +11,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from model3d_reconstruction import read_image,mask_from_image,publish
+from model3d_reconstruction import Evidence,read_image,mask_from_image,publish
 from model3d_reconstruction_solids import extrude_contour,extrude_mask,revolve_profile,heightfield
 from rig_errors import RigError
 from rig_import import load_character_model
@@ -65,6 +65,38 @@ class ReconstructionTests(unittest.TestCase):
         with self.assertRaises(RigError):extrude_mask(np.eye(3,dtype=bool),pixel_size=.1,thickness=.2)
         with self.assertRaises(RigError):extrude_mask(np.ones((2,2),dtype=int),pixel_size=.1,thickness=.2)
 
+    def test_mask_boolean_sequences_match_array_geometry(self):
+        array = np.array([[True, True], [True, False]], dtype=bool)
+        expected = extrude_mask(array, pixel_size=.2, thickness=.4)
+        for mask in ([[True, True], [True, False]], ((True, np.bool_(True)), array[1])):
+            with self.subTest(mask=mask):
+                result = extrude_mask(mask, pixel_size=.2, thickness=.4)
+                self.assertEqual(result.report['parameters'], expected.report['parameters'])
+                np.testing.assert_array_equal(result.geometry.meshes[0].positions,
+                                              expected.geometry.meshes[0].positions)
+                np.testing.assert_array_equal(result.geometry.meshes[0].triangles,
+                                              expected.geometry.meshes[0].triangles)
+
+    def test_mask_preflights_shape_type_and_pixel_count(self):
+        cases = (
+            [[True], [False], [True], [False], [True]],
+            [[True, True, False], [True, False, False]],
+            [[True], [False, True]],
+            [[[True]], [[False]]],
+            [[True, 1]],
+            [[True, False], np.array([[True, False]])],
+            np.ones((2, 3), dtype=bool),
+        )
+        with patch('model3d_reconstruction_solids.MAX_MASK_PIXELS', 4):
+            result = extrude_mask([[True, True], [True, False]], pixel_size=.2, thickness=.4)
+            self.assertEqual(result.report['parameters']['mask_shape'], [2, 2])
+            with patch('model3d_reconstruction_solids.np.asarray',
+                       side_effect=AssertionError('Mask converted before preflight')):
+                for mask in cases:
+                    with self.subTest(mask=mask), self.assertRaises(RigError) as caught:
+                        extrude_mask(mask, pixel_size=.2, thickness=.4)
+                    self.assertEqual(caught.exception.report['code'], 'RECON_MASK')
+
     def test_revolution_independent_prism_volume_uv_seam_and_axis_tips(self):
         n=32;result=revolve_profile([[1,0],[1,2]],segments=n)
         self.assert_closed(result)
@@ -108,6 +140,73 @@ class ReconstructionTests(unittest.TestCase):
             self.assertFalse(mask_from_image(evidence,mode='alpha',threshold=128).any())
             with patch('model3d_reconstruction.MAX_IMAGE_PIXELS',2):
                 with self.assertRaises(RigError):read_image(path)
+
+    def test_mask_from_image_checks_direct_evidence_budget_before_open(self):
+        cases = (
+            (b'', 1, 1, 'RECON_SOURCE_LIMIT'),
+            (b'12345', 1, 1, 'RECON_SOURCE_LIMIT'),
+            (b'1234', 2, 3, 'RECON_SOURCE_LIMIT'),
+            (b'1234', 0, 2, 'RECON_SOURCE'),
+        )
+        with patch('model3d_reconstruction.MAX_IMAGE_BYTES', 4), \
+                patch('model3d_reconstruction.MAX_IMAGE_PIXELS', 4), \
+                patch('model3d_reconstruction.Image.open',
+                      side_effect=AssertionError('Image opened before preflight')):
+            for payload, width, height, code in cases:
+                evidence = Evidence('image.png', payload, 'mask', width, height)
+                with self.subTest(evidence=evidence), self.assertRaises(RigError) as caught:
+                    mask_from_image(evidence, mode='luminance')
+                self.assertEqual(caught.exception.report['code'], code)
+
+    def test_webp_canvas_admission_precedes_open_for_supported_variants(self):
+        variants = (
+            ('RGB', (1, 2, 3), False, b'VP8 '),
+            ('RGB', (1, 2, 3), True, b'VP8L'),
+            ('RGBA', (1, 2, 3, 200), False, b'VP8X'),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'source.webp'
+            for mode, color, lossless, chunk in variants:
+                with self.subTest(chunk=chunk):
+                    Image.new(mode, (4, 3), color).save(path, lossless=lossless)
+                    evidence = read_image(path)
+                    self.assertEqual(evidence.payload[12:16], chunk)
+                    self.assertEqual(mask_from_image(evidence, mode='luminance').shape, (3, 4))
+                    if mode == 'RGBA':
+                        self.assertTrue(mask_from_image(evidence, mode='alpha').all())
+
+                    direct = Evidence(path.name, evidence.payload, 'mask', 1, 1)
+                    with (patch('model3d_reconstruction.MAX_IMAGE_PIXELS', 11),
+                          patch('model3d_reconstruction.Image.open',
+                                side_effect=AssertionError('Image opened before canvas preflight'))):
+                        for operation in (lambda: read_image(path),
+                                          lambda: mask_from_image(direct, mode='luminance')):
+                            with self.assertRaises(RigError) as caught:
+                                operation()
+                            self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE_LIMIT')
+
+    def test_direct_mask_evidence_requires_supported_image_and_matching_dimensions(self):
+        encoded = io.BytesIO()
+        Image.new('RGB', (4, 3)).save(encoded, format='GIF')
+        evidence = Evidence('image.gif', encoded.getvalue(), 'mask', 4, 3)
+        with self.assertRaises(RigError) as caught:
+            mask_from_image(evidence, mode='luminance')
+        self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE')
+
+        encoded = io.BytesIO()
+        Image.new('RGB', (4, 3)).save(encoded, format='PNG')
+        evidence = Evidence('image.png', encoded.getvalue(), 'mask', 3, 4)
+        with self.assertRaises(RigError) as caught:
+            mask_from_image(evidence, mode='luminance')
+        self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE')
+
+        result = extrude_mask([[True]], pixel_size=.2, thickness=.4)
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / 'result'
+            with self.assertRaises(RigError) as caught:
+                publish(result, destination, evidence=[evidence])
+            self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE')
+            self.assertFalse(destination.exists())
 
     def test_image_parent_alias_preserves_leaf_symlink_rejection(self):
         with tempfile.TemporaryDirectory() as temporary:

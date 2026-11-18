@@ -5,6 +5,7 @@ bytes. Image masks require an explicit interpretation and threshold; no semantic
 labels, depth, symmetry or camera calibration are guessed from appearance.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 from dataclasses import dataclass
 from copy import deepcopy
 import hashlib
@@ -46,6 +47,74 @@ class Reconstruction:
     report: dict
 
 
+def _webp_canvas(payload):
+    """Read the canvas from the first WebP chunk without opening a decoder."""
+    if payload[:4] != b'RIFF' or payload[8:12] != b'WEBP':
+        return None
+    # The WebP container specification puts VP8X, VP8L, or VP8 first.
+    chunk = payload[12:16]
+    minimum = {b'VP8X': 10, b'VP8L': 5, b'VP8 ': 10}.get(chunk)
+    chunk_size = int.from_bytes(payload[16:20], 'little')
+    riff_end = 8 + int.from_bytes(payload[4:8], 'little')
+    invalid = 'Invalid WebP canvas header.'
+    require(minimum is not None and minimum <= chunk_size
+            and 20 + chunk_size + (chunk_size % 2) <= riff_end <= len(payload),
+            'RECON_SOURCE', invalid)
+    if chunk == b'VP8X':
+        require((payload[20] & 0x02) == 0, 'RECON_SOURCE', 'Only static WebP observations are supported.')
+        width = 1 + int.from_bytes(payload[24:27], 'little')
+        height = 1 + int.from_bytes(payload[27:30], 'little')
+    elif chunk == b'VP8L':
+        require(payload[20] == 0x2f, 'RECON_SOURCE', invalid)
+        bits = int.from_bytes(payload[21:25], 'little')
+        width = 1 + (bits & 0x3fff)
+        height = 1 + ((bits >> 14) & 0x3fff)
+    else:
+        require((payload[20] & 1) == 0 and payload[23:26] == b'\x9d\x01\x2a',
+                'RECON_SOURCE', invalid)
+        width = int.from_bytes(payload[26:28], 'little') & 0x3fff
+        height = int.from_bytes(payload[28:30], 'little') & 0x3fff
+    require(0 < width * height <= MAX_IMAGE_PIXELS, 'RECON_SOURCE_LIMIT',
+            'WebP canvas is outside the source pixel budget.')
+    return width, height
+
+
+@contextmanager
+def _open_image(payload):
+    require(type(payload) is bytes, 'RECON_SOURCE', 'Expected immutable encoded image bytes.')
+    require(0 < len(payload) <= MAX_IMAGE_BYTES, 'RECON_SOURCE_LIMIT',
+            'Encoded image size is outside the source budget.')
+    require(not ImageFile.LOAD_TRUNCATED_IMAGES, 'RECON_SOURCE_POLICY',
+            'Strict source admission requires truncated image recovery disabled.')
+    canvas = _webp_canvas(payload)
+    try:
+        with Image.open(io.BytesIO(payload), formats=('PNG', 'JPEG', 'WEBP')) as image:
+            require(getattr(image, 'n_frames', 1) == 1, 'RECON_SOURCE',
+                    'Only single-frame PNG/JPEG/WebP observations are supported.')
+            require(0 < image.width * image.height <= MAX_IMAGE_PIXELS, 'RECON_SOURCE_LIMIT',
+                    'Observation is outside the source pixel budget.')
+            require(image.format != 'WEBP' or image.size == canvas, 'RECON_SOURCE',
+                    'WebP canvas and decoder dimensions disagree.')
+            yield image
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        if isinstance(exc, RigError):
+            raise
+        raise RigError('RECON_SOURCE', 'Observation cannot be verified and decoded.') from exc
+
+
+@contextmanager
+def _open_evidence_image(evidence):
+    require(type(evidence.width) is int and type(evidence.height) is int
+            and evidence.width > 0 and evidence.height > 0, 'RECON_SOURCE',
+            'Evidence dimensions must be positive integers.')
+    require(evidence.width <= MAX_IMAGE_PIXELS // evidence.height, 'RECON_SOURCE_LIMIT',
+            'Observation exceeds the source pixel budget.')
+    with _open_image(evidence.payload) as image:
+        require(image.size == (evidence.width, evidence.height), 'RECON_SOURCE',
+                'Evidence dimensions disagree.')
+        yield image
+
+
 def read_image(path, *, role='source'):
     """Read one immutable PNG/JPEG/WebP observation with bounded verified decode."""
     require(role in ('source','mask','depth','sketch','reference'), 'RECON_SOURCE', 'Unknown evidence role.')
@@ -55,22 +124,22 @@ def read_image(path, *, role='source'):
         require(0 < info.st_size <= MAX_IMAGE_BYTES, 'RECON_SOURCE_LIMIT', 'Encoded image exceeds64MiB.')
         payload=stream.read(MAX_IMAGE_BYTES+1)
         require(len(payload)==info.st_size,'RECON_SOURCE','Source changed while reading.')
-    require(not ImageFile.LOAD_TRUNCATED_IMAGES,'RECON_SOURCE_POLICY','Strict source admission requires truncated image recovery disabled.')
-    try:
-        with Image.open(io.BytesIO(payload)) as image:
-            require(image.format in ('PNG','JPEG','WEBP') and getattr(image,'n_frames',1)==1,
-                    'RECON_SOURCE','Only single-frame PNG/JPEG/WebP observations are supported.')
-            require(0 < image.width*image.height <= MAX_IMAGE_PIXELS,'RECON_SOURCE_LIMIT','Observation exceeds4million pixels.')
-            width,height=image.size;image_format=image.format;image.verify()
-        if image_format in ('PNG','JPEG'):
-            # Reuse the warning-aware JPEG entropy and complete PNG raster
-            # authorities. Pillow may silently recover damaged JPEG scan data.
-            from rig_import import _decode_texture
+    with _open_image(payload) as image:
+        width, height = image.size
+        image_format = image.format
+        image.verify()
+    if image_format in ('PNG', 'JPEG'):
+        # Reuse the complete PNG raster and warning-aware JPEG entropy checks.
+        # Pillow may silently recover damaged JPEG scan data.
+        from rig_import import _decode_texture
+        try:
             _decode_texture(payload,dict(DEFAULT_LIMITS,source_bytes=MAX_IMAGE_BYTES,memory_bytes=128*1024**2))
-        with Image.open(io.BytesIO(payload)) as image:image.load()
-    except (OSError,ValueError,Image.DecompressionBombError) as exc:
-        if isinstance(exc,RigError):raise
-        raise RigError('RECON_SOURCE','Observation cannot be verified and decoded.') from exc
+        except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            if isinstance(exc, RigError):
+                raise
+            raise RigError('RECON_SOURCE', 'Observation cannot be verified and decoded.') from exc
+    with _open_image(payload) as image:
+        image.load()
     return Evidence(path.name,payload,role,width,height)
 
 
@@ -79,8 +148,7 @@ def mask_from_image(evidence, *, mode, threshold=127):
     require(isinstance(evidence,Evidence),'RECON_SOURCE','Expected captured image evidence.')
     require(mode in ('alpha','luminance') and type(threshold) is int and 0<=threshold<=254,
             'RECON_MASK','Select alpha/luminance and an integer threshold0..254.')
-    with Image.open(io.BytesIO(evidence.payload)) as image:
-        require(image.size==(evidence.width,evidence.height),'RECON_SOURCE','Evidence dimensions disagree.')
+    with _open_evidence_image(evidence) as image:
         if mode=='alpha':
             require('A' in image.getbands() or 'transparency' in image.info,'RECON_MASK','Source has no authored alpha; supply a mask or explicit luminance interpretation.')
             values=np.asarray(image.convert('RGBA').getchannel('A'))
@@ -218,9 +286,14 @@ def publish(result, destination, *, evidence=(), format='glb'):
     # edits cannot race the geometry/report pair used for this publication.
     result=deepcopy(result)
     require(result._reconstruction_signature==_result_signature(result),'RECON_STALE','Result changed while capturing its publication snapshot.')
-    require(isinstance(evidence,(list,tuple)) and len(evidence)<=64 and all(isinstance(e,Evidence) and type(e.payload) is bytes for e in evidence),
+    require(isinstance(evidence,(list,tuple)), 'RECON_SOURCE','Supply at most64captured observations.')
+    evidence = tuple(evidence[:65])
+    require(len(evidence)<=64 and all(isinstance(e,Evidence) and type(e.payload) is bytes for e in evidence),
             'RECON_SOURCE','Supply at most64captured observations.')
     require(sum(len(e.payload) for e in evidence)<=256*1024**2,'RECON_SOURCE_LIMIT','Evidence total exceeds256MiB.')
+    for item in evidence:
+        with _open_evidence_image(item):
+            pass  # Validate the inventory's claimed dimensions before staging.
     destination=Path(destination).absolute();parent=destination.parent.resolve(strict=True);destination=parent/destination.name
     require(not destination.exists() and not destination.is_symlink(),'RECON_EXISTS','Publish to a new destination.')
     stage=Path(tempfile.mkdtemp(prefix='.reconstruction-',dir=parent))

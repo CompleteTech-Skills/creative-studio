@@ -11,6 +11,8 @@ import numpy as np
 from model3d_reconstruction import _number,_array,_budget,_result,_seal_result
 from rig_errors import require
 
+MAX_MASK_PIXELS = 262144
+
 
 def _cross(a,b,c):return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
 def _on(a,b,p):return _cross(a,b,p)==0 and min(a[0],b[0])<=p[0]<=max(a[0],b[0]) and min(a[1],b[1])<=p[1]<=max(a[1],b[1])
@@ -210,10 +212,33 @@ def extrude_mask(mask, *, pixel_size, thickness, origin=(0,0), evidence=None):
     No cleanup/resampling/semantic component labels are silently applied. Diagonal
     point/edge contacts reject as nonmanifold and require an explicit mask edit.
     """
-    try:values=np.asarray(mask)
-    except (ValueError,TypeError,OverflowError):require(False,'RECON_MASK','Mask must be a rectangular boolean array.')
-    require(values.ndim==2 and values.dtype.kind=='b' and 0<values.size<=262144 and values.any(),
-            'RECON_MASK','Supply a nonempty binary mask of at most262144pixels.')
+    layout_error = 'Mask must be a rectangular boolean array.'
+    size_error = f'Supply a nonempty binary mask of at most {MAX_MASK_PIXELS} pixels.'
+    if isinstance(mask, np.ndarray):
+        values = np.ndarray.view(mask, np.ndarray)
+        require(values.ndim == 2 and values.dtype.kind == 'b', 'RECON_MASK', layout_error)
+        require(0 < values.size <= MAX_MASK_PIXELS, 'RECON_MASK', size_error)
+    else:
+        require(type(mask) in (list, tuple), 'RECON_MASK', layout_error)
+        height = len(mask)
+        require(0 < height <= MAX_MASK_PIXELS, 'RECON_MASK', size_error)
+        first = mask[0]
+        require(type(first) in (list, tuple) or (isinstance(first, np.ndarray) and first.ndim == 1),
+                'RECON_MASK', layout_error)
+        width = len(first)
+        require(0 < height * width <= MAX_MASK_PIXELS, 'RECON_MASK', size_error)
+        for row in mask:
+            if isinstance(row, np.ndarray):
+                require(row.shape == (width,) and row.dtype.kind == 'b', 'RECON_MASK', layout_error)
+            else:
+                require(type(row) in (list, tuple) and len(row) == width
+                        and all(isinstance(cell, (bool, np.bool_)) for cell in row),
+                        'RECON_MASK', layout_error)
+        try:
+            values = np.asarray(mask)
+        except (ValueError, TypeError, OverflowError):
+            require(False, 'RECON_MASK', layout_error)
+    require(values.any(), 'RECON_MASK', size_error)
     pixel=_number(pixel_size,positive=True);depth=_number(thickness,positive=True);origin=_array(origin,(2,),'origin')
     occupied=np.argwhere(values);h,w=values.shape
     # At most2grid layers; bound before allocating output point/face records.
