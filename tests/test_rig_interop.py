@@ -4,8 +4,10 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import numpy as np
 from PIL import Image
 from rig_test_helpers import fixture
@@ -68,7 +70,60 @@ class RigInterchangeTests(unittest.TestCase):
         from pygltflib import GLTF2
         path=Path(self.temp.name)/'independent.glb';export_gltf(self.rig,path);report=validate_gltf(path)
         self.assertTrue(report['ok']);self.assertEqual(report['issues']['numErrors'],0)
+        self.assertIs(report['issues']['truncated'], False)
+        self.assertEqual(report['asset_sha256'], sha256(path))
         gltf=GLTF2().load(str(path));self.assertGreater(len(gltf.skins[0].joints),0);self.assertGreater(len(gltf.animations[0].channels),0)
+
+
+class KhronosReportTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / 'model.gltf'
+        self.path.write_text('{"asset":{"version":"2.0"}}', encoding='utf-8')
+        self.issues = {'truncated': False, 'numErrors': 0, 'numWarnings': 0}
+
+    def validate_report(self, report, *, returncode=0):
+        result = subprocess.CompletedProcess([], returncode, json.dumps(report), '')
+        with patch('rig_interop.shutil.which', return_value='node'), patch(
+            'rig_interop.subprocess.run', return_value=result
+        ):
+            return validate_gltf(self.path)
+
+    def test_complete_report_preserves_details_and_exact_hash(self):
+        report = {
+            'validator': 'synthetic',
+            'issues': {**self.issues, 'numWarnings': 1, 'messages': [{'severity': 1}]},
+            'info': {'version': '2.0'},
+        }
+        self.assertEqual(
+            self.validate_report(report),
+            {**report, 'ok': True, 'asset_sha256': sha256(self.path)},
+        )
+
+    def test_incomplete_or_malformed_reports_fail_closed(self):
+        cases = []
+        for field, invalid_values in (
+            ('truncated', (True, None, 0, 'false')),
+            ('numErrors', (False, None, -1, '0', 0.0)),
+            ('numWarnings', (False, None, -1, '0', 0.0)),
+        ):
+            cases.append({'issues': {key: value for key, value in self.issues.items() if key != field}})
+            cases.extend({'issues': {**self.issues, field: value}} for value in invalid_values)
+        for report in cases:
+            with self.subTest(report=report):
+                self.assertIs(self.validate_report({**report, 'ok': True})['ok'], False)
+
+    def test_report_with_errors_or_unsuccessful_exit_does_not_pass(self):
+        self.assertIs(self.validate_report({'issues': {**self.issues, 'numErrors': 1}})['ok'], False)
+        self.assertIs(self.validate_report({'issues': self.issues}, returncode=1)['ok'], False)
+
+    def test_invalid_report_structure_raises_structured_error(self):
+        for report in ([], {}, {'issues': None}, {'issues': []}):
+            with self.subTest(report=report):
+                with self.assertRaises(RigError) as caught:
+                    self.validate_report(report)
+                self.assertEqual(caught.exception.report['code'], 'RIG_VALIDATOR_REPORT')
 
 
 class RigExternalIntegrationTests(unittest.TestCase):
