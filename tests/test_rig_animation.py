@@ -20,6 +20,20 @@ class RigAnimationTests(unittest.TestCase):
         track=dict(times=[0.,1.],values=[[0,0,0],[2,4,6]],path='translation',interpolation='STEP')
         np.testing.assert_allclose(evaluate_track(track,.999),[0,0,0]);np.testing.assert_allclose(evaluate_track(track,1),[2,4,6])
         track['interpolation']='LINEAR';np.testing.assert_allclose(evaluate_track(track,.25),[.5,1,1.5])
+    def test_exact_rotation_key_matches_the_same_key_at_a_clip_boundary(self):
+        rotation = [0., 0., np.nextafter(.6, 0.), np.nextafter(.8, 0.)]
+        for interpolation in ('STEP', 'LINEAR', 'CUBICSPLINE'):
+            with self.subTest(interpolation=interpolation):
+                values = [[0., 0., 0., 1.], rotation, [0., 0., 1., 0.]]
+                track = dict(times=[0., 1., 2.], values=values, path='rotation',
+                             interpolation=interpolation)
+                segment = dict(track, times=[0., 1.], values=values[1:])
+                if interpolation == 'CUBICSPLINE':
+                    track.update(in_tangents=[[0.] * 4] * 3, out_tangents=[[0.] * 4] * 3)
+                    segment.update(in_tangents=track['in_tangents'][1:],
+                                   out_tangents=track['out_tangents'][1:])
+                np.testing.assert_array_equal(evaluate_track(track, 1.), evaluate_track(segment, 0.))
+
     def test_cubic_hermite_uses_tangents_and_quaternion_normalization(self):
         track=dict(times=[0.,2.],values=[[0,0,0],[2,0,0]],in_tangents=[[0,0,0],[0,0,0]],out_tangents=[[2,0,0],[0,0,0]],path='translation',interpolation='CUBICSPLINE')
         np.testing.assert_allclose(evaluate_track(track,1),[1.5,0,0])

@@ -66,8 +66,10 @@ def evaluate_track(track: dict, time: float) -> np.ndarray:
     if time <= times[0]:return values[0].copy()
     if time >= times[-1]:return values[-1].copy()
     right = int(np.searchsorted(times, time, side='right'));left = right-1
+    # Use the same authored value whether a key is inside a clip or at its boundary.
+    if time == times[left] or track['interpolation'] == 'STEP':
+        return values[left].copy()
     dt = times[right]-times[left];u = (time-times[left])/dt
-    if track['interpolation'] == 'STEP':return values[left].copy()
     if track['interpolation'] == 'CUBICSPLINE':
         a, b = values[left], values[right]
         out_tangent = np.asarray(track['out_tangents'][left]);in_tangent = np.asarray(track['in_tangents'][right])
