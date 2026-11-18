@@ -149,8 +149,9 @@ def decompose(matrix: np.ndarray) -> dict:
     m = np.asarray(matrix, dtype=np.float64)
     require(m.shape == (4, 4) and np.isfinite(m).all() and np.allclose(m[3], [0, 0, 0, 1]),
             'RIG_MATRIX', 'Expected finite affine 4×4 transform.')
-    scale = np.linalg.norm(m[:3, :3], axis=0)
-    require(np.all(scale > EPS), 'RIG_SINGULAR_TRANSFORM', 'Singular transforms are unsupported.')
+    scale = np.array([math.hypot(*m[:3, column]) for column in range(3)])
+    require(np.isfinite(scale).all() and np.all(scale > EPS),
+            'RIG_SINGULAR_TRANSFORM', 'Singular or unrepresentable transform scales are unsupported.')
     rot = m[:3, :3] / scale
     require(np.linalg.det(rot) > 0 and np.allclose(rot.T @ rot, np.eye(3), atol=1e-6),
             'RIG_SHEAR', 'Reflections or shear require an explicit mesh repair before rigging.')

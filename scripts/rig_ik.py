@@ -251,6 +251,9 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         pole = points[1]
     else:
         bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
-        pole = points[0]+bend*reach
+        with np.errstate(over='ignore', invalid='ignore'):
+            pole = points[0]+bend*reach
+    require(np.isfinite(pole).all(), 'RIG_NONFINITE',
+            'FK-to-IK pole exceeds finite world-coordinate representation.')
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
                 orientation=decompose(world[chain['bones'][-1]])['rotation'])

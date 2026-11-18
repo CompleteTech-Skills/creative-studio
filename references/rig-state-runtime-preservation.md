@@ -400,3 +400,8 @@ because an intermediate square exceeds binary64. Six unchanged independent
 cases retain direct, animation and runtime contact checks, strict JSON pole
 serialization, and contact-free and two-bone positive controls. These exercise
 synthetic native geometry and skinning; they do not establish visual acceptance.
+Transform decomposition likewise uses scaled column lengths while retaining
+the existing singularity, reflection and shear checks. FK matching rejects a
+final pole whose world-coordinate sum cannot be represented, with a structured
+native error and unchanged inputs. Independent nearby finite controls remain
+part of the same gate.
