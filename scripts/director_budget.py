@@ -678,6 +678,16 @@ def native_recovery_envelope(data):
         reserve_receipt(terminal)
         # A concise failure/finalization remains available even if the caller
         # cannot provide an output artifact. Larger annotations may be refused.
+        if terminal['payload']['outcome'] == 'retry':
+            # The resulting failed owner still holds a reservation. Its next
+            # save reserves cancellation, so include that same escape before
+            # any retry delta commits, not only after changing owner status.
+            cancellation = dict(key='native-release-' + 'f' * 64,
+                payload=dict(token=None, id='x' * 128, outcome='canceled-known',
+                             evidence=[deepcopy(reference)]),
+                evidence=[deepcopy(reference), deepcopy(reference)])
+            operation['events'].append(cancellation)
+            reserve_receipt(cancellation)
         job['history'].append(dict(event='failed', time=1.7976931348623157e308,
                                    reason='accounted', token=token))
         job['status'] = 'failed'
@@ -1339,7 +1349,10 @@ class NativeBudget:
 
     def retain_finalization(self, job):
         """Authenticate a durable failed owner before closing its retry token."""
-        if job['status'] != 'failed' or 'token' in job:
+        # A later repair may mark the job pending while preserving its exact
+        # original failed transition. Current activity, not that later status,
+        # prevents recovery of the original durable accounting closure.
+        if job['status'] == 'running' or 'token' in job:
             return
         operation = self._check_claim_bindings(job)
         if operation is None:

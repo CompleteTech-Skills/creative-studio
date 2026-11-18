@@ -620,12 +620,19 @@ uncertainty. A crash after that save replays closure without charging another
 delta. An already terminal native settlement supplies its own closure and does
 not acquire an extra ledger revision. Later repair records may coexist with the
 unchanged original history; rollback or edits to retained finalization reject.
+A repair that returns an inactive job to `pending` can recover that same
+original failed transition if closure was interrupted. A running job or one
+still holding a token cannot use this recovery path.
 
 Capacity calculation also covers a pending reservation acknowledgement, every
 missing observation receipt, and a concise cancellation path before a handoff
 is published. A journal that cannot retain those facts refuses before the
 corresponding irreversible accounting mutation. The future envelope preserves
 all existing fields and history; it never persists placeholder measurements.
+The envelope for a measured retry also reserves the cancellation receipt that
+the resulting failed owner will require. If the combined records cannot fit,
+the retry refuses before its accounting delta or native observation is saved,
+leaving the admitted token's concise measured terminal path available.
 
 Earlier descriptor formats without `@journal-headroom` remain recovery-only.
 For an original unstarted reservation, retain nonexecution evidence and call
