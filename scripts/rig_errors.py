@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import math
@@ -67,7 +68,24 @@ def finite_json(value: Any, depth: int = 0) -> None:
             finite_json(child, depth + 1)
 
 
-def decode_json(payload: bytes | str, *, max_bytes: int | None = None) -> Any:
+class RoundedJsonInteger(float):
+    """Mark a parsed float whose spelling has a different value."""
+
+
+def _mark_rounded_integer(token: str) -> float:
+    value = float(token)
+    if value.is_integer():
+        try:
+            if Decimal(token) == Decimal.from_float(value):
+                return value
+        except InvalidOperation:
+            pass
+        return RoundedJsonInteger(value)
+    return value
+
+
+def decode_json(payload: bytes | str, *, max_bytes: int | None = None,
+                mark_rounded_integers: bool = False) -> Any:
     if max_bytes is None:
         max_bytes = MAX_JSON_BYTES
     require(len(payload) <= max_bytes, 'RIG_LIMIT_JSON', f'JSON exceeds the {max_bytes}-byte bound.')
@@ -91,6 +109,7 @@ def decode_json(payload: bytes | str, *, max_bytes: int | None = None) -> Any:
 
     try:
         value = json.loads(payload, object_pairs_hook=pairs,
+                           parse_float=_mark_rounded_integer if mark_rounded_integers else None,
                            parse_constant=lambda _: (_ for _ in ()).throw(
                                RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
     except RigError:
