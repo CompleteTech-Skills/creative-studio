@@ -9,7 +9,7 @@ from fractions import Fraction
 import math
 from sys import float_info
 import numpy as np
-from rig_animation import evaluate_animation, blend_poses
+from rig_animation import evaluate_animation
 from rig_errors import RigError, require, object_hash
 from rig_states import map_states
 
@@ -74,7 +74,7 @@ class RigStateRuntime:
                                   contacts=False, constraints=False)['pose']
         return self._root(pose)
 
-    def _pose(self, now):
+    def _sample(self, now):
         recipe = self.recipes[self.state]
         elapsed = max(0., now-self.entered)
         clips = recipe['clips']
@@ -115,20 +115,14 @@ class RigStateRuntime:
         # Place the root and contact targets before native constraints and IK.
         # Translating an already solved pose changes its relation to fixed world
         # poles/constraint points, so matching the endpoint alone is insufficient.
-        pose = evaluate_animation(self.rig, clip, min(local, clip['duration']),
-                                  _root_offset=placement)['pose']
-        if self.source_pose is not None and self.blend_seconds and elapsed < self.blend_seconds:
-            # Complete both poses: sparse target channels must fade old channels
-            # back to rest, including morphs omitted from the target clip.
-            source, target = deepcopy(self.source_pose), deepcopy(pose)
-            for bone in self.rig.skeleton['bones']:
-                for path, rest in bone['rest'].items():
-                    target['bones'].setdefault(bone['id'], {}).setdefault(path, deepcopy(rest))
-            for mesh in self.rig.geometry.meshes:
-                for morph in mesh.morphs:
-                    target['morphs'].setdefault(mesh.id, {}).setdefault(morph, mesh.morph_defaults.get(morph, 0.))
-            pose = blend_poses(self.rig, source, target, elapsed/self.blend_seconds)
-        return pose
+        blending = self.source_pose is not None and self.blend_seconds and elapsed < self.blend_seconds
+        return evaluate_animation(self.rig, clip, min(local, clip['duration']),
+                                  _root_offset=placement,
+                                  _blend_from=self.source_pose if blending else None,
+                                  _blend_weight=elapsed/self.blend_seconds if blending else 1.)
+
+    def _pose(self, now):
+        return self._sample(now)['pose']
 
     def _enter(self, state, now, pose):
         require(self.transition_count < self.transition_budget, 'RIG_STATE_BUDGET',
@@ -172,11 +166,16 @@ class RigStateRuntime:
                 status = 'completion-unavailable'
                 break
             self._enter(target, boundary, self._pose(boundary))
-        pose = self._pose(now)
+        sample = self._sample(now)
+        completion_unavailable = status == 'completion-unavailable'
+        if any(not report['reachable'] or not report['converged'] for report in sample['contacts']):
+            status = 'controls-unsatisfied'
         self.time = float(now)
-        return dict(state=self.state, elapsed=now-self.entered, pose=pose,
+        return dict(state=self.state, elapsed=now-self.entered, pose=sample['pose'],
+                    contacts=deepcopy(sample['contacts']),
+                    constraints_applied=deepcopy(sample['constraints_applied']),
                     status=status, transition_count=self.transition_count,
-                    pending_completion=self.recipes[self.state]['completion'] if status == 'completion-unavailable' else None)
+                    pending_completion=self.recipes[self.state]['completion'] if completion_unavailable else None)
 
     def request(self, state, now):
         """Request an allowed transition; rejected requests preserve playback."""

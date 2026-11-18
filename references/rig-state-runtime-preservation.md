@@ -135,10 +135,10 @@ catalog definitions, 2D contracts and persisted schemas remain authoritative.
 
 ## Verification and integration requirements
 
-The preparation environment has no executor. No Python test, native deformation
-run or local release gate was executed for this layer. Source equality checks
-establish retention only; historical passing runs apply to their original
-revisions. Independent review and exact-current-head hosted checks remain needed.
+The initial API-only preparation had no executor. Its source equality checks
+established retention only; historical passing runs remain bound to their
+original revisions. Subsequent local execution and hosted checks supplement
+that history and must identify the exact tested revision.
 
 The existing integration has already added `test_rig_state_runtime.py` to the
 `animation-ik` group in `scripts/test_rig_gate.py`. Its original 16 tests remain
@@ -151,7 +151,7 @@ presence.
 Run the focused tests and release gates against the final integrated revision:
 
 ```bash
-PYTHONPATH=scripts:tests python -m unittest test_rig_state_runtime test_rig_state_runtime_contacts test_rig_animation -v
+PYTHONPATH=scripts:tests python -m unittest test_rig_state_runtime test_rig_state_runtime_contacts test_rig_state_runtime_control_results test_rig_animation -v
 python scripts/test_rig_gate.py animation-ik
 python scripts/test_rig_gate.py schema-math
 python scripts/test_rig_gate.py interoperability
@@ -160,3 +160,31 @@ python scripts/test_rig_gate.py interoperability
 Report actual failures, optional-tool skips and environmental blockers separately.
 These numerical fixtures cannot provide artistic review, external interoperability
 acceptance when tools are skipped, or full six-fixture/parent acceptance.
+
+## Transition controls and final diagnostics
+
+Native controls now run after transition interpolation. The runtime passes its
+captured source pose and interpolation weight to the existing native animation
+owner, which completes absent target channels, blends authored channels, then
+applies constraints and contact IK. Interpolating two already solved contact
+poses can move a planted endpoint; no second solver is introduced to hide that
+drift. Root placement, fixed-world poles and authored contact goals retain the
+same native coordinate convention.
+
+Every evaluation exposes the native `contacts` and `constraints_applied`
+results. Contact residuals describe the returned final geometry, including when
+a later chain affects an earlier endpoint. Unreachable or unconverged contacts
+return `status: controls-unsatisfied` instead of an unqualified playing status.
+The bounded best-effort pose remains available for inspection; it does not
+assert a successful contact. A missing completion target remains visible in
+`pending_completion` even when controls are unsatisfied.
+
+Eight independently authored methods exercise nonzero request, cancellation,
+completion and interrupted transitions, every joint transform, actual skinned
+positions, unreachable goals and orientation-only nonconvergence. The author
+did not see the correction. A negative control measures approximately 0.0833 m
+of endpoint drift when already solved poses are blended. The test oracle
+explicitly authors the intended scale channel; rest-valued channels may be
+omitted by the native clip writer. The original 16 runtime and seven placement
+tests remain unchanged. All three runtime suites are enrolled in the existing
+animation/IK gate. Source tests do not replace exact-head execution and review.
