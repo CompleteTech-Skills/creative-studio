@@ -150,6 +150,7 @@ def validate_rig(rig, *, require_animation=False) -> dict:
     height = max(m.positions[:, 1].max() for m in rig.geometry.meshes)-min(m.positions[:, 1].min() for m in rig.geometry.meshes)
     contact_tolerance = min(.01, max(height*.01, 1e-5));maximum = 0.;distinct = set();contact_max = 0.;drift_max = 0.;key_total = 0
     orientation_max, orientation_samples, orientation_ok = None, 0, True
+    contacts_measured = True
     chains = {c['id']: c for c in rig.manifest['controllers']['ik']}
     for clip in rig.clips.values():
         required_orientation = False
@@ -189,17 +190,23 @@ def validate_rig(rig, *, require_animation=False) -> dict:
                 orientation_ok = orientation_ok and contacts.get('orientation_converged') is True
             _check(report, 'clip:'+clip['id'], True, 'Channel evaluation produces finite real mesh positions.', result['tracks'])
         except (RigError, ValueError, KeyError) as exc:
+            if clip.get('contacts'):
+                contacts_measured = False
             if required_orientation:orientation_ok = False
             _check(report, 'clip:'+clip['id'], False, str(exc))
     _check(report, 'key-budget', key_total <= rig.manifest['limits']['keyframes'], 'Total authored keyframe budget.', key_total)
-    _check(report, 'contacts', contact_max <= contact_tolerance and drift_max <= contact_tolerance and orientation_ok,
-           'Measured IK endpoint error, planted world-space drift and required final orientation/convergence.', max(contact_max, drift_max))
+    _check(report, 'contacts', contacts_measured and contact_max <= contact_tolerance
+           and drift_max <= contact_tolerance and orientation_ok,
+           'Measured IK endpoint error, planted world-space drift and required final orientation/convergence.'
+           if contacts_measured else 'Contact measurements could not be completed; see the failed clip checks.',
+           max(contact_max, drift_max) if contacts_measured else None)
     if require_animation:
         _check(report, 'animated-geometry', bool(rig.clips) and maximum > 1e-5 and len(distinct) >= 2,
                'Acceptance requires executable channels and distinct deformed vertices.', maximum)
     report['metrics'].update(max_vertex_displacement_m=maximum, distinct_sampled_poses=len(distinct),
                               clips=len(rig.clips), contact_tolerance_m=contact_tolerance,
-                              max_contact_error_m=contact_max, max_planted_drift_m=drift_max,
+                              max_contact_error_m=contact_max if contacts_measured else None,
+                              max_planted_drift_m=drift_max if contacts_measured else None,
                               max_contact_orientation_error_rad=orientation_max, orientation_samples=orientation_samples)
     _check(report, 'visual-review', True, 'Numerical validation does not establish artistic or anatomical approval.',
            rig.manifest['review']['status'], unavailable=rig.manifest['review']['status'] != 'approved')

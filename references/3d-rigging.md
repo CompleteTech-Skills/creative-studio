@@ -503,3 +503,11 @@ Distance aggregation uses overflow-safe Euclidean measurement; scalar rounding
 keeps large finite pose signatures valid. All nine new methods passed in the
 181-test combined gate before integration of the later folded-matching merge.
 That is synthetic native numerical evidence; no visual approval is implied.
+
+The analytical two-bone solve factors the triangle calculation before measuring
+its perpendicular extent, so representable long segments do not overflow merely
+because an intermediate squared length would be too large. Eight independent
+native regressions cover direct solving, animation and runtime evaluation,
+ordinary bent limbs, and measured contact reports. A contact evaluation failure
+makes the aggregate contact check fail and leaves its unavailable distances
+`null`; it cannot report a successful check with invented zero distances.

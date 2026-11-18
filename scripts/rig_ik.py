@@ -192,8 +192,12 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     elif chain['solver'] == 'two-bone':
         d = float(np.clip(distance, max(lower, 1e-9), lengths.sum()))
         a, b = lengths
-        x = (d*d+a*a-b*b)/(2*d)
-        y = math.sqrt(max(0., a*a-x*x))
+        # Factor the difference of squares and halve before adding. Every
+        # intermediate stays bounded by a side on a feasible triangle, unlike
+        # squaring large but representable segment lengths.
+        x = d/2 + ((a-b)/d)*(a/2+b/2)
+        ratio = x/a
+        y = a*math.sqrt(max(0., (1-ratio)*(1+ratio)))
         points[1] = origin + direction*x + _pole_perpendicular(direction, origin, pole)*y
         points[2] = origin + direction*d
         result = _orient_chain(skeleton, result, names, points)
