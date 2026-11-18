@@ -269,8 +269,37 @@ def descendants(data, name):
         found |= more
 
 
+def _native_budget(root, data):
+    if 'director_budget' not in data:
+        if any('budget_operation' in job for job in data['jobs']):
+            raise ValueError('native accounting policy is missing; preserve its operation history')
+        return None
+    from director_budget import NativeBudget
+    return NativeBudget.for_run(root, data)
+
+
+def record_budget_usage(root, data, name, token, observation):
+    """Record actual usage independently of source validity under native ownership."""
+    budget = _native_budget(root, data)
+    if budget is None:
+        raise ValueError('this run has not opted into a Director budget')
+    return budget.record(job_for(data, name), token, observation)
+
+
+def release_budget(root, data, name, *, idempotency_key, outcome, evidence):
+    """Release an evidenced nonrunning remainder under existing native ownership."""
+    budget = _native_budget(root, data)
+    if budget is None:
+        raise ValueError('this run has not opted into a Director budget')
+    return budget.release(job_for(data, name), idempotency_key=idempotency_key,
+                          outcome=outcome, evidence=evidence)
+
+
 def reconcile(root, data):
     """Invalidate stale work without ever launching or duplicating generation."""
+    budget = _native_budget(root, data)
+    if budget is not None:
+        budget.reconcile()
     stale = set()
     for job in data['jobs']:
         if job['status'] not in ('generated', 'running'):
@@ -444,7 +473,9 @@ def claim(root, data, name):
         job.pop(key, None)
     hashes = inputs(root, job)
     job.pop('stale', None)
-    job.update(status='running', token=uuid.uuid4().hex, input_hashes=hashes,
+    budget = _native_budget(root, data)
+    token = budget.before_claim(job, hashes) if budget is not None else uuid.uuid4().hex
+    job.update(status='running', token=token, input_hashes=hashes,
                started_at=time.time(), attempts=job.get('attempts', 0) + 1)
     selected_prompt = job.get('retry_prompt_file', job['prompt_file']) if job['attempts'] > 1 else job['prompt_file']
     prompt_bytes = inside(root, selected_prompt).read_bytes()
@@ -456,6 +487,8 @@ def claim(root, data, name):
         'identity': request.get('identity', {}), 'resolved_style': request.get('resolved_style')})
     save(root, data)
     return {'job': name, 'token': job['token'], 'generation_skill': '$imagegen', 'attempt': job['attempts'],
+            **({'budget_reservation_id': job['budget_operation']['reservation_id'],
+                'budget_operation_id': job['budget_operation']['operation_id']} if budget is not None else {}),
             'prompt': str(root / selected_prompt),
             'retry_prompt': str(root / job.get('retry_prompt_file', job['prompt_file'])),
             'input_images': [{**x, 'path': str(inside(root, x['path']))} for x in job['input_images']],
@@ -570,6 +603,12 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
         raise ValueError('receipt must attest the active job/token and every current prompt and grounding input hash')
     if not note.strip():
         raise ValueError('QA note required')
+    budget = _native_budget(root, data)
+    if budget is not None:
+        observation = receipt.get('budget_usage')
+        budget.record(job, token, observation)
+        if observation['outcome'] != 'complete':
+            raise ValueError('native ingestion requires complete known budget usage')
     source = Path(source).resolve()
     managed = [root / folder for folder in ('decoded', 'frames', 'final', 'qa')]
     if any(source == p or source.is_relative_to(p) for p in managed) or source == root / 'references/canonical-base.png':
@@ -605,12 +644,23 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
     return {'generated': name, 'fixture': fixture, 'settings': read(root / 'extraction-settings.json') if name == 'base' else None}
 
 
-def fail(root, data, name, token, reason):
+def fail(root, data, name, token, reason, *, budget_usage=None):
     job = job_for(data, name)
     if job['status'] != 'running' or job.get('token') != token:
         raise ValueError('active token required')
     if not reason.strip():
         raise ValueError('failure reason required')
+    budget = _native_budget(root, data)
+    if budget is not None:
+        budget.record(job, token, budget_usage)
+        if budget_usage['outcome'] == 'uncertain':
+            if not any(entry.get('event') == 'outcome-uncertain' and
+                       entry.get('budget_observation') == budget_usage['id'] for entry in job['history']):
+                job['history'].append({'event': 'outcome-uncertain', 'time': time.time(),
+                                       'reason': reason, 'token': token,
+                                       'budget_observation': budget_usage['id']})
+                save(root, data)
+            return {'uncertain': name, 'token': token}
     job.update(status='failed')
     job['history'].append({'event': 'failed', 'time': time.time(), 'reason': reason, 'token': token})
     job.pop('token', None)
@@ -1252,6 +1302,9 @@ def status(root, data):
               'artifact_hashes': artifact_hashes(root), 'app_integration_verified': False,
               'retention': data.get('retention')}
     result['limits'] = data.get('limits', {})
+    budget = _native_budget(root, data)
+    if budget is not None:
+        result['budget'] = budget.status()
     result['resolved_style'] = read(root / 'pet_request.json').get('resolved_style')
     result['style_warnings'] = style_warnings(root)
     result['claims'] = [{'job': j['id'], 'token': j['token'], 'age_seconds': round(time.time() - j['started_at']),

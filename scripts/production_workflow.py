@@ -582,6 +582,9 @@ def _generation_report(bundle, state, runs):
                 active.append({'binding_id': binding_id, 'job': job['id'],
                                'token': job['token'], 'stale': copy.deepcopy(job.get('stale'))})
         bindings[binding_id] = {**copy.deepcopy(binding), 'jobs': jobs}
+        budget = hatch._native_budget(run, data)
+        if budget is not None:
+            bindings[binding_id]['budget'] = budget.status()
     limits = copy.deepcopy(state['generation_limits'])
     limits['max_calls'] = min(limits['max_calls'], bundle['project']['limits']['max_generation_calls'])
     return {'schema_version': 1, 'project_id': bundle['project']['id'],
@@ -720,8 +723,9 @@ def ingest_generation(root, binding_id, job, source, token, note, receipt):
                               note=note, receipt=receipt)
 
 
-def fail_generation(root, binding_id, job, token, reason):
-    return _generation_action(root, binding_id, job, 'fail', token=token, reason=reason)
+def fail_generation(root, binding_id, job, token, reason, *, budget_usage=None):
+    return _generation_action(root, binding_id, job, 'fail', token=token, reason=reason,
+                              **({'budget_usage': budget_usage} if budget_usage is not None else {}))
 
 
 def repair_generation(root, binding_id, job, reason):
