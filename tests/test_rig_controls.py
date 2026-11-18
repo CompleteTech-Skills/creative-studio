@@ -5,7 +5,7 @@ from test_rig_math import chain_skeleton
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import RigError
 from rig_ik import match_fk_to_ik, solve_ik
-from rig_math import axis_angle, qangle
+from rig_math import axis_angle, decompose, qangle
 from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone, skeleton_from_heads
 
 
@@ -63,6 +63,187 @@ class RigControlTests(unittest.TestCase):
         targets = match_fk_to_ik(skeleton, pose, ik_chain())
         result = solve_ik(skeleton, pose, ik_chain(), targets['target'], pole=targets['pole'], orientation=targets['orientation'])
         self.assertTrue(result.converged)
+        before=evaluate_fk(skeleton,pose);after=evaluate_fk(skeleton,result.pose)
+        for name in before:np.testing.assert_allclose(after[name],before[name],atol=1e-12)
+
+    def test_fully_folded_matching_preserves_all_joint_transforms_and_skin(self):
+        from rig_models import Geometry, Mesh, RigAsset, SkinWeights
+        from rig_skinning import evaluate_deformation
+        skeleton=chain_skeleton()
+        positions=np.array([[.1,0,0],[.2,1,0],[.1,2,0]],dtype=float)
+        rest=evaluate_fk(skeleton)
+        mesh=Mesh('strip',positions,np.array([[0,1,2]]))
+        skin=SkinWeights('strip',['b0','b1','b2'],np.arange(3)[:,None],np.ones((3,1)),
+                         np.array([np.linalg.inv(rest[name]) for name in ('b0','b1','b2')]))
+        rig=RigAsset({'skeleton':skeleton},Geometry([mesh]),{'strip':skin})
+        pose=rotate_bone(skeleton,neutral_pose(skeleton),'b0',axis_angle([0,0,1],.6))
+        pose=rotate_bone(skeleton,pose,'b1',axis_angle([1,0,0],math.pi))
+        before=evaluate_fk(skeleton,pose)
+        self.assertLess(np.linalg.norm(before['b2'][:3,3]-before['b0'][:3,3]),1e-12)
+        for solver in ('two-bone','fabrik'):
+            with self.subTest(solver=solver):
+                chain=ik_chain(solver=solver)
+                targets=match_fk_to_ik(skeleton,pose,chain)
+                self.assertTrue(np.isfinite(targets['pole']).all())
+                result=solve_ik(skeleton,pose,chain,**targets)
+                self.assertTrue(result.converged,result.report())
+                after=evaluate_fk(skeleton,result.pose)
+                for name in before:np.testing.assert_allclose(after[name],before[name],atol=1e-12)
+                np.testing.assert_allclose(evaluate_deformation(rig,result.pose)['strip']['positions'],
+                                           evaluate_deformation(rig,pose)['strip']['positions'],atol=1e-12)
+        # A different pole still controls the singular elbow instead of being
+        # discarded merely because the previous pose already reached target.
+        other=solve_ik(skeleton,pose,ik_chain(),[0,0,0],pole=[0,0,2])
+        np.testing.assert_allclose(evaluate_fk(skeleton,other.pose)['b1'][:3,3],[0,0,1],atol=1e-12)
+
+    def test_closed_multisegment_matching_keeps_all_segments_and_weighted_geometry(self):
+        from rig_models import Geometry, Mesh, RigAsset, SkinWeights
+        from rig_skinning import evaluate_deformation
+        skeleton=chain_skeleton(5);pose=neutral_pose(skeleton)
+        for name in ('b1','b2','b3'):
+            pose=rotate_bone(skeleton,pose,name,axis_angle([0,0,1],math.pi/2))
+        before=evaluate_fk(skeleton,pose);rest=evaluate_fk(skeleton)
+        positions=np.array([[.1,0,0],[.2,1,0],[.1,2,0],[.2,3,0],[.1,4,0]])
+        mesh=Mesh('strip',positions,np.array([[0,1,2],[2,3,4]]))
+        names=[f'b{i}' for i in range(5)]
+        skin=SkinWeights('strip',names,np.arange(5)[:,None],np.ones((5,1)),
+                         np.array([np.linalg.inv(rest[name]) for name in names]))
+        rig=RigAsset({'skeleton':skeleton},Geometry([mesh]),{'strip':skin})
+        chain=ik_chain(5,'fabrik');targets=match_fk_to_ik(skeleton,pose,chain)
+        result=solve_ik(skeleton,pose,chain,**targets)
+        self.assertTrue(result.converged,result.report())
+        for name,world in evaluate_fk(skeleton,result.pose).items():
+            np.testing.assert_allclose(world,before[name],atol=1e-12)
+        np.testing.assert_allclose(evaluate_deformation(rig,result.pose)['strip']['positions'],
+                                   evaluate_deformation(rig,pose)['strip']['positions'],atol=1e-12)
+        limit=dict(schema_version=1,id='bend-limit',bone='b1',type='hinge',axis=[0,0,1],minimum=0.,maximum=.4)
+        limited=solve_ik(skeleton,pose,chain,**targets,constraints=[limit])
+        self.assertFalse(limited.converged)
+        self.assertGreater(limited.residual_m,.1)
+
+    def test_matched_fold_still_enforces_existing_joint_limits(self):
+        skeleton=chain_skeleton()
+        pose=rotate_bone(skeleton,neutral_pose(skeleton),'b1',axis_angle([1,0,0],math.pi))
+        targets=match_fk_to_ik(skeleton,pose,ik_chain())
+        limit=dict(schema_version=1,id='elbow-limit',bone='b1',type='hinge',axis=[1,0,0],minimum=0.,maximum=.4)
+        result=solve_ik(skeleton,pose,ik_chain(),**targets,constraints=[limit])
+        self.assertFalse(result.converged)
+        self.assertGreater(result.residual_m,1.)
+        self.assertLessEqual(qangle(result.pose['bones']['b1']['rotation']),.4+1e-12)
+
+    def test_singular_pole_changes_control_both_solvers_off_origin(self):
+        skeleton = chain_skeleton()
+        for solver in ('two-bone', 'fabrik'):
+            for folded in (False, True):
+                with self.subTest(solver=solver, folded=folded):
+                    pose = neutral_pose(skeleton)
+                    if folded:
+                        pose = rotate_bone(skeleton, pose, 'b1', axis_angle([1, 0, 0], math.pi))
+                    origin = np.array([2., -3., .5])
+                    pose['bones']['b0'] = dict(translation=origin.tolist())
+                    result = solve_ik(skeleton, pose, ik_chain(solver=solver), origin,
+                                      pole=origin+[2., 0., 0.])
+                    self.assertTrue(result.converged, result.report())
+                    self.assertLessEqual(result.iterations, 128)
+                    world = evaluate_fk(skeleton, result.pose)
+                    np.testing.assert_allclose(world['b1'][:3, 3], origin+[1., 0., 0.], atol=1e-12)
+                    np.testing.assert_allclose(world['b2'][:3, 3], origin, atol=1e-12)
+
+    def test_closed_multisegment_changed_pole_does_not_preserve_seed(self):
+        skeleton = chain_skeleton(5)
+        pose = neutral_pose(skeleton)
+        for name in ('b1', 'b2', 'b3'):
+            pose = rotate_bone(skeleton, pose, name, axis_angle([0, 0, 1], math.pi/2))
+        before = evaluate_fk(skeleton, pose)
+        result = solve_ik(skeleton, pose, ik_chain(5, 'fabrik'), [0, 0, 0], pole=[0, 0, 4])
+        after = evaluate_fk(skeleton, result.pose)
+        self.assertTrue(result.converged, result.report())
+        self.assertGreater(result.iterations, 0)
+        self.assertLessEqual(result.iterations, 128)
+        self.assertGreater(np.linalg.norm(after['b1'][:3, 3]-before['b1'][:3, 3]), .1)
+        for i in range(4):
+            self.assertAlmostEqual(np.linalg.norm(after[f'b{i+1}'][:3, 3]-after[f'b{i}'][:3, 3]), 1.)
+        self.assertAlmostEqual(result.residual_m, np.linalg.norm(after['b4'][:3, 3]), places=12)
+
+    def test_folded_match_runs_orientation_limits_and_followers(self):
+        for solver in ('two-bone', 'fabrik'):
+            with self.subTest(solver=solver):
+                skeleton = orientation_skeleton(3)
+                pose = rotate_bone(skeleton, neutral_pose(skeleton), 'b1', axis_angle([1, 0, 0], math.pi))
+                chain = ik_chain(solver=solver)
+                targets = match_fk_to_ik(skeleton, pose, chain)
+                targets['orientation'] = axis_angle([1, 0, 0], .6).tolist()
+                follower = dict(schema_version=1, id='follow', bone='follower',
+                                type='copy-rotation', target='b2')
+                for limited in (False, True):
+                    constraints = [follower]
+                    if limited:
+                        constraints.append(dict(schema_version=1, id='endpoint-limit', bone='b2',
+                                                type='hinge', axis=[1, 0, 0], minimum=0, maximum=.2))
+                    result = solve_ik(skeleton, pose, chain, **targets, constraints=constraints)
+                    world = evaluate_fk(skeleton, result.pose)
+                    self.assertEqual(result.converged, not limited, result.report())
+                    self.assertAlmostEqual(result.residual_m, 0., places=12)
+                    self.assertAlmostEqual(result.orientation_residual_rad,
+                                           qangle(targets['orientation'],
+                                                  decompose(world['b2'])['rotation']), places=12)
+                    if limited:self.assertGreater(result.orientation_residual_rad, .1)
+                    np.testing.assert_allclose(world['follower'][:3, :3], world['b2'][:3, :3], atol=1e-12)
+                    self.assertEqual(sum(c['constraint'] == 'follow' for c in result.constraints_applied), 1)
+                with self.assertRaises(RigError):
+                    solve_ik(skeleton, pose, chain, **dict(targets, orientation=[0, 0, 0, 0]))
+
+    def test_folded_runtime_segment_length_guard_boundary(self):
+        skeleton = chain_skeleton()
+        for solver in ('two-bone', 'fabrik'):
+            for length in (0., 1e-8, 2e-8):
+                with self.subTest(solver=solver, length=length):
+                    pose = rotate_bone(skeleton, neutral_pose(skeleton), 'b1', axis_angle([1, 0, 0], math.pi))
+                    pose['bones']['b1']['translation'] = [0, length, 0]
+                    pose['bones']['b2'] = dict(translation=[0, length, 0])
+                    chain = ik_chain(solver=solver)
+                    if length > 1e-8:
+                        targets = match_fk_to_ik(skeleton, pose, chain)
+                        result = solve_ik(skeleton, pose, chain, **targets)
+                        self.assertTrue(result.converged, result.report())
+                        self.assertTrue(np.isfinite(targets['pole']).all())
+                    else:
+                        for operation in (lambda: match_fk_to_ik(skeleton, pose, chain),
+                                          lambda: solve_ik(skeleton, pose, chain, [0, 0, 0])):
+                            with self.assertRaises(RigError) as error:operation()
+                            self.assertEqual(error.exception.report['code'], 'RIG_IK_LENGTH')
+
+    def test_folded_limit_does_not_make_unequal_segments_reachable(self):
+        skeleton = chain_skeleton()
+        pose = rotate_bone(skeleton, neutral_pose(skeleton), 'b1', axis_angle([1, 0, 0], math.pi))
+        pose['bones']['b2'] = dict(translation=[0, .5, 0])
+        for solver in ('two-bone', 'fabrik'):
+            with self.subTest(solver=solver):
+                result = solve_ik(skeleton, pose, ik_chain(solver=solver), [0, 0, 0], pole=[0, 0, 2])
+                self.assertFalse(result.reachable)
+                self.assertFalse(result.converged)
+                self.assertGreaterEqual(result.residual_m, .5-1e-12)
+                self.assertTrue(np.isfinite(result.residual_m))
+
+    def test_folded_threshold_keeps_strict_residual_and_degenerate_pole_guards(self):
+        skeleton = chain_skeleton()
+        pose = rotate_bone(skeleton, neutral_pose(skeleton), 'b1', axis_angle([1, 0, 0], math.pi))
+        for solver in ('two-bone', 'fabrik'):
+            chain = ik_chain(solver=solver)
+            # A pole at the root has no direction: use the valid first segment.
+            result = solve_ik(skeleton, pose, chain, [0, 0, 0], pole=[0, 0, 0])
+            self.assertTrue(result.converged, result.report())
+            np.testing.assert_allclose(evaluate_fk(skeleton, result.pose)['b1'][:3, 3], [0, 1, 0], atol=1e-12)
+            for distance in (5e-10, 1e-9, 2e-9):
+                with self.subTest(solver=solver, distance=distance):
+                    chain['tolerance'] = 1e-12
+                    result = solve_ik(skeleton, pose, chain, [0, distance, 0], pole=[0, 0, 2])
+                    actual = evaluate_fk(skeleton, result.pose)['b2'][:3, 3]
+                    measured = np.linalg.norm(actual-[0, distance, 0])
+                    self.assertTrue(np.isfinite(actual).all())
+                    self.assertAlmostEqual(result.residual_m, measured, places=15)
+                    self.assertEqual(result.converged, result.reachable and measured <= chain['tolerance'])
+                    self.assertLessEqual(result.iterations, chain['iterations'])
 
     def test_requested_endpoint_orientation_cannot_bypass_joint_limits(self):
         skeleton = chain_skeleton()

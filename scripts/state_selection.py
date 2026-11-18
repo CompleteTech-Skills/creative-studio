@@ -34,13 +34,14 @@ def read_selection(path, profile, identity):
     return value
 
 
-def prepared_selection(root):
+def prepared_selection(root, *, reader=None):
     """Read immutable original compilation evidence, including after profile revision."""
     root = Path(root)
     request_path = root / 'pet_request.json'
     if not request_path.is_file():
         return None
-    request = json.loads(request_path.read_text(encoding='utf-8'))
+    reader = reader or (lambda path: path.read_bytes())
+    request = json.loads(reader(request_path))
     record = request.get('state_selection')
     path = root / 'state-selection.json'
     if record is None:
@@ -50,14 +51,13 @@ def prepared_selection(root):
     strict_keys(record, {'path', 'sha256', 'profile_sha256'}, 'state selection reference')
     if record.get('path') != 'state-selection.json' or not path.is_file() or path.is_symlink():
         raise ValueError('missing or invalid original state selection evidence')
-    raw = path.read_bytes()
+    raw = reader(path)
     if hashlib.sha256(raw).hexdigest() != record.get('sha256'):
         raise ValueError('state selection evidence changed after preparation')
     value = json.loads(raw.decode('utf-8'))
     if value.get('profile_sha256') != record.get('profile_sha256'):
         raise ValueError('state selection profile reference changed')
     return value
-
 
 def export_selection(root, output, profile):
     value = prepared_selection(root)

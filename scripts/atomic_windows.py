@@ -31,6 +31,10 @@ class _Attributes(ctypes.Structure):
     _fields_ = [('attributes', _DWORD), ('reparse_tag', _DWORD)]
 
 
+class _FileIdInfo(ctypes.Structure):
+    _fields_ = [('volume_serial', ctypes.c_uint64), ('file_id', ctypes.c_ubyte * 16)]
+
+
 class _RenameInfo(ctypes.Structure):
     _fields_ = [('replace', ctypes.c_ubyte), ('root', _HANDLE),
                 ('name_bytes', _DWORD), ('name', ctypes.c_wchar * 1)]
@@ -236,9 +240,9 @@ def _mkdir_private(path):
 
 def _component(name):
     if (not isinstance(name, str) or not name or name in ('.', '..')
-            or any(character in name for character in ('/', '\\', ':', '\0'))
+            or any(character in name for character in '/\\:<>"|?*')
             or name[-1] in (' ', '.') or any(ord(character) < 32 for character in name)
-            or re.match(r'(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', name)):
+            or re.match(r'(?i)^(CON|CONIN\$|CONOUT\$|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)', name)):
         raise ValueError('Windows publication names must be ordinary single filename components')
     return name
 
@@ -259,12 +263,28 @@ def _path(path):
     return result
 
 
+def validate_destination(destination):
+    """Admit the spelling of an ordinary local publication destination."""
+    destination = _path(destination)
+    _component(destination.name)
+    return destination
+
+
 class _DirectoryPin:
     def __init__(self, path, handle, stage=None):
         self.path = path
         self._handle = handle
         self._active = True
         self._stage = stage
+
+    def identity(self):
+        """Return the pinned directory's native volume serial and file ID."""
+        if not self._active:
+            raise ValueError('directory pin is inactive')
+        info = _FileIdInfo()
+        if not _api().GetFileInformationByHandleEx(self._handle, 18, ctypes.byref(info), ctypes.sizeof(info)):
+            raise _error(self.path)
+        return info.volume_serial, bytes(info.file_id)
 
     @contextmanager
     def pin_child(self, name, *, create=False):
@@ -368,23 +388,24 @@ def _delete_handle(handle):
         raise _error('owned private entry')
 
 
-def _clear_owned(path, *, depth=0, count=None):
+def _clear_owned(path, *, max_depth, max_entries, depth=0, count=None):
     if count is None:
         count = [0]
-    if depth > 64:
+    if depth > max_depth:
         raise ValueError('private stage cleanup exceeds directory depth budget')
     # Every directory being scanned is already held with delete sharing denied.
     with os.scandir(path) as entries:
         for entry in entries:
             count[0] += 1
-            if count[0] > 100000:
+            if count[0] > max_entries:
                 raise ValueError('private stage cleanup exceeds entry budget')
             handle = _open(entry.path, delete=True, traverse=False)
             body_error = None
             try:
                 attributes = _attributes(handle)
                 if attributes & _DIRECTORY and not attributes & _REPARSE:
-                    _clear_owned(Path(entry.path), depth=depth + 1, count=count)
+                    _clear_owned(Path(entry.path), max_depth=max_depth, max_entries=max_entries,
+                                 depth=depth + 1, count=count)
                 # Delete the exact held object, including a reparse point itself.
                 _delete_handle(handle)
             except BaseException as exc:
@@ -408,27 +429,33 @@ class PrivateStage(_DirectoryPin):
             raise ValueError('private stage is inactive or has already been published')
         if self._children:
             raise ValueError('close child directory pin contexts before publication')
-        destination = _path(destination)
-        _component(destination.name)
+        destination = validate_destination(destination)
         with pinned_directory(destination.parent) as parent:
             _rename_handle(self._handle, parent.path / destination.name)
             self.published = True
 
 
 @contextmanager
-def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=True):
+def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=True,
+                  cleanup_max_depth=64, cleanup_max_entries=100000):
     """Yield a Windows Path stage pinned before all caller writes and checks.
 
     Call ``stage.publish_to(destination)`` after verifying the complete payload.
     Writers must finish before publication or exit. The empty private wrapper is
     retained; cleanup never removes its public basename. Native sharing modes
     keep ancestors and payload names stable until their handles close.
+    Consumers with a known closure may size cleanup to its directory depth and
+    total entry count.
     """
     _api()
     if not isinstance(prefix, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,64}', prefix):
         raise ValueError('private stage prefix must be one bounded portable component')
     if type(cleanup) is not bool or type(cleanup_on_error) is not bool:
         raise ValueError('private stage cleanup policies must be booleans')
+    if type(cleanup_max_depth) is not int or cleanup_max_depth < 0:
+        raise ValueError('private stage cleanup requires a nonnegative depth limit')
+    if type(cleanup_max_entries) is not int or cleanup_max_entries < 0:
+        raise ValueError('private stage cleanup requires a nonnegative entry limit')
     with pinned_directory(parent) as parent_pin:
         for _ in range(64):
             wrapper = parent_pin.path / (prefix + secrets.token_hex(16))
@@ -467,7 +494,7 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
                 stage._active = False
                 if not stage.published and cleanup and (body_error is None or cleanup_on_error):
                     try:
-                        _clear_owned(payload)
+                        _clear_owned(payload, max_depth=cleanup_max_depth, max_entries=cleanup_max_entries)
                         _delete_handle(payload_handle)
                     except BaseException as cleanup_error:
                         if body_error is None:
@@ -495,8 +522,7 @@ class _PrivateFile:
         if not self.active or self.published:
             raise ValueError('private file is inactive or already published')
         import msvcrt
-        destination = _path(destination)
-        _component(destination.name)
+        destination = validate_destination(destination)
         with pinned_directory(destination.parent) as parent:
             _rename_handle(msvcrt.get_osfhandle(self.fd), parent.path / destination.name)
             self.published = True
