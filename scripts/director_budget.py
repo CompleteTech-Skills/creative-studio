@@ -403,19 +403,83 @@ def _native_owner_identity(owner, ledger_root, genesis):
                 ledger_path=ledger_root.relative_to(owner).as_posix(), genesis=genesis)
 
 
-def _native_owner_binding(owner, ledger_root, genesis, *, create=False):
-    """One immutable ledger association; creation requires Hatch owner ownership."""
+def _native_enrollment(root, data):
+    import hatch
+    return dict(run_id=data['run_id'], run_location_sha256=object_hash(str(Path(root).resolve())),
+                request_sha256=hatch.digest(Path(root) / 'pet_request.json'))
+
+
+def _read_native_owner(path):
+    """Read a bounded owner association and its monotonic enrollment identities."""
+    _need(not path.is_symlink(), 'PATH', 'Native owner association cannot be a link.')
+    value = decode_json(_read_source_bytes(path, MAX_BYTES))
+    fields = {'schema_version', 'kind', 'owner_location_sha256', 'ledger_path', 'genesis', 'enrollments'}
+    _need(isinstance(value, dict) and set(value) == fields and
+          value['schema_version'] == 1 and value['kind'] == 'native-budget-owner',
+          'BINDING', 'Malformed native owner association.')
+    enrollments = value['enrollments']
+    _need(isinstance(enrollments, list) and 0 < len(enrollments) <= MAX_RESERVATIONS,
+          'BINDING', 'Native enrollment inventory is missing or exceeds its bound.')
+    identities, locations = set(), set()
+    for entry in enrollments:
+        _need(isinstance(entry, dict) and set(entry) == {
+            'run_id', 'run_location_sha256', 'request_sha256'},
+            'BINDING', 'Malformed native enrollment identity.')
+        _id(entry['run_id'])
+        _need(all(isinstance(entry[key], str) and re.fullmatch(r'[0-9a-f]{64}', entry[key])
+                  for key in ('run_location_sha256', 'request_sha256')),
+              'BINDING', 'Malformed native enrollment digest.')
+        _need(entry['run_id'] not in identities and entry['run_location_sha256'] not in locations,
+              'BINDING', 'Native enrollment identities cannot be replaced or duplicated.')
+        identities.add(entry['run_id']); locations.add(entry['run_location_sha256'])
+    return value
+
+
+def _native_owner_binding(owner, ledger_root, genesis, *, create=False, enrollment=None):
+    """One ledger association; enrollment append requires existing Hatch ownership."""
     import hatch
     expected = _native_owner_identity(owner, ledger_root, genesis)
     path = owner / NATIVE_OWNER_FILE
     _need(not path.is_symlink(), 'PATH', 'Native owner association cannot be a link.')
-    if path.exists():
-        _need(decode_json(_read_source_bytes(path, MAX_BYTES)) == expected,
+    exists = path.exists()
+    if exists:
+        stored = _read_native_owner(path)
+        _need({key: stored[key] for key in expected} == expected,
               'BINDING', 'Native owner already belongs to a different ledger or location.')
+        enrollments = stored['enrollments']
     else:
-        _need(create, 'BINDING', 'Native owner ledger association is missing.')
-        hatch.atomic(path, expected)
+        _need(create and enrollment is not None, 'BINDING', 'Native owner ledger association is missing.')
+        enrollments = []
+    changed = not exists
+    if enrollment is not None:
+        matches = [entry for entry in enrollments if entry['run_id'] == enrollment['run_id']
+                   or entry['run_location_sha256'] == enrollment['run_location_sha256']]
+        if matches:
+            _need(matches == [enrollment], 'BINDING', 'Native enrollment identity cannot be replaced.')
+        else:
+            _need(create, 'BINDING', 'Native accounting enrollment is missing from its owner.')
+            _need(len(enrollments) < MAX_RESERVATIONS, 'BINDING', 'Native enrollment inventory is full.')
+            enrollments = enrollments + [deepcopy(enrollment)]
+            changed = True
+    if changed:
+        hatch.atomic(path, dict(expected, enrollments=enrollments))
     return expected
+
+
+def reject_legacy_budget_rollback(root, data):
+    """An earlier unbudgeted snapshot cannot erase enrollment retained by its owner."""
+    root = Path(root).resolve()
+    location = object_hash(str(root))
+    for owner in (root, *root.parents):
+        path = owner / NATIVE_OWNER_FILE
+        if not path.exists() and not path.is_symlink():
+            continue
+        stored = _read_native_owner(path)
+        _need(stored['owner_location_sha256'] == object_hash(str(owner)),
+              'BINDING', 'Native accounting owner was relocated without reconciliation.')
+        _need(not any(entry['run_id'] == data['run_id'] or
+                      entry['run_location_sha256'] == location for entry in stored['enrollments']),
+              'BINDING', 'A previously enrolled run cannot fall back to unbudgeted ownership.')
 
 
 def require_production_budget(root, state, run, data):
@@ -497,7 +561,8 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
                 previous = NativeBudget(bound, bound_data)
                 _need(previous.owner == owner and previous.ledger.root == ledger_root,
                       'BINDING', 'Existing project acquisition uses a different ledger.')
-        _native_owner_binding(owner, ledger_root, config['genesis'], create=True)
+        _native_owner_binding(owner, ledger_root, config['genesis'], create=True,
+                              enrollment=_native_enrollment(root, data))
         if project_state is not None and 'director_budget' not in project_state:
             project_state['director_budget'] = association
             workflow._save(owner, project_state)
@@ -519,7 +584,10 @@ class NativeBudget:
 
     @classmethod
     def for_run(cls, root, data):
-        return cls(root, data) if 'director_budget' in data else None
+        if 'director_budget' not in data:
+            reject_legacy_budget_rollback(root, data)
+            return None
+        return cls(root, data)
 
     def __init__(self, root, data):
         self.root, self.data = Path(root).resolve(), data
@@ -558,7 +626,8 @@ class NativeBudget:
         _need(next(ledger_root.glob('00000000-*.json')).stem[9:] == config['genesis'],
               'BINDING', 'Native ledger identity changed.')
         _verify_evidence(ledger_root, config['evidence'])
-        _native_owner_binding(owner, ledger_root, config['genesis'])
+        _native_owner_binding(owner, ledger_root, config['genesis'],
+                              enrollment=_native_enrollment(self.root, data))
         for job in data['jobs']:
             operation = job.get('budget_operation')
             if operation is None:

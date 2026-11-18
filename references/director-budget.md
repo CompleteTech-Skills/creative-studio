@@ -176,3 +176,21 @@ PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_director_budget
 PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_workflow.py' -v
 PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_production_workflow.py' -v
 ```
+
+
+### Enrollment survives an older run manifest
+
+The existing owner association retains a bounded, append-only enrollment inventory
+of run identities, canonical-location digests and original-request digests. It is
+written under the existing owner and run locks before the run policy is saved.
+It does not own tokens, reserve capacity or create another acquisition controller.
+Native claims cannot enter the legacy path when that retained owner inventory
+already identifies the run or location, including an archive captured before
+enrollment. Interrupted enrollment fails closed and can replay the same binding.
+Unrelated, never-enrolled legacy runs retain their existing restore/claim behavior.
+
+This check depends on the current authoritative owner association and ledger being
+preserved. It is not an off-host or global rollback detector for replacement of an
+entire owner and all its accounting records. The broader canonical project/account
+policy and AcquisitionGateway integration remain open under #34. Original owner
+records and expenditure history must be retained for any future migration.

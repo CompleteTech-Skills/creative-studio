@@ -273,6 +273,13 @@ def _native_budget(root, data):
     if 'director_budget' not in data:
         if any('budget_operation' in job for job in data['jobs']):
             raise ValueError('native accounting policy is missing; preserve its operation history')
+        # Avoid new imports for ordinary legacy runs, but never forget a policy
+        # enrollment retained outside an older restorable run manifest.
+        candidates = (Path(root).resolve(), *Path(root).resolve().parents)
+        if any((owner / 'director-budget-owner.json').exists() or
+               (owner / 'director-budget-owner.json').is_symlink() for owner in candidates):
+            from director_budget import reject_legacy_budget_rollback
+            reject_legacy_budget_rollback(root, data)
         return None
     from director_budget import NativeBudget
     return NativeBudget.for_run(root, data)

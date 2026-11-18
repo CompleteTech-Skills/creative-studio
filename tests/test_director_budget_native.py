@@ -571,3 +571,58 @@ class NativeBudgetTests(unittest.TestCase):
             self.bind(restored)
         self.assertNotIn('director_budget', hatch.manifest(restored))
         self.assertEqual(self.ledger.snapshot(), before)
+
+
+    def test_pre_enrollment_archive_cannot_remove_retained_owner_accounting_policy(self):
+        from portable_runs import archive_run, restore_run
+        owner = self.owner / 'pre-enrollment-owner'
+        original = self.prepare('pre-enrollment-owner/original')
+        archive = self.owner / 'before-budget-enrollment.zip'
+        with hatch.ownership(original):
+            archive_run(original, hatch.manifest(original), archive)
+        limits = quantities(provider_calls=1, amount=2)
+        ledger = BudgetLedger.create(owner / 'ledger', limits,
+                                    provider_limits={'imagegen': limits}, currency='USD')
+        bind_native_budget(original, ledger.root, owner_root=owner, provider='imagegen',
+            estimate=limits, retry_allowance=0,
+            evidence=[ledger.retain_evidence(self.owner / 'evidence.json')])
+        token = self.claim(original)['token']
+        before = ledger.snapshot()
+        newer_bytes = (original / 'imagegen-jobs.json').read_bytes()
+        owner_bytes = (owner / 'director-budget-owner.json').read_bytes()
+        preserved = owner / 'preserved-enrolled-run'
+        original.rename(preserved)
+        restore_run(archive, original)
+        restored = hatch.manifest(original)
+        self.assertNotIn('director_budget', restored)
+        self.assertEqual(restored['run_id'], hatch.read(preserved / 'imagegen-jobs.json')['run_id'])
+        self.assertTrue(any(event['event'] == 'restored' for event in restored['history']))
+        with self.assertRaisesRegex(RigError, 'previously enrolled'):
+            self.claim(original)
+        with self.assertRaisesRegex(RigError, 'previously enrolled'):
+            NativeBudget.for_run(original, hatch.manifest(original))
+        self.assertEqual(hatch.job_for(hatch.manifest(original), 'base')['attempts'], 0)
+        self.assertEqual(ledger.snapshot(), before)
+        self.assertEqual((owner / 'director-budget-owner.json').read_bytes(), owner_bytes)
+        self.assertEqual((preserved / 'imagegen-jobs.json').read_bytes(), newer_bytes)
+        self.assertEqual(hatch.job_for(hatch.read(preserved / 'imagegen-jobs.json'), 'base')['token'], token)
+        self.assertEqual(len(before['state']['reservations']), 1)
+
+    def test_interrupted_enrollment_blocks_legacy_claim_until_same_policy_replayed(self):
+        root = self.prepare('interrupted-enrollment')
+        original_save = hatch.save
+        def interrupted(path, data):
+            if Path(path) == root and 'director_budget' in data:
+                raise RuntimeError('synthetic crash after owner enrollment')
+            return original_save(path, data)
+        with patch.object(hatch, 'save', side_effect=interrupted), self.assertRaises(RuntimeError):
+            self.bind(root)
+        self.assertNotIn('director_budget', hatch.manifest(root))
+        before = self.ledger.snapshot()
+        with self.assertRaisesRegex(RigError, 'previously enrolled'):
+            self.claim(root)
+        self.assertEqual(self.ledger.snapshot(), before)
+        self.assertEqual(hatch.job_for(hatch.manifest(root), 'base')['attempts'], 0)
+        self.bind(root)
+        self.assertIn('budget_reservation_id', self.claim(root))
+        self.assertEqual(len(self.ledger.snapshot()['state']['reservations']), 1)
