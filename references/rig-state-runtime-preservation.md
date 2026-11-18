@@ -102,8 +102,8 @@ seconds: native complete-cycle contact displacement is 1.0 meter on X, while
 constrained-endpoint accumulation gives only 0.4 meter. Both can clamp the root
 itself to 0.2 meter, so checking only root position misses the defect. These
 numbers follow from the source's displacement formulas; no numerical execution
-is claimed. The independent constrained-root regression must compare the
-resulting native pose and deformation as well as contact displacement.
+is claimed. The independent constrained-root regression compares the resulting native pose
+and deformation as well as contact displacement; it is present but unexecuted.
 
 This handles complete embedded cycles, different clip origins and state-entry
 alignment through the same native controls. In-place cycles still do not
@@ -145,7 +145,7 @@ The existing integration has already added `test_rig_state_runtime.py` to the
 byte-for-byte preserved. The direct evaluator contact test remains in the
 existing `test_rig_animation.py` group member. The independent
 `test_rig_state_runtime_contacts.py` regression module is also included in that
-gate without removing other entries. The new methods use the real native
+gate without removing other entries. All seven new methods use the real native
 solver and deformation functions; no execution result is inferred from their
 presence.
 Run the focused tests and release gates against the final integrated revision:
