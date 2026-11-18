@@ -312,6 +312,16 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     return result
 
 
+def _advertised_names(transcript, flags):
+    """Read exact names from FFmpeg's flag/name/description tables."""
+    names = set()
+    for line in transcript.splitlines():
+        columns = line.split(None, 2)
+        if len(columns) >= 2 and re.fullmatch(flags, columns[0]):
+            names.update(columns[1].split(','))
+    return names
+
+
 def capabilities(*, ffmpeg=None, ffprobe=None):
     result = {'schema_version': 1, 'kind': 'silent-video-capabilities', 'platform': os.name,
               'profiles': {}, 'audio_policy': 'forbidden'}
@@ -325,10 +335,12 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
         result.update(status='unavailable', reason=str(exc))
         return result
     publication_supported = secure_publication_supported()
+    encoders = _advertised_names(lists['-encoders'], r'V[A-Z.]{5}')
+    muxers = _advertised_names(lists['-muxers'], r'(?:D|[.])?E')
+    pixels = _advertised_names(lists['-pix_fmts'], r'[I.]O[H.][P.][B.]')
     for name, profile in PROFILES.items():
-        supported = (publication_supported and re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
-                     re.search(r'\b'+profile['container']+r'\b', lists['-muxers']) and
-                     re.search(r'\byuv420p\b', lists['-pix_fmts']))
+        supported = (publication_supported and profile['encoder'] in encoders and
+                     profile['container'] in muxers and 'yuv420p' in pixels)
         result['profiles'][name] = {**profile, 'status': 'supported' if supported else 'unsupported'}
     result.update(status='available', evidence=evidence, raw_capabilities=lists,
                   secure_publication_supported=publication_supported)
