@@ -672,9 +672,7 @@ def claim_generation(root, binding_id, job):
                 if field in selected:
                     hatch.inside(run, selected[field])  # Keep containment without resolving the read's leaf.
                     prompt = run / selected[field]
-                    current_text = hatch.input_bytes(prompt).decode('utf-8')
-                    if marker not in current_text:
-                        hatch.atomic_bytes(prompt, (current_text + instruction).encode('utf-8'))
+                    hatch.append_input_text(prompt, marker, instruction)
             data.setdefault('limits', {})['attempts_per_job'] = min(
                 data.get('limits', {}).get('attempts_per_job', report['limits']['attempts_per_job']),
                 report['limits']['attempts_per_job'])

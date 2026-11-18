@@ -307,6 +307,9 @@ class BudgetLedger:
             row = state['reservations'][reservation_id]
             _need(row['state'] in ('reserved','uncertain'), 'STATE', 'Reservation is already final.')
             _need(len(row['attempts']) < 128, 'LIMIT', 'Too many usage attempts.')
+            incoming = dict(usage=amounts, outcome=outcome, evidence=proof, idempotency_key=idempotency_key)
+            if outcome != 'uncertain' and _native_usage(self, row, incoming) is not None:
+                _require_generic_reconciliation(self, row)
             for key in METRICS:
                 if amounts[key] is not None:
                     spent = Decimal(row['spent'][key]) + Decimal(amounts[key])
@@ -329,15 +332,20 @@ class BudgetLedger:
             _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
             row=state['reservations'][reservation_id]
             _need(row['state']=='reserved', 'UNCERTAIN', 'Uncertain/final reservations cannot be released.')
-            published = any(event['action'] == 'native-claim' and
-                            event['payload']['reservation_id'] == reservation_id for event in state['events'])
+            published = [event['payload'] for event in state['events'] if event['action'] == 'native-claim' and
+                         event['payload']['reservation_id'] == reservation_id]
             _need(outcome!='unstarted' or not (row['attempts'] or published),
                   'STATE', 'Started or published work cannot be released as unstarted.')
-            if outcome == 'unstarted' and re.fullmatch(r'native-[0-9a-f]{64}', row['operation_id']):
+            if published:
+                _require_generic_reconciliation(self, row)
+                _need(_native_remainder_known(self, row, published[-1]['token']), 'UNCERTAIN',
+                      'The latest published native attempt needs reconciled usage before cancellation.')
+            if re.fullmatch(r'native-[0-9a-f]{64}', row['operation_id']):
                 admission = next(event for event in state['events'] if event['action'] == 'reserve' and
                                  event['payload']['operation_id'] == row['operation_id'])
                 intent = _native_admission(self, admission)
-                _need(intent is None or intent.get('publication_protocol') == 1, 'STATE',
+                _need(intent is None or intent.get('publication_protocol') == 1 or
+                      outcome == 'canceled-known' and _native_remainder_known(self, row), 'STATE',
                       'Historical native publication is unknown; explicit reconciliation is required.')
             row['state']='released';row['held']={key:'0' for key in METRICS}
             return {'reservation_id':reservation_id,'state':'released','spent':deepcopy(row['spent'])}
@@ -553,6 +561,48 @@ def _native_proof(ledger, references, kinds):
         return None  # Generic evidence is allowed to contain non-JSON bytes.
     return proof if (isinstance(proof, dict) and isinstance(proof.get('kind'), str)
                      and proof['kind'] in kinds) else None
+
+
+def _native_usage(ledger, row, attempt):
+    """Identify a token-bound native observation, including its actual deltas."""
+    proof = _native_proof(ledger, attempt['evidence'], {'native-budget-usage'})
+    if (proof is None or proof.get('operation_id') != row['operation_id'] or
+            attempt['idempotency_key'] != 'native-observation-' +
+                object_hash([proof.get('operation_id'), proof.get('id')]) or
+            proof.get('usage') != attempt['usage'] or proof.get('outcome') != attempt['outcome'] or
+            proof.get('evidence') != attempt['evidence'][:-1]):
+        return None
+    return proof
+
+
+def _require_generic_reconciliation(ledger, row):
+    """Only explicit generic accounting may reconcile generic uncertainty.
+
+    Native resolutions name native observation IDs. They cannot implicitly
+    clear unknown usage that has no counterpart in that journal, even if an
+    earlier native client incorrectly changed the ledger's row state.
+    """
+    unresolved = False
+    for attempt in row['attempts']:
+        if _native_usage(ledger, row, attempt) is None:
+            unresolved = attempt['outcome'] == 'uncertain'
+    _need(not unresolved, 'UNCERTAIN',
+          'Reconcile direct ledger uncertainty explicitly before known native usage or another claim.')
+
+
+def _native_remainder_known(ledger, row, token=None):
+    observations = [proof for attempt in row['attempts']
+                    if (proof := _native_usage(ledger, row, attempt)) is not None]
+    if not observations:
+        return False
+    token = observations[-1].get('token') if token is None else token
+    observations = [proof for proof in observations if proof.get('token') == token]
+    pending = set()
+    for proof in observations:
+        pending.difference_update(proof.get('resolves', []))
+        if proof['outcome'] == 'uncertain':
+            pending.add(proof['id'])
+    return bool(observations) and not pending and observations[-1]['outcome'] == 'retry'
 
 
 def _read_native_intent(ledger, reference, identifier):
@@ -960,6 +1010,7 @@ class NativeBudget:
         row = state['reservations'].get(operation['reservation_id'])
         _need(row is not None and row['operation_id'] == operation['operation_id'] and
               row['state'] == 'reserved', 'BINDING', 'Publication requires its current reservation.')
+        _require_generic_reconciliation(self.ledger, row)
         estimate = operation['reservation_request']['estimate']
         bound = {**estimate, 'amount': self.config['unknown_price_cap'] if
                  estimate['amount'] is None else estimate['amount']}
@@ -1142,6 +1193,7 @@ class NativeBudget:
               'Budgeted inputs changed; reconcile this operation before preparing new work.')
         row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
         _need(row['state'] == 'reserved', 'UNCERTAIN', 'Only reserved known work may issue a native attempt.')
+        _require_generic_reconciliation(self.ledger, row)
         attempts = operation['attempts']
         claimed = {entry.get('token') for entry in job['history'] if entry.get('event') == 'claim'}
         _need(claimed == {entry['token'] for entry in self._published_claims(operation)},
@@ -1218,6 +1270,8 @@ class NativeBudget:
         row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
         _need(row['state'] in ('reserved', 'uncertain'), 'STATE',
               'Final accounting requires exact outcome replay, not another observation.')
+        if observation['outcome'] != 'uncertain':
+            _require_generic_reconciliation(self.ledger, row)
         pending = set()
         for event in operation['events']:
             item = event['payload']

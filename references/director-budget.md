@@ -174,6 +174,24 @@ retain their matching native journal entries. A directly released reservation
 remains readable but cannot issue more work or block an unrelated enrolled run
 merely because its release was recorded through the generic accounting API.
 
+Direct ledger uncertainty remains authoritative even when it has no native
+observation ID. A known native observation cannot silently clear it with an
+empty `resolves` list, or by resolving only a later native unknown observation.
+First reconcile the direct ledger observation through the existing generic
+settlement API with explicitly measured deltas and retained evidence; then
+resolve any native observations by their IDs. This is checked before retaining
+a known native intent and again under the ledger mutation lock. A concurrent
+unknown observation therefore preserves the hold even after a native intent
+has been saved. Status and unrelated sibling operations remain readable.
+
+`canceled-known` does not imply that an earlier published attempt cost nothing.
+Cancellation of a native reservation requires reconciled usage for its latest
+published token. An older attempt's measurement cannot authorize release of a
+newer publication. Generic known deltas can be retained first, followed by an
+explicit token-bound native reconciliation using only additional measured
+deltas. Never-published generic work and known native remainders remain
+cancellable without discarding already recorded spend.
+
 Ingest receipts add a `budget_usage` object. Native `fail` and production
 `fail_generation` take the same object as an optional keyword argument, required
 for opted-in runs. It has exactly `id`, `outcome`, `usage`, `evidence`,
@@ -321,8 +339,12 @@ it does not claim that a downstream provider has executed or retained those byte
 Settings that were absent at admission must remain absent. A row claim also
 checks that captured settings match its approved prompt calibration. Production
 binding rechecks, prompt reads and base-review input checks use the same bounded
-reader. Production prompt augmentation atomically replaces only its owned leaf,
-without following a substituted leaf path.
+readers. Production prompt augmentation retains its existing parent through
+the bounded read, staging, replacement and cleanup. POSIX uses the canonical
+no-follow directory descriptor and descriptor-relative payload reader; Windows
+pins every ancestor with the existing native directory owner. A changed POSIX
+pathname cannot redirect publication or cleanup and refuses subsequent claim
+authority. A substituted leaf is never followed.
 The accounting adapter receives the captured settings/profile identity, rather
 than independently rebinding a later read. Input checks run again after capacity
 preflight and after durable publication. A change before saving the claim leaves
@@ -373,6 +395,13 @@ accounting compatibility, in-run prompt aliases, captured settings/profile
 identity, and input changes during actual preflight, with five positive controls.
 Local contention tests distinguish injected scheduling failures from actual
 multi-process claims; neither is provider execution evidence.
+Nine additional accounting/prompt regressions fail behaviorally on the preceding
+published tree and pass with the boundary correction. They cover the independent
+generic-uncertainty oracle, interleaved generic/native observations, a ledger
+change between durable intent and settlement, cancellation before usage or after
+a newer token, and real parent-directory replacement during prompt staging.
+Windows exercises the native pinned-parent refusal when directory renaming is
+denied; POSIX verifies the foreign replacement is untouched and no claim issues.
 
 ### Owned receipt paths and platform checks
 

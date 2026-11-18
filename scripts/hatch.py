@@ -65,23 +65,78 @@ def claim_handoff_identity(root):
     return {**claim_settings_identity(root), 'profile.json': input_digest(Path(root) / 'profile.json')}
 
 
-def atomic_bytes(path, value):
-    """Replace an owned native file without following a substituted leaf."""
-    import tempfile
+@contextmanager
+def _input_parent(path):
+    """Hold the existing canonical directory through reading and publication."""
     path = Path(path)
-    if not isinstance(value, bytes) or len(value) > MAX_SOURCE_BYTES or path.parent.resolve() != path.parent:
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('owned native inputs require a canonical absolute path')
+    if os.name == 'nt':
+        from atomic_windows import pinned_directory
+        with pinned_directory(path.parent) as pin:
+            yield pin.path, path.name
+    else:
+        from atomic_publish import pinned_directory_fd
+        with pinned_directory_fd(path.parent) as descriptor:
+            yield descriptor, path.name
+            # The retained directory remains the write owner after a rename,
+            # but its replacement pathname must not become claim authority.
+            with pinned_directory_fd(path.parent) as current:
+                held, named = os.fstat(descriptor), os.fstat(current)
+                if (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino):
+                    raise ValueError('native input parent changed during augmentation')
+
+
+def _atomic_bytes_at(parent, leaf, value):
+    """Replace one leaf using an already-held parent; never reopen its path."""
+    if not isinstance(value, bytes) or len(value) > MAX_SOURCE_BYTES:
         raise ValueError('unsafe or oversized owned native byte publication')
-    descriptor, name = tempfile.mkstemp(prefix='.hatch-bytes-', dir=path.parent)
-    temporary = Path(name)
+    relative = isinstance(parent, int)
+    if relative:
+        name = '.hatch-bytes-' + uuid.uuid4().hex
+        descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=parent)
+    else:
+        descriptor, name = tempfile.mkstemp(prefix='.hatch-bytes-', dir=parent)
     try:
         with os.fdopen(descriptor, 'wb') as output:
             output.write(value)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, path)
+        if relative:
+            os.replace(name, leaf, src_dir_fd=parent, dst_dir_fd=parent)
+            os.fsync(parent)
+        else:
+            os.replace(name, parent / leaf)
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            os.unlink(name, dir_fd=parent) if relative else os.unlink(name)
+        except FileNotFoundError:
+            pass
 
+
+def atomic_bytes(path, value):
+    """Replace an owned native file without following a substituted parent."""
+    with _input_parent(path) as (parent, leaf):
+        _atomic_bytes_at(parent, leaf, value)
+
+
+def append_input_text(path, marker, suffix):
+    """Augment a bounded prompt while retaining the same parent capability."""
+    with _input_parent(path) as (parent, leaf):
+        if isinstance(parent, int):
+            from rig_errors import open_payload_at
+            with open_payload_at(parent, leaf) as (stream, info):
+                if not 0 < info.st_size <= MAX_SOURCE_BYTES:
+                    raise ValueError('native prompt must be a bounded nonempty regular file')
+                payload = stream.read(MAX_SOURCE_BYTES + 1)
+                if len(payload) != info.st_size:
+                    raise ValueError('native prompt changed during bounded reading')
+        else:
+            payload = input_bytes(parent / leaf)
+        current = payload.decode('utf-8')
+        if marker not in current:
+            _atomic_bytes_at(parent, leaf, (current + suffix).encode('utf-8'))
 
 
 
