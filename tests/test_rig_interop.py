@@ -102,7 +102,7 @@ class KhronosReportTests(unittest.TestCase):
         )
 
     def test_incomplete_or_malformed_reports_fail_closed(self):
-        cases = [{}, {'issues': None}, {'issues': []}]
+        cases = []
         for field, invalid_values in (
             ('truncated', (True, None, 0, 'false')),
             ('numErrors', (False, None, -1, '0', 0.0)),
@@ -118,10 +118,12 @@ class KhronosReportTests(unittest.TestCase):
         self.assertIs(self.validate_report({'issues': {**self.issues, 'numErrors': 1}})['ok'], False)
         self.assertIs(self.validate_report({'issues': self.issues}, returncode=1)['ok'], False)
 
-    def test_non_object_report_raises_structured_error(self):
-        with self.assertRaises(RigError) as caught:
-            self.validate_report([])
-        self.assertEqual(caught.exception.report['code'], 'RIG_VALIDATOR_REPORT')
+    def test_invalid_report_structure_raises_structured_error(self):
+        for report in ([], {}, {'issues': None}, {'issues': []}):
+            with self.subTest(report=report):
+                with self.assertRaises(RigError) as caught:
+                    self.validate_report(report)
+                self.assertEqual(caught.exception.report['code'], 'RIG_VALIDATOR_REPORT')
 
 
 class RigExternalIntegrationTests(unittest.TestCase):
