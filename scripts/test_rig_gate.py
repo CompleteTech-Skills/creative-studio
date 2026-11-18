@@ -11,7 +11,7 @@ GROUPS={
  'skinning':['test_rig_skinning.py', 'test_rig_weight_input_boundaries.py', 'test_rig_load_limits.py'],
  'animation-ik':['test_rig_controls.py', 'test_rig_contact_orientation_validation.py', 'test_rig_animation.py', 'test_rig_specializations.py', 'test_rig_morph_authoring.py'],
  'interoperability':['test_rig_interop.py', 'test_rig_import_transforms.py', 'test_rig_material_validation.py', 'test_rig_texture_integrity.py', 'test_rig_jpeg.py', 'test_rig_scene3d_service.py', 'test_rig_scene3d_evaluate.py', 'test_rig_scene3d_environment.py', 'test_rig_scene3d_materials.py', 'test_rig_scene3d_catalog.py', 'test_rig_continuity_gltf_preflight.py', 'test_rig_asset_library_import.py', 'test_rig_asset_library_validation.py', 'test_rig_continuity_inspection.py'],
- 'operations-archive':['test_rig_directory_capability.py', 'test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_director_assets.py', 'test_director_budget_native.py', 'test_director_budget_recovery.py', 'test_director_budget_admission.py', 'test_production_receipt_paths.py'],
+ 'operations-archive':['test_rig_directory_capability.py', 'test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_director_assets.py', 'test_director_budget_native.py', 'test_director_budget_recovery.py', 'test_director_budget_admission.py', 'test_director_acquisition.py', 'test_rig_director_resolver.py', 'test_director_acquisition_budget.py', 'test_production_receipt_paths.py', 'test_director_acquisition_recovery.py'],
 }
 
 
