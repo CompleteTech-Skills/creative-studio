@@ -95,6 +95,27 @@ class TopologyTests(unittest.TestCase):
         reversed_mesh = tetra(); reversed_mesh.triangles = reversed_mesh.triangles[:,::-1]
         self.assertGreater(volume(orient_mesh(reversed_mesh,outward=True)),0)
 
+    def test_outward_preserves_volume_sign_below_binary64_range(self):
+        import model3d_topology as topology
+
+        mesh = tetra()
+        mesh.positions[2, 1] = mesh.positions[3, 2] = 1e-170
+        outward = mesh.triangles.copy()
+        mesh.triangles = outward[:, [0, 2, 1]]
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
+        np.testing.assert_array_equal(orient_mesh(mesh, outward=True).triangles, outward)
+        scaling = topology._scaled_positions
+        with mock.patch.object(topology, '_scaled_positions',
+                               side_effect=lambda p: scaling(p).astype(np.float64)):
+            np.testing.assert_array_equal(orient_mesh(mesh, outward=True).triangles, outward)
+        np.testing.assert_array_equal(mesh.triangles, outward[:, [0, 2, 1]])
+
+    def test_outward_rejects_closed_nondegenerate_zero_volume(self):
+        mesh = tetra()
+        mesh.positions[3] = [0.25, 0.25, 0]
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
+        self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
+
     def test_open_or_nonmanifold_orientation_rejected(self):
         mesh=tetra();mesh.triangles=mesh.triangles[:3]
         self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh,outward=True))

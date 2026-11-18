@@ -132,13 +132,16 @@ def _scaled_positions(positions):
     return local / magnitude if magnitude else local
 
 
-def _exact_cross(points):
+def _exact_coordinates(points):
     # Integer ratios preserve both the original integers and all mantissa bits
     # of NumPy floating types, including long double.
     if points.dtype.kind in 'iu':
-        p = [[int(x) for x in row] for row in points]
-    else:
-        p = [[Fraction(*x.as_integer_ratio()) for x in row] for row in points]
+        return [[int(x) for x in row] for row in points]
+    return [[Fraction(*x.as_integer_ratio()) for x in row] for row in points]
+
+
+def _exact_cross(points):
+    p = _exact_coordinates(points)
     a = [p[1][i] - p[0][i] for i in range(3)]
     b = [p[2][i] - p[0][i] for i in range(3)]
     return [a[i] * b[j] - a[j] * b[i] for i, j in ((1, 2), (2, 0), (0, 1))]
@@ -302,6 +305,39 @@ def clean_mesh(mesh: Mesh, *, remove_degenerate=False, remove_duplicate_faces=Fa
     return result
 
 
+def _exact_closed_volume6(positions, triangles):
+    points = _exact_coordinates(positions)
+    local = [[x - origin for x, origin in zip(point, points[0])] for point in points]
+    volume6 = 0
+    for i, j, k in triangles:
+        a, b, c = local[i], local[j], local[k]
+        volume6 += (a[0] * (b[1] * c[2] - b[2] * c[1])
+                    + a[1] * (b[2] * c[0] - b[0] * c[2])
+                    + a[2] * (b[0] * c[1] - b[1] * c[0]))
+    return volume6
+
+
+def _closed_volume_sign(positions, triangles):
+    # A closed surface has translation-invariant signed volume. The scaling
+    # helper already translates to the first vertex and applies a positive scale.
+    with np.errstate(under='ignore'):
+        p = _scaled_positions(positions)
+        volume6 = np.einsum('ij,ij->', p[triangles[:, 0]],
+                            np.cross(p[triangles[:, 1]], p[triangles[:, 2]]))
+    finite = np.isfinite(volume6)
+    if len(triangles) <= 32:
+        # Normalized coordinates have magnitude at most one. Allow for
+        # rounding in the determinant and sum, and resolve uncertain signs
+        # exactly for small components without imposing that cost on large ones.
+        tolerance = np.finfo(p.dtype).eps * 128 * len(triangles)
+        if not finite or abs(volume6) <= tolerance:
+            exact = _exact_closed_volume6(positions, triangles)
+            return (exact > 0) - (exact < 0)
+    if finite and volume6 != 0:
+        return 1 if volume6 > 0 else -1
+    return 0
+
+
 def orient_mesh(mesh: Mesh, *, outward=False, limits=None) -> Mesh:
     """Make edge-connected orientable manifold components consistent.
 
@@ -344,14 +380,11 @@ def orient_mesh(mesh: Mesh, *, outward=False, limits=None) -> Mesh:
             tri[mask] = tri[mask][:, [0, 2, 1]]
             vertex_ids, inverse = np.unique(tri, return_inverse=True)
             tri = inverse.reshape(-1, 3)
-            p = _scaled_positions(mesh.positions[vertex_ids])
-            # Only this component is scanned; work no longer grows with the
-            # number of disconnected components times the whole mesh size.
-            p = p - p.mean(axis=0)
-            volume6 = float(np.einsum('ij,ij->', p[tri[:, 0]], np.cross(p[tri[:, 1]], p[tri[:, 2]])))
-            require(volume6 != 0 and math.isfinite(volume6), 'MODEL3D_TOPOLOGY_ORIENTATION',
+            # Only this component is scanned.
+            sign = _closed_volume_sign(mesh.positions[vertex_ids], tri)
+            require(sign != 0, 'MODEL3D_TOPOLOGY_ORIENTATION',
                     'Closed component has no measurable signed volume.')
-            if volume6 < 0:
+            if sign < 0:
                 flips[group] ^= 1
     normals = bool(flips.any()) and 'NORMAL' in mesh.attributes
     _check_output(mesh, limits, generate_normals=normals)
