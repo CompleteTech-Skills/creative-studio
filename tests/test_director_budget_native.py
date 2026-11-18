@@ -28,6 +28,15 @@ def concurrent_claim(root):
         return None
 
 
+def restarted_enrollment(root, ledger_root, options):
+    try:
+        return bind_native_budget(Path(root), Path(ledger_root), **options)
+    except RigError as error:
+        # Preserve the typed diagnostic across a fresh process; RigError itself
+        # is not pickleable because its constructor has separate code/message.
+        raise RuntimeError(f'{error.report["code"]}: {error}') from None
+
+
 class NativeBudgetTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -435,6 +444,310 @@ class NativeBudgetTests(unittest.TestCase):
         self.assertEqual(len(a.snapshot()['state']['reservations']), 1)
         self.assertEqual(b.snapshot()['state']['revision'], 0)
         self.assertEqual(hatch.job_for(hatch.manifest(second), 'base')['attempts'], 0)
+
+    def project_enrollment_fixture(self, name):
+        project = self.owner / name
+        build_fixture_project(project)
+        value = hatch.read(project / 'project.json')
+        value['limits']['max_generation_calls'] = 2
+        hatch.atomic(project / 'project.json', value)
+        runs = [self.prepare(f'{name}/acquisition/{label}') for label in ('first', 'second')]
+        for label, run in zip(('first', 'second'), runs):
+            workflow.bind_generation_run(project, label, run, ['synthetic enrollment requirement'])
+        limits = quantities(provider_calls=2, amount=4)
+        ledger = BudgetLedger.create(project / 'ledger', limits,
+            provider_limits={'imagegen': limits}, currency='USD')
+        proof = [ledger.retain_evidence(self.owner / 'evidence.json')]
+        return project, runs, ledger, proof
+
+    def test_prebound_fresh_runs_enroll_in_either_order_before_admission(self):
+        for order in ((0, 1), (1, 0)):
+            with self.subTest(order=order):
+                project, runs, ledger, proof = self.project_enrollment_fixture(f'enrollment-{order[0]}')
+                def enroll(index):
+                    return bind_native_budget(runs[index], ledger.root, owner_root=project,
+                        provider='imagegen', estimate=quantities(provider_calls=1, amount=2),
+                        retry_allowance=0, evidence=proof)
+                first = enroll(order[0])
+                before = ledger.snapshot()
+                manifests = [hatch.manifest(run) for run in runs]
+                for index in (0, 1):
+                    with self.assertRaises(RigError):
+                        workflow.claim_generation(project, ('first', 'second')[index], 'base')
+                    with hatch.ownership(runs[index]):
+                        with self.assertRaises(RigError):
+                            hatch.claim(runs[index], hatch.manifest(runs[index]), 'base')
+                self.assertEqual([hatch.manifest(run) for run in runs], manifests)
+                self.assertEqual(ledger.snapshot(), before)
+                second = enroll(order[1])
+                self.assertEqual(first['ledger_path'], second['ledger_path'])
+                self.assertEqual(first['genesis'], second['genesis'])
+                state = hatch.read(project / workflow.WORKFLOW_FILE)
+                owner = hatch.read(project / 'director-budget-owner.json')
+                self.assertEqual(state['director_budget'], {key: owner[key] for key in state['director_budget']})
+                self.assertEqual(len(owner['enrollments']), 2)
+                workflow.configure_generation_limits(project, concurrency=2)
+                claims = [workflow.claim_generation(project, label, 'base') for label in ('first', 'second')]
+                self.assertNotEqual(claims[0]['token'], claims[1]['token'])
+                self.assertEqual(len(ledger.snapshot()['state']['reservations']), 2)
+
+    def test_prebound_invalid_sibling_rejects_enrollment_without_mutation(self):
+        for invalid in ('claimed', 'run-id', 'request', 'requirements', 'restored'):
+            with self.subTest(invalid=invalid):
+                project, runs, ledger, proof = self.project_enrollment_fixture(f'invalid-{invalid}')
+                if invalid == 'claimed':
+                    workflow.claim_generation(project, 'second', 'base')
+                elif invalid in ('run-id', 'request', 'requirements'):
+                    state = hatch.read(project / workflow.WORKFLOW_FILE)
+                    binding = state['generation_bindings']['second']
+                    field = {'run-id': 'run_id', 'request': 'request_sha256',
+                             'requirements': 'requirements_hash'}[invalid]
+                    binding[field] = 'changed' if invalid == 'run-id' else '0' * 64
+                    hatch.atomic(project / workflow.WORKFLOW_FILE, state)
+                else:
+                    data = hatch.manifest(runs[1])
+                    data['history'].append({'event': 'restored'})
+                    hatch.save(runs[1], data)
+                def inventory():
+                    return {path.relative_to(project).as_posix(): path.read_bytes()
+                            for path in project.rglob('*.json')}
+                before = inventory()
+                with self.assertRaises((RigError, ValueError)):
+                    bind_native_budget(runs[0], ledger.root, owner_root=project, provider='imagegen',
+                        estimate=quantities(provider_calls=1, amount=2), retry_allowance=0, evidence=proof)
+                self.assertEqual(inventory(), before)
+
+    def test_partial_project_enrollment_rejects_ledger_or_policy_mismatch_without_mutation(self):
+        for invalid in ('wrong-ledger', 'enrolled-policy'):
+            with self.subTest(invalid=invalid):
+                project, runs, ledger, proof = self.project_enrollment_fixture(f'mismatch-{invalid}')
+                options = dict(owner_root=project, provider='imagegen',
+                    estimate=quantities(provider_calls=1, amount=2), retry_allowance=0, evidence=proof)
+                bind_native_budget(runs[0], ledger.root, **options)
+                target_ledger = ledger
+                if invalid == 'wrong-ledger':
+                    limits = quantities(provider_calls=2, amount=4)
+                    target_ledger = BudgetLedger.create(project / 'other-ledger', limits,
+                        provider_limits={'imagegen': limits}, currency='USD')
+                    options['evidence'] = [target_ledger.retain_evidence(self.owner / 'evidence.json')]
+                else:
+                    data = hatch.manifest(runs[0])
+                    data['director_budget']['request_sha256'] = '0' * 64
+                    hatch.save(runs[0], data)
+                def inventory():
+                    return {path.relative_to(project).as_posix(): path.read_bytes()
+                            for path in project.rglob('*.json')}
+                before = inventory()
+                with self.assertRaises(RigError):
+                    bind_native_budget(runs[1], target_ledger.root, **options)
+                self.assertEqual(inventory(), before)
+                self.assertNotIn('director_budget', hatch.manifest(runs[1]))
+
+    def interrupt_project_enrollment(self, name, interruption):
+        project, runs, ledger, proof = self.project_enrollment_fixture(name)
+        options = dict(owner_root=project, provider='imagegen',
+            estimate=quantities(provider_calls=1, amount=2), retry_allowance=0, evidence=proof)
+        if interruption == 'owner-only':
+            target, attribute = workflow, '_save'
+        else:
+            target, attribute = hatch, 'save'
+        original = getattr(target, attribute)
+        def interrupted(path, data):
+            if Path(path) == (project if interruption == 'owner-only' else runs[0]) and 'director_budget' in data:
+                raise RuntimeError('synthetic interrupted project enrollment')
+            return original(path, data)
+        with patch.object(target, attribute, side_effect=interrupted), self.assertRaises(RuntimeError):
+            bind_native_budget(runs[0], ledger.root, **options)
+        self.assertNotIn('director_budget', hatch.manifest(runs[0]))
+        self.assertEqual(len(hatch.read(project / 'director-budget-owner.json')['enrollments']), 1)
+        return project, runs, ledger, options
+
+    def assert_project_enrollment_blocks_claims(self, project, runs, ledger):
+        before = ledger.snapshot()
+        manifests = [hatch.manifest(run) for run in runs]
+        for index, run in enumerate(runs):
+            with self.assertRaises(RigError):
+                workflow.claim_generation(project, ('first', 'second')[index], 'base')
+            with hatch.ownership(run), self.assertRaises(RigError):
+                hatch.claim(run, hatch.manifest(run), 'base')
+        self.assertEqual([hatch.manifest(run) for run in runs], manifests)
+        self.assertEqual(ledger.snapshot(), before)
+
+    def test_interrupted_prebound_project_enrollment_replays_after_restart_in_either_order(self):
+        for interruption in ('owner-only', 'project-published'):
+            for order in ((0, 1), (1, 0)):
+                with self.subTest(interruption=interruption, order=order):
+                    project, runs, ledger, options = self.interrupt_project_enrollment(
+                        f'replay-{interruption}-{order[0]}', interruption)
+                    self.assert_project_enrollment_blocks_claims(project, runs, ledger)
+                    with ProcessPoolExecutor(max_workers=1) as restarted:
+                        restarted.submit(restarted_enrollment, runs[order[0]], ledger.root, options).result(timeout=20)
+                    self.assert_project_enrollment_blocks_claims(project, runs, ledger)
+                    with ProcessPoolExecutor(max_workers=1) as restarted:
+                        restarted.submit(restarted_enrollment, runs[order[1]], ledger.root, options).result(timeout=20)
+                    owner = hatch.read(project / 'director-budget-owner.json')
+                    self.assertEqual(len(owner['enrollments']), 2)
+                    self.assertEqual(hatch.manifest(runs[0])['director_budget']['genesis'],
+                                     hatch.manifest(runs[1])['director_budget']['genesis'])
+                    workflow.configure_generation_limits(project, concurrency=2)
+                    for label in ('first', 'second'):
+                        workflow.claim_generation(project, label, 'base')
+                    self.assertEqual(len(ledger.snapshot()['state']['reservations']), 2)
+
+    def test_explicit_reenrollment_cannot_erase_any_retained_native_admission(self):
+        for stage in ('preclaim', 'running', 'released'):
+            for changed_prompt in (False, True):
+                with self.subTest(stage=stage, changed_prompt=changed_prompt):
+                    project, runs, ledger, proof = self.project_enrollment_fixture(
+                        f'admitted-rollback-{stage}-{changed_prompt}')
+                    manifest_path = runs[0] / 'imagegen-jobs.json'
+                    original = manifest_path.read_bytes()
+                    options = dict(owner_root=project, provider='imagegen',
+                        estimate=quantities(provider_calls=1, amount=2), retry_allowance=0,
+                        evidence=proof)
+                    for run in runs:
+                        bind_native_budget(run, ledger.root, **options)
+                    if stage in ('preclaim', 'released'):
+                        original_claim = NativeBudget.before_claim
+                        def stop_after_admission(budget, job, hashes):
+                            original_claim(budget, job, hashes)
+                            raise RuntimeError('synthetic interruption after retained admission')
+                        with patch.object(NativeBudget, 'before_claim', stop_after_admission):
+                            with self.assertRaises(RuntimeError):
+                                workflow.claim_generation(project, 'first', 'base')
+                        if stage == 'released':
+                            operation = hatch.job_for(hatch.manifest(runs[0]), 'base')['budget_operation']
+                            ledger.release(operation['reservation_id'], outcome='unstarted',
+                                evidence=proof, idempotency_key='synthetic-released-admission',
+                                expected_revision=ledger.snapshot()['sha256'])
+                    else:
+                        workflow.claim_generation(project, 'first', 'base')
+                    before = ledger.snapshot()
+                    owner_bytes = (project / 'director-budget-owner.json').read_bytes()
+                    workflow_bytes = (project / workflow.WORKFLOW_FILE).read_bytes()
+                    manifest_path.write_bytes(original)
+                    if changed_prompt:
+                        prompt = runs[0] / 'prompts/base-pet.md'
+                        prompt.write_bytes(prompt.read_bytes() + b'\nSynthetic changed prompt after rollback.\n')
+                    with self.assertRaisesRegex(RigError, 'Native admission already exists'):
+                        bind_native_budget(runs[0], ledger.root, **options)
+                    self.assertEqual(manifest_path.read_bytes(), original)
+                    self.assertEqual(ledger.snapshot(), before)
+                    self.assertEqual((project / 'director-budget-owner.json').read_bytes(), owner_bytes)
+                    self.assertEqual((project / workflow.WORKFLOW_FILE).read_bytes(), workflow_bytes)
+                    with self.assertRaises((ValueError, RigError)):
+                        workflow.claim_generation(project, 'first', 'base')
+
+    def test_interrupted_project_enrollment_rejects_changed_identity_ledger_or_policy(self):
+        for interruption in ('owner-only', 'project-published'):
+            for invalid in ('request', 'run', 'ledger', 'policy'):
+                with self.subTest(interruption=interruption, invalid=invalid):
+                    project, runs, ledger, options = self.interrupt_project_enrollment(
+                        f'bad-replay-{interruption}-{invalid}', interruption)
+                    if invalid == 'request':
+                        request = hatch.read(runs[0] / 'pet_request.json')
+                        request['pet_notes'] = 'Changed synthetic request after interruption'
+                        hatch.atomic(runs[0] / 'pet_request.json', request)
+                    elif invalid == 'run':
+                        data = hatch.manifest(runs[0])
+                        data['run_id'] = 'changed-run-id'
+                        hatch.save(runs[0], data)
+                    elif invalid == 'ledger':
+                        limits = quantities(provider_calls=2, amount=4)
+                        ledger = BudgetLedger.create(project / 'wrong-ledger', limits,
+                            provider_limits={'imagegen': limits}, currency='USD')
+                        options['evidence'] = [ledger.retain_evidence(self.owner / 'evidence.json')]
+                    else:
+                        options['retry_allowance'] = 1
+                    before = {path.relative_to(project).as_posix(): path.read_bytes()
+                              for path in project.rglob('*.json')}
+                    with self.assertRaises((RigError, ValueError)):
+                        bind_native_budget(runs[0], ledger.root, **options)
+                    self.assertEqual({path.relative_to(project).as_posix(): path.read_bytes()
+                                      for path in project.rglob('*.json')}, before)
+
+    def test_completed_enrollment_authenticates_retained_policy_and_identity_digests(self):
+        for invalid in ('retained-policy', 'native-policy', 'request-digest', 'ledger-digest'):
+            with self.subTest(invalid=invalid):
+                project, runs, ledger, proof = self.project_enrollment_fixture(f'digest-{invalid}')
+                options = dict(owner_root=project, provider='imagegen',
+                    estimate=quantities(provider_calls=1, amount=2), retry_allowance=0, evidence=proof)
+                for run in runs:
+                    bind_native_budget(run, ledger.root, **options)
+                owner_path = project / 'director-budget-owner.json'
+                if invalid == 'native-policy':
+                    data = hatch.manifest(runs[0])
+                    data['director_budget']['retry_allowance'] = 1
+                    hatch.save(runs[0], data)
+                else:
+                    owner = hatch.read(owner_path)
+                    if invalid == 'ledger-digest':
+                        owner['genesis'] = '0' * 64
+                    else:
+                        entry = next(value for value in owner['enrollments']
+                                     if value['run_id'] == hatch.manifest(runs[0])['run_id'])
+                        entry['policy_sha256' if invalid == 'retained-policy' else 'request_sha256'] = '0' * 64
+                    hatch.atomic(owner_path, owner)
+                before = {path.relative_to(project).as_posix(): path.read_bytes()
+                          for path in project.rglob('*.json')}
+                with self.assertRaises(RigError):
+                    bind_native_budget(runs[0], ledger.root, **options)
+                with self.assertRaises(RigError):
+                    workflow.claim_generation(project, 'first', 'base')
+                with hatch.ownership(runs[0]), self.assertRaises(RigError):
+                    hatch.claim(runs[0], hatch.manifest(runs[0]), 'base')
+                self.assertEqual({path.relative_to(project).as_posix(): path.read_bytes()
+                                  for path in project.rglob('*.json')}, before)
+
+    def test_old_completed_owner_enrollment_remains_readable(self):
+        owner_path = self.owner / 'director-budget-owner.json'
+        owner = hatch.read(owner_path)
+        for entry in owner['enrollments']:
+            del entry['policy_sha256']
+        hatch.atomic(owner_path, owner)
+        before = owner_path.read_bytes()
+        self.bind(self.root)
+        self.assertIn('budget_reservation_id', self.claim())
+        self.assertEqual(owner_path.read_bytes(), before)
+
+    def test_old_incomplete_project_enrollment_fails_without_retained_policy_provenance(self):
+        for interruption in ('owner-only', 'project-published'):
+            with self.subTest(interruption=interruption):
+                project, runs, ledger, options = self.interrupt_project_enrollment(
+                    f'old-incomplete-{interruption}', interruption)
+                owner_path = project / 'director-budget-owner.json'
+                owner = hatch.read(owner_path)
+                del owner['enrollments'][0]['policy_sha256']
+                hatch.atomic(owner_path, owner)
+                before = {path.relative_to(project).as_posix(): path.read_bytes()
+                          for path in project.rglob('*.json')}
+                for run in runs:
+                    with self.assertRaisesRegex(RigError, 'lacks its retained policy digest'):
+                        bind_native_budget(run, ledger.root, **options)
+                self.assert_project_enrollment_blocks_claims(project, runs, ledger)
+                self.assertEqual({path.relative_to(project).as_posix(): path.read_bytes()
+                                  for path in project.rglob('*.json')}, before)
+
+    def test_old_incomplete_standalone_enrollment_cannot_invent_policy_provenance(self):
+        root = self.prepare('old-incomplete-standalone')
+        original_save = hatch.save
+        def interrupted(path, data):
+            if Path(path) == root and 'director_budget' in data:
+                raise RuntimeError('synthetic interrupted standalone enrollment')
+            return original_save(path, data)
+        with patch.object(hatch, 'save', side_effect=interrupted), self.assertRaises(RuntimeError):
+            self.bind(root)
+        owner_path = self.owner / 'director-budget-owner.json'
+        owner = hatch.read(owner_path)
+        entry = next(value for value in owner['enrollments'] if value['run_id'] == hatch.manifest(root)['run_id'])
+        del entry['policy_sha256']
+        hatch.atomic(owner_path, owner)
+        before = owner_path.read_bytes(), self.ledger.snapshot(), hatch.manifest(root)
+        with self.assertRaisesRegex(RigError, 'lacks its retained policy digest'):
+            self.bind(root)
+        with self.assertRaisesRegex(RigError, 'previously enrolled'):
+            self.claim(root)
+        self.assertEqual((owner_path.read_bytes(), self.ledger.snapshot(), hatch.manifest(root)), before)
 
     def test_production_claim_checks_persisted_project_ledger_association(self):
         project = self.owner / 'association-project'

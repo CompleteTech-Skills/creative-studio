@@ -55,6 +55,9 @@ requires evidence. An uncertain reservation cannot be released. Cancellation
 never deletes previous actual usage. Replaying the same idempotency key and
 same normalized payload returns its original receipt; reusing it for different
 work fails. New mutations require the exact current SHA, preventing stale writes.
+An `unstarted` release is rejected after a retained native claim publication,
+even when no usage observation has arrived. An older native reservation without
+the publication protocol described below cannot prove that it was unstarted.
 
 Persistence uses immutable, canonical-JSON revision files with a SHA-linked
 parent chain. Existing native OS locks serialize cooperating writers; the
@@ -107,15 +110,69 @@ and location, not another acquisition controller or reservation store.
 Production acquisitions must declare their containing project as owner.
 Enrollment also pins the association in the existing production workflow state.
 Production binding and claim paths verify that association against each native
-run. Configure fresh acquisitions before binding them; this slice does not
-retroactively account for historical unbudgeted work or migrate groups of
-previously bound unbudgeted runs. Standalone legacy runs remain outside this
-opt-in project accounting scope.
+run. Fresh acquisitions can enroll before binding, or already-bound never-claimed
+acquisitions can enroll one at a time in either order. The existing production
+owner validates every binding identity; enrollment holds the existing run locks
+through publication and admits at most 512 bindings. Every bound acquisition must
+join the same ledger before either a production claim or a raw native claim can
+proceed. Partial enrollment cannot authorize generation. Historical claims,
+restored journals, changed identities and a different ledger remain rejected;
+this is not retroactive accounting for earlier unbudgeted work. Standalone legacy
+runs outside a budgeted production owner retain their existing behavior.
 
 One cumulative reservation covers each native job and its bounded attempts.
 Native claim history still owns tokens and call counts; these counts are not
 measurements of actual provider billing. A bare reservation ID is never an
 accounting authorization.
+
+Before returning a native claim handoff, the existing journal durably saves the
+claim and the existing immutable ledger retains a `native-claim` publication
+event. It binds the original operation, reservation, run, canonical location,
+job, token, attempt ordinal and input hashes without recording usage or changing
+held capacity. It does not become a second acquisition controller. All retained
+reserve intents must still have their original native operations, and every
+published token must remain in the matching native claim history. Rolling back
+only the native journal therefore cannot erase admitted or published authority.
+
+A new native reserve intent records publication protocol version 1. It binds
+the presence or absence and exact hash of optional extraction settings and the
+complete captured profile digest into the operation identity, in addition to the
+original request, generation projection and prompt hashes. An older intent
+without that marker cannot prove that a missing
+publication event means no handoff was issued. Its authentic historical usage
+remains recoverable, but it cannot issue further work or use an `unstarted`
+release. Recovery must retain and reconcile the original claim journal.
+
+A protocol-1 pending token created before publication remains reusable after an ordinary
+interruption, including an input-change refusal before claim publication. Once
+publication is retained, an older preclaim snapshot fails closed even if it
+retains that token. If publication itself fails after saving the native claim,
+the call returns no handoff and leaves the original claim running for explicit
+reconciliation. Reporting actual usage for a historical retained claim remains
+available; issuing further work requires complete publication evidence. Never
+infer zero usage merely from a missing caller response. The added event is
+accepted by the current v1 ledger reader; older readers fail closed on it.
+
+Publication rechecks the current reservation, remaining per-attempt capacity,
+retry ordinal and aggregate project/provider limits inside the ledger's existing
+writer lock, using the explicit exact-decimal context. A separate preflight
+keeps an already-known capacity refusal pending before the native claim is saved.
+An overrun that races after that preflight still prevents a returned handoff;
+the saved claim remains running for explicit reconciliation. Neither an absent
+usage report nor a failed caller response proves that published work never ran.
+Transient ledger lock or revision contention retries the same local accounting
+mutation at most eight times, with bounded backoff. It never allocates another
+native token or provider attempt. Current capacity is rechecked on each actual
+publication mutation; public ledger mutations still require their exact revision.
+
+Generic ledger operations may use any valid operation identifier, including one
+that resembles a native hash. Native admissions are recognized by authenticated
+retained native intent evidence and their reserve identity. Direct generic
+settlements and cancellations remain authoritative in the ledger without needing
+an invented native journal event. Actual native observation events must still
+retain their matching native journal entries. A directly released reservation
+remains readable but cannot issue more work or block an unrelated enrolled run
+merely because its release was recorded through the generic accounting API.
 
 Ingest receipts add a `budget_usage` object. Native `fail` and production
 `fail_generation` take the same object as an optional keyword argument, required
@@ -170,7 +227,7 @@ binding are separate integration work. PR #315's non-null reservation field alon
 does not verify this ledger. No live provider, production rendering or artistic
 acceptance is established by these hooks or their synthetic tests.
 
-Proposed validation (not executed while preparing this patch):
+Focused validation commands (execution results must identify their revision):
 ```sh
 PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_director_budget*.py' -v
 PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_workflow.py' -v
@@ -186,8 +243,24 @@ written under the existing owner and run locks before the run policy is saved.
 It does not own tokens, reserve capacity or create another acquisition controller.
 Native claims cannot enter the legacy path when that retained owner inventory
 already identifies the run or location, including an archive captured before
-enrollment. Interrupted enrollment fails closed and can replay the same binding.
-Unrelated, never-enrolled legacy runs retain their existing restore/claim behavior.
+enrollment. New entries also retain the hash of the complete normalized budget
+policy. Interrupted enrollment fails closed and can replay the same binding
+only before the ledger has admitted any native operation for that run identity
+or canonical location. Replay authenticates the retained intent and its exact
+operation hash from every native reserve event, including released reservations
+and admissions interrupted before token publication. Changing the current
+prompt cannot hide a previous admission. An admitted run with an older manifest
+must recover its original claim journal; reenrollment cannot manufacture a new
+token against already used capacity.
+
+Completed legacy owner entries without a policy hash remain readable and are
+preserved unchanged. An incomplete old entry cannot prove the interrupted policy
+and therefore cannot use enrollment replay. A bare enrollment flag never grants
+claim authority. These checks reuse the existing owner association, immutable
+ledger evidence and native journal instead of adding a second accounting store.
+Unrelated, never-enrolled legacy runs outside a budgeted production owner retain
+their existing restore/claim behavior. A run inside a budgeted production project
+cannot evade that project's admission policy by using the raw native entry point.
 
 This check depends on the current authoritative owner association and ledger being
 preserved. It is not an off-host or global rollback detector for replacement of an
@@ -235,6 +308,29 @@ validation. Native input failures remain structured native errors; FIFO and
 oversized input paths cannot become an unbounded read while ownership is held.
 These changes do not globally redefine hashing of unrelated legacy outputs.
 
+Claim publication captures bounded prompt, request, profile and applicable
+extraction settings before admission. The same bytes supply input hashes,
+prompt history, identity/style fields and handoff warnings. After admission, the
+owner rechecks the current hashes and captured handoff inputs with bounded
+readers, then publishes from the captured values without ordinary file rereads.
+A changed file or substituted symlink, FIFO or directory refuses publication.
+The durable reservation and unpublished token intent survive that refusal;
+restoring the admitted inputs lets an explicit retry reuse the same pending
+token without allocating a second attempt. This protects native handoff identity;
+it does not claim that a downstream provider has executed or retained those bytes.
+Settings that were absent at admission must remain absent. A row claim also
+checks that captured settings match its approved prompt calibration. Production
+binding rechecks, prompt reads and base-review input checks use the same bounded
+reader. Production prompt augmentation atomically replaces only its owned leaf,
+without following a substituted leaf path.
+The accounting adapter receives the captured settings/profile identity, rather
+than independently rebinding a later read. Input checks run again after capacity
+preflight and after durable publication. A change before saving the claim leaves
+the original intent pending; a change after publication returns no handoff and
+leaves the original running claim for reconciliation. Returned file paths are
+not a promise that a downstream consumer cannot edit them after a successful
+handoff; the retained hashes and captured native history identify admitted bytes.
+
 Reservation normalization retains its explicit 128-digit decimal context during
 both admission and recovery. A caller's ambient decimal precision cannot round
 an already admitted reservation into a different identity.
@@ -253,9 +349,30 @@ invalid identities, recovery authority restrictions, existing-receipt replay,
 bounded special-file input checks, precision above 28 significant digits under
 changed ambient contexts, and forged job/claim hashes with authentic pending
 usage. Their author did not inspect the fix.
-Original native tests remain unchanged. No provider, paid service, production
-host or live API is invoked. Runtime evidence is bound to its tested revision;
-the presence of these tests is not platform or production acceptance.
+Original native tests remain, with three enrollment regressions added for both
+orders, partial-admission refusal and invalid sibling identities/policies. Two
+additional claim regressions exercise post-admission input replacement and
+bounded special-file refusal while retaining the real synthetic reservation.
+The original preparation was unexecuted; later local and hosted results must
+identify the exact integrated revision instead of inheriting that status.
+No provider, paid service, production host or live API is invoked.
+
+Independent journal-authority tests cover older enrollment, pending, retry and
+uncertainty snapshots, positive interrupted-publication recovery, and refusal of
+ambiguous historical publication. Independent dispatch tests cover generic
+unstarted release, a concurrent overrun, settings byte/presence changes, and
+restoration of the originally admitted settings. These test authors worked from
+the preceding default branch without reading the corrective implementation.
+Four additional independent input-path tests substitute real POSIX FIFOs or
+Windows directories at production request/prompt and native base-review reads,
+with regular-file controls and retained authority checks. POSIX prompt coverage
+also preserves an external symlink target. A child-process timeout makes an
+unbounded read an explicit failure rather than hanging the test runner.
+Twelve independent publication-edge regressions additionally cover generic
+accounting compatibility, in-run prompt aliases, captured settings/profile
+identity, and input changes during actual preflight, with five positive controls.
+Local contention tests distinguish injected scheduling failures from actual
+multi-process claims; neither is provider execution evidence.
 
 ### Owned receipt paths and platform checks
 

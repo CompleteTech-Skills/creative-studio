@@ -537,7 +537,7 @@ def bind_generation_run(root, binding_id, run_dir, requirements):
                 from director_budget import require_production_budget
                 require_production_budget(root, state, run, data)
             binding = {'run_path': relative, 'run_id': data['run_id'],
-                       'request_sha256': file_hash(run / 'pet_request.json'),
+                       'request_sha256': hatch.input_digest(run / 'pet_request.json'),
                        'requirements': copy.deepcopy(requirements),
                        'requirements_hash': hash_object(requirements)}
             state['generation_bindings'][binding_id] = binding
@@ -561,7 +561,7 @@ def _bound_runs(root, state):
         data = hatch.manifest(run)
         if data['run_id'] != binding['run_id'] or data['fixture_mode'] is not state['fixture']:
             raise ValueError('bound acquisition identity or fixture label changed')
-        if file_hash(run / 'pet_request.json') != binding['request_sha256']:
+        if hatch.input_digest(run / 'pet_request.json') != binding['request_sha256']:
             raise ValueError('bound original request changed; create a separately identified acquisition')
         if 'director_budget' in state or 'director_budget' in data:
             from director_budget import require_production_budget
@@ -670,10 +670,11 @@ def claim_generation(root, binding_id, job):
                 'Generate only the requested reusable asset; keep unrelated performance dimensions independent.\n')
             for field in ('prompt_file', 'retry_prompt_file'):
                 if field in selected:
-                    prompt = hatch.inside(run, selected[field])
-                    current_text = prompt.read_text(encoding='utf-8')
+                    hatch.inside(run, selected[field])  # Keep containment without resolving the read's leaf.
+                    prompt = run / selected[field]
+                    current_text = hatch.input_bytes(prompt).decode('utf-8')
                     if marker not in current_text:
-                        prompt.write_text(current_text + instruction, encoding='utf-8')
+                        hatch.atomic_bytes(prompt, (current_text + instruction).encode('utf-8'))
             data.setdefault('limits', {})['attempts_per_job'] = min(
                 data.get('limits', {}).get('attempts_per_job', report['limits']['attempts_per_job']),
                 report['limits']['attempts_per_job'])
@@ -708,8 +709,7 @@ def _generation_action(root, binding_id, job, action, **arguments):
                 if value.get('production_context') != _binding_context(binding_id, binding):
                     raise ValueError('ingest receipt must attest the exact bound production coverage context')
                 with tempfile.TemporaryDirectory(prefix='hatch-production-receipt-') as temporary:
-                    # This directory is owned by this operation. Normalize OS
-                    # temporary-root aliases before the native no-follow reader.
+                    # Resolve only the temporary directory owned by this operation.
                     receipt_path = Path(temporary).resolve() / 'receipt.json'
                     hatch.atomic(receipt_path, value)
                     result = hatch.ingest(run, data, job, used_inputs=receipt_path,

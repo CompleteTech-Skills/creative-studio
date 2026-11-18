@@ -54,6 +54,35 @@ def input_json(path):
     return json.loads(input_bytes(path))
 
 
+def claim_settings_identity(root):
+    """Bind both absence and exact bytes of optional handoff settings."""
+    path = Path(root) / 'extraction-settings.json'
+    present = path.exists() or path.is_symlink()
+    return {'extraction-settings.json': input_digest(path) if present else None}
+
+
+def claim_handoff_identity(root):
+    return {**claim_settings_identity(root), 'profile.json': input_digest(Path(root) / 'profile.json')}
+
+
+def atomic_bytes(path, value):
+    """Replace an owned native file without following a substituted leaf."""
+    import tempfile
+    path = Path(path)
+    if not isinstance(value, bytes) or len(value) > MAX_SOURCE_BYTES or path.parent.resolve() != path.parent:
+        raise ValueError('unsafe or oversized owned native byte publication')
+    descriptor, name = tempfile.mkstemp(prefix='.hatch-bytes-', dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, 'wb') as output:
+            output.write(value)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 
 
 class _RecoveryManifest(dict):
@@ -305,12 +334,13 @@ def job_for(data, name):
     raise ValueError('unknown job ' + str(name))
 
 
-def inputs(root, job):
+def inputs(root, job, *, _reader=None):
     root = Path(root).resolve()
+    reader = input_bytes if _reader is None else _reader
     paths = ['pet_request.json']
     if not job.get('import_receipt'):
         paths.append(job['prompt_file'])
-    discovery = input_json(root / 'pet_request.json').get('brand_discovery_path')
+    discovery = json.loads(reader(root / 'pet_request.json')).get('brand_discovery_path')
     if discovery:
         paths.append(discovery)
     if job.get('retry_prompt_file') and not job.get('import_receipt'):
@@ -321,9 +351,9 @@ def inputs(root, job):
     hashes = {}
     for path in paths:
         inside(root, path)  # Preserve the native containment policy.
-        hashes[path] = input_digest(root / path)
+        hashes[path] = hashlib.sha256(reader(root / path)).hexdigest()
     hashes['@generation-profile'] = object_hash(generation_projection(
-        load_profile(input_json(root / 'profile.json')), job['id']))
+        load_profile(json.loads(reader(root / 'profile.json'))), job['id']))
     return hashes
 
 def revise_profile(root, data, path):
@@ -376,7 +406,7 @@ def descendants(data, name):
         found |= more
 
 
-def _native_budget(root, data, *, recovery=False):
+def _native_budget(root, data, *, recovery=False, claim_handoff=None):
     if type(recovery) is not bool:
         raise ValueError('recovery mode must be explicit')
     if not recovery:
@@ -393,7 +423,7 @@ def _native_budget(root, data, *, recovery=False):
             reject_legacy_budget_rollback(root, data)
         return None
     from director_budget import NativeBudget
-    return NativeBudget.for_run(root, data, recovery=recovery)
+    return NativeBudget.for_run(root, data, recovery=recovery, claim_handoff=claim_handoff)
 
 def record_budget_usage(root, data, name, token, observation):
     """Record actual usage independently of source validity under native ownership."""
@@ -562,6 +592,7 @@ def recover_prepare(root):
 
 def claim(root, data, name):
     _require_current_authority(data)
+    root = Path(root).resolve()
     reconcile(root, data)
     job = job_for(data, name)
     if job['status'] == 'running':
@@ -583,38 +614,79 @@ def claim(root, data, name):
             raise ValueError('dependency is not generated: ' + dependency)
     if name != 'base' and not base_review_current(root, data):
         raise ValueError('inspect canonical base/calibration and record base-review before generating rows')
-    if name != 'base' and job.get('prompt_settings_hash') != digest(root / 'extraction-settings.json'):
+    if name != 'base' and job.get('prompt_settings_hash') != input_digest(root / 'extraction-settings.json'):
         raise ValueError('calibration changed outside configure; regenerate prompts with configure before claiming rows')
     for key in ('derived_from', 'derivation_receipt', 'import_receipt'):
         job.pop(key, None)
-    hashes = inputs(root, job)
+    next_attempt = job.get('attempts', 0) + 1
+    selected_prompt = job.get('retry_prompt_file', job['prompt_file']) if next_attempt > 1 else job['prompt_file']
+    # Keep only the bounded handoff inputs, not every attached image, in memory.
+    # The same captured bytes supply both admission hashes and published fields.
+    captured = {}
+    handoff_paths = {root / selected_prompt, root / 'pet_request.json',
+                     root / 'profile.json', root / 'extraction-settings.json'}
+    def capture(path):
+        path = Path(path)
+        if path not in handoff_paths:
+            return input_bytes(path)
+        if path not in captured:
+            captured[path] = input_bytes(path)
+        return captured[path]
+    hashes = inputs(root, job, _reader=capture)
+    prompt_bytes = capture(root / selected_prompt)
+    prompt_text = prompt_bytes.decode('utf-8')
+    request = json.loads(capture(root / 'pet_request.json'))
+    profile = load_profile(json.loads(capture(root / 'profile.json')))
+    settings_path = root / 'extraction-settings.json'
+    settings_payload = capture(settings_path) if settings_path.exists() or settings_path.is_symlink() else None
+    settings_identity = {'extraction-settings.json': hashlib.sha256(settings_payload).hexdigest()
+                         if settings_payload is not None else None}
+    handoff_identity = {**settings_identity, 'profile.json': hashlib.sha256(captured[root / 'profile.json']).hexdigest()}
+    settings = json.loads(settings_payload) if settings_payload is not None else request.get('extraction', {})
+    if name != 'base' and job.get('prompt_settings_hash') != settings_identity['extraction-settings.json']:
+        raise ValueError('captured calibration differs from the approved row prompt')
+    warnings = style_warnings(root, request=request, profile=profile, settings=settings)
+    input_images = [{**x, 'path': str(inside(root, x['path']))} for x in job['input_images']]
+    tool_arguments = {'transparent_background':
+                      (settings if name != 'base' else request['extraction']).get('background') != 'chroma'}
     job.pop('stale', None)
-    budget = _native_budget(root, data)
+    budget = _native_budget(root, data, claim_handoff=handoff_identity)
     token = budget.before_claim(job, hashes) if budget is not None else uuid.uuid4().hex
+    # A refusal here retains the durable reservation and unpublished token intent.
+    # Never reread mutable inputs with ordinary file/JSON readers after admission.
+    def check_captured_inputs():
+        if (inputs(root, job) != hashes or claim_handoff_identity(root) != handoff_identity or
+                any(input_bytes(path) != payload for path, payload in captured.items()) or
+                budget is not None and job['budget_operation'].get('handoff_hashes') != handoff_identity):
+            raise ValueError('generation inputs changed during claim admission')
+    check_captured_inputs()
+    if budget is not None:
+        budget.preflight_publication(job, token)
+    check_captured_inputs()
     job.update(status='running', token=token, input_hashes=hashes,
-               started_at=time.time(), attempts=job.get('attempts', 0) + 1)
-    selected_prompt = job.get('retry_prompt_file', job['prompt_file']) if job['attempts'] > 1 else job['prompt_file']
-    prompt_bytes = inside(root, selected_prompt).read_bytes()
-    request = read(root / 'pet_request.json')
+               started_at=time.time(), attempts=next_attempt)
     job['history'].append({'event': 'claim', 'time': time.time(), 'token': job['token'], 'input_hashes': hashes,
         'prompt_snapshot': {'path': selected_prompt, 'sha256': hashlib.sha256(prompt_bytes).hexdigest(),
-                            'utf8': prompt_bytes.decode('utf-8')},
+                            'utf8': prompt_text},
         'input_images': json.loads(json.dumps(job['input_images'])),
         'identity': request.get('identity', {}), 'resolved_style': request.get('resolved_style')})
     save(root, data)
+    if budget is not None:
+        budget.publish_claim(job, token)
+    check_captured_inputs()
     return {'job': name, 'token': job['token'], 'generation_skill': '$imagegen', 'attempt': job['attempts'],
             **({'budget_reservation_id': job['budget_operation']['reservation_id'],
                 'budget_operation_id': job['budget_operation']['operation_id']} if budget is not None else {}),
             'prompt': str(root / selected_prompt),
             'retry_prompt': str(root / job.get('retry_prompt_file', job['prompt_file'])),
-            'input_images': [{**x, 'path': str(inside(root, x['path']))} for x in job['input_images']],
+            'input_images': input_images,
             'receipt_template': {'generation_skill': '$fixture' if data['fixture_mode'] else '$imagegen',
                                  'input_hashes': hashes, 'job': name, 'token': job['token']},
             'previous_failures': [e for e in job['history'] if e.get('event') in ('failed', 'repair')],
-            'identity': read(root / 'pet_request.json').get('identity', {}),
+            'identity': request.get('identity', {}),
             'resolved_style': request.get('resolved_style'),
-            'style_warnings': style_warnings(root),
-            'tool_arguments': {'transparent_background': read(root / 'extraction-settings.json').get('background') != 'chroma'} if name != 'base' else {'transparent_background': read(root / 'pet_request.json')['extraction']['background'] != 'chroma'},
+            'style_warnings': warnings,
+            'tool_arguments': tool_arguments,
             'attachment_rules': 'View local inputs before editing. Attach every input using referenced_image_paths when all are local; otherwise num_last_images_to_include (max 5). Never use both. A brand-new text-only base omits both.',
             'output_rules': 'Follow installed imagegen skill, including image output; return selected source and QA note. Do not mutate manifests.'}
 
@@ -680,9 +752,9 @@ def select_base(root, data, source_origin=None):
 def base_review_current(root, data):
     value = data.get('base_review', {})
     try:
-        return (value.get('canonical_hash') == digest(root / 'references/canonical-base.png') and
-                value.get('settings_hash') == digest(root / 'extraction-settings.json'))
-    except OSError:
+        return (value.get('canonical_hash') == input_digest(root / 'references/canonical-base.png') and
+                value.get('settings_hash') == input_digest(root / 'extraction-settings.json'))
+    except (OSError, ValueError):
         return False
 
 
@@ -1006,11 +1078,13 @@ def require_valid(root, data):
         raise ValueError('validation failed')
 
 
-def style_warnings(root):
+def style_warnings(root, *, request=None, profile=None, settings=None):
     from style_registry import compatibility_warnings
-    request = read(root / 'pet_request.json')
-    settings = read(root / 'extraction-settings.json') if (root / 'extraction-settings.json').is_file() else request.get('extraction', {})
-    return compatibility_warnings(request.get('resolved_style'), load_profile(root / 'profile.json'),
+    if request is None:request = read(root / 'pet_request.json')
+    if profile is None:profile = load_profile(root / 'profile.json')
+    if settings is None:
+        settings = read(root / 'extraction-settings.json') if (root / 'extraction-settings.json').is_file() else request.get('extraction', {})
+    return compatibility_warnings(request.get('resolved_style'), profile,
                                   settings.get('background', 'auto'), settings.get('resampling'))
 
 
