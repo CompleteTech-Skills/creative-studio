@@ -44,6 +44,18 @@ def constraint_order(skeleton: dict, constraints: list[dict]) -> list[dict]:
     return sorted(constraints, key=lambda c: (priority[c['bone']], c['type'] in ('hinge', 'ball', 'swing-twist', 'locked'), c['id']))
 
 
+def apply_joint_limits(skeleton: dict, pose: dict, constraints: list[dict]) -> tuple[dict, list[dict]]:
+    """Project hard local limits without replaying fractional world controls.
+
+    A blend between legal endpoint rotations can cross a forbidden joint range.
+    Use the same native limit implementations after such a blend; aim and copy
+    controls retain their already evaluated influence instead of running twice.
+    """
+    limits = [item for item in constraint_order(skeleton, constraints)
+              if item['type'] in ('hinge', 'ball', 'swing-twist', 'locked', 'translation')]
+    return apply_constraints(skeleton, pose, limits, ordered=True)
+
+
 def apply_constraints(skeleton: dict, pose: dict, constraints: list[dict], *, ordered=False) -> tuple[dict, list[dict]]:
     result = deepcopy(pose)
     bones = {b['id']: b for b in skeleton['bones']}

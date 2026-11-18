@@ -51,7 +51,49 @@ the last pose. Cancellation requires a selected executable `static-neutral`.
 Rejected requests and exhausted completion chains restore prior runtime state.
 The total transition budget defaults to 32 and is restricted to 1..1024.
 
-Crossfades capture the evaluated source pose, including an interrupted fade.
+Crossfades capture both the evaluated source pose and its pre-control input,
+including an interrupted fade. Normal transitions blend pre-control inputs and
+then execute the shared native control pipeline once. Reapplying partial-strength
+aim or copy controls to already controlled poses would increase their effective
+influence and cause a jump at the fade boundary. By default,
+`control_transition="continuous"` admits a nonzero transition only when applying
+the incoming controls at entry preserves the captured final FK within 1e-7.
+An incompatible goal rejects atomically with `RIG_STATE_CONTACT_TRANSITION`;
+the caller can supply compatible goals or explicitly choose a zero-duration
+transition. Callers that intentionally require immediate incoming control
+projection can select `control_transition="project"`. That explicit mode keeps
+the incoming clip's placed contact goals authoritative while other channels
+fade; constrained joints can then jump when goals differ. The runtime never
+interpolates replacement contact targets. Interruptions retain the actual final
+returned pose as well as the bounded pre-control snapshot.
+
+When an outgoing contact correction is released and the incoming clip has no
+active authored contact, the fade interpolates from the actual frozen source pose
+to the once-controlled incoming target. During this bounded release, fractional
+world aim/copy controls are not reapplied to the intermediate interpolation.
+Hard hinge, ball, swing/twist, locked-axis and translation limits still project
+the blended pose through the native constraint owner. A hard limit can override
+interpolation continuity when the shortest quaternion path crosses a forbidden
+range. The result explicitly reports `control_stage="contact-release-blend"` and
+records any hard-limit corrections in `constraints_applied`; normal evaluation
+reports `control_stage="native"`.
+Release provenance survives request/cancel interruptions. An incoming active
+contact always restores the normal authoritative contact-solving stage.
+
+`evaluate`, `request` and `cancel` also return `contacts` and
+`constraints_applied`. Positional and orientation residuals are measured against
+the final returned FK, including a contact disturbed by a later contact solve.
+An unresolved contact reports `status="controls-unsatisfied"`; the separate
+`pending_completion` field still describes the state transition boundary. Native
+per-solve reports remain under `solve_contacts`; `contacts` and `final_contacts`
+describe the final geometry. Direct `evaluate_animation` preserves its existing
+per-solve `contacts` result and adds separate `final_contacts`. Reachability and
+convergence diagnostics are preserved rather than discarded.
+The contact regression suite exercises default and custom nonzero fades,
+interruption, cancellation, fixed-world controls, impossible targets and
+conflicting chains on synthetic geometry. These checks do not grant visual or
+production approval.
+
 Sparse target morph channels return to authored defaults. Embedded root motion
 stitches different authored clip origins and accumulates across repeated recipes;
 in-place clips retain their cycle reset. Finite-time guards retain the original
@@ -93,8 +135,10 @@ evaluator derives complete-cycle displacement from authored channels before
 controls. All trajectory and origin samples now use native evaluation with
 `contacts=False, constraints=False`: the first clip origin, each clip's start
 and end, the selected local sample, complete-cycle sums and the target origin
-used at state entry. Only trajectory extraction disables controls. The final
-placed pose goes through full native constraints and contact IK.
+used at state entry. Runtime blend inputs also disable controls during sampling;
+`apply_animation_controls` then applies the same native stage used by direct
+`evaluate_animation`. The explicit contact-release interpolation above is the
+only final-pose exception to that projection order.
 
 For the same one-second 0-to-0.5-meter root motion and contact at `[0, 1.5, 0]`,
 a root X translation clamp of `[0, 0.2]` demonstrates the distinction at 2.25
@@ -135,23 +179,41 @@ catalog definitions, 2D contracts and persisted schemas remain authoritative.
 
 ## Verification and integration requirements
 
-The initial API-only preparation had no executor. Its source equality checks
-established retention only; historical passing runs remain bound to their
-original revisions. Subsequent local execution and hosted checks supplement
-that history and must identify the exact tested revision.
+The original preservation layer was prepared without an executor. The later
+crossfade correction ran 50 focused runtime/contact/animation tests and all 98
+tests in the animation-IK gate on Linux, without skips. Schema and template
+checks also passed. These tests use the actual native controls, FK and skin
+deformation on synthetic engineering geometry. Historical preparation statements
+above remain revision-bound; they do not replace these executed corrections or
+independent review and exact-current-head hosted checks.
+
+The subsequent hard-limit release correction passed the full 51-test focused
+runtime/contact/animation suite without skips. Its added regression reproduces a
+forbidden hinge angle between legal endpoint rotations on the previous source,
+then checks the corrected angles and actual finite skinned vertices through the
+whole release. Existing fractional-control and contact-release assertions remain.
+
+The subsequent integration preserves concurrent remote head
+`9b0bff39ec23697aca27da2a42f597b005434964` and both of its eight-test control
+result and transition-admission modules unchanged. The combined 67-test focused
+suite passed without skips. A later additive policy-type test covers malformed
+selection values; final-head execution and review remain required. The shared
+native control pass retains source blending and hard limits while adopting the
+remote default of continuous transition admission and distinct final reports.
 
 The existing integration has already added `test_rig_state_runtime.py` to the
 `animation-ik` group in `scripts/test_rig_gate.py`. Its original 16 tests remain
 byte-for-byte preserved. The direct evaluator contact test remains in the
 existing `test_rig_animation.py` group member. The independent
 `test_rig_state_runtime_contacts.py` regression module is also included in that
-gate without removing other entries. All seven new methods use the real native
-solver and deformation functions; no execution result is inferred from their
-presence.
+gate without removing other entries. Its 22 regression methods use the real
+native solver and deformation functions, including nonzero contact fades,
+fractional controls, contact release and interruptions. Execution results above
+come from the recorded test runs, not merely the presence of those methods.
 Run the focused tests and release gates against the final integrated revision:
 
 ```bash
-PYTHONPATH=scripts:tests python -m unittest test_rig_state_runtime test_rig_state_runtime_contacts test_rig_state_runtime_control_results test_rig_animation -v
+PYTHONPATH=scripts:tests python -m unittest test_rig_state_runtime test_rig_state_runtime_contacts test_rig_state_runtime_control_results test_rig_state_runtime_transition_admission test_rig_animation -v
 python scripts/test_rig_gate.py animation-ik
 python scripts/test_rig_gate.py schema-math
 python scripts/test_rig_gate.py interoperability
@@ -160,46 +222,3 @@ python scripts/test_rig_gate.py interoperability
 Report actual failures, optional-tool skips and environmental blockers separately.
 These numerical fixtures cannot provide artistic review, external interoperability
 acceptance when tools are skipped, or full six-fixture/parent acceptance.
-
-## Transition controls and final diagnostics
-
-Native controls now run after transition interpolation. The runtime passes its
-captured source pose and interpolation weight to the existing native animation
-owner, which completes absent target channels, blends authored channels, then
-applies constraints and contact IK. Interpolating two already solved contact
-poses can move a planted endpoint; no second solver is introduced to hide that
-drift. Root placement, fixed-world poles and authored contact goals retain the
-same native coordinate convention.
-
-Every runtime evaluation exposes `contacts` and `constraints_applied` results.
-The native animation API preserves its historical per-solve `contacts` reports
-and adds separate `final_contacts`; the runtime exposes those final reports.
-Final contact residuals describe the returned geometry, including when
-a later chain affects an earlier endpoint. Unreachable or unconverged contacts
-return `status: controls-unsatisfied` instead of an unqualified playing status.
-The bounded best-effort pose remains available for inspection; it does not
-assert a successful contact. A missing completion target remains visible in
-`pending_completion` even when controls are unsatisfied.
-
-Eight independently authored methods exercise nonzero request, cancellation,
-completion and interrupted transitions, every joint transform, actual skinned
-positions, unreachable goals and orientation-only nonconvergence. The author
-did not see the correction. A negative control measures approximately 0.0833 m
-of endpoint drift when already solved poses are blended. The test oracle
-explicitly authors the intended scale channel; rest-valued channels may be
-omitted by the native clip writer. The original 16 runtime and seven placement
-tests remain unchanged. All three runtime suites are enrolled in the existing
-animation/IK gate. Source tests do not replace exact-head execution and review.
-
-A nonzero transition is admitted only when the incoming controls preserve the
-captured boundary pose, with an absolute numerical tolerance of `1e-7` on the
-native FK matrices. Different contact goals, orientations or newly active poles
-can be incompatible even when their endpoint positions match. Such requests,
-cancellation or completion edges raise `RIG_STATE_CONTACT_TRANSITION` and
-atomically restore playback state and time. An explicitly configured
-zero-duration transition retains its immediate handoff semantics. Smooth
-handoff between conflicting physical contacts is outside this bounded runtime;
-it is not silently replaced with a snap or drifting solved-pose interpolation.
-Eight additional independently authored admission tests cover those rejection
-paths, complete rollback, a compatible transition and the explicit immediate
-control. Existing native orientation failure oracles remain unchanged.

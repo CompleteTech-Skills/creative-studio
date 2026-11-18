@@ -81,6 +81,52 @@ def contact_is_active(contact: dict, time: float, duration: float) -> bool:
     return contact['start'] <= time < contact['end'] or (time == duration and contact['end'] == duration)
 
 
+def apply_animation_controls(rig: RigAsset, clip: dict, pose: dict, local_time: float, *,
+                             contact_offset=None, contacts=True, constraints=True) -> dict:
+    """Apply the native control pipeline once to a sampled or blended input pose.
+
+    Callers validate the clip before sampling. The offset places authored contact
+    targets in native world meters; it does not move constraint points or poles.
+    Keeping this stage separate lets runtimes blend unconstrained inputs without
+    applying fractional constraints twice to an already controlled pose.
+    """
+    require(math.isfinite(local_time) and 0 <= local_time <= clip['duration'],
+            'RIG_ANIMATION_TIME', 'Control time must be within the clip duration.')
+    offset = vector(contact_offset) if contact_offset is not None else np.zeros(3)
+    pose = deepcopy(pose)
+    controller_data = rig.manifest.get('controllers', dict(ik=[], constraints=[]))
+    ordered = constraint_order(rig.skeleton, controller_data['constraints']) if constraints else []
+    changes = []
+    if ordered:pose, changes = apply_constraints(rig.skeleton, pose, ordered, ordered=True)
+    reports = []
+    if contacts:
+        chains = {c['id']: c for c in controller_data['ik']}
+        for contact in clip['contacts']:
+            if not contact_is_active(contact, local_time, clip['duration']):continue
+            with np.errstate(over='ignore', invalid='ignore'):
+                target = vector(np.asarray(contact['target'])+offset)
+            result = solve_ik(rig.skeleton, pose, chains[contact['chain']], target,
+                              constraints=ordered, orientation=contact.get('orientation'))
+            pose = result.pose
+            reports.append(dict(id=contact['id'], chain=contact['chain'], target=target.tolist(),
+                                residual_m=result.residual_m, orientation_residual_rad=result.orientation_residual_rad,
+                                reachable=result.reachable, converged=result.converged))
+    final_reports = deepcopy(reports)
+    if final_reports:
+        world = evaluate_fk(rig.skeleton, pose)
+        active = [c for c in clip['contacts'] if contact_is_active(c, local_time, clip['duration'])]
+        for report, contact in zip(final_reports, active):
+            chain = chains[report['chain']]
+            endpoint = world[chain['bones'][-1]]
+            report['residual_m'] = float(np.linalg.norm(endpoint[:3, 3]-report['target']))
+            goal = contact.get('orientation', chain.get('orientation'))
+            angle = qangle(decompose(endpoint)['rotation'], goal) if goal is not None else None
+            report['orientation_residual_rad'] = angle
+            report['converged'] = bool(report['converged'] and report['residual_m'] <= chain['tolerance']
+                                      and (angle is None or angle <= 1e-5))
+    return dict(pose=pose, contacts=reports, final_contacts=final_reports, constraints_applied=changes)
+
+
 def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=False,
                        contacts=True, constraints=True, _validated=False,
                        _root_offset=None, _blend_from=None, _blend_weight=1.) -> dict:
@@ -89,8 +135,6 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
     The private offset is a finite three-vector in native world meters. It moves
     the sampled root and active contact targets before constraints and IK;
     authored world-space poles and constraint points stay fixed.
-    A runtime transition may blend a captured source pose into the placed
-    authored channels. Native controls then solve the actual returned pose.
     """
     placement = vector(_root_offset) if _root_offset is not None else None
     clip = rig.clips[clip] if isinstance(clip, str) else clip
@@ -116,8 +160,6 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
         with np.errstate(over='ignore', invalid='ignore'):
             root['translation'] = vector(np.asarray(root.get('translation', root_rest))+placement).tolist()
     if _blend_from is not None:
-        # Complete the target so channels absent from this clip return to their
-        # authored defaults, rather than preserving channels from the old state.
         for bone in rig.skeleton['bones']:
             for path, rest in bone['rest'].items():
                 pose['bones'].setdefault(bone['id'], {}).setdefault(path, deepcopy(rest))
@@ -125,47 +167,18 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
             for morph in mesh.morphs:
                 pose['morphs'].setdefault(mesh.id, {}).setdefault(morph, mesh.morph_defaults.get(morph, 0.))
         pose = blend_poses(rig, _blend_from, pose, _blend_weight)
-    controller_data = rig.manifest.get('controllers', dict(ik=[], constraints=[]))
-    ordered = constraint_order(rig.skeleton, controller_data['constraints']) if constraints else []
-    changes = []
-    if ordered:pose, changes = apply_constraints(rig.skeleton, pose, ordered, ordered=True)
-    reports = []
-    final_reports = []
-    if contacts:
-        chains = {c['id']: c for c in controller_data['ik']}
-        for contact in clip['contacts']:
-            if not contact_is_active(contact, local_time, duration):continue
-            target = np.array(contact['target'])+(cycles*root_cycle if clip['root_motion'] == 'embedded' else 0)
-            if placement is not None:
-                with np.errstate(over='ignore', invalid='ignore'):
-                    target = vector(target+placement)
-            result = solve_ik(rig.skeleton, pose, chains[contact['chain']], target,
-                              constraints=ordered, orientation=contact.get('orientation'))
-            pose = result.pose
-            reports.append(dict(id=contact['id'], chain=contact['chain'], target=target.tolist(),
-                                residual_m=result.residual_m, orientation_residual_rad=result.orientation_residual_rad,
-                                reachable=result.reachable, converged=result.converged))
-        final_reports = deepcopy(reports)
-        if final_reports:
-            # Later chains or constraints can affect an earlier endpoint. Report
-            # residuals of the returned geometry, not an intermediate solve.
-            world = evaluate_fk(rig.skeleton, pose)
-            active = [c for c in clip['contacts'] if contact_is_active(c, local_time, duration)]
-            for report, contact in zip(final_reports, active):
-                chain = chains[report['chain']]
-                endpoint = world[chain['bones'][-1]]
-                report['residual_m'] = float(np.linalg.norm(endpoint[:3, 3]-report['target']))
-                goal = contact.get('orientation')
-                if goal is None:
-                    goal = chain.get('orientation')
-                angle = qangle(decompose(endpoint)['rotation'], goal) if goal is not None else None
-                report['orientation_residual_rad'] = angle
-                report['converged'] = bool(report['converged'] and report['residual_m'] <= chain['tolerance']
-                                           and (angle is None or angle <= 1e-5))
+    with np.errstate(over='ignore', invalid='ignore'):
+        contact_offset = vector((cycles*root_cycle if clip['root_motion'] == 'embedded' else np.zeros(3))
+                                +(placement if placement is not None else 0))
+    controlled = apply_animation_controls(rig, clip, pose, local_time,
+                                          contact_offset=contact_offset, contacts=contacts,
+                                          constraints=constraints)
+    pose = controlled['pose']
     root_delta = np.array(pose['bones'].get(root_id, {}).get('translation', root_rest))-root_rest
-    return dict(pose=pose, time=local_time, cycle=cycles, root_motion=root_delta.tolist(), contacts=reports,
-                final_contacts=final_reports,
-                constraints_applied=changes, events=[deepcopy(e) for e in clip['events'] if abs(e['time']-local_time) < 1e-7])
+    return dict(pose=pose, time=local_time, cycle=cycles, root_motion=root_delta.tolist(),
+                contacts=controlled['contacts'], final_contacts=controlled['final_contacts'],
+                constraints_applied=controlled['constraints_applied'],
+                events=[deepcopy(e) for e in clip['events'] if abs(e['time']-local_time) < 1e-7])
 
 
 def blend_poses(rig: RigAsset, base: dict, overlay: dict, weight: float, *, mask=None,

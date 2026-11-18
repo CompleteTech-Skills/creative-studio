@@ -9,7 +9,9 @@ from fractions import Fraction
 import math
 from sys import float_info
 import numpy as np
-from rig_animation import evaluate_animation
+from rig_animation import (evaluate_animation, blend_poses, contact_is_active,
+                           apply_animation_controls)
+from rig_constraints import apply_joint_limits
 from rig_errors import RigError, require, object_hash
 from rig_skeleton import evaluate_fk
 from rig_states import map_states
@@ -20,12 +22,15 @@ class RigStateRuntime:
 
     Requests use the incoming state's interruption policy, as catalog event
     mappings do. Cancellation is an explicit override to selected static-neutral.
-    A transition freezes its source pose, so interrupting it is continuous and
-    does not grow a recursive blend tree. Root translation is aligned at entry.
+    A transition freezes its evaluated source and its pre-control input. Blends
+    operate on pre-control inputs before one native control pass, without a
+    recursive blend tree. Root translation is aligned to the evaluated source.
+    Contact-free release fades blend the actual source toward a controlled target.
     """
 
     def __init__(self, rig, initial, *, recipes=None, selected=None,
-                 blend_seconds=0.2, now=0.0, transition_budget=32):
+                 blend_seconds=0.2, now=0.0, transition_budget=32,
+                 control_transition='continuous'):
         require(isinstance(now, (int, float)) and not isinstance(now, bool) and 0 <= now <= float_info.max,
                 'RIG_STATE_TIME', 'Runtime time must be finite and nonnegative.')
         require(isinstance(blend_seconds, (int, float)) and not isinstance(blend_seconds, bool)
@@ -33,6 +38,9 @@ class RigStateRuntime:
                 'RIG_STATE_BLEND', 'Blend duration must be within zero to ten seconds.')
         require(type(transition_budget) is int and 1 <= transition_budget <= 1024,
                 'RIG_STATE_BUDGET', 'Transition budget must be within 1..1024.')
+        require(type(control_transition) is str and control_transition in ('continuous', 'project'),
+                'RIG_STATE_CONTACT_TRANSITION',
+                'Control transition must be continuous or explicitly project incoming controls.')
         self.rig = rig
         self.mapping = map_states(rig, recipes=recipes, selected=selected)
         self.recipes = deepcopy(self.mapping['recipes'])
@@ -41,8 +49,11 @@ class RigStateRuntime:
         self.entered = self.time = float(now)
         self.blend_seconds = float(blend_seconds)
         self.transition_budget = transition_budget
+        self.control_transition = control_transition
         self.transition_count = 0
         self.source_pose = None
+        self._input_pose = self._source_input_pose = None
+        self._source_contact_correction = False
         self.root_offset = np.zeros(3)
         self._signature = self._current_signature()
 
@@ -116,43 +127,89 @@ class RigStateRuntime:
         # Place the root and contact targets before native constraints and IK.
         # Translating an already solved pose changes its relation to fixed world
         # poles/constraint points, so matching the endpoint alone is insufficient.
-        blending = self.source_pose is not None and self.blend_seconds and elapsed < self.blend_seconds
-        return evaluate_animation(self.rig, clip, min(local, clip['duration']),
-                                  _root_offset=placement,
-                                  _blend_from=self.source_pose if blending else None,
-                                  _blend_weight=elapsed/self.blend_seconds if blending else 1.)
+        sampled = evaluate_animation(self.rig, clip, min(local, clip['duration']),
+                                     _root_offset=placement, contacts=False, constraints=False)
+        input_pose = sampled['pose']
+        goals = {contact['chain']: contact for contact in clip['contacts']
+                 if contact_is_active(contact, sampled['time'], clip['duration'])}
+        blending = (self._source_input_pose is not None and self.blend_seconds > 0
+                    and elapsed < self.blend_seconds)
+        releasing = blending and self._source_contact_correction and not goals
+        control_input = input_pose
+        if blending:
+            # Complete both poses: sparse target channels must fade old channels
+            # back to rest, including morphs omitted from the target clip.
+            source, target = deepcopy(self._source_input_pose), deepcopy(input_pose)
+            for bone in self.rig.skeleton['bones']:
+                for path, rest in bone['rest'].items():
+                    target['bones'].setdefault(bone['id'], {}).setdefault(path, deepcopy(rest))
+            for mesh in self.rig.geometry.meshes:
+                for morph in mesh.morphs:
+                    target['morphs'].setdefault(mesh.id, {}).setdefault(morph, mesh.morph_defaults.get(morph, 0.))
+            input_pose = blend_poses(self.rig, source, target, elapsed/self.blend_seconds)
+            control_input = target if releasing else input_pose
+        # Blend before native controls: replaying a fractional aim/copy on
+        # already controlled poses changes its influence and snaps at blend end.
+        # Incoming authored contacts still override the pose crossfade; never
+        # interpolate their goals. Keep the raw input as a bounded snapshot so
+        # interruption can resume the same single native pass without inversion.
+        controlled = apply_animation_controls(self.rig, clip, control_input, sampled['time'],
+                                               contact_offset=placement)
+        controlled['control_stage'] = 'native'
+        if releasing:
+            # With no incoming authored lock, release the outgoing correction
+            # from the actual frozen final pose toward the once-controlled
+            # target. Reprojecting this blend would replay fractional controls.
+            # Interruptions retain this release provenance until the fade ends.
+            controlled['pose'] = blend_poses(self.rig, self.source_pose, controlled['pose'],
+                                              elapsed/self.blend_seconds)
+            controlled['pose'], controlled['constraints_applied'] = apply_joint_limits(
+                self.rig.skeleton, controlled['pose'],
+                self.rig.manifest['controllers']['constraints'])
+            controlled['control_stage'] = 'contact-release-blend'
+        # Keep the native evaluator's per-solve reports separate; runtime
+        # contacts always describe the final geometry after every chain.
+        controlled['solve_contacts'] = controlled['contacts']
+        controlled['contacts'] = controlled['final_contacts']
+        return dict(input_pose=input_pose, **controlled)
 
     def _pose(self, now):
         return self._sample(now)['pose']
 
-    def _enter(self, state, now, pose):
+    def _enter(self, state, now, pose, input_pose, *, contact_correction=False):
         require(self.transition_count < self.transition_budget, 'RIG_STATE_BUDGET',
                 'Runtime transition budget exhausted; create a new runtime explicitly.')
         self._require_state(state)
         first = self.rig.clips[self.recipes[state]['clips'][0]]
         start = self._authored_root(first, 0)
         offset = self._root(pose)-start
-        if self.blend_seconds:
-            # A nonzero fade promises a continuous captured-pose boundary.
-            # Conflicting goals or a newly active pole can otherwise snap the
-            # limb even at weight zero. Reject that unsupported handoff before
-            # changing state; never hide it by blending already solved poses.
-            incoming = evaluate_animation(self.rig, first, 0, _root_offset=offset,
-                                          _blend_from=pose, _blend_weight=0.)['pose']
+        if self.blend_seconds and self.control_transition == 'continuous':
+            active = any(contact_is_active(c, 0., first['duration']) for c in first['contacts'])
+            if contact_correction and not active:
+                incoming, _ = apply_joint_limits(self.rig.skeleton, pose,
+                                                 self.rig.manifest['controllers']['constraints'])
+            else:
+                incoming = apply_animation_controls(self.rig, first, input_pose, 0.,
+                                                     contact_offset=offset)['pose']
             source_fk = evaluate_fk(self.rig.skeleton, pose)
             incoming_fk = evaluate_fk(self.rig.skeleton, incoming)
             require(all(np.allclose(source_fk[bone], incoming_fk[bone], rtol=0, atol=1e-7)
                         for bone in source_fk), 'RIG_STATE_CONTACT_TRANSITION',
-                    'Incoming controls change the captured transition pose; use compatible goals or an explicit zero-duration transition.')
+                    'Incoming controls change the captured transition pose; use compatible goals, '
+                    'an explicit zero-duration transition, or control_transition="project".')
         self.state, self.entered = state, float(now)
         self.source_pose, self.root_offset = deepcopy(pose), offset
+        self._source_input_pose = deepcopy(input_pose)
+        self._source_contact_correction = contact_correction
         self.transition_count += 1
 
     @contextmanager
     def _transaction(self):
         # A failed completion chain or request must not consume an attempt or
         # leave a partially advanced active state.
-        fields = ('state', 'entered', 'time', 'source_pose', 'root_offset', 'transition_count')
+        fields = ('state', 'entered', 'time', 'source_pose', '_input_pose',
+                  '_source_input_pose', '_source_contact_correction',
+                  'root_offset', 'transition_count')
         before = {name: deepcopy(getattr(self, name)) for name in fields}
         try:
             yield
@@ -178,24 +235,27 @@ class RigStateRuntime:
             if target not in self.recipes:
                 status = 'completion-unavailable'
                 break
-            self._enter(target, boundary, self._pose(boundary))
-        sample = self._sample(now)
-        completion_unavailable = status == 'completion-unavailable'
-        if any(not report['reachable'] or not report['converged'] for report in sample['final_contacts']):
+            completed = self._sample(boundary)
+            self._enter(target, boundary, completed['pose'], completed['input_pose'],
+                        contact_correction=bool(completed['contacts']) or
+                        completed['control_stage'] == 'contact-release-blend')
+        sampled = self._sample(now)
+        self._input_pose = deepcopy(sampled.pop('input_pose'))
+        pending = self.recipes[self.state]['completion'] if status == 'completion-unavailable' else None
+        if any(not contact['reachable'] or not contact['converged'] for contact in sampled['contacts']):
             status = 'controls-unsatisfied'
         self.time = float(now)
-        return dict(state=self.state, elapsed=now-self.entered, pose=sample['pose'],
-                    contacts=deepcopy(sample['final_contacts']),
-                    constraints_applied=deepcopy(sample['constraints_applied']),
+        return dict(state=self.state, elapsed=now-self.entered, **sampled,
                     status=status, transition_count=self.transition_count,
-                    pending_completion=self.recipes[self.state]['completion'] if completion_unavailable else None)
+                    pending_completion=pending)
 
     def request(self, state, now):
         """Request an allowed transition; rejected requests preserve playback."""
         with self._transaction():
             self._check(now)
             self._require_state(state)
-            pose = self._evaluate(now)['pose']
+            evaluated = self._evaluate(now)
+            pose = evaluated['pose']
             current, incoming = self.recipes[self.state], self.recipes[state]
             if state == self.state and incoming['repeat'] == 'coalesce':
                 return self._evaluate(now)
@@ -204,7 +264,9 @@ class RigStateRuntime:
             require(incoming['interrupt'] == 'always' or
                     (incoming['interrupt'] == 'higher' and incoming['priority'] > current['priority']),
                     'RIG_STATE_PRIORITY', 'Incoming state cannot interrupt the active priority.')
-            self._enter(state, now, pose)
+            self._enter(state, now, pose, self._input_pose,
+                        contact_correction=bool(evaluated['contacts']) or
+                        evaluated['control_stage'] == 'contact-release-blend')
             return self._evaluate(now)
 
     def cancel(self, now):
@@ -212,6 +274,8 @@ class RigStateRuntime:
         with self._transaction():
             self._check(now)
             self._require_state('static-neutral')
-            pose = self._evaluate(now)['pose']
-            self._enter('static-neutral', now, pose)
+            evaluated = self._evaluate(now)
+            self._enter('static-neutral', now, evaluated['pose'], self._input_pose,
+                        contact_correction=bool(evaluated['contacts']) or
+                        evaluated['control_stage'] == 'contact-release-blend')
             return self._evaluate(now)
