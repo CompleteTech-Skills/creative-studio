@@ -276,3 +276,82 @@ class BudgetRecoveryTests(unittest.TestCase):
         for name in ('input_bytes', 'input_digest', 'input_json'):
             with self.subTest(helper=name), self.assertRaises((ValueError, OSError)):
                 getattr(hatch, name)(path)
+
+    def test_exact_fractional_reservation_recovers_under_ambient_decimal_precision(self):
+        from decimal import localcontext
+        exact = '0.12345678901234567890123456789'
+        for precision in (28, 9):
+            for ingest in (False, True):
+                with self.subTest(precision=precision, ingest=ingest):
+                    self.root = self.prepare('exact-' + str(precision) + '-' + str(ingest))
+                    self.bind(self.root, estimate=native_fixture.quantities(provider_calls=1, amount=exact),
+                              retry_allowance=0)
+                    claim = self.claim()
+                    self.assertEqual(self.row()['reserved']['amount'], exact)
+                    observation = self.observe('exact-usage', 'complete' if ingest else 'failed', amount='0.01')
+                    receipt = self.receipt(claim)
+                    payload = hatch.read(receipt)
+                    payload['budget_usage'] = observation
+                    hatch.atomic(receipt, payload)
+                    source = self.source()
+                    for name in ('pet_request.json', 'profile.json'):
+                        (self.root / name).unlink()
+                    with localcontext() as context:
+                        context.prec = precision
+                        if ingest:
+                            with self.assertRaises((ValueError, OSError)):
+                                self.ingest(claim, receipt, source)
+                            self.assertEqual(self.row()['spent']['amount'], '0.01')
+                        self.report_failure(claim['token'], observation)
+                        row = self.row()
+                        self.assertEqual(row['reserved']['amount'], exact)
+                        self.assertEqual(row['spent']['amount'], '0.01')
+                        self.assertEqual(row['state'], 'settled')
+                        self.assertTrue(all(value == '0' for value in row['held'].values()))
+                        self.assertEqual(self.job()['status'], 'failed')
+                        self.assertNotIn('token', self.job())
+                        before = self.ledger.snapshot()
+                        with hatch.ownership(self.root):
+                            for _ in range(2):
+                                hatch.record_budget_usage(self.root, self.journal(), 'base',
+                                                          claim['token'], observation)
+                        self.assertEqual(self.ledger.snapshot(), before)
+
+    def test_forged_active_and_claim_prompt_hashes_reject_before_usage_replay(self):
+        for entry in ('ingest', 'record', 'fail'):
+            with self.subTest(entry=entry):
+                self.root = self.prepare('forged-prompt-' + entry)
+                self.bind(self.root, retry_allowance=0)
+                claim = self.claim()
+                data = self.journal()
+                with hatch.ownership(self.root), patch.object(
+                        BudgetLedger, 'settle', side_effect=RuntimeError('pending authentic usage')):
+                    with self.assertRaises(RuntimeError):
+                        hatch.record_budget_usage(self.root, data, 'base', claim['token'],
+                                                  self.observe('pending', 'retry', amount='0.01'))
+                data = self.journal()
+                job = hatch.job_for(data, 'base')
+                anchor = deepcopy(job['budget_operation'])
+                job['input_hashes'][job['prompt_file']] = '0' * 64
+                latest = [event for event in job['history'] if event['event'] == 'claim'][-1]
+                latest['input_hashes'][job['prompt_file']] = '0' * 64
+                hatch.save(self.root, data)
+                receipt = self.receipt(claim)
+                payload = hatch.read(receipt)
+                payload['input_hashes'] = deepcopy(job['input_hashes'])
+                hatch.atomic(receipt, payload)
+                source = self.source()
+                before = self.ledger.snapshot()
+                with patch.object(hatch, 'inputs', side_effect=AssertionError('current inputs are not authority')):
+                    with self.assertRaises((ValueError, RigError)):
+                        if entry == 'ingest':
+                            self.ingest(claim, receipt, source)
+                        elif entry == 'record':
+                            with hatch.ownership(self.root):
+                                hatch.record_budget_usage(self.root, self.journal(), 'base',
+                                                          claim['token'], payload['budget_usage'])
+                        else:
+                            self.report_failure(claim['token'], payload['budget_usage'])
+                self.assertEqual(self.ledger.snapshot(), before)
+                saved = hatch.read(self.root / 'imagegen-jobs.json')
+                self.assertEqual(hatch.job_for(saved, 'base')['budget_operation'], anchor)
