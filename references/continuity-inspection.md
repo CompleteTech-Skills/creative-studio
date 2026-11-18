@@ -78,7 +78,12 @@ Comparisons report `semantic_equivalence: unverified`,
 
 Native preflight accounts for instantiated geometry, accessor work, and
 metadata. Image admission adds aggregate decoded texture capacity using
-native image framing before the importer decodes pixels. Limits only tighten
+native image framing before the importer decodes pixels. Animation admission then
+adds retained track/container costs and decoded working arrays across all clips,
+including a separate times/value/tangent copy for every morph primitive destination.
+The combined estimate is checked before native model import and is retained as
+`native_animation_admission`; source keyframe limits keep their channel-counted
+meaning while memory admission accounts for instantiated copies. Limits only tighten
 the inspector's caps. These are conservative loader estimates, with no process
 RSS or renderer guarantee. The canonical reader applies its declared buffer
 limits. The inspection estimate does not separately meter cumulative work
