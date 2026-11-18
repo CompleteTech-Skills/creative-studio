@@ -16,7 +16,7 @@ import tempfile
 import numpy as np
 from PIL import Image, ImageFile
 from atomic_publish import _rename_no_replace
-from rig_errors import RigError, finite_json, open_payload, portable_name, require
+from rig_errors import RigError, finite_json, normalize_root, open_payload, portable_name, require
 from rig_models import Geometry, Mesh, validate_geometry
 from rig_contracts import DEFAULT_LIMITS
 
@@ -51,7 +51,7 @@ def read_image(path, *, role='source'):
     require(role in ('source','mask','depth','sketch','reference'), 'RECON_SOURCE', 'Unknown evidence role.')
     path=Path(path).absolute()
     require(path.suffix.lower() in ('.png','.jpg','.jpeg','.webp'), 'RECON_SOURCE', 'Choose PNG, JPEG or WebP.')
-    with open_payload(path.parent,path.name) as (stream, info):
+    with open_payload(normalize_root(path.parent),path.name) as (stream, info):
         require(0 < info.st_size <= MAX_IMAGE_BYTES, 'RECON_SOURCE_LIMIT', 'Encoded image exceeds64MiB.')
         payload=stream.read(MAX_IMAGE_BYTES+1)
         require(len(payload)==info.st_size,'RECON_SOURCE','Source changed while reading.')

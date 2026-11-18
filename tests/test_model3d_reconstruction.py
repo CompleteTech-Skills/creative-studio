@@ -109,6 +109,22 @@ class ReconstructionTests(unittest.TestCase):
             with patch('model3d_reconstruction.MAX_IMAGE_PIXELS',2):
                 with self.assertRaises(RigError):read_image(path)
 
+    def test_image_parent_alias_preserves_leaf_symlink_rejection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            source_root = root/'source'; source_root.mkdir()
+            source = source_root/'image.png'
+            Image.new('RGB',(2,2)).save(source)
+            alias = root/'alias'
+            try:
+                alias.symlink_to(source_root,target_is_directory=True)
+                (source_root/'linked.png').symlink_to(source)
+            except OSError:
+                self.skipTest('This host cannot create symlinks.')
+            self.assertEqual(read_image(alias/source.name).payload,source.read_bytes())
+            with self.assertRaises(RigError):
+                read_image(alias/'linked.png')
+
     def test_damaged_jpeg_entropy_is_rejected_without_source_repair(self):
         source=Path(__file__).parent/'fixtures/strict-jpeg-valid.jpg'
         original=source.read_bytes()
