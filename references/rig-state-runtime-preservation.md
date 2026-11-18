@@ -171,8 +171,10 @@ poses can move a planted endpoint; no second solver is introduced to hide that
 drift. Root placement, fixed-world poles and authored contact goals retain the
 same native coordinate convention.
 
-Every evaluation exposes the native `contacts` and `constraints_applied`
-results. Contact residuals describe the returned final geometry, including when
+Every runtime evaluation exposes `contacts` and `constraints_applied` results.
+The native animation API preserves its historical per-solve `contacts` reports
+and adds separate `final_contacts`; the runtime exposes those final reports.
+Final contact residuals describe the returned geometry, including when
 a later chain affects an earlier endpoint. Unreachable or unconverged contacts
 return `status: controls-unsatisfied` instead of an unqualified playing status.
 The bounded best-effort pose remains available for inspection; it does not
@@ -188,3 +190,16 @@ explicitly authors the intended scale channel; rest-valued channels may be
 omitted by the native clip writer. The original 16 runtime and seven placement
 tests remain unchanged. All three runtime suites are enrolled in the existing
 animation/IK gate. Source tests do not replace exact-head execution and review.
+
+A nonzero transition is admitted only when the incoming controls preserve the
+captured boundary pose, with an absolute numerical tolerance of `1e-7` on the
+native FK matrices. Different contact goals, orientations or newly active poles
+can be incompatible even when their endpoint positions match. Such requests,
+cancellation or completion edges raise `RIG_STATE_CONTACT_TRANSITION` and
+atomically restore playback state and time. An explicitly configured
+zero-duration transition retains its immediate handoff semantics. Smooth
+handoff between conflicting physical contacts is outside this bounded runtime;
+it is not silently replaced with a snap or drifting solved-pose interpolation.
+Eight additional independently authored admission tests cover those rejection
+paths, complete rollback, a compatible transition and the explicit immediate
+control. Existing native orientation failure oracles remain unchanged.

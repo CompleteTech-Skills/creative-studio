@@ -130,6 +130,7 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
     changes = []
     if ordered:pose, changes = apply_constraints(rig.skeleton, pose, ordered, ordered=True)
     reports = []
+    final_reports = []
     if contacts:
         chains = {c['id']: c for c in controller_data['ik']}
         for contact in clip['contacts']:
@@ -144,12 +145,13 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
             reports.append(dict(id=contact['id'], chain=contact['chain'], target=target.tolist(),
                                 residual_m=result.residual_m, orientation_residual_rad=result.orientation_residual_rad,
                                 reachable=result.reachable, converged=result.converged))
-        if reports:
+        final_reports = deepcopy(reports)
+        if final_reports:
             # Later chains or constraints can affect an earlier endpoint. Report
             # residuals of the returned geometry, not an intermediate solve.
             world = evaluate_fk(rig.skeleton, pose)
             active = [c for c in clip['contacts'] if contact_is_active(c, local_time, duration)]
-            for report, contact in zip(reports, active):
+            for report, contact in zip(final_reports, active):
                 chain = chains[report['chain']]
                 endpoint = world[chain['bones'][-1]]
                 report['residual_m'] = float(np.linalg.norm(endpoint[:3, 3]-report['target']))
@@ -162,6 +164,7 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
                                            and (angle is None or angle <= 1e-5))
     root_delta = np.array(pose['bones'].get(root_id, {}).get('translation', root_rest))-root_rest
     return dict(pose=pose, time=local_time, cycle=cycles, root_motion=root_delta.tolist(), contacts=reports,
+                final_contacts=final_reports,
                 constraints_applied=changes, events=[deepcopy(e) for e in clip['events'] if abs(e['time']-local_time) < 1e-7])
 
 

@@ -11,6 +11,7 @@ from sys import float_info
 import numpy as np
 from rig_animation import evaluate_animation
 from rig_errors import RigError, require, object_hash
+from rig_skeleton import evaluate_fk
 from rig_states import map_states
 
 
@@ -131,6 +132,18 @@ class RigStateRuntime:
         first = self.rig.clips[self.recipes[state]['clips'][0]]
         start = self._authored_root(first, 0)
         offset = self._root(pose)-start
+        if self.blend_seconds:
+            # A nonzero fade promises a continuous captured-pose boundary.
+            # Conflicting goals or a newly active pole can otherwise snap the
+            # limb even at weight zero. Reject that unsupported handoff before
+            # changing state; never hide it by blending already solved poses.
+            incoming = evaluate_animation(self.rig, first, 0, _root_offset=offset,
+                                          _blend_from=pose, _blend_weight=0.)['pose']
+            source_fk = evaluate_fk(self.rig.skeleton, pose)
+            incoming_fk = evaluate_fk(self.rig.skeleton, incoming)
+            require(all(np.allclose(source_fk[bone], incoming_fk[bone], rtol=0, atol=1e-7)
+                        for bone in source_fk), 'RIG_STATE_CONTACT_TRANSITION',
+                    'Incoming controls change the captured transition pose; use compatible goals or an explicit zero-duration transition.')
         self.state, self.entered = state, float(now)
         self.source_pose, self.root_offset = deepcopy(pose), offset
         self.transition_count += 1
@@ -168,11 +181,11 @@ class RigStateRuntime:
             self._enter(target, boundary, self._pose(boundary))
         sample = self._sample(now)
         completion_unavailable = status == 'completion-unavailable'
-        if any(not report['reachable'] or not report['converged'] for report in sample['contacts']):
+        if any(not report['reachable'] or not report['converged'] for report in sample['final_contacts']):
             status = 'controls-unsatisfied'
         self.time = float(now)
         return dict(state=self.state, elapsed=now-self.entered, pose=sample['pose'],
-                    contacts=deepcopy(sample['contacts']),
+                    contacts=deepcopy(sample['final_contacts']),
                     constraints_applied=deepcopy(sample['constraints_applied']),
                     status=status, transition_count=self.transition_count,
                     pending_completion=self.recipes[self.state]['completion'] if completion_unavailable else None)
