@@ -18,6 +18,8 @@ import stat
 from continuity_contracts import (MAX_BYTES, canonical_bytes, decode_json, digest, ID,
     references, read_reference_bytes, validate_document, verify_references)
 
+from continuity_temporal import TemporalRegistryMixin
+
 MAX_RECORDS = 10000
 MAX_DB_BYTES = 256 * 1024 * 1024
 
@@ -40,7 +42,7 @@ def _unpack(payload):
     return decode_json(payload)
 
 
-class IdentityRegistry:
+class IdentityRegistry(TemporalRegistryMixin):
     """One local data-only database; explicit expected hashes guard every edit.
 
     Root and its ancestors must be trusted against arbitrary concurrent renaming.
@@ -99,6 +101,7 @@ class IdentityRegistry:
                 self.db.execute('CREATE TABLE IF NOT EXISTS revisions (id TEXT PRIMARY KEY, identity_id TEXT NOT NULL REFERENCES identities(id), version TEXT NOT NULL, hash TEXT NOT NULL REFERENCES contents(hash), review BLOB NOT NULL, deprecated INTEGER NOT NULL DEFAULT 0, UNIQUE(identity_id, version))')
                 self.db.execute('CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, document BLOB NOT NULL, hash TEXT NOT NULL)')
                 self.db.execute('CREATE TABLE IF NOT EXISTS history (sequence INTEGER PRIMARY KEY, action TEXT NOT NULL, subject TEXT NOT NULL, details BLOB NOT NULL)')
+                self._init_temporal()
         except BaseException:
             self.db.close()
             raise
