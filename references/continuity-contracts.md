@@ -213,3 +213,24 @@ This detects corrupted decision fields; it is not cryptographic protection
 against an attacker rewriting every database row. Identity and project payload
 IDs must match their database lookup keys. Selected migration shares revision
 verification across all repeated pins within its transaction, then discards it.
+
+
+### History archival and permanent promotion bindings
+
+The capped history table contains both ordinary audit events and permanent
+`promote` rows. The latter bind each immutable revision to its original review
+digest; they must remain in the live database for verified and recovery reads.
+Archival never means clearing the entire history table. Export `history()` to an
+external archive and verify that archive before pruning. In a SQLite transaction,
+prune only exported non-promotion rows, bounded by the exported sequence:
+`DELETE FROM history WHERE action <> 'promote' AND sequence < ?`.
+The bound is the last exported sequence; keep that highest-sequence row as a
+high-water mark so future inserts cannot reuse archived sequence numbers.
+Retain every `promote` row permanently, including those for deprecated revisions.
+Do not change their contents or reset/resequence surviving rows. The cap message
+names this boundary; the registry does not automatically delete history.
+
+Draft creation and editing can recover from a missing selected receipt without
+relaxing candidate references, explicit parent verification, stored decision
+bindings or promotion selection CAS. A replacement can be an independent root
+revision; naming a broken parent still requires that parent's valid native files.

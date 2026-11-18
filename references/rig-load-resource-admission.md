@@ -1,6 +1,7 @@
 # Native rig loading with caller resource limits
 
-`rig_models.load_rig(root, verify_source=True, *, limits=None)` accepts a partial
+`rig_models.load_rig(root, verify_source=True, *, limits=None,
+expected_manifest_sha256=None, max_total_morph_targets=None)` accepts a partial
 runtime limits dictionary. For example:
 
 ```python
@@ -14,6 +15,28 @@ caller value. Values must be finite, positive, bounded integers; integral floats
 are accepted on a runtime copy. Unknown keys and booleans are rejected. The returned
 `rig.manifest`, source bytes, content hashes and `rig_signature` are unchanged.
 Increasing a caller limit never increases the manifest limit.
+
+Callers holding an immutable rig reference can pass `expected_manifest_sha256`.
+The shared bounded JSON reader verifies the exact captured `rig.json` bytes
+against that pin before parsing or loading native arrays. Whitespace differences
+also fail with `RIG_HASH`; object equivalence does not establish byte identity.
+Omitting the pin preserves the existing load behavior. A caller must pass its pin
+on every native reload where a bound reference remains authoritative.
+
+`max_total_morph_targets` optionally caps the sum of distinct morph target names
+within each geometry mesh. The same name on two meshes counts twice; POSITION
+and NORMAL arrays within one target count once. Admission checks the actual
+geometry headers before any array materialization, and repeats on live loading.
+The cap accepts nonnegative integers (including normalized whole floats); zero
+admits a genuinely zero-morph rig. Omitting it preserves existing behavior.
+The native `limits['morphs']` remains a separate per-mesh cap. Consumers retaining
+several unique rigs must pass their remaining aggregate allowance on each load.
+
+Both aggregate budgets retain the byte charge measured by the initial bounded
+manifest reader. They account for the actual captured JSON object, without
+reopening or re-statting its path for that charge. Replacing `rig.json` with a
+smaller file after capture cannot lower the captured manifest's input or memory
+estimate; the optional manifest pin continues to verify the captured raw bytes.
 
 Before the first NumPy array allocation, admission inspects the complete native
 geometry/skin bundles and all retained JSON inputs. It measures actual NPY
@@ -47,7 +70,20 @@ operation deadlines and ownership, and verify source pins again after an operati
 In particular, retaining one loaded rig while loading a second rig requires separate
 reservation; this API does not make duplicate live objects free.
 
+Clip, identity and review JSON admission verifies each captured bounded byte
+snapshot against its immutable reference before parsing. Preflight and live clip
+loads both enforce caller duration, FPS and aggregate key counts. A substituted
+short clip cannot authorize loading a different manifest-bound longer clip.
+JSON, hashing and binary snapshots use the same descriptor-safe reader, including
+when a regular file becomes a FIFO between size admission and opening.
+
 The `test_rig_load_limits.py` family is part of the existing skinning CI gate. Its
 real retained robot exercises signature/hash preservation, aggregate multi-skin and
 clip admission, 48 actual 512×512 PNG textures under a stricter caller cap, compressed
 pixel expansion, malformed NPY/ZIP inputs and rejection before array materialization.
+
+
+The shared loader also retains explicit scoped directory roots through native reads.
+Metadata and array ZIP members use the canonical 64 KiB bounded reader, NumPy
+headers pass the bounded header-reader adapter before parser allocation, and
+JSON/hash/binary reads use the shared no-follow descriptor reader.
