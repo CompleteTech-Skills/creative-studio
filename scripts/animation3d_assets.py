@@ -7,7 +7,7 @@ from copy import deepcopy
 import hashlib
 import io
 from types import SimpleNamespace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 import zipfile
 import zlib
@@ -177,7 +177,7 @@ class Snapshot:
         if expected is not None:
             require(value.get('id') == expected['id'] and value.get('version') == expected['version'],
                     'ANIMATION_IDENTITY', 'Native source identity/version differs.')
-        parent = Path(name).parent
+        parent = PurePosixPath(name).parent
         kind = value.get('kind')
         if kind == 'hatch-3d-rig':
             from rig_contracts import DEFAULT_LIMITS, validate_contract as validate_rig_contract
