@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -18,6 +17,10 @@ import uuid
 import zipfile
 
 from PIL import Image
+from native_journal import (AdmittedRoot as _AdmittedRoot, admitted as _admitted_journal_root,
+                            admit as _admit_journal_root, admission as _journal_admission,
+                            operation as _journal_operation, pinned_root as _journal_directory,
+                            pinned_admission as _pinned_journal_admission)
 from profile_spec import load_profile
 from asset_contracts import versions, resolve_ref, check_image, hash_object, REVIEW_DIMENSIONS, generation_projection, extraction_projection, MAX_SOURCE_BYTES
 
@@ -394,27 +397,20 @@ def _journal_payload(data):
     return payload
 
 
-@dataclass(frozen=True)
-class _AdmittedRoot:
-    """In-process writer provenance; never derive this from journal fields."""
-    path: str
-
-    def __fspath__(self):
-        return self.path
-
-
 def _save_admitted(root, data):
-    """Keep an operation's earlier root admission through the public save hook."""
-    return save(_AdmittedRoot(os.path.abspath(root)), data)
+    """Preserve earlier admission through the public two-argument save hook."""
+    return save(_admitted_journal_root(root), data)
 
 
 def save(root, data):
-    # A direct save is a fresh admission of its caller-supplied destination.
-    # An active operation carries its canonical name out of band, so neither
-    # a replaced leaf nor a replaced ancestor is resolved during publication.
-    root = Path(root.path) if isinstance(root, _AdmittedRoot) else Path(root).resolve()
-    with _input_parent(root / 'imagegen-jobs.json') as (parent, leaf):
-        _save_at(parent, leaf, data)
+    # A direct save admits its explicit destination. Lifecycle writers instead
+    # retain the identity captured before their reads and accounting changes.
+    witness = root if isinstance(root, _AdmittedRoot) else None
+    path = Path(witness.path) if witness is not None else Path(root).resolve()
+    with _journal_directory(path) as (parent, identity):
+        if witness is not None and witness.identity != identity:
+            raise ValueError('native journal directory differs from its original admission')
+        _save_at(parent, 'imagegen-jobs.json', data)
 
 
 def _save_at(parent, leaf, data):
@@ -473,8 +469,8 @@ def inputs(root, job, *, _reader=None):
         load_profile(json.loads(reader(root / 'profile.json'))), job['id']))
     return hashes
 
+@_journal_operation
 def revise_profile(root, data, path):
-    root = Path(root).resolve()
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running claims before a profile revision')
     before, after = load_profile(root / 'profile.json'), load_profile(path)
@@ -543,6 +539,7 @@ def _native_budget(root, data, *, recovery=False, claim_handoff=None):
     from director_budget import NativeBudget
     return NativeBudget.for_run(root, data, recovery=recovery, claim_handoff=claim_handoff)
 
+@_journal_operation
 def record_budget_usage(root, data, name, token, observation):
     """Record actual usage independently of source validity under native ownership."""
     budget = _native_budget(root, data, recovery=True)
@@ -550,6 +547,7 @@ def record_budget_usage(root, data, name, token, observation):
         raise ValueError('this run has not opted into a Director budget')
     return budget.record(job_for(data, name), token, observation)
 
+@_journal_operation
 def release_budget(root, data, name, *, idempotency_key, outcome, evidence):
     """Release an evidenced nonrunning remainder under existing native ownership."""
     budget = _native_budget(root, data, recovery=True)
@@ -558,9 +556,9 @@ def release_budget(root, data, name, *, idempotency_key, outcome, evidence):
     return budget.release(job_for(data, name), idempotency_key=idempotency_key,
                           outcome=outcome, evidence=evidence)
 
+@_journal_operation
 def reconcile(root, data):
     """Invalidate stale work without ever launching or duplicating generation."""
-    root = Path(root).resolve()
     budget = _native_budget(root, data, recovery=True)
     if budget is not None:
         budget.reconcile()
@@ -703,14 +701,15 @@ def recover_prepare(root):
         os.replace(stage, root)
     path.unlink()
     if (root / 'imagegen-jobs.json').is_file():
-        data = manifest(root)
-        event(data, 'prepare-recovered', preserved_previous=str(backup) if backup.exists() else None)
-        _save_admitted(root, data)
+        with _journal_admission(root):
+            data = manifest(root)
+            event(data, 'prepare-recovered', preserved_previous=str(backup) if backup.exists() else None)
+            _save_admitted(root, data)
 
 
+@_journal_operation
 def claim(root, data, name):
     _require_current_authority(data)
-    root = Path(root).resolve()
     reconcile(root, data)
     job = job_for(data, name)
     validate_prompt_paths(job)
@@ -798,28 +797,29 @@ def claim(root, data, name):
         'input_images': json.loads(json.dumps(job['input_images'])),
         'identity': request.get('identity', {}), 'resolved_style': request.get('resolved_style')})
     _save_admitted(root, data)
-    if budget is not None:
-        budget.publish_claim(job, token)
-    check_captured_inputs()
-    return {'job': name, 'token': job['token'], 'generation_skill': '$imagegen', 'attempt': job['attempts'],
-            **({'budget_reservation_id': job['budget_operation']['reservation_id'],
-                'budget_operation_id': job['budget_operation']['operation_id']} if budget is not None else {}),
-            'prompt': str(root / selected_prompt),
-            'retry_prompt': str(root / job.get('retry_prompt_file', job['prompt_file'])),
-            'input_images': input_images,
-            'receipt_template': {'generation_skill': '$fixture' if data['fixture_mode'] else '$imagegen',
-                                 'input_hashes': hashes, 'job': name, 'token': job['token']},
-            'previous_failures': [e for e in job['history'] if e.get('event') in ('failed', 'repair')],
-            'identity': request.get('identity', {}),
-            'resolved_style': request.get('resolved_style'),
-            'style_warnings': warnings,
-            'tool_arguments': tool_arguments,
-            'attachment_rules': 'View local inputs before editing. Attach every input using referenced_image_paths when all are local; otherwise num_last_images_to_include (max 5). Never use both. A brand-new text-only base omits both.',
-            'output_rules': 'Follow installed imagegen skill, including image output; return selected source and QA note. Do not mutate manifests.'}
+    with _pinned_journal_admission(root):
+        if budget is not None:
+            budget.publish_claim(job, token)
+        check_captured_inputs()
+        return {'job': name, 'token': job['token'], 'generation_skill': '$imagegen', 'attempt': job['attempts'],
+                **({'budget_reservation_id': job['budget_operation']['reservation_id'],
+                    'budget_operation_id': job['budget_operation']['operation_id']} if budget is not None else {}),
+                'prompt': str(root / selected_prompt),
+                'retry_prompt': str(root / job.get('retry_prompt_file', job['prompt_file'])),
+                'input_images': input_images,
+                'receipt_template': {'generation_skill': '$fixture' if data['fixture_mode'] else '$imagegen',
+                                     'input_hashes': hashes, 'job': name, 'token': job['token']},
+                'previous_failures': [e for e in job['history'] if e.get('event') in ('failed', 'repair')],
+                'identity': request.get('identity', {}),
+                'resolved_style': request.get('resolved_style'),
+                'style_warnings': warnings,
+                'tool_arguments': tool_arguments,
+                'attachment_rules': 'View local inputs before editing. Attach every input using referenced_image_paths when all are local; otherwise num_last_images_to_include (max 5). Never use both. A brand-new text-only base omits both.',
+                'output_rules': 'Follow installed imagegen skill, including image output; return selected source and QA note. Do not mutate manifests.'}
 
+@_journal_operation
 def select_base(root, data, source_origin=None):
     """Calibrate from the actual selected image, never a text-only fallback guess."""
-    root = Path(root).resolve()
     from prepare_pet_run import CHROMA_KEY_CANDIDATES, parse_hex_color, regenerate_prompts
     from extract_strip_frames import mask_background, pixels
     path = root / 'references/canonical-base.png'
@@ -886,8 +886,8 @@ def base_review_current(root, data):
         return False
 
 
+@_journal_operation
 def record_base_review(root, data, note, accept_color_warning=False):
-    root = Path(root).resolve()
     reconcile(root, data)
     if job_for(data, 'base')['status'] != 'generated' or not note.strip():
         raise ValueError('current canonical base and a visual inspection note are required')
@@ -903,8 +903,8 @@ def record_base_review(root, data, note, accept_color_warning=False):
     return {'base_reviewed': True, 'calibration': settings}
 
 
+@_journal_operation
 def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
-    root = Path(root).resolve()
     job = job_for(data, name)
     if job['status'] != 'running' or token != job.get('token'):
         raise ValueError('generation token is not active')
@@ -968,8 +968,8 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
     _save_admitted(root, data)
     return {'generated': name, 'fixture': fixture, 'settings': read(root / 'extraction-settings.json') if name == 'base' else None}
 
+@_journal_operation
 def fail(root, data, name, token, reason, *, budget_usage=None):
-    root = Path(root).resolve()
     job = job_for(data, name)
     if job['status'] != 'running' or job.get('token') != token:
         raise ValueError('active token required')
@@ -996,8 +996,8 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
         budget.retain_finalization(job)
     return {'failed': name, 'remaining_attempts': max(0, data.get('limits', {}).get('attempts_per_job', RETRIES) - job['attempts'])}
 
+@_journal_operation
 def repair(root, data, name, reason):
-    root = Path(root).resolve()
     if not reason.strip():
         raise ValueError('specific repair reason required')
     affected = descendants(data, name)
@@ -1020,8 +1020,8 @@ def repair(root, data, name, reason):
     return {'pending': sorted(affected), 'reason': reason}
 
 
+@_journal_operation
 def configure(root, data, args):
-    root = Path(root).resolve()
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running handoffs before changing extraction settings')
     settings = read(root / 'extraction-settings.json')
@@ -1087,8 +1087,8 @@ def configure(root, data, args):
     return {'settings': settings, 'pending': pending, 'changed': changed, 'model_call_required': bool(pending)}
 
 
+@_journal_operation
 def derive(root, data, name, reason, approved):
-    root = Path(root).resolve()
     if not approved or not reason.strip():
         raise ValueError('explicit mirror approval and a visual identity/asymmetry decision note are required')
     reconcile(root, data)
@@ -1145,8 +1145,8 @@ def artifact_hashes(root):
 
 
 @contextmanager
+@_journal_operation
 def operation(root, data, kind):
-    root = Path(root).resolve()
     old = data.get('operation')
     if old and old.get('status') == 'running':
         event(data, 'interrupted-operation', operation=old)
@@ -1166,8 +1166,8 @@ def operation(root, data, kind):
         _save_admitted(root, data)
 
 
+@_journal_operation
 def validate(root, data):
-    root = Path(root).resolve()
     reconcile(root, data)
     if any(j['status'] != 'generated' for j in data['jobs']):
         raise ValueError('all generation handoffs must be complete and current')
@@ -1206,6 +1206,7 @@ def validate(root, data):
     return {'validated': True, 'extracted_states': changed, 'visual_review_required': True}
 
 
+@_journal_operation
 def require_valid(root, data):
     reconcile(root, data)
     record = data.get('gates', {}).get('validated')
@@ -1234,8 +1235,8 @@ def style_provenance(root, data):
             'interpretation': 'Requested generation guidance, not proof of style quality or imagegen origin. Imported pixels retain their original rendering. Passing visual review is recorded separately.'}
 
 
+@_journal_operation
 def review_template(root, data):
-    root = Path(root).resolve()
     require_valid(root, data)
     metrics = read(root / 'qa/review.json')
     style_risks = style_warnings(root)
@@ -1247,8 +1248,8 @@ def review_template(root, data):
                 'warning_notes': {w: '' for w in warnings[s['id']]}} for s in load_profile(root / 'profile.json')['states']}}
 
 
+@_journal_operation
 def review(root, data, receipt):
-    root = Path(root).resolve()
     require_valid(root, data)
     value = read(receipt)
     states = {s['id'] for s in load_profile(root / 'profile.json')['states']}
@@ -1288,6 +1289,7 @@ def review(root, data, receipt):
     return {'reviewed': True, 'accepted': value['accepted'], 'fixture': data['fixture_mode']}
 
 
+@_journal_operation
 def require_review(root, data):
     require_valid(root, data)
     record = data['gates'].get('reviewed')
@@ -1306,8 +1308,8 @@ def _destination(root, destination):
     return path
 
 
+@_journal_operation
 def export(root, data, destination):
-    root = Path(root).resolve()
     require_valid(root, data)
     from export_assets import export_assets
     destination = _destination(root, destination)
@@ -1345,8 +1347,8 @@ def tree_hashes(root, exclude=()):
     return files
 
 
+@_journal_operation
 def package(root, data, destination):
-    root = Path(root).resolve()
     require_review(root, data)
     destination = _destination(root, destination)
     if destination.exists():
@@ -1443,8 +1445,8 @@ def _existing_install(destination):
         image.verify()
 
 
+@_journal_operation
 def install(root, data, package_path, destination, allow_fixture=False, fail_after_backup=False, fail_after_promote=False):
-    root = Path(root).resolve()
     require_review(root, data)
     package_path = Path(package_path).resolve()
     record = data['gates'].get('packaged')
@@ -1517,8 +1519,8 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
     return data['gates']['installed']
 
 
+@_journal_operation
 def rollback(root, data):
-    root = Path(root).resolve()
     records = data.get('installations', []) + ([data['gates']['installed']] if data.get('gates', {}).get('installed') else [])
     if not records or not records[-1].get('backup'):
         raise ValueError('no recoverable previous installation recorded')
@@ -1547,8 +1549,8 @@ def rollback(root, data):
     return {'restored': str(destination), 'displaced': str(displaced)}
 
 
+@_journal_operation
 def cleanup(root, data, mode, apply):
-    root = Path(root).resolve()
     require_review(root, data)
     if mode not in ('repair', 'minimal-delivery'):
         raise ValueError('unknown retention mode')
@@ -1610,8 +1612,8 @@ def _review_ok(root, data):
         return False
 
 
+@_journal_operation
 def status(root, data):
-    root = Path(root).resolve()
     reconcile(root, data)
     try:
         require_valid(root, data)
@@ -1657,8 +1659,8 @@ def status(root, data):
     return result
 
 
+@_journal_operation
 def resume(root, data):
-    root = Path(root).resolve()
     if data.get('pending_install'):
         destination = Path(data['pending_install']['destination']).resolve()
         with ownership(destination):
@@ -1678,8 +1680,8 @@ def resume(root, data):
     return result
 
 
+@_journal_operation
 def configure_limits(root, data, args):
-    root = Path(root).resolve()
     import math
     value = dict(data.get('limits', {}))
     for argument, key, maximum in (('max_attempts', 'attempts_per_job', 100), ('concurrency', 'concurrency', 16), ('max_calls', 'generation_calls', 100000)):
@@ -1702,8 +1704,8 @@ def configure_limits(root, data, args):
     return {'limits': value, 'measurements': 'claims count includes failed and unresolved calls; monetary usage is unavailable'}
 
 
+@_journal_operation
 def annotate(root, data, name, path):
-    root = Path(root).resolve()
     job = job_for(data, name)
     if name == 'base' or job['status'] != 'generated':
         raise ValueError('annotations require a current state source')
@@ -1727,6 +1729,7 @@ def annotate(root, data, name, path):
     return {'annotation': name, 'generation_reused': True, 'visual_review_required': True}
 
 
+@_journal_operation
 def calibrate(root, data, path, apply=False):
     from statistics import median
     from types import SimpleNamespace
@@ -1846,40 +1849,41 @@ def main():
             elif args.command == 'prepare':
                 result = prepare(root, args)
             else:
-                data = manifest(root)
-                if args.command == 'status': result = status(root, data)
-                elif args.command == 'resume': result = resume(root, data)
-                elif args.command == 'claim': result = claim(root, data, args.job)
-                elif args.command == 'ingest': result = ingest(root, data, args.job, args.source, args.token, args.note, args.receipt, args.fixture)
-                elif args.command == 'import-source':
-                    from source_interface import import_source
-                    result = import_source(root, data, args.job, args.receipt, args.note)
-                elif args.command == 'base-review': result = record_base_review(root, data, args.note, args.accept_color_warning)
-                elif args.command == 'fail': result = fail(root, data, args.job, args.token, args.note)
-                elif args.command == 'repair': result = repair(root, data, args.job, args.note)
-                elif args.command == 'configure': result = configure(root, data, args)
-                elif args.command == 'revise-profile': result = revise_profile(root, data, args.profile)
-                elif args.command == 'derive': result = derive(root, data, args.job, args.note, args.approve_mirror)
-                elif args.command == 'validate': result = validate(root, data)
-                elif args.command == 'review-template': result = review_template(root, data)
-                elif args.command == 'review-ui':
-                    from review_ui import build_review
-                    result = build_review(root, data, args.destination)
-                elif args.command == 'archive':
-                    from portable_runs import archive_run
-                    result = archive_run(root, data, args.destination)
-                elif args.command == 'limits': result = configure_limits(root, data, args)
-                elif args.command == 'annotate': result = annotate(root, data, args.job, args.receipt)
-                elif args.command == 'calibrate': result = calibrate(root, data, args.receipt, args.apply)
-                elif args.command == 'review': result = review(root, data, args.receipt)
-                elif args.command == 'export': result = export(root, data, args.destination)
-                elif args.command == 'package': result = package(root, data, args.destination)
-                elif args.command == 'install':
-                    if not args.destination or not args.package_path: raise ValueError('install needs --destination and --package-path')
-                    with ownership(Path(args.destination).resolve()):
-                        result = install(root, data, args.package_path, args.destination, args.test_destination)
-                elif args.command == 'rollback': result = rollback(root, data)
-                elif args.command == 'cleanup': result = cleanup(root, data, args.mode, args.apply)
+                with _journal_admission(root):
+                    data = manifest(root)
+                    if args.command == 'status': result = status(root, data)
+                    elif args.command == 'resume': result = resume(root, data)
+                    elif args.command == 'claim': result = claim(root, data, args.job)
+                    elif args.command == 'ingest': result = ingest(root, data, args.job, args.source, args.token, args.note, args.receipt, args.fixture)
+                    elif args.command == 'import-source':
+                        from source_interface import import_source
+                        result = import_source(root, data, args.job, args.receipt, args.note)
+                    elif args.command == 'base-review': result = record_base_review(root, data, args.note, args.accept_color_warning)
+                    elif args.command == 'fail': result = fail(root, data, args.job, args.token, args.note)
+                    elif args.command == 'repair': result = repair(root, data, args.job, args.note)
+                    elif args.command == 'configure': result = configure(root, data, args)
+                    elif args.command == 'revise-profile': result = revise_profile(root, data, args.profile)
+                    elif args.command == 'derive': result = derive(root, data, args.job, args.note, args.approve_mirror)
+                    elif args.command == 'validate': result = validate(root, data)
+                    elif args.command == 'review-template': result = review_template(root, data)
+                    elif args.command == 'review-ui':
+                        from review_ui import build_review
+                        result = build_review(root, data, args.destination)
+                    elif args.command == 'archive':
+                        from portable_runs import archive_run
+                        result = archive_run(root, data, args.destination)
+                    elif args.command == 'limits': result = configure_limits(root, data, args)
+                    elif args.command == 'annotate': result = annotate(root, data, args.job, args.receipt)
+                    elif args.command == 'calibrate': result = calibrate(root, data, args.receipt, args.apply)
+                    elif args.command == 'review': result = review(root, data, args.receipt)
+                    elif args.command == 'export': result = export(root, data, args.destination)
+                    elif args.command == 'package': result = package(root, data, args.destination)
+                    elif args.command == 'install':
+                        if not args.destination or not args.package_path: raise ValueError('install needs --destination and --package-path')
+                        with ownership(Path(args.destination).resolve()):
+                            result = install(root, data, args.package_path, args.destination, args.test_destination)
+                    elif args.command == 'rollback': result = rollback(root, data)
+                    elif args.command == 'cleanup': result = cleanup(root, data, args.mode, args.apply)
             if args.out:
                 out = Path(args.out).resolve()
                 atomic(out, result)

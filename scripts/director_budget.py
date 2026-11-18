@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from native_journal import operation as _journal_operation
 import re
 import tempfile
 import time
@@ -948,11 +949,11 @@ def require_production_budget(root, state, run, data):
           'Production workflow and acquisition must reference the same authoritative ledger.')
 
 
+@_journal_operation
 def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate,
                        retry_allowance, evidence, unknown_price=False, unknown_price_cap=None):
     """Opt a fresh Hatch run into one existing project ledger; never submit work."""
     import hatch
-    root = Path(root).resolve()
     owner = root if owner_root is None else Path(owner_root).resolve()
     ledger_root = Path(ledger_root).absolute()
     project = next((parent for parent in root.parents if (parent / 'project.json').is_file()), None)
@@ -1054,7 +1055,9 @@ class NativeBudget:
         _need(type(recovery) is bool, 'INPUT', 'Recovery mode must be explicit.')
         self.recovery = recovery
         self.claim_handoff = None if claim_handoff is None else _handoff_hashes(claim_handoff)
-        self.root, self.data = Path(root).resolve(), data
+        import hatch
+        self._journal_root = hatch._admit_journal_root(root)
+        self.root, self.data = Path(self._journal_root.path), data
         _require_unrestored_budget(data)
         self.config = data['director_budget']
         config = self.config
@@ -1246,9 +1249,11 @@ class NativeBudget:
 
     def _ledger_retry(self, action):
         """Retry only transient local CAS/lock contention with the same intent."""
+        import hatch
         for attempt in range(8):
             try:
-                return action()
+                with hatch._pinned_journal_admission(self._journal_root):
+                    return action()
             except RigError as exc:
                 if exc.report['code'] not in ('RIG_BUSY', 'DIRECTOR_BUDGET_STALE') or attempt == 7:
                     raise
@@ -1292,6 +1297,7 @@ class NativeBudget:
         This event measures no provider usage and owns no acquisition state.
         """
         _need(not self.recovery, 'STATE', 'Recovery cannot publish native claims.')
+        self._require_current_journal()
         operation = self._check_claim_bindings(job)
         _need(operation is not None and job['status'] == 'running' and job.get('token') == token,
               'BINDING', 'Publication requires the exact durable native claim.')
@@ -1377,7 +1383,7 @@ class NativeBudget:
 
     def _save(self):
         import hatch
-        hatch._save_admitted(self.root, self.data)
+        hatch._save_admitted(self._journal_root, self.data)
 
     def _proof(self, value):
         with tempfile.TemporaryDirectory(prefix='.native-budget-', dir=self.ledger.root.parent) as temporary:
@@ -1414,9 +1420,10 @@ class NativeBudget:
 
     def _require_current_journal(self):
         import hatch
-        current = hatch.manifest(self.root, recovery=True)
-        _need(object_hash(current) == object_hash(self.data), 'BINDING',
-              'Native finalization requires the current on-disk owner journal.')
+        with hatch._pinned_journal_admission(self._journal_root):
+            current = hatch.manifest(self.root, recovery=True)
+            _need(object_hash(current) == object_hash(self.data), 'BINDING',
+                  'Native finalization requires the current on-disk owner journal.')
 
     def _legacy_release_witness(self, job, row):
         """Bind the owner's all-attempt attestation to verifiable retained history."""
@@ -1470,24 +1477,26 @@ class NativeBudget:
             return deepcopy(matches[0]['receipt'])
         options = dict(outcome=payload['outcome'], evidence=event['evidence'],
                        idempotency_key=event['key'], expected_revision=self.ledger.snapshot()['sha256'])
-        if 'nonexecution_attestation' in payload:
-            def check_legacy(row):
-                _need(self._legacy_release_witness(job, row) == payload['nonexecution_attestation'],
-                      'BINDING', 'Historical cancellation differs from its retained attestation.')
-            receipt = self.ledger._release(operation['reservation_id'], check_legacy=check_legacy, **options)
-        elif payload['outcome'] in ('unstarted', 'canceled-known'):
-            receipt = matching_release()
-            if receipt is None:
-                try:
-                    receipt = self.ledger.release(operation['reservation_id'], _native_run=self.root, **options)
-                except RigError as exc:
-                    if exc.report['code'] not in ('DIRECTOR_BUDGET_STALE', 'DIRECTOR_BUDGET_STATE', 'DIRECTOR_BUDGET_UNCERTAIN'):
-                        raise
-                    receipt = matching_release()
-                    if receipt is None:
-                        raise
-        else:
-            receipt = self.ledger.settle(operation['reservation_id'], usage=payload['usage'], _native_run=self.root, **options)
+        import hatch
+        with hatch._pinned_journal_admission(self._journal_root):
+            if 'nonexecution_attestation' in payload:
+                def check_legacy(row):
+                    _need(self._legacy_release_witness(job, row) == payload['nonexecution_attestation'],
+                          'BINDING', 'Historical cancellation differs from its retained attestation.')
+                receipt = self.ledger._release(operation['reservation_id'], check_legacy=check_legacy, **options)
+            elif payload['outcome'] in ('unstarted', 'canceled-known'):
+                receipt = matching_release()
+                if receipt is None:
+                    try:
+                        receipt = self.ledger.release(operation['reservation_id'], _native_run=self.root, **options)
+                    except RigError as exc:
+                        if exc.report['code'] not in ('DIRECTOR_BUDGET_STALE', 'DIRECTOR_BUDGET_STATE', 'DIRECTOR_BUDGET_UNCERTAIN'):
+                            raise
+                        receipt = matching_release()
+                        if receipt is None:
+                            raise
+            else:
+                receipt = self.ledger.settle(operation['reservation_id'], usage=payload['usage'], _native_run=self.root, **options)
         if event.get('receipt') != receipt:
             event['receipt'] = receipt
             self._save()

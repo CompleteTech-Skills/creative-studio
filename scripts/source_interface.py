@@ -1,12 +1,13 @@
 """Explicit imported-art interface. This module never calls an image model."""
 from pathlib import Path
+from native_journal import operation as _journal_operation
 from PIL import Image
 from asset_contracts import check_image, sha, strict_keys, text, MAX_SOURCE_PIXELS
 
 
+@_journal_operation
 def import_source(root, data, name, descriptor_path, note):
     import hatch
-    root = Path(root).resolve()
     hatch.reconcile(root, data)
     job = hatch.job_for(data, name)
     if job['status'] == 'running':

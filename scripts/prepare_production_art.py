@@ -113,9 +113,10 @@ def prepare(root: Path, character: str):
         _require_unused(root)
         _require_unused(transaction_path)
         result = hatch.prepare(root, args)
-        data = hatch.manifest(root)
-        data['limits'].update(attempts_per_job=1, concurrency=1, generation_calls=2)
-        hatch._save_admitted(root, data)
+        with hatch._journal_admission(root):
+            data = hatch.manifest(root)
+            data['limits'].update(attempts_per_job=1, concurrency=1, generation_calls=2)
+            hatch._save_admitted(root, data)
         return result
     except BaseException:
         # Only remove inputs exclusively created here, and leave any replacement

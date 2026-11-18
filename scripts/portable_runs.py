@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+from native_journal import operation as _journal_operation
 import shutil
 import tempfile
 import zipfile
@@ -21,8 +22,8 @@ def _unique_json_object(pairs):
     return result
 
 
+@_journal_operation
 def migrate(root):
-    root = Path(root).resolve()
     import hatch
     data = hatch.read(root / 'imagegen-jobs.json')
     if data.get('schema_version') == 3:
@@ -133,39 +134,40 @@ def restore_run(archive_path, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix='.hatch-restore-', dir=destination.parent))
     try:
-        with zipfile.ZipFile(archive_path) as archive:
-            for name in receipt['files']:
-                path = hatch.inside(stage, name)
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(archive.read(name))
-        data = hatch.read(stage / 'imagegen-jobs.json')
-        jobs = data.get('jobs')
-        if 'director_budget' in data or (isinstance(jobs, list) and any(
-                isinstance(job, dict) and 'budget_operation' in job for job in jobs)):
-            raise ValueError('budgeted acquisitions cannot be restored without an explicit accounting reconciliation transaction')
-        if data.get('schema_version') == 2:
-            migrate(stage)
-            data = hatch.manifest(stage)
-        elif data.get('schema_version') != 3:
-            raise ValueError('archive needs unsupported run migration')
-        prior_versions = receipt.get('versions')
-        revalidate = prior_versions != versions() or receipt.get('mode') != 'full'
-        if revalidate:
-            hatch.invalidate(data, 'restoration tool versions or compact snapshot require revalidation')
-        # Never act on external installations/package locations from the archived host.
-        for key in ('installed', 'packaged'):
-            previous = data.get('gates', {}).pop(key, None)
-            if previous:
-                hatch.event(data, 'external-receipt-retained', kind=key, previous=previous)
-        data.pop('pending_install', None)
-        hatch.event(data, 'restored', archive_sha256=hatch.digest(archive_path), revalidation_required=revalidate)
-        hatch._save_admitted(stage, data)
-        hatch.manifest(stage)
-        if not revalidate and not hatch._review_ok(stage, data):
-            revalidate = True
-            hatch.invalidate(data, 'restored artifacts do not satisfy current validation and review')
+        with hatch._journal_admission(stage):
+            with zipfile.ZipFile(archive_path) as archive:
+                for name in receipt['files']:
+                    path = hatch.inside(stage, name)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(archive.read(name))
+            data = hatch.read(stage / 'imagegen-jobs.json')
+            jobs = data.get('jobs')
+            if 'director_budget' in data or (isinstance(jobs, list) and any(
+                    isinstance(job, dict) and 'budget_operation' in job for job in jobs)):
+                raise ValueError('budgeted acquisitions cannot be restored without an explicit accounting reconciliation transaction')
+            if data.get('schema_version') == 2:
+                migrate(stage)
+                data = hatch.manifest(stage)
+            elif data.get('schema_version') != 3:
+                raise ValueError('archive needs unsupported run migration')
+            prior_versions = receipt.get('versions')
+            revalidate = prior_versions != versions() or receipt.get('mode') != 'full'
+            if revalidate:
+                hatch.invalidate(data, 'restoration tool versions or compact snapshot require revalidation')
+            # Never act on external installations/package locations from the archived host.
+            for key in ('installed', 'packaged'):
+                previous = data.get('gates', {}).pop(key, None)
+                if previous:
+                    hatch.event(data, 'external-receipt-retained', kind=key, previous=previous)
+            data.pop('pending_install', None)
+            hatch.event(data, 'restored', archive_sha256=hatch.digest(archive_path), revalidation_required=revalidate)
             hatch._save_admitted(stage, data)
-        _rename_no_replace(stage, destination)
+            hatch.manifest(stage)
+            if not revalidate and not hatch._review_ok(stage, data):
+                revalidate = True
+                hatch.invalidate(data, 'restored artifacts do not satisfy current validation and review')
+                hatch._save_admitted(stage, data)
+            _rename_no_replace(stage, destination)
     finally:
         if stage.exists():
             shutil.rmtree(stage)

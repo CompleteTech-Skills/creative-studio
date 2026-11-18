@@ -656,6 +656,51 @@ replacement leaf nor a replacement ancestor is resolved again. Journal fields
 such as `run_dir` never choose the write destination. Imported-art admission
 normalizes its root before checking that the originals are outside the run.
 
+Lifecycle admission now records the original directory identity before native
+reads and accounting changes. Nested operations share that out-of-band witness,
+and a NativeBudget instance retains it after construction. Journal publication
+opens the canonical directory without following aliases, verifies its native
+identity against the earlier admission, and writes through that same held pin.
+POSIX uses the device/inode pair; Windows uses the pinned native volume/file ID.
+An ordinary replacement directory is therefore refused as well as a substituted
+symlink or junction. The initial pin is closed after recording identity, so
+legitimate staging promotions and the existing namespace-race tests still run.
+After durable journal save, the original directory is pinned again across
+ledger mutation and the final handoff checks. A surviving replacement prevents
+the handoff from returning; an already committed native publication remains
+paired with its original running journal for explicit reconciliation. Native
+settlement, release and retry mutations likewise retain the admitted directory
+through the ledger write. This does not invent a provider execution or spend.
+Fresh caller paths retain their filesystem meaning through alias-plus-parent
+components; nested operations inherit the canonical admission without resolving
+it again.
+The shared native_journal module keeps admission identical when Hatch runs as
+__main__ and its collaborators import hatch separately. These guarantees concern
+journal writes and ledger publication, not every staging extraction or cleanup
+operation elsewhere in the repository.
+
+The original independent Linux observation test is preserved byte-for-byte in
+`tests/independent/test_native_journal_admission.py` (SHA-256
+`a917868963b5f0bb47fa169fbc3048b8a5ae6ae7c6d04f8a1c06db0495e3b0a0`).
+Run it explicitly with `PYTHONPATH=scripts:tests python
+ tests/independent/test_native_journal_admission.py`; it inspects Linux `/proc`
+and is outside automatic cross-platform discovery. The automatic
+`test_hatch_directory_identity.py` suite uses real ordinary-directory renames
+inside temporary synthetic fixtures, keeps the project owner and ledger intact,
+and checks the replacement journal, original journal and ledger independently.
+Its scheduling hooks do not replace file writes or accounting. Local Linux
+results are not Windows or macOS execution evidence.
+
+The two later independent Linux controls are also preserved unchanged in
+`tests/independent/test_native_journal_alias_parent.py` and
+`tests/independent/test_native_journal_commit_window.py`. They check actual
+filesystem parent resolution and observe the directory pin at the real native
+ledger writer, respectively. The automatic directory-identity module includes
+corresponding real temporary-filesystem regressions and an explicit direct-save
+positive control. On Windows a live native pin can refuse the scheduled rename;
+on POSIX the namespace replacement runs and the post-publication identity check
+refuses to return a handoff. Neither branch is represented as provider execution.
+
 Earlier descriptor formats without `@journal-headroom` remain recovery-only.
 For an original unstarted reservation, retain nonexecution evidence and call
 `hatch.release_budget` under `hatch.ownership`, using the original recovery
