@@ -1,86 +1,105 @@
-# Native asset inspection
+# GLB/glTF continuity inspection
 
-Issue #114 adds inspection and compatibility orchestration over the existing
-`rig_import`, `rig_gltf`, `rig_models`, `rig_geometry`, skeleton, skinning,
-attachment and retargeting owners. It introduces no parser, renderer, acquisition
-service, identity registry or review authority. Existing production-v1 documents
-and fixed pet contracts remain unchanged.
+This slice of issue #114 uses the canonical rig importer's glTF reader,
+preflight, and model importer. It provides read-only engineering evidence for
+GLB/glTF and uses the existing continuity reference format
+`{id, version, path, sha256, kind}`. IDs and versions are caller-supplied
+pointers. They do not grant visual approval or semantic identity.
 
 ## Exact inputs and operation
 
-```python
-from continuity_inspection import inspect_asset, compare_assets, classify_rigs
+Supply the source and every native local buffer or image dependency as
+explicit, project-relative pins. The inspector rejects missing pins, unused
+pins, changed bytes, and duplicate or case-alias paths. Embedded data uses
+the source pin. The inspector reads pins through the existing native payload
+reader, including active registered directory capabilities. The model reader
+uses a private copy of the pinned bytes. Original and variant pins are
+rechecked against the admitted directory identity before a receipt returns.
+Comparisons share that directory identity across both inputs and their final
+closure checks.
 
-receipt = inspect_asset(
-    "project", source_reference, dependencies=exact_dependency_references,
-    landmarks={"top": {"mesh_id": "mesh-0-0", "vertex_index": 7},
-               "bottom": {"mesh_id": "mesh-0-0", "vertex_index": 1}},
-    distances={"authored_height": ["bottom", "top"]})
-```
-
-Every source/dependency is the existing continuity exact
-`{id, version, path, sha256, kind}` reference. The caller supplies the complete
-file closure, including external buffers/textures and native rig files. Missing
-files are errors, rather than permissions to search elsewhere. Native `rig.json`
-uses `kind: hatch-3d-rig` and its actual ID/version. GLB/glTF uses a stable caller
-asset ID/version with a native kind such as `mesh`; that label grants no
-approval. Inputs are never rewritten or promoted.
-
-Run the same operation with a JSON request containing `source`, optional
-`dependencies`, `landmarks`, `distances`, restrictive `limits`, and `variants`:
+Run an inspection with a JSON request containing `source` and optional
+`dependencies`, `landmarks`, `distances`, `limits`, and `variants`.
+For comparison, supply an object with `left` and `right` inspection requests.
+Python callers can use `inspect_asset(root, source, ...)` and
+`compare_assets(root, left, right)` from `scripts/continuity_inspection.py`.
 
 ```sh
-python scripts/continuity_inspection.py --root project --request inspect-request.json > inspection-receipt.json
+python scripts/continuity_inspection.py --root project --request inspect-request.json
 ```
 
-Unknown request fields reject. Successful JSON contains an `inspection` and its
-canonical SHA-256. Native failures retain their structured diagnostic in CLI
-output. An inspection receipt binds source closure, software source hashes,
-coordinate conventions, measured data and unavailable fields. Reopen/reinspect
-the exact closure to reproduce observations; a receipt is not an input cache.
+Successful inspections contain `inspection` and its canonical `sha256`.
+Comparisons retain both inspection receipts. On rejection, the CLI returns a
+nonzero exit and reports diagnostic codes and bounded resource counts when
+available. Public failures omit authored names, paths, and native message text.
 
-## Measurements and comparisons
+Named landmarks bind the receipt's `mesh_id` and a `vertex_index`. Distances bind two landmark
+names. The receipt reports distance in meters and as a fraction of observed
+height. Landmark names are authored. Optional variant references are separately
+verified evidence pointers. They confer no approval.
 
-The canonical parser supplies actual scene-node parentage and local/world
-transforms for supported glTF scenes. Native rig inspection supplies its actual
-skeleton hierarchy/rest transforms, controllers, facial controls and sockets.
-Original imported scene hierarchy is explicitly unavailable from a native rig
-alone; inspect its retained original GLB/glTF separately when that is required.
+## What the receipts measure
 
-Geometry analysis observes real bounds, dimensions, vertex/triangle/component
-counts, surface area, degeneracy, manifold boundaries and normal/UV/tangent
-presence. Native owners validate finite transforms, skin joint references,
-normalized weights, inverse binds, constraint dependencies, IK chains and socket
-bone bindings. Receipts retain portable array fingerprints and shapes, material
-slots and complete portable shader inputs, exact encoded texture hashes,
-samplers, UV bindings, morph arrays/defaults and measured source hierarchy.
-Texture slots identify their portable glTF color-space semantics. Arbitrary
-renderer-specific shader node graphs, displacement and subsurface behavior are
-unavailable rather than inferred from labels.
+Receipts retain selected scene hierarchy and transforms, geometry measurements,
+array fingerprints, imported skin joints and bind data, material inputs,
+texture hashes, sampler and UV bindings, morphs, and source extension and
+animation-channel inventories. Skin records carry the canonical importer's
+method. `imported` identifies a source skin carried into the normalized model.
+`rigid` identifies a binding synthesized by the importer for an unskinned
+instance in a scene with a skeleton. The inverse bind matrices use the
+normalized importer rest space. Software hashes identify selected on-disk
+implementations, including the native JPEG verifier.
 
-Named landmarks reference actual mesh vertices. Distance measurements use those
-observed coordinates and report meters and the ratio to measured overall
-height. Naming a vertex “eye” does not establish anatomical correctness; the
-receipt preserves that uncertainty. Overall bounds are geometry measurements,
-independent of a camera. Variant references preserve exact evidence without
-inferring that a state, costume or scale change has been approved.
+Public observations use stable node, primitive, and bone indices. They retain
+typed core shader fields, validated extension texture bindings, sampler settings, and
+texture byte hashes. Authored resource names and arbitrary metadata stay in
+the pinned source with other extension parameters. Morph labels, bone roles and unsupported extension labels
+are represented by fingerprints.
 
-`compare_assets(root, left_request, right_request)` executes both inspections.
-It reports byte identity, triangle-surface identity, attribute/morph identity,
-height-normalized geometry identity and material/texture/assignment identity
-separately. `source_byte_identity` concerns only the main file;
-`byte_identity` covers its pinned dependency closure as well, so an unchanged
-glTF document cannot hide a changed external texture. The triangle fingerprint quantizes coordinates to 1e-9 meters and
-sorts triangle vertices/triangles, ignoring winding and serialization; original
-indices and attributes retain separate fingerprints. It remains topology
-sensitive. Equal counts, names or fingerprints do not prove semantic identity.
-Every comparison retains `semantic_equivalence: unverified`,
+Texture slot color spaces describe portable glTF semantics. Their UV binding
+uses the texture transform coordinate set when specified, otherwise the base
+coordinate set or glTF default of zero. Optional extensions outside supported coverage yield partial
+evidence. Recognized material extensions with semantics beyond the projected
+fields also yield partial material coverage. The native reader rejects
+unsupported required extensions.
+
+The comparison reports main-file byte identity and full closure byte identity.
+It measures triangle surfaces, attributes and morphs, height-normalized
+surfaces, and materials and textures. `observed_material_identity` compares the
+projected material fields, texture bytes, sampler settings, and the slot at
+each source node and primitive index. A position-only change leaves those
+assignments intact. `material_identity` uses that result within the supported
+profile and is `null` if either input's material coverage is partial. The surface fingerprint uses coordinates
+quantized to 1e-9 meters and is independent of winding and triangle order.
+Separate index fingerprints preserve connectivity evidence, including
+distinctions between shared indices and coincident vertices.
+Comparisons report `semantic_equivalence: unverified`,
 `needs_visual_review: true`, and `visual_approval: false`.
-Both exact source closures are rechecked together before a comparison or rig
-classification is published. Optional glTF extensions outside the native
-decoder's observed coverage are retained explicitly and make inspection partial;
-the capability adapter withholds the extensions/channels gate. Unsupported
-required extensions remain native decoder errors.
+
+Native preflight accounts for instantiated geometry, accessor work, and
+metadata. Image admission adds aggregate decoded texture capacity using
+native image framing before the importer decodes pixels. Limits only tighten
+the inspector's caps. These are conservative loader estimates, with no process
+RSS or renderer guarantee. The canonical reader applies its declared buffer
+limits. The inspection estimate does not separately meter cumulative work
+from repeated buffer URI references.
+
+## Local evidence and remaining acceptance
+
+```sh
+python -m unittest discover -s tests -p 'test_rig_continuity*.py' -v
+python tests/continuity_inspection_probe.py new-evidence-directory
+```
+
+The probe writes portable source and receipt hashes for procedural fixtures
+with actual skinning, positions, morphs, and PNG texture bytes. It includes
+geometry and texture changes, partial material-extension comparison, exact
+external closure acceptance and missing pin rejection, and aggregate image
+capacity acceptance and rejection. The shared rig interoperability gate
+registers the inspection suite. Hosted probe evidence and independent
+Khronos Validator, Blender, and Three.js observations remain follow-up work. Native `rig.json`, owner capability registration, rig compatibility and
+facial classification, renderer-specific outputs, and production artwork
+review are outside this slice.
 
 ## Rig classification
 
@@ -149,17 +168,3 @@ hostile ancestor renames. Untrusted executable Blender content never runs.
 Blender-native inspection requires a separately validated data-only export or a
 trusted native adapter; this API does not invent one. No network provider, GPU,
 encoder, renderer or review service is implicitly invoked.
-
-## Acceptance traceability
-
-`tests/test_rig_continuity_inspection.py` uses actual persisted procedural GLB,
-glTF and native rigs. It verifies hierarchy/transforms, UV/normal/tangent data,
-material slots and exact textures, morphs, actual skin/bind data, vertex landmark
-distances, format-independent shape comparison, changed geometry/textures with
-unchanged descriptive labels, required socket/bone rejection, retained mapping
-decision binding, native retarget deformation, corrupt GLB and invalid skin
-references, missing external textures, unsafe paths/symlinks, restrictive resource
-limits, CLI receipts and actual capability admission. All fixture decisions and
-geometry remain explicitly nonproduction. Final execution evidence and any
-remaining acceptance gaps are recorded in the coordinator's revision-bound
-issue114 receipt; source code or a schema alone does not establish acceptance.

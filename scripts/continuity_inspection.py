@@ -1,10 +1,6 @@
-"""Exact-source continuity inspection through existing rig/glTF authorities.
-
-No acquisition, parser, review authority, renderer or rig evaluator is added.
-Native readers run against a private verified file snapshot. Receipt equality
-never grants semantic identity or visual approval.
-"""
-from contextlib import contextmanager, nullcontext
+"""Inspect exact GLB/glTF source closures through the canonical native readers."""
+from collections import defaultdict
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 import hashlib
 import importlib.metadata
@@ -12,9 +8,10 @@ from pathlib import Path
 import platform
 import tempfile
 
-from continuity_contracts import (canonical_bytes, digest, definitions, portable_path,
-                                  _read_regular_bytes, verify_references)
+from continuity_contracts import canonical_bytes, digest, definitions, portable_path, _read_regular_bytes
 from continuity_capabilities import OwnerAdapter
+from continuity_contracts import verify_references
+from rig_errors import RigError, job_lock, normalize_root, open_payload
 
 CAPS = dict(source_bytes=8*1024**2, dependency_bytes=32*1024**2,
             vertices=100000, triangles=100000, bones=256, influences=4,
@@ -22,8 +19,14 @@ CAPS = dict(source_bytes=8*1024**2, dependency_bytes=32*1024**2,
 MAX_FILES = 256
 
 
+class _InspectionError(ValueError):
+    def __init__(self, code, message):
+        self.code = 'CONTINUITY_INSPECTION_' + code
+        super().__init__(f'{self.code}: {message}')
+
+
 def fail(code, text):
-    raise ValueError('CONTINUITY_INSPECTION_' + code + ': ' + text)
+    raise _InspectionError(code, text)
 
 
 def _limits(requested):
@@ -42,106 +45,101 @@ def _limits(requested):
 def _references(source, dependencies):
     from jsonschema import Draft202012Validator
     validator = Draft202012Validator({'$defs': definitions(), '$ref': '#/$defs/ref'})
-    if not isinstance(dependencies,(list,tuple)) or len(dependencies)>=MAX_FILES:
-        fail('LIMIT','bounded explicit dependency list is required')
-    supplied = [source] + list(dependencies)
+    if not isinstance(dependencies, (list, tuple)) or len(dependencies) >= MAX_FILES:
+        fail('LIMIT', 'source closure must contain at most 256 files')
+    supplied = [source, *dependencies]
     canonical_bytes(supplied)
     refs = deepcopy(supplied)
-    if not 1 <= len(refs) <= MAX_FILES:
-        fail('LIMIT', 'source closure must contain at most256 files')
-    seen = {}
+    seen = set()
     for item in refs:
-        if list(validator.iter_errors(item)):
+        if not validator.is_valid(item):
             fail('REFERENCE', 'exact id/version/path/hash/kind references are required')
         path = portable_path(item['path'])
         key = path.casefold()
         if key in seen:
             fail('REFERENCE', 'duplicate or portable-alias source path')
-        seen[key] = path
-    # Check programmatic nesting/size before copying potentially untrusted data.
-    canonical_bytes(refs)
+        seen.add(key)
     return refs
 
 
+def _read_closure(root, root_identity, refs, limits, snapshot=None):
+    """Hash the exact bytes read from the owning descriptor; optionally copy them."""
+    from rig_load_limits import _JSON_FACTOR
+    total = 0
+    closure_cap = min(limits['dependency_bytes'], limits['memory_bytes'] // _JSON_FACTOR)
+    for ref in refs:
+        relative = ref['path']
+        maximum = min(limits['source_bytes'], closure_cap - total)
+        try:
+            with ExitStack() as scope:
+                stream, info = scope.enter_context(open_payload(root, relative, root_identity=root_identity))
+                if info.st_size > maximum:
+                    fail('LIMIT', 'encoded closure exceeds its byte budget: ' + relative)
+                if snapshot is not None:
+                    target = snapshot / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    output = scope.enter_context(target.open('xb'))
+                digestor = hashlib.sha256()
+                size = 0
+                while chunk := stream.read(min(1024 * 1024, maximum - size + 1)):
+                    size += len(chunk)
+                    if size > maximum:
+                        fail('LIMIT', 'encoded closure exceeds its byte budget: ' + relative)
+                    digestor.update(chunk)
+                    if snapshot is not None:
+                        output.write(chunk)
+                if digestor.hexdigest() != ref['sha256']:
+                    fail('HASH', 'source bytes disagree with the exact reference: ' + relative)
+                total += size
+        except RigError as exc:
+            if exc.report['code'] != 'RIG_PAYLOAD_IO':
+                raise
+            raise RigError('RIG_PAYLOAD_IO', 'Cannot safely read the pinned payload.', asset=relative) from exc
+    return total
+
+
 @contextmanager
-def _loaded(root, source, dependencies, requested):
-    """Copy through the existing nonblocking/nofollow descriptor reader first."""
+def _loaded(root, root_identity, source, dependencies, requested):
+    from rig_gltf import read_gltf, scene_graph, node_matrix, preflight_gltf
+    from rig_import import load_character_model
+
     limits = _limits(requested)
     refs = _references(source, dependencies)
-    source = refs[0]
-    root = Path(root).resolve(strict=True)
-    suffix = Path(source['path']).suffix.lower()
-    native = source['kind'] == 'hatch-3d-rig'
-    if (native and Path(source['path']).name != 'rig.json') or (not native and suffix not in ('.glb', '.gltf')):
-        fail('ADAPTER_REQUIRED', 'supported inputs are native rig.json and GLB/glTF; Blender scripts are never executed')
-    from rig_errors import job_lock
-    from rig_load_limits import _JSON_FACTOR
-    reservation = job_lock((root/source['path']).parent) if native else nullcontext()
-    with reservation:
-        divisor=16 if native else _JSON_FACTOR
-        verification_budget=min(limits['dependency_bytes'],limits['memory_bytes']//divisor)
-        verify_references(root, refs,maximum_bytes=verification_budget)
-        with tempfile.TemporaryDirectory(prefix='continuity-inspect-') as scratch:
-            snapshot = Path(scratch)
-            total = 0
-            for ref in refs:
-                # Admission precedes allocations; count encoded bytes conservatively
-                # against memory for JSON decode, snapshot and native parser copies.
-                budget = min(limits['source_bytes'], limits['dependency_bytes']-total,
-                             limits['memory_bytes']//divisor-total)
-                if budget <= 0:
-                    fail('LIMIT', 'source closure exceeds byte/memory admission')
-                payload = _read_regular_bytes(root/ref['path'], limit=budget, expected_sha256=ref['sha256'])
-                total += len(payload)
-                target = snapshot/ref['path']
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open('xb') as stream:
-                    stream.write(payload)
-            path = snapshot/source['path']
-            try:
-                if native:
-                    from rig_models import load_rig
-                    rig = load_rig(path.parent, limits=limits)
-                    if (rig.manifest['id'], rig.manifest['version']) != (source['id'], source['version']):
-                        fail('REFERENCE', 'native rig identity/version differs from exact source reference')
-                    _validate_rig(rig,limits)
-                    model, hierarchy = rig, _rig_hierarchy(rig)
-                else:
-                    from rig_gltf import read_gltf, scene_graph, node_matrix, preflight_gltf
-                    from rig_import import load_character_model
-                    document = read_gltf(path, limits)
-                    if (len(document.json.get('nodes',[]))>512 or len(document.json.get('materials',[]))>256
-                            or len(document.json.get('images',[]))>64):
-                        fail('LIMIT','bounded inspector report inventory exceeded')
-                    admission = preflight_gltf(document, encoded_bytes=total, limits=limits)
-                    image_admission = _image_admission(document, admission, limits)
-                    parents, world, order = scene_graph(document)
-                    hierarchy = [dict(node_id=i, name=document.json['nodes'][i].get('name'),
-                                      parent=parents.get(i), local_matrix=node_matrix(document.json['nodes'][i]).tolist(),
-                                      world_matrix=world[i].tolist(), mesh=document.json['nodes'][i].get('mesh'),
-                                      skin=document.json['nodes'][i].get('skin')) for i in order]
-                    model = load_character_model(path, limits=limits)
-                    model.report['source_features'] = _source_features(document)
-                    model.report['source_preflight'] = admission
-                    model.report['image_preflight'] = image_admission
-                yield model, hierarchy, refs, limits, total
-            except MemoryError:
-                fail('LIMIT','native allocation failed inside admitted inspection')
-            except (KeyError, IndexError, TypeError, AttributeError, OverflowError, RecursionError) as exc:
-                fail('NATIVE_DOCUMENT', 'native structure is invalid: ' + type(exc).__name__)
-            finally:
-                # Revalidate every exact original byte even after native failure.
-                verify_references(root, refs,maximum_bytes=verification_budget)
-
-
-def _rig_hierarchy(rig):
-    if rig.manifest.get('skeleton') is None:
-        return []
-    from rig_skeleton import evaluate_fk
-    world = evaluate_fk(rig.skeleton)
-    return [dict(bone_id=b['id'], parent=b['parent'], rest=deepcopy(b['rest']),
-                 world_matrix=world[b['id']].tolist(), semantic_role=b['role'],
-                 role_evidence=deepcopy(b['evidence'])) for b in rig.skeleton['bones']]
+    path_name = refs[0]['path']
+    if Path(path_name).suffix.lower() not in ('.glb', '.gltf') or refs[0]['kind'] == 'hatch-3d-rig':
+        fail('ADAPTER_REQUIRED', 'inspection requires a GLB or glTF source')
+    with tempfile.TemporaryDirectory(prefix='continuity-inspect-') as scratch:
+        snapshot = Path(scratch).resolve()
+        total = _read_closure(root, root_identity, refs, limits, snapshot)
+        path = snapshot / path_name
+        try:
+            document = read_gltf(path, limits)
+            if any(len(document.json.get(name, [])) > cap
+                   for name, cap in [('nodes', 512), ('materials', 256), ('images', 64)]):
+                fail('LIMIT', 'bounded inspector report inventory exceeded')
+            admission = preflight_gltf(document, encoded_bytes=total, limits=limits)
+            images = _image_admission(document, admission, limits)
+            expected = {ref['path'] for ref in refs}
+            observed = {entry.relative_to(snapshot).as_posix() for entry in document.dependencies}
+            if expected != observed:
+                fail('CLOSURE', 'supplied pins differ from native source closure: ' +
+                     ', '.join(sorted(expected ^ observed)))
+            parents, world, order = scene_graph(document)
+            nodes = document.json['nodes']
+            hierarchy = [dict(node_id=i, parent=parents.get(i),
+                              local_matrix=node_matrix(nodes[i]).tolist(), world_matrix=world[i].tolist(),
+                              mesh=nodes[i].get('mesh'), skin=nodes[i].get('skin')) for i in order]
+            features = _source_features(document)
+            del document
+            model = load_character_model(path, limits=limits)
+            model.report.update(source_features=features, source_preflight=admission, image_preflight=images)
+            yield model, hierarchy, refs, limits, total
+        except MemoryError:
+            fail('LIMIT', 'native allocation failed inside admitted inspection')
+        except (KeyError, IndexError, TypeError, AttributeError, OverflowError, RecursionError) as exc:
+            fail('NATIVE_DOCUMENT', 'native structure is invalid: ' + type(exc).__name__)
+        finally:
+            _read_closure(root, root_identity, refs, limits)
 
 
 def _image_admission(document,geometry_admission,limits):
@@ -189,13 +187,328 @@ def _source_features(document):
         if not isinstance(extensions,dict):
             fail('NATIVE_DOCUMENT','invalid extension object')
         unsupported.update(category+'/'+name for name in extensions)
-    for material in body.get('materials',[]):
-        unsupported.update(set(material.get('extensions',{}))-MATERIAL_EXTENSIONS)
+    material_extensions = set(used) | set(required)
+    for material in body.get('materials', []):
+        declared = set(material.get('extensions', {}))
+        material_extensions.update(declared)
+        unsupported.update(declared - MATERIAL_EXTENSIONS)
+    # The projector captures unlit presence and texture transforms. Other
+    # recognized material extensions have semantics beyond the observed slots.
+    partial_material_extensions = ((material_extensions & MATERIAL_EXTENSIONS)
+                                   - {'KHR_materials_unlit', 'KHR_texture_transform'})
     channels=[dict(animation=i,target_node=c['target']['node'],path=c['target']['path'])
               for i,a in enumerate(body.get('animations',[])) for c in a.get('channels',[])]
-    return dict(extensions_used=used,extensions_required=required,
-                unsupported_extensions=sorted(unsupported),animation_channels=channels)
+    return dict(extensions_used=sorted(set(used) & MATERIAL_EXTENSIONS),
+                extensions_required=sorted(set(required) & MATERIAL_EXTENSIONS),
+                unsupported_extensions=sorted(digest(name) for name in unsupported),
+                partial_material_extensions=sorted(partial_material_extensions),
+                animation_channels=channels)
 
+
+def _array(array):
+    import numpy as np
+    value = np.asarray(array)
+    if not np.isfinite(value).all():
+        fail('NUMERICAL', 'native arrays must contain finite observations')
+    # Explicit portable scalar representation, independent of container encoding.
+    canonical = np.asarray(value, dtype='<f8').copy()
+    canonical[canonical == 0] = 0
+    return dict(shape=list(value.shape), sha256=hashlib.sha256(canonical.tobytes()).hexdigest(),
+                encoding='little-endian-float64; negative zero normalized')
+
+
+def _surface(mesh, scale=1.):
+    """Quantized triangle coordinates, independent of winding and ordering."""
+    import numpy as np
+    values = np.round(mesh.positions[mesh.triangles]/scale, 9)
+    values[values == 0] = 0
+    # Sorting vertices ignores triangle winding for this shape fingerprint only;
+    # original indices/normals retain separate lossless array fingerprints.
+    order = np.lexsort((values[:,:,2], values[:,:,1], values[:,:,0]), axis=1)
+    flat = np.take_along_axis(values, order[:,:,None], axis=1).reshape(-1,9).astype('<f8')
+    if len(flat):
+        flat = flat[np.lexsort(tuple(flat[:, i] for i in reversed(range(9))))]
+    return hashlib.sha256(flat.tobytes()).hexdigest()
+
+
+def _measure(geometry, mesh_ids, landmarks, distances, height):
+    import numpy as np
+    if not isinstance(landmarks, dict) or len(landmarks) > 256 or not isinstance(distances, dict) or len(distances) > 256:
+        fail('LANDMARK', 'bounded named vertex landmarks and pair distances are required')
+    points = {}
+    meshes = {mesh_ids[mesh.id]: mesh for mesh in geometry.meshes}
+    for name, item in landmarks.items():
+        if not isinstance(name, str) or not 1 <= len(name) <= 128 or not isinstance(item, dict) or set(item) != {'mesh_id', 'vertex_index'}:
+            fail('LANDMARK', 'landmark must identify an actual mesh vertex')
+        mesh = meshes.get(item['mesh_id'])
+        index = item['vertex_index']
+        if mesh is None or type(index) is not int or not 0 <= index < len(mesh.positions):
+            fail('LANDMARK', 'landmark vertex does not exist')
+        points[name] = dict(position_m=mesh.positions[index].tolist(), binding=deepcopy(item),
+                            uncertainty='vertex location measured; anatomical naming is authored, not inferred')
+    values = {}
+    for name, pair in distances.items():
+        if not isinstance(name, str) or len(name) > 128 or not isinstance(pair, list) or len(pair) != 2 or any(not isinstance(x,str) or x not in points for x in pair):
+            fail('LANDMARK', 'distance must bind two declared vertex landmarks')
+        value = float(np.linalg.norm(np.asarray(points[pair[0]]['position_m'])-points[pair[1]]['position_m']))
+        values[name] = dict(landmarks=pair, distance_m=value, relative_to_height=value/height if height > 1e-9 else None)
+    return dict(landmarks=points, distances=values)
+
+
+def _material_inputs(material):
+    """Project the canonical validator's observed shader fields."""
+    from rig_models import _MATERIAL_TEXTURE_SLOTS
+
+    def select(obj, fields):
+        return {key: obj[key] for key in fields if key in obj}
+
+    def binding(slot, info):
+        value = select(info, ('index', 'texCoord'))
+        if slot in ('normalTexture', 'clearcoatNormalTexture') and 'scale' in info:
+            value['scale'] = info['scale']
+        if slot == 'occlusionTexture' and 'strength' in info:
+            value['strength'] = info['strength']
+        transform = info.get('extensions', {}).get('KHR_texture_transform')
+        if transform is not None:
+            value['extensions'] = {'KHR_texture_transform': select(transform, ('offset', 'scale', 'rotation', 'texCoord'))}
+        return value
+
+    def bindings(obj, slots):
+        return {slot: binding(slot, obj[slot]) for slot in slots if slot in obj}
+
+    observed = select(material, ('emissiveFactor', 'alphaCutoff', 'alphaMode', 'doubleSided'))
+    observed.update(bindings(material, ('normalTexture', 'occlusionTexture', 'emissiveTexture')))
+    if 'pbrMetallicRoughness' in material:
+        pbr = material['pbrMetallicRoughness']
+        pbr_inputs = dict(select(pbr, ('baseColorFactor', 'metallicFactor', 'roughnessFactor')),
+                          **bindings(pbr, ('baseColorTexture', 'metallicRoughnessTexture')))
+        if pbr_inputs:
+            observed['pbrMetallicRoughness'] = pbr_inputs
+    extensions = material.get('extensions', {})
+    observed_extensions = {name: bindings(extensions[name], slots)
+                           for name, slots in _MATERIAL_TEXTURE_SLOTS.items() if name in extensions}
+    if 'KHR_materials_unlit' in extensions:
+        observed_extensions['KHR_materials_unlit'] = {}
+    if observed_extensions:
+        observed['extensions'] = observed_extensions
+    return observed
+
+
+def _admitted_root(root):
+    root = Path(root).absolute()
+    try:
+        info = root.stat()
+    except OSError as exc:
+        raise RigError('RIG_DIRECTORY_PATH', 'Inspection root is unavailable.') from exc
+    return root, (info.st_dev, info.st_ino)
+
+
+def _color_spaces(materials):
+    """Annotate glTF slot semantics; texture bytes themselves have no shader role."""
+    result=[]
+    srgb={'baseColorTexture','emissiveTexture','specularColorTexture','sheenColorTexture'}
+    def visit(value,path):
+        if not isinstance(value,dict):
+            return
+        for name,child in value.items():
+            current=path+[name]
+            if name.endswith('Texture') and isinstance(child,dict) and 'index' in child:
+                transform = child.get('extensions', {}).get('KHR_texture_transform', {})
+                texcoord = transform.get('texCoord', child.get('texCoord', 0))
+                result.append(dict(slot_path=current,texture=child['index'],texcoord=texcoord,
+                    color_space='sRGB color channels; alpha linear' if name in srgb else 'linear-data',
+                    basis='portable glTF slot semantics; renderer implementation unverified'))
+            else:
+                visit(child,current)
+    for i,material in enumerate(materials):
+        visit(material,[i])
+    return result
+
+
+def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=None, limits=None, variants=()):
+    """Inspect exact file closure. No source mutation or automatic approvals."""
+    root, root_identity = _admitted_root(root)
+    return _inspect_asset(root, root_identity, source, dependencies=dependencies, landmarks=landmarks,
+                          distances=distances, limits=limits, variants=variants)
+
+
+def _inspect_asset(root, root_identity, source, *, dependencies=(), landmarks=None, distances=None, limits=None, variants=()):
+    if isinstance(source, dict) and source.get('kind') == 'hatch-3d-rig':
+        native_root, native_identity = _admitted_root(normalize_root(root))
+        if native_identity != root_identity:
+            fail('ROOT', 'native inspection root changed before capture')
+        return _inspect_native(native_root, native_identity, source, dependencies=dependencies, landmarks=landmarks,
+                               distances=distances, limits=limits, variants=variants)
+    if not isinstance(variants,(list,tuple)) or len(variants)>64:
+        fail('REFERENCE','variants must be a bounded list of existing exact references')
+    canonical_bytes(dict(landmarks=landmarks,distances=distances,variants=variants))
+    landmarks,distances,variants=deepcopy((landmarks,distances,variants))
+    with _loaded(root, root_identity, source, dependencies, limits) as (model, hierarchy, refs, caps, encoded):
+        source=refs[0]
+        from rig_geometry import analyze_geometry
+        geometry = model.geometry
+        analysis = analyze_geometry(geometry, caps)
+        height = analysis['dimensions_m'][1]
+        meshes = []
+        primitive_counts = defaultdict(int)
+        mesh_ids = {}
+        for mesh in geometry.meshes:
+            primitive_index = primitive_counts[mesh.source_node]
+            primitive_counts[mesh.source_node] += 1
+            mesh_id = f'mesh-{mesh.source_node}-{primitive_index}'
+            mesh_ids[mesh.id] = mesh_id
+            morph_ids = {name: digest(name) for name in mesh.morphs}
+            meshes.append(dict(id=mesh_id,
+                source_node=mesh.source_node, primitive_index=primitive_index, positions=_array(mesh.positions), triangles=_array(mesh.triangles),
+                attributes={key:_array(value) for key,value in mesh.attributes.items()},
+                morphs={morph_ids[name]:{key:_array(value) for key,value in fields.items()} for name,fields in mesh.morphs.items()},
+                morph_defaults={morph_ids[name]: weight for name, weight in mesh.morph_defaults.items()},
+                material_slot=mesh.material, geometry_sha256=_surface(mesh),
+                scale_normalized_sha256=_surface(mesh, height) if height > 1e-9 else None))
+        for observation in analysis['meshes']:
+            observation['id'] = mesh_ids[observation['id']]
+            observation.pop('region')
+        material_inputs = [_material_inputs(material) for material in geometry.materials]
+        materials = [dict(slot=i, inputs=material, graph_sha256=digest(material))
+                     for i, material in enumerate(material_inputs)]
+        textures = [dict(index=i, mime_type=image.mime_type,
+                         sha256=hashlib.sha256(image.data).hexdigest(), bytes=len(image.data))
+                    for i, image in enumerate(geometry.images)]
+        texture_bindings = [{key: texture[key] for key in ('source', 'sampler') if key in texture}
+                            for texture in geometry.textures]
+        samplers = [{key: sampler[key] for key in ('magFilter', 'minFilter', 'wrapS', 'wrapT') if key in sampler}
+                    for sampler in geometry.samplers]
+
+        skeleton = deepcopy(model.skeleton)
+        bone_ids = {}
+        if skeleton is not None:
+            bone_ids = {bone['id']: f'bone-{i}' for i, bone in enumerate(skeleton['bones'])}
+            skeleton['root'] = bone_ids[skeleton['root']]
+            for bone in skeleton['bones']:
+                bone['id'] = bone_ids[bone['id']]
+                bone['parent'] = bone_ids.get(bone['parent'])
+                bone['mirror'] = bone_ids.get(bone['mirror'])
+                bone['role_sha256'] = digest(bone.pop('role'))
+        skin = {mesh_ids[key]:dict(method=value.method, joints=[bone_ids[joint] for joint in value.joints],
+                       indices=_array(value.indices), weights=_array(value.weights),
+                       inverse_bind_matrices=value.inverse_bind.tolist(),
+                       inverse_bind_space='normalized importer rest space',
+                       maximum_weight_sum_error=float(abs(value.weights.sum(axis=1)-1).max()))
+                for key,value in model.weights.items()}
+        features = model.report['source_features']
+        material_partial = bool(features['unsupported_extensions'] or features['partial_material_extensions'])
+        measurements = _measure(geometry, mesh_ids, {} if landmarks is None else landmarks,
+                                {} if distances is None else distances, height)
+        # Variant references serve as evidence pointers.
+        if variants:
+            _references(source, variants)
+            _read_closure(root, root_identity, variants, caps)
+        result = dict(schema_version='1.0.0', kind='continuity-asset-inspection',
+            source=deepcopy(source), dependencies=refs, coordinates='right-handed Y-up meters; native importer scale 1',
+            owners=['rig_import.load_character_model', 'rig_gltf.read_gltf/preflight_gltf/scene_graph'],
+            software=dict(python=platform.python_version(),numpy=importlib.metadata.version('numpy'),
+                          Pillow=importlib.metadata.version('Pillow'),
+                          source_sha256={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                            for name in ('continuity_inspection.py','continuity_contracts.py','rig_errors.py','rig_gltf.py',
+                                         'rig_import.py','rig_geometry.py','rig_models.py','rig_skeleton.py','rig_skinning.py',
+                                         'rig_load_limits.py','rig_jpeg.py')}),
+            analysis=analysis, hierarchy=hierarchy, meshes=meshes, materials=materials,
+            textures=textures, texture_bindings=texture_bindings, samplers=samplers,
+            texture_color_spaces=_color_spaces(material_inputs),
+            extensions=features['extensions_used'], skeleton=skeleton, skins=skin,
+            source_features=features, status='partial' if material_partial else 'inspected-supported-data',
+            material_coverage='partial' if material_partial else 'supported-profile',
+            native_load_admission=model.report['source_preflight'],
+            native_image_admission=model.report['image_preflight'], measurements=measurements,
+            variant_references=list(variants),
+            geometry_sha256=digest(sorted(m['geometry_sha256'] for m in meshes)),
+            attribute_morph_sha256=digest([dict(attributes=m['attributes'],morphs=m['morphs'],defaults=m['morph_defaults']) for m in meshes]),
+            scale_normalized_sha256=digest(sorted(m['scale_normalized_sha256'] for m in meshes)) if height > 1e-9 else None,
+            material_sha256=digest(dict(materials=materials,textures=textures,bindings=texture_bindings,samplers=samplers,
+                                       assignments=sorted((m['source_node'], m['primitive_index'], m['material_slot']) for m in meshes))),
+            fixture=bool(model.report['fixture']),
+            bytes_inspected=encoded, visual_approval=False, semantic_equivalence='unverified',
+            unavailable_fields=['subjective-visual-identity','renderer-specific-displacement/subsurface-node-graphs','native-rig-controllers-and-sockets'],
+            limitations=['Material evidence covers core inputs and validated extension texture bindings.',
+                         'Shape fingerprint quantizes triangle coordinates to 1e-9 m. Mesh index fingerprints record connectivity separately.',
+                         'Scale-normalized fingerprint divides by measured height. Scale variation requires review.',
+                         'Anatomical labels and production artwork require human review.'])
+        receipt = dict(inspection=result, sha256=digest(result))
+        _read_closure(root, root_identity, variants, caps)
+        return receipt
+
+
+def compare_assets(root, left, right):
+    """Execute both inspections; never trust caller-supplied measurement receipts."""
+    root, root_identity = _admitted_root(root)
+    a = _inspect_asset(root, root_identity, **left)
+    b = _inspect_asset(root, root_identity, **right)
+    x, y = a['inspection'], b['inspection']
+
+    def closure(value):
+        import posixpath
+        parent = Path(value['source']['path']).parent.as_posix()
+        return sorted((posixpath.relpath(ref['path'], parent), ref['sha256'])
+                      for ref in value['dependencies'][1:])
+
+    same_source = x['source']['sha256'] == y['source']['sha256']
+    observed_material_identity = x['material_sha256'] == y['material_sha256']
+    material_complete = x['material_coverage'] == y['material_coverage'] == 'supported-profile'
+    result = dict(left=a,right=b,byte_identity=same_source and closure(x) == closure(y),
+                source_byte_identity=same_source,
+                geometry_identity=x['geometry_sha256']==y['geometry_sha256'],
+                attribute_morph_identity=x['attribute_morph_sha256']==y['attribute_morph_sha256'],
+                scale_normalized_geometry_identity=x['scale_normalized_sha256'] is not None and x['scale_normalized_sha256']==y['scale_normalized_sha256'],
+                observed_material_identity=observed_material_identity,
+                material_identity=observed_material_identity if material_complete else None,
+                semantic_equivalence='unverified',visual_approval=False,needs_visual_review=True)
+    return _finish_comparison(root, root_identity, result, [a, b])
+
+
+def _finish_comparison(root, root_identity, result, receipts):
+    """Recheck both exact closures together at the result publication boundary."""
+    canonical_bytes(result)
+    for receipt in receipts:
+        inspection = receipt['inspection']
+        caps = inspection['native_load_admission']['limits']
+        closure_root = normalize_root(root) if inspection['source']['kind'] == 'hatch-3d-rig' else root
+        _read_closure(closure_root, root_identity, inspection['dependencies'], caps)
+        _read_closure(closure_root, root_identity, inspection['variant_references'], caps)
+    return result
+
+
+@contextmanager
+def _loaded_native(root, root_identity, source, dependencies, requested):
+    from rig_models import load_rig
+
+    limits = _limits(requested)
+    refs = _references(source, dependencies)
+    if Path(source['path']).name != 'rig.json':
+        fail('ADAPTER_REQUIRED', 'native rig inspection requires rig.json')
+    with job_lock((root / source['path']).parent):
+        with tempfile.TemporaryDirectory(prefix='continuity-inspect-') as scratch:
+            snapshot = Path(scratch).resolve()
+            total = _read_closure(root, root_identity, refs, limits, snapshot)
+            try:
+                rig = load_rig((snapshot / source['path']).parent, limits=limits,
+                               expected_manifest_sha256=refs[0]['sha256'])
+                if (rig.manifest['id'], rig.manifest['version']) != (source['id'], source['version']):
+                    fail('REFERENCE', 'native rig identity/version differs from exact source reference')
+                _validate_rig(rig, limits)
+                yield rig, _rig_hierarchy(rig), refs, limits, total
+            except MemoryError:
+                fail('LIMIT', 'native allocation failed inside admitted inspection')
+            finally:
+                _read_closure(root, root_identity, refs, limits)
+
+def _rig_hierarchy(rig):
+    if rig.manifest.get('skeleton') is None:
+        return []
+    from rig_skeleton import evaluate_fk
+    world = evaluate_fk(rig.skeleton)
+    return [dict(bone_id=b['id'], parent=b['parent'], rest=deepcopy(b['rest']),
+                 world_matrix=world[b['id']].tolist(), semantic_role=b['role'],
+                 role_evidence=deepcopy(b['evidence'])) for b in rig.skeleton['bones']]
 
 def _validate_rig(rig,limits):
     """Delegate bone/bind/socket/constraint validation to their native owners."""
@@ -229,83 +542,13 @@ def _validate_rig(rig,limits):
         if keys>limits['keyframes']:
             fail('LIMIT','aggregate native clip keys exceed caller cap')
 
-
-def _array(array):
-    import numpy as np
-    value = np.asarray(array)
-    if not np.isfinite(value).all():
-        fail('NUMERICAL', 'native arrays must contain finite observations')
-    # Explicit portable scalar representation, independent of container encoding.
-    canonical = np.asarray(value, dtype='<f8').copy()
-    canonical[canonical == 0] = 0
-    return dict(shape=list(value.shape), sha256=hashlib.sha256(canonical.tobytes()).hexdigest(),
-                encoding='little-endian-float64; negative zero normalized')
-
-
-def _surface(mesh, scale=1.):
-    """Topology-sensitive quantized triangle surface; not semantic equivalence."""
-    import numpy as np
-    values = np.round(mesh.positions[mesh.triangles]/scale, 9)
-    values[values == 0] = 0
-    # Sorting vertices ignores triangle winding for this shape fingerprint only;
-    # original indices/normals retain separate lossless array fingerprints.
-    order = np.lexsort((values[:,:,2], values[:,:,1], values[:,:,0]), axis=1)
-    flat = np.take_along_axis(values, order[:,:,None], axis=1).reshape(-1,9).astype('<f8')
-    if len(flat):
-        flat = flat[np.lexsort(tuple(flat[:, i] for i in reversed(range(9))))]
-    return hashlib.sha256(flat.tobytes()).hexdigest()
-
-
-def _measure(geometry, landmarks, distances, height):
-    import numpy as np
-    if not isinstance(landmarks, dict) or len(landmarks) > 256 or not isinstance(distances, dict) or len(distances) > 256:
-        fail('LANDMARK', 'bounded named vertex landmarks and pair distances are required')
-    points = {}
-    for name, item in landmarks.items():
-        if not isinstance(name, str) or not 1 <= len(name) <= 128 or not isinstance(item, dict) or set(item) != {'mesh_id', 'vertex_index'}:
-            fail('LANDMARK', 'landmark must identify an actual mesh vertex')
-        mesh = geometry.by_id().get(item['mesh_id'])
-        index = item['vertex_index']
-        if mesh is None or type(index) is not int or not 0 <= index < len(mesh.positions):
-            fail('LANDMARK', 'landmark vertex does not exist')
-        points[name] = dict(position_m=mesh.positions[index].tolist(), binding=deepcopy(item),
-                            uncertainty='vertex location measured; anatomical naming is authored, not inferred')
-    values = {}
-    for name, pair in distances.items():
-        if not isinstance(name, str) or len(name) > 128 or not isinstance(pair, list) or len(pair) != 2 or any(not isinstance(x,str) or x not in points for x in pair):
-            fail('LANDMARK', 'distance must bind two declared vertex landmarks')
-        value = float(np.linalg.norm(np.asarray(points[pair[0]]['position_m'])-points[pair[1]]['position_m']))
-        values[name] = dict(landmarks=pair, distance_m=value, relative_to_height=value/height if height > 1e-9 else None)
-    return dict(landmarks=points, distances=values)
-
-
-def _color_spaces(materials):
-    """Annotate glTF slot semantics; texture bytes themselves have no shader role."""
-    result=[]
-    srgb={'baseColorTexture','emissiveTexture','specularColorTexture','sheenColorTexture'}
-    def visit(value,path):
-        if not isinstance(value,dict):
-            return
-        for name,child in value.items():
-            current=path+[name]
-            if name.endswith('Texture') and isinstance(child,dict) and 'index' in child:
-                result.append(dict(slot_path=current,texture=child['index'],texcoord=child.get('texCoord',0),
-                    color_space='sRGB color channels; alpha linear' if name in srgb else 'linear-data',
-                    basis='portable glTF slot semantics; renderer implementation unverified'))
-            else:
-                visit(child,current)
-    for i,material in enumerate(materials):
-        visit(material,[i])
-    return result
-
-
-def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=None, limits=None, variants=()):
+def _inspect_native(root, root_identity, source, *, dependencies=(), landmarks=None, distances=None, limits=None, variants=()):
     """Inspect exact file closure. No source mutation or automatic approvals."""
     if not isinstance(variants,(list,tuple)) or len(variants)>64:
         fail('REFERENCE','variants must be a bounded list of existing exact references')
     canonical_bytes(dict(landmarks=landmarks,distances=distances,variants=variants))
     landmarks,distances,variants=deepcopy((landmarks,distances,variants))
-    with _loaded(root, source, dependencies, limits) as (model, hierarchy, refs, caps, encoded):
+    with _loaded_native(root, root_identity, source, dependencies, limits) as (model, hierarchy, refs, caps, encoded):
         source=refs[0]
         from rig_geometry import analyze_geometry
         geometry = model.geometry
@@ -326,25 +569,26 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
                        inverse_bind_matrices=value.inverse_bind.tolist(),
                        maximum_weight_sum_error=float(abs(value.weights.sum(axis=1)-1).max()))
                 for key,value in model.weights.items()}
-        skeleton = model.manifest.get('skeleton') if hasattr(model, 'manifest') else model.skeleton
+        skeleton = model.manifest.get('skeleton')
         from rig_gltf import MATERIAL_EXTENSIONS
-        features=model.report['source_features'] if hasattr(model,'report') else dict(
+        features=dict(
             extensions_used=list(geometry.extensions_used),extensions_required=None,
             unsupported_extensions=sorted(set(geometry.extensions_used)-MATERIAL_EXTENSIONS),
             animation_channels=[dict(clip=name,target=track['target'],path=track['path'])
                                 for name,clip in model.clips.items() for track in clip['tracks']])
-        controllers = deepcopy(model.manifest['controllers']) if hasattr(model,'manifest') else None
-        sockets = deepcopy(model.manifest['attachments']) if hasattr(model,'manifest') else []
-        measurements = _measure(geometry, {} if landmarks is None else landmarks,
+        controllers = deepcopy(model.manifest['controllers'])
+        sockets = deepcopy(model.manifest['attachments'])
+        measurements = _measure(geometry, {mesh.id: mesh.id for mesh in geometry.meshes},
+                                {} if landmarks is None else landmarks,
                                 {} if distances is None else distances, height)
         # Approved variant references are evidence pointers only. Approval is
         # deliberately not inferred from client labels or equal geometry.
         if variants:
             _references(source, variants)
-            verify_references(root, list(variants))
+            _read_closure(root, root_identity, variants, caps)
         result = dict(schema_version='1.0.0', kind='continuity-asset-inspection',
             source=deepcopy(source), dependencies=refs, coordinates='right-handed Y-up meters; native importer scale1',
-            owners=['rig_import.load_character_model','rig_gltf.read_gltf/scene_graph'] if not hasattr(model,'manifest') else ['rig_models.load_rig','rig_skeleton.evaluate_fk'],
+            owners=['rig_models.load_rig','rig_skeleton.evaluate_fk'],
             software=dict(python=platform.python_version(),numpy=importlib.metadata.version('numpy'),
                           Pillow=importlib.metadata.version('Pillow'),
                           source_sha256={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
@@ -355,54 +599,27 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
             texture_color_spaces=_color_spaces(geometry.materials),
             extensions=list(geometry.extensions_used), skeleton=deepcopy(skeleton), skins=skin,
             source_features=features,status='partial' if features['unsupported_extensions'] else 'inspected-supported-data',
-            native_load_admission=model.report['source_preflight'] if hasattr(model,'report') else model.resource_usage,
-            native_image_admission=model.report['image_preflight'] if hasattr(model,'report') else None,
+            native_load_admission=dict(model.resource_usage, limits=caps),
+            native_image_admission=None, material_coverage='partial' if features['unsupported_extensions'] else 'supported-profile',
             controllers=controllers, sockets=sockets, measurements=measurements,
-            facial_controls=deepcopy(model.manifest['facial']) if hasattr(model,'manifest') else None,
-            native_approval_status=model.manifest['review']['status'] if hasattr(model,'manifest') else 'unreviewed',
+            facial_controls=deepcopy(model.manifest['facial']),
+            native_approval_status=model.manifest['review']['status'],
             variant_references=list(variants),
             geometry_sha256=digest(sorted(m['geometry_sha256'] for m in meshes)),
             attribute_morph_sha256=digest([dict(attributes=m['attributes'],morphs=m['morphs'],defaults=m['morph_defaults']) for m in meshes]),
             scale_normalized_sha256=digest(sorted(m['scale_normalized_sha256'] for m in meshes)) if height > 1e-9 else None,
             material_sha256=digest(dict(materials=materials,textures=textures,bindings=geometry.textures,samplers=geometry.samplers,
                                        assignments=[dict(geometry=m['geometry_sha256'],slot=m['material_slot']) for m in meshes])),
-            fixture=bool(model.manifest['source']['fixture']) if hasattr(model,'manifest') else bool(model.report['fixture']),
+            fixture=bool(model.manifest['source']['fixture']),
             bytes_inspected=encoded, visual_approval=False, semantic_equivalence='unverified',
-            unavailable_fields=['subjective-visual-identity','renderer-specific-displacement/subsurface-node-graphs','original-native-scene-hierarchy' if hasattr(model,'manifest') else 'native-rig-controllers-and-sockets'],
+            unavailable_fields=['subjective-visual-identity','renderer-specific-displacement/subsurface-node-graphs','original-native-scene-hierarchy'],
             limitations=['Material shader inputs are observed portable glTF/native data, not renderer output equivalence.',
                          'Shape fingerprint quantizes triangles to1e-9m, ignores winding/serialization and retains topology; it cannot prove semantic identity.',
                          'Scale-normalized fingerprint divides by measured height; approved scale variation still requires review.',
                          'No automatic anatomical inference or production artwork approval.'])
-        return dict(inspection=result, sha256=digest(result))
-
-
-def compare_assets(root, left, right):
-    """Execute both inspections; never trust caller-supplied measurement receipts."""
-    a = inspect_asset(root, **left)
-    b = inspect_asset(root, **right)
-    x,y = a['inspection'],b['inspection']
-    def closure(value):
-        import posixpath
-        parent=Path(value['source']['path']).parent.as_posix()
-        return sorted(('$source' if r==value['source'] else posixpath.relpath(r['path'],parent),r['sha256']) for r in value['dependencies'])
-    result = dict(left=a,right=b,byte_identity=closure(x)==closure(y),
-                source_byte_identity=x['source']['sha256']==y['source']['sha256'],
-                geometry_identity=x['geometry_sha256']==y['geometry_sha256'],
-                attribute_morph_identity=x['attribute_morph_sha256']==y['attribute_morph_sha256'],
-                scale_normalized_geometry_identity=x['scale_normalized_sha256'] is not None and x['scale_normalized_sha256']==y['scale_normalized_sha256'],
-                material_identity=x['material_sha256']==y['material_sha256'],
-                semantic_equivalence='unverified',visual_approval=False,needs_visual_review=True)
-    return _finish_comparison(root,result,[a,b])
-
-
-def _finish_comparison(root,result,receipts):
-    """Recheck both exact closures together at the result publication boundary."""
-    canonical_bytes(result)
-    refs=[r for receipt in receipts for r in
-          receipt['inspection']['dependencies']+receipt['inspection']['variant_references']]
-    verify_references(root,refs,maximum_bytes=2*CAPS['dependency_bytes'])
-    return result
-
+        receipt = dict(inspection=result, sha256=digest(result))
+        _read_closure(root, root_identity, variants, caps)
+        return receipt
 
 class NativeInspectionOwner(OwnerAdapter):
     """Trusted host adapter for the existing capability admission authority.
@@ -496,7 +713,6 @@ class NativeInspectionOwner(OwnerAdapter):
                               triangles=result['inspection']['analysis']['triangles'],fixture=result['inspection']['fixture'],
                               visual_approval=False),limitations=result['inspection']['limitations'])
 
-
 def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(),
                   required_morphs=(), profile=None, review=None):
     """Inspect before classifying; approval decisions remain external evidence.
@@ -513,13 +729,15 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         if (not isinstance(required,(list,tuple)) or len(required)>256 or
                 any(not isinstance(x,str) or not 1<=len(x)<=128 for x in required) or len(set(required))!=len(required)):
             fail('RIG_REQUIREMENT','bounded unique bone/socket/morph names are required')
-    a,b = inspect_asset(root,**source),inspect_asset(root,**target)
+    root, root_identity = _admitted_root(normalize_root(root))
+    a = _inspect_asset(root, root_identity, **source)
+    b = _inspect_asset(root, root_identity, **target)
     x,y = a['inspection'],b['inspection']
     result=dict(status='unverified',source=a,target=b,issues=[],profile=profile,review=review,
                 visual_approval=False,production_artwork_approved=False,
                 limitations=['Structural/pose compatibility only; full clip timing, contacts and artistic identity require their owning validators.'])
     def finish():
-        return _finish_comparison(root,result,[a,b])
+        return _finish_comparison(root, root_identity, result, [a,b])
     if x['skeleton'] is None or y['skeleton'] is None:
         result['issues'].append(dict(code='MISSING_SKELETON',message='actual source/target skeleton is unavailable'))
         return finish()
@@ -528,8 +746,8 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         return finish()
     source_bones={v['id'] for v in x['skeleton']['bones']}
     target_bones={v['id'] for v in y['skeleton']['bones']}
-    source_sockets={v['id']:v for v in x['sockets']}
-    target_sockets={v['id']:v for v in y['sockets']}
+    source_sockets={v['id']:v for v in x.get('sockets',())}
+    target_sockets={v['id']:v for v in y.get('sockets',())}
     morphs={name for mesh in y['meshes'] for name in mesh['morphs']}
     for kind,names,available in [('bone',required_bones,target_bones),('socket',required_sockets,target_sockets),('morph',required_morphs,morphs)]:
         for name in names:
@@ -539,10 +757,10 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         result['status']='incompatible'
         return finish()
     same=(x['skeleton']==y['skeleton'] and x['skins']==y['skins'] and
-          x['controllers']==y['controllers'] and x['sockets']==y['sockets'] and
+          x.get('controllers')==y.get('controllers') and x.get('sockets')==y.get('sockets') and
           x['geometry_sha256']==y['geometry_sha256'] and x['attribute_morph_sha256']==y['attribute_morph_sha256'])
     if same:
-        result['status']='exact' if x['native_approval_status']==y['native_approval_status']=='approved' else 'unverified'
+        result['status']='exact' if x.get('native_approval_status')==y.get('native_approval_status')=='approved' else 'unverified'
         result['structure_and_binding_equal']=True
         if result['status']=='unverified':
             result['issues'].append(dict(code='APPROVAL_REQUIRED',message='equal measured structures do not establish approved rig identity'))
@@ -590,8 +808,8 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
     from rig_math import axis_angle,decompose,qinverse,qmul
     import numpy as np
     # Source/target are distinct here: same-source exact path returned above.
-    with _loaded(root,source['source'],source.get('dependencies',()),source.get('limits')) as (sr,_,_,_,_):
-        with _loaded(root,target['source'],target.get('dependencies',()),target.get('limits')) as (tr,_,_,_,_):
+    with _loaded_native(root,root_identity,source['source'],source.get('dependencies',()),source.get('limits')) as (sr,_,_,_,_):
+        with _loaded_native(root,root_identity,target['source'],target.get('dependencies',()),target.get('limits')) as (tr,_,_,_,_):
             sw,tw=evaluate_fk(sr.skeleton),evaluate_fk(tr.skeleton)
             if not mapping['mapping'] or not set(mapping['mapping'])<=source_bones or not set(mapping['mapping'].values())<=target_bones:
                 fail('RIG_MAPPING','approved mapping names missing native bones')
@@ -629,6 +847,25 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
     return finish()
 
 
+def _public_failure(exc):
+    if isinstance(exc, RigError):
+        report = exc.report
+        diagnostic = {'code': report['code']}
+        # These errors report resource totals and limits, rather than arbitrary
+        # JSON values or identifiers. Bound their public integer representation.
+        if report['code'] in {'RIG_LIMIT_BINARY', 'RIG_LIMIT_MEMORY', 'RIG_LIMIT_MORPHS',
+                              'RIG_LIMIT_TRIANGLES', 'RIG_LIMIT_VERTICES'}:
+            for key in ('expected', 'observed'):
+                count = report.get(key)
+                if type(count) is int and 0 <= count <= 2**53 - 1:
+                    diagnostic[key] = count
+        return dict(error='Native inspection input rejected.', native_diagnostic=diagnostic)
+    if isinstance(exc, _InspectionError):
+        return dict(error=f'{exc.code}: Inspection input rejected.', native_diagnostic=None)
+    message = 'Inspection I/O failed.' if isinstance(exc, OSError) else 'Inspection input rejected.'
+    return dict(error=message, native_diagnostic=None)
+
+
 def main(argv=None):
     import argparse,json
     parser=argparse.ArgumentParser(description=__doc__)
@@ -638,12 +875,21 @@ def main(argv=None):
     try:
         from rig_errors import decode_json
         request=decode_json(_read_regular_bytes(args.request,limit=1024*1024))
-        if not isinstance(request,dict) or 'source' not in request or set(request)-{'source','dependencies','landmarks','distances','limits','variants'}:
-            fail('REQUEST','unknown inspection request field')
-        print(json.dumps(inspect_asset(args.root,**request),sort_keys=True,allow_nan=False))
+        fields = {'source', 'dependencies', 'landmarks', 'distances', 'limits', 'variants'}
+
+        def validate_spec(spec):
+            if not isinstance(spec, dict) or 'source' not in spec or set(spec) - fields:
+                fail('REQUEST', 'unexpected or missing inspection request field')
+            return spec
+
+        if isinstance(request, dict) and set(request) == {'left', 'right'}:
+            result = compare_assets(args.root, validate_spec(request['left']), validate_spec(request['right']))
+        else:
+            result = inspect_asset(args.root, **validate_spec(request))
+        print(json.dumps(result, sort_keys=True, allow_nan=False))
         return 0
     except (ValueError,OSError) as exc:
-        print(json.dumps(dict(error=str(exc),native_diagnostic=getattr(exc,'report',None))))
+        print(json.dumps(_public_failure(exc), allow_nan=False))
         return 1
 
 
