@@ -523,6 +523,9 @@
             "failed"
           ]
         },
+        "integrity_coverage": {
+          "const": "Request references and reported evidence plus native dependency checks reached during execution."
+        },
         "visual_approval": {
           "const": false
         },
@@ -545,6 +548,7 @@
         "outcome",
         "checks",
         "integrity",
+        "integrity_coverage",
         "visual_approval",
         "host_policy",
         "admission_resources",
