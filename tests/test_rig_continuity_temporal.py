@@ -18,7 +18,8 @@ from scene3d_contracts import canonical_bytes, load_project
 from scene3d_example import build_example, TRANSFORM
 
 
-def fixture(root, *, dynamic=False, incoming_translation=None):
+def fixture(root, *, dynamic=False, incoming_translation=None, node_scale=None,
+            camera_override=None, camera_parent=False):
     build_example(root)
     old_scene = json.loads((root / 'example-scene.json').read_bytes())
     old_shot = json.loads((root / 'example-shot.json').read_bytes())
@@ -38,6 +39,10 @@ def fixture(root, *, dynamic=False, incoming_translation=None):
         for identifier in ('second-character', 'prop'):
             node = deepcopy(scene['nodes'][1]); node['id'] = identifier
             scene['nodes'].append(node)
+        if node_scale is not None:
+            scene['nodes'][1]['transform']['scale'] = [node_scale] * 3
+        if camera_parent:
+            scene['nodes'][1]['parent'] = 'camera'
         if i == 1 and incoming_translation is not None:
             scene['nodes'][1]['transform']['translation'] = list(incoming_translation)
         scenes.append(write(scene))
@@ -48,6 +53,8 @@ def fixture(root, *, dynamic=False, incoming_translation=None):
         if dynamic and i == 0:
             shot['tracks'] = [dict(target='mesh', property='translation', interpolation='linear',
                 keys=[dict(frame=0,value=[2,0,0]),dict(frame=4,value=[3,0,0])])]
+        if camera_override is not None and i == 0:
+            shot['camera_overrides']['transform'] = camera_override
         shots.append(write(shot))
     project.update(scenes=scenes, shots=shots, prefabs=[], animations=[])
     project['dependency_lock'] = [project['assets'][0], *scenes, *shots]
@@ -90,6 +97,65 @@ class TemporalTests(unittest.TestCase):
 
     def snap(self, shot='shot-0', frame=0, **kw):
         return self.registry.temporal_snapshot('main', shot, frame, **kw)
+
+    def test_snapshot_fact_limit_is_checked_at_append_and_allows_overwrite(self):
+        with patch('continuity_temporal.MAX_ITEMS', 2):
+            self.append([event('first', 1001, target='first'), event('second', 1001, target='second')])
+            head = self.append([event('update', 2002, target='first', before=True, after=False)])
+            with self.assertRaisesRegex(ValueError, 'LIMIT: snapshot fact count'):
+                self.append([event('third', 3003, target='third')])
+            self.assertEqual(self.registry.temporal_history('main')['sha256'], head)
+            self.assertEqual([(row['id'], row['value']) for row in self.snap(frame=3)['snapshot']['facts']],
+                             [('first', False), ('second', True)])
+
+    def test_composed_entity_seed_must_fit_snapshot_transform_contract(self):
+        root = Path(self.temp.name) / 'composed-native'
+        plan = fixture(root, node_scale=500_000)
+        for scene in plan['scenes']:
+            scene['scene_to_world']['scale'] = [2, 2, 2]
+        with IdentityRegistry(Path(self.temp.name) / 'composed.sqlite', asset_root=root) as registry:
+            registry.create_timeline(plan)
+            entities = registry.temporal_snapshot('main', 'shot-0', 0)['snapshot']['entities']
+            self.assertEqual(entities[0]['transform']['scale'], [1_000_000] * 3)
+            plan = dict(plan, timeline_id='over-limit')
+            for scene in plan['scenes']:
+                scene['scene_to_world']['scale'] = [3, 3, 3]
+            with self.assertRaisesRegex(ValueError, 'SOURCE_STATE: composed native entity'):
+                registry.create_timeline(plan)
+            self.assertEqual(registry.db.execute('SELECT count(*) FROM temporal_heads').fetchone()[0], 1)
+
+    def test_static_camera_override_requires_adapter_only_for_affected_mappings(self):
+        for attachment in ('unrelated', 'camera', 'descendant'):
+            with self.subTest(attachment=attachment):
+                root = Path(self.temp.name) / attachment
+                plan = fixture(root, camera_override=dict(TRANSFORM, translation=[0, 1, 0]),
+                               camera_parent=attachment == 'descendant')
+                if attachment == 'camera':
+                    for scene in plan['scenes']:
+                        scene['entities'][0]['node_id'] = 'camera'
+                with IdentityRegistry(Path(self.temp.name) / (attachment + '.sqlite'), asset_root=root) as registry:
+                    if attachment == 'unrelated':
+                        registry.create_timeline(plan)
+                        self.assertEqual(len(registry.temporal_snapshot('main', 'shot-0', 0)['snapshot']['entities']), 3)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'ADAPTER_REQUIRED: shot camera transform'):
+                            registry.create_timeline(plan)
+                        self.assertEqual(registry.db.execute('SELECT count(*) FROM temporal_heads').fetchone()[0], 0)
+
+    def test_equivalent_camera_override_keeps_mapped_camera_queryable(self):
+        root = Path(self.temp.name) / 'equivalent-camera'
+        scene = json.loads((self.root / 'example-scene.json').read_bytes())
+        transform = next(node['transform'] for node in scene['nodes'] if node['id'] == 'camera')
+        self.assertNotIn('pivot', transform)
+        override = dict(transform, pivot=[0, 0, 0])
+        plan = fixture(root, camera_override=override)
+        for entry in plan['scenes']:
+            entry['entities'][0]['node_id'] = 'camera'
+        with IdentityRegistry(Path(self.temp.name) / 'equivalent-camera.sqlite', asset_root=root) as registry:
+            registry.create_timeline(plan)
+            first = registry.temporal_snapshot('main', 'shot-0', 0)['snapshot']['entities']
+            later = registry.temporal_snapshot('main', 'shot-1', 0)['snapshot']['entities']
+            self.assertEqual(first, later)
 
     def test_shot_binds_exact_selected_scene_version(self):
         def write(document, name=None):

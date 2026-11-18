@@ -11,7 +11,7 @@ from fractions import Fraction
 from pathlib import Path
 import hashlib
 
-from continuity_contracts import (MAX_BYTES, canonical_bytes, decode_json, digest,
+from continuity_contracts import (MAX_BYTES, MAX_ITEMS, canonical_bytes, decode_json, definitions, digest,
     validate_document, verify_references)
 
 MAX_EVENTS = 4096
@@ -83,6 +83,8 @@ def _operations(events, initial, until=None):
             kind = operation['event_type']
             if kind == 'set-fact':
                 container, field = state['facts'], operation['fact_id']
+                if field not in container and len(container) >= MAX_ITEMS:
+                    fail('LIMIT', 'snapshot fact count exceeds the continuity contract')
                 current = container.get(field)
             else:
                 entity = operation['entity_id']
@@ -117,6 +119,10 @@ class TemporalEngine:
         from scene3d_contracts import load_project, frame_time
         from scene3d_math import evaluate_transforms, local_matrix
         from rig_math import decompose
+        from jsonschema import Draft202012Validator
+        entity_validator = Draft202012Validator({
+            '$defs': definitions(), '$ref': '#/$defs/temporal-entity',
+        })
         # The native closure loader verifies actual project, scene and asset
         # identity/version/hash relationships, including transitive payloads.
         project = self.plan['project_revision']
@@ -138,7 +144,7 @@ class TemporalEngine:
             return dict(reference, path=(project_directory / reference['path']).as_posix())
         known_scenes = {digest(rooted(r)): r['path'] for r in project_doc['scenes']}
         known_shots = {digest(rooted(r)): r['path'] for r in project_doc['shots']}
-        scenes, scene_references, seeds = {}, {}, {}
+        scenes, scene_references, seeds, mapped_ancestors = {}, {}, {}, {}
         for entry in self.plan['scenes']:
             reference = entry['scene']
             native_path = known_scenes.get(digest(reference))
@@ -159,9 +165,19 @@ class TemporalEngine:
                     fail('MAPPING', 'node has no native evaluated state')
                 result = evaluated[node]
                 transform = decompose(matrix @ __import__('numpy').array(result['world_matrix']))
-                entities[entity] = dict(entity_id=entity, identity_id=binding['identity_id'],
+                state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=result['visible'])
+                if not entity_validator.is_valid(state):
+                    fail('SOURCE_STATE', 'composed native entity state exceeds the snapshot contract')
+                entities[entity] = state
+            scene_nodes = {node['id']: node for node in scene['nodes']}
+            ancestors = {}
+            for node in nodes:
+                while node is not None and node not in ancestors:
+                    ancestors[node] = scene_nodes[node]
+                    node = scene_nodes[node]['parent']
+            mapped_ancestors[scene['id']] = ancestors
             scenes[scene['id']] = scene
             scene_references[scene['id']] = reference
             seeds[scene['id']] = entities
@@ -181,6 +197,11 @@ class TemporalEngine:
                 fail('MAPPING', 'shot scene mapping unresolved')
             if shot['tracks'] or shot['bindings'] or shot['temporal_constraints']:
                 fail('ADAPTER_REQUIRED', 'dynamic shot needs an admitted native evaluator')
+            camera = mapped_ancestors[scene_id].get(shot['camera'])
+            override = shot['camera_overrides'].get('transform')
+            if (camera is not None and override is not None and
+                    not (local_matrix(override) == local_matrix(camera['transform'])).all()):
+                fail('ADAPTER_REQUIRED', 'shot camera transform affects a mapped entity')
             speed = fraction(entry['story_speed'])
             if speed < 0:
                 fail('MAPPING', 'story speed cannot be negative; use an explicit offset for flashbacks')
