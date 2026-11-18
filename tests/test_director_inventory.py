@@ -36,9 +36,28 @@ class InventoryTests(unittest.TestCase):
                               'required_permissions', 'performance', 'policy_limits'):
                     self.assertIn(field, receipt)
 
+    def assert_admission_evidence_failure(self, snapshot, operation, root, receipt_bytes, message):
+        reference, = snapshot['capabilities'][0]['probe_evidence']
+        if director_contracts.artifact_reads_supported():
+            with self.assertRaises(RigError) as error:
+                cap.assert_admission(snapshot, [operation], evidence_root=root)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_EVIDENCE')
+            self.assertEqual(error.exception.report['message'], message)
+
+        with patch.object(director_contracts, 'artifact_reads_supported', return_value=False):
+            with self.assertRaises(RigError) as error:
+                cap.assert_admission(snapshot, [operation], evidence_root=root)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
+
+            # Supply only the fixture receipt bytes at the reader boundary.
+            with patch.object(director_contracts, '_read_artifact', return_value=receipt_bytes) as reader:
+                with self.assertRaises(RigError) as error:
+                    cap.assert_admission(snapshot, [operation], evidence_root=root)
+                self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_EVIDENCE')
+                self.assertEqual(error.exception.report['message'], message)
+                reader.assert_called_once_with(root, reference)
+
     def test_dependency_observation_cannot_substitute_for_execution(self):
-        if not director_contracts.artifact_reads_supported():
-            self.skipTest('exact receipt comparisons need secure Director artifact reads')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()/'evidence'
             result = cap.probe(request(['runtime.python']), root)
@@ -52,9 +71,10 @@ class InventoryTests(unittest.TestCase):
             snapshot['capabilities'][0].update(status='available', execution_verified=True)
             snapshot['digest'] = object_hash({key: value for key, value in snapshot.items()
                                               if key != 'digest'})
-            with self.assertRaises(RigError) as error:
-                cap.assert_admission(snapshot, ['runtime.python'], evidence_root=root)
-            self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_EVIDENCE')
+            reference = snapshot['capabilities'][0]['probe_evidence'][0]
+            self.assert_admission_evidence_failure(
+                snapshot, 'runtime.python', root, (root/reference['path']).read_bytes(),
+                'Probe evidence does not verify capability.')
 
     def test_actual_interpreter_and_destination_filesystem_are_measured(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -138,8 +158,6 @@ class InventoryTests(unittest.TestCase):
             self.assertEqual(list(parent.iterdir()), [])
 
     def test_malformed_resource_measurement_is_typed_evidence_failure(self):
-        if not director_contracts.artifact_reads_supported():
-            self.skipTest('exact receipt comparisons need secure Director artifact reads')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             for operation in ('resource.memory', 'resource.storage'):
@@ -155,9 +173,9 @@ class InventoryTests(unittest.TestCase):
                             probe_evidence=[cap._reference(path, root)])],
                             expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
                         snapshot['digest'] = object_hash(snapshot)
-                        with self.assertRaises(RigError) as error:
-                            cap.assert_admission(snapshot, [operation], evidence_root=root)
-                        self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_EVIDENCE')
+                        self.assert_admission_evidence_failure(
+                            snapshot, operation, root, path.read_bytes(),
+                            'Resource measurement is missing.')
 
     def test_provider_descriptors_are_public_unverified_and_never_invoked(self):
         for operation, field in inventory.PROVIDERS.items():
