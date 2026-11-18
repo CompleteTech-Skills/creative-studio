@@ -1,0 +1,1718 @@
+{
+  "input": "audit/gitleaks-history-redacted.json",
+  "scope": "Exact commit/path/line for every supplied finding; values inspected only in memory; no credentials tested or retained",
+  "counts": {
+    "false_positive": 111
+  },
+  "categories": {
+    "sha256_evidence_digest": 58,
+    "historical_local_generation_claim": 52,
+    "python_parameter_expression": 1
+  },
+  "records": [
+    {
+      "fingerprint": "16c8ceacefe1071b9bbdcacd2a564608d324a6fd:tests/results/native-texture-integrity-ci-correction-20261024/inputs-before.json:generic-api-key:73",
+      "commit": "16c8ceacefe1071b9bbdcacd2a564608d324a6fd",
+      "path": "tests/results/native-texture-integrity-ci-correction-20261024/inputs-before.json",
+      "line": 73,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "7fe448d4e774c5e90a2811a6bfe3562f4a85b6db:tests/results/camera3d-contracts/main-model3d-integration/source-snapshot.json:generic-api-key:72",
+      "commit": "7fe448d4e774c5e90a2811a6bfe3562f4a85b6db",
+      "path": "tests/results/camera3d-contracts/main-model3d-integration/source-snapshot.json",
+      "line": 72,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "16c8ceacefe1071b9bbdcacd2a564608d324a6fd:tests/results/native-texture-integrity-ci-correction-20261024/inputs-after.json:generic-api-key:73",
+      "commit": "16c8ceacefe1071b9bbdcacd2a564608d324a6fd",
+      "path": "tests/results/native-texture-integrity-ci-correction-20261024/inputs-after.json",
+      "line": 73,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e9ef226816f747b2790c73168c38606ddbcb00f3:tests/results/native-texture-integrity-ci-correction-20261024/lod-inputs-after.json:generic-api-key:73",
+      "commit": "e9ef226816f747b2790c73168c38606ddbcb00f3",
+      "path": "tests/results/native-texture-integrity-ci-correction-20261024/lod-inputs-after.json",
+      "line": 73,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/final-summary.json:generic-api-key:112",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/final-summary.json",
+      "line": 112,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e9ef226816f747b2790c73168c38606ddbcb00f3:tests/results/native-texture-integrity-ci-correction-20261024/lod-inputs-before.json:generic-api-key:73",
+      "commit": "e9ef226816f747b2790c73168c38606ddbcb00f3",
+      "path": "tests/results/native-texture-integrity-ci-correction-20261024/lod-inputs-before.json",
+      "line": 73,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-new-review-threads-20261024/summary.json:generic-api-key:122",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-new-review-threads-20261024/summary.json",
+      "line": 122,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/helper-integrated-summary.json:generic-api-key:121",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/helper-integrated-summary.json",
+      "line": 121,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/latest-summary.json:generic-api-key:95",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/latest-summary.json",
+      "line": 95,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/full-suite.json:generic-api-key:86",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/full-suite.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/full-suite.json:generic-api-key:254",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/full-suite.json",
+      "line": 254,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "d92fc03351a84fd40f9719d7a1cc170e7a868c78:tests/results/continuity-contracts/windows-constructor-close/verification.json:generic-api-key:122",
+      "commit": "d92fc03351a84fd40f9719d7a1cc170e7a868c78",
+      "path": "tests/results/continuity-contracts/windows-constructor-close/verification.json",
+      "line": 122,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/summary.json:generic-api-key:86",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/summary.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dcba9123c4b70fc2caa7b56267920f239fb35c12:tests/results/model3d-review-corrections-20261023/summary.json:generic-api-key:254",
+      "commit": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+      "path": "tests/results/model3d-review-corrections-20261023/summary.json",
+      "line": 254,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "14be87ad607ab8411371ea48922e865442ca5649:tests/results/model3d-review-corrections-20261023/latest-summary.json:generic-api-key:95",
+      "commit": "14be87ad607ab8411371ea48922e865442ca5649",
+      "path": "tests/results/model3d-review-corrections-20261023/latest-summary.json",
+      "line": 95,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "7cff19f4d3d7c3c4c83f1a309f3a9300b6f9d941:tests/results/physics-contracts-20261024/decoder-integration/verification.json:generic-api-key:264",
+      "commit": "7cff19f4d3d7c3c4c83f1a309f3a9300b6f9d941",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/verification.json",
+      "line": 264,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "api_probe_script_sha256"
+    },
+    {
+      "fingerprint": "5cf8edea99b91b00159b32ec74314529d310eb54:tests/results/continuity-contracts/depth-guard-verification.json:generic-api-key:82",
+      "commit": "5cf8edea99b91b00159b32ec74314529d310eb54",
+      "path": "tests/results/continuity-contracts/depth-guard-verification.json",
+      "line": 82,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "2619444c4f6a16892f68505030fa06feae4df869:tests/results/continuity-contracts/final-provenance-crlf-proof.json:generic-api-key:87",
+      "commit": "2619444c4f6a16892f68505030fa06feae4df869",
+      "path": "tests/results/continuity-contracts/final-provenance-crlf-proof.json",
+      "line": 87,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "7f5d19e11ab9c463bc4c17df046430bea767eb18:tests/results/continuity-contracts/post-helper-verification.json:generic-api-key:83",
+      "commit": "7f5d19e11ab9c463bc4c17df046430bea767eb18",
+      "path": "tests/results/continuity-contracts/post-helper-verification.json",
+      "line": 83,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dd5a3302820ae9149d00804cbf4b500939a197fe:tests/results/continuity-contracts/manifest-reader-verification.json:generic-api-key:82",
+      "commit": "dd5a3302820ae9149d00804cbf4b500939a197fe",
+      "path": "tests/results/continuity-contracts/manifest-reader-verification.json",
+      "line": 82,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "744bc40597101dc52505707d0b1f0e63fda91dab:tests/results/continuity-contracts/final-decoder-verification.json:generic-api-key:83",
+      "commit": "744bc40597101dc52505707d0b1f0e63fda91dab",
+      "path": "tests/results/continuity-contracts/final-decoder-verification.json",
+      "line": 83,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "dbdb4b4b80dcc303e2cb6a15850fa9ca2cefdbc6:tests/results/model3d-review-corrections-20261023/final-summary.json:generic-api-key:112",
+      "commit": "dbdb4b4b80dcc303e2cb6a15850fa9ca2cefdbc6",
+      "path": "tests/results/model3d-review-corrections-20261023/final-summary.json",
+      "line": 112,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "87cbd8fbe660a80240e1436a0b66bc6e5422ee6d:tests/results/native-texture-integrity-20261024/native-texture-final-regression.json:generic-api-key:62",
+      "commit": "87cbd8fbe660a80240e1436a0b66bc6e5422ee6d",
+      "path": "tests/results/native-texture-integrity-20261024/native-texture-final-regression.json",
+      "line": 62,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "87cbd8fbe660a80240e1436a0b66bc6e5422ee6d:tests/results/native-texture-integrity-20261024/native-texture-final-regression.json:generic-api-key:390",
+      "commit": "87cbd8fbe660a80240e1436a0b66bc6e5422ee6d",
+      "path": "tests/results/native-texture-integrity-20261024/native-texture-final-regression.json",
+      "line": 390,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "7eb2d5cb7541404b227aa63883bb055e5fd6fc7a:tests/results/model3d-new-review-threads-20261024/summary.json:generic-api-key:122",
+      "commit": "7eb2d5cb7541404b227aa63883bb055e5fd6fc7a",
+      "path": "tests/results/model3d-new-review-threads-20261024/summary.json",
+      "line": 122,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "b7e0b13905ee4d94c32f8a013f0100fb3b3f45b5:tests/results/continuity-contracts/history-63f5810/verification.json:generic-api-key:100",
+      "commit": "b7e0b13905ee4d94c32f8a013f0100fb3b3f45b5",
+      "path": "tests/results/continuity-contracts/history-63f5810/verification.json",
+      "line": 100,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "73af07270025f06bbe4f044f566a366f98ce1750:tests/results/camera3d-contracts/historical-e202ca4/source-snapshot.json:generic-api-key:66",
+      "commit": "73af07270025f06bbe4f044f566a366f98ce1750",
+      "path": "tests/results/camera3d-contracts/historical-e202ca4/source-snapshot.json",
+      "line": 66,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e881182b12583dc1dcd99cba66714ed520d2e419:tests/results/strict-jpeg-validation-20261024/validation.json:generic-api-key:92",
+      "commit": "e881182b12583dc1dcd99cba66714ed520d2e419",
+      "path": "tests/results/strict-jpeg-validation-20261024/validation.json",
+      "line": 92,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e881182b12583dc1dcd99cba66714ed520d2e419:tests/results/strict-jpeg-validation-20261024/validation.json:generic-api-key:270",
+      "commit": "e881182b12583dc1dcd99cba66714ed520d2e419",
+      "path": "tests/results/strict-jpeg-validation-20261024/validation.json",
+      "line": 270,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e05d13db3ea55fcd4f13d6a73053120510be8916:tests/results/model3d-review-corrections-20261023/helper-integrated-summary.json:generic-api-key:121",
+      "commit": "e05d13db3ea55fcd4f13d6a73053120510be8916",
+      "path": "tests/results/model3d-review-corrections-20261023/helper-integrated-summary.json",
+      "line": 121,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "63f581001fff488db3c8b9ad721a71ef59424a1f:tests/results/continuity-contracts/verification.json:generic-api-key:100",
+      "commit": "63f581001fff488db3c8b9ad721a71ef59424a1f",
+      "path": "tests/results/continuity-contracts/verification.json",
+      "line": 100,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e05d13db3ea55fcd4f13d6a73053120510be8916:tests/results/model3d-review-corrections-20261023/full-suite.json:generic-api-key:86",
+      "commit": "e05d13db3ea55fcd4f13d6a73053120510be8916",
+      "path": "tests/results/model3d-review-corrections-20261023/full-suite.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e05d13db3ea55fcd4f13d6a73053120510be8916:tests/results/model3d-review-corrections-20261023/full-suite.json:generic-api-key:254",
+      "commit": "e05d13db3ea55fcd4f13d6a73053120510be8916",
+      "path": "tests/results/model3d-review-corrections-20261023/full-suite.json",
+      "line": 254,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "b5b48f23c010e445acb153e796a56c0e745345c8:tests/results/native-texture-integrity-20261024/png-corrected-frozen-inputs.json:generic-api-key:58",
+      "commit": "b5b48f23c010e445acb153e796a56c0e745345c8",
+      "path": "tests/results/native-texture-integrity-20261024/png-corrected-frozen-inputs.json",
+      "line": 58,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "b5b48f23c010e445acb153e796a56c0e745345c8:tests/results/native-texture-integrity-20261024/png-corrected-frozen-inputs.json:generic-api-key:365",
+      "commit": "b5b48f23c010e445acb153e796a56c0e745345c8",
+      "path": "tests/results/native-texture-integrity-20261024/png-corrected-frozen-inputs.json",
+      "line": 365,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e05d13db3ea55fcd4f13d6a73053120510be8916:tests/results/model3d-review-corrections-20261023/summary.json:generic-api-key:86",
+      "commit": "e05d13db3ea55fcd4f13d6a73053120510be8916",
+      "path": "tests/results/model3d-review-corrections-20261023/summary.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e05d13db3ea55fcd4f13d6a73053120510be8916:tests/results/model3d-review-corrections-20261023/summary.json:generic-api-key:254",
+      "commit": "e05d13db3ea55fcd4f13d6a73053120510be8916",
+      "path": "tests/results/model3d-review-corrections-20261023/summary.json",
+      "line": 254,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e202ca4bb60372523d33590f7ba1e31e867f7f55:tests/results/camera3d-contracts/source-snapshot.json:generic-api-key:66",
+      "commit": "e202ca4bb60372523d33590f7ba1e31e867f7f55",
+      "path": "tests/results/camera3d-contracts/source-snapshot.json",
+      "line": 66,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "be3bc294d89a94c2094b88becd4fdc671e7a0608:tests/results/rig-contracts-20261022/results-before-ik-length-review.json:generic-api-key:19",
+      "commit": "be3bc294d89a94c2094b88becd4fdc671e7a0608",
+      "path": "tests/results/rig-contracts-20261022/results-before-ik-length-review.json",
+      "line": 19,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "287b25c8257302f1ee620ca422a53996caeb1a72:tests/results/rig-contracts-20261022/results.json:generic-api-key:15",
+      "commit": "287b25c8257302f1ee620ca422a53996caeb1a72",
+      "path": "tests/results/rig-contracts-20261022/results.json",
+      "line": 15,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "401ac372b967cdb336e315bbc40fc6913ccf6758:tests/results/asset-library-baseline-20261022/baseline-source-hashes.json:generic-api-key:67",
+      "commit": "401ac372b967cdb336e315bbc40fc6913ccf6758",
+      "path": "tests/results/asset-library-baseline-20261022/baseline-source-hashes.json",
+      "line": 67,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "662c966f9097ff80a7cada8b8b472566ff233204:tests/results/rig-release-results.json:generic-api-key:367",
+      "commit": "662c966f9097ff80a7cada8b8b472566ff233204",
+      "path": "tests/results/rig-release-results.json",
+      "line": 367,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "d92fc03351a84fd40f9719d7a1cc170e7a868c78:tests/results/continuity-contracts/windows-constructor-close/native-windows-report.json:generic-api-key:1230",
+      "commit": "d92fc03351a84fd40f9719d7a1cc170e7a868c78",
+      "path": "tests/results/continuity-contracts/windows-constructor-close/native-windows-report.json",
+      "line": 1230,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "d92fc03351a84fd40f9719d7a1cc170e7a868c78:tests/results/continuity-contracts/windows-constructor-close/native-windows-report.json:generic-api-key:1397",
+      "commit": "d92fc03351a84fd40f9719d7a1cc170e7a868c78",
+      "path": "tests/results/continuity-contracts/windows-constructor-close/native-windows-report.json",
+      "line": 1397,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "749697a7cf53c4eb6e095d3a757f0dd622dc86fe:tests/results/continuity-source-delivery.json:generic-api-key:1225",
+      "commit": "749697a7cf53c4eb6e095d3a757f0dd622dc86fe",
+      "path": "tests/results/continuity-source-delivery.json",
+      "line": 1225,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "749697a7cf53c4eb6e095d3a757f0dd622dc86fe:tests/results/continuity-source-delivery.json:generic-api-key:1358",
+      "commit": "749697a7cf53c4eb6e095d3a757f0dd622dc86fe",
+      "path": "tests/results/continuity-source-delivery.json",
+      "line": 1358,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "401ac372b967cdb336e315bbc40fc6913ccf6758:tests/results/asset-library-baseline-20261022/public-delivery-report.json:generic-api-key:1225",
+      "commit": "401ac372b967cdb336e315bbc40fc6913ccf6758",
+      "path": "tests/results/asset-library-baseline-20261022/public-delivery-report.json",
+      "line": 1225,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "401ac372b967cdb336e315bbc40fc6913ccf6758:tests/results/asset-library-baseline-20261022/public-delivery-report.json:generic-api-key:1358",
+      "commit": "401ac372b967cdb336e315bbc40fc6913ccf6758",
+      "path": "tests/results/asset-library-baseline-20261022/public-delivery-report.json",
+      "line": 1358,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "6e3d0dded29f523563502dab1c4db9a4c08ef00b:tests/results/director-baseline-delivery.json:generic-api-key:1225",
+      "commit": "6e3d0dded29f523563502dab1c4db9a4c08ef00b",
+      "path": "tests/results/director-baseline-delivery.json",
+      "line": 1225,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "6e3d0dded29f523563502dab1c4db9a4c08ef00b:tests/results/director-baseline-delivery.json:generic-api-key:1358",
+      "commit": "6e3d0dded29f523563502dab1c4db9a4c08ef00b",
+      "path": "tests/results/director-baseline-delivery.json",
+      "line": 1358,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "b850c8a60396d0496e5f368cdc7d42c80c28b2d7:tests/results/rig-release-results.json:generic-api-key:137",
+      "commit": "b850c8a60396d0496e5f368cdc7d42c80c28b2d7",
+      "path": "tests/results/rig-release-results.json",
+      "line": 137,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": false,
+      "checksum_match_limit": "Explicit file digest field; exact historical source bytes were not reconstructed in this bounded audit."
+    },
+    {
+      "fingerprint": "b850c8a60396d0496e5f368cdc7d42c80c28b2d7:tests/results/rig-release-results.json:generic-api-key:226",
+      "commit": "b850c8a60396d0496e5f368cdc7d42c80c28b2d7",
+      "path": "tests/results/rig-release-results.json",
+      "line": 226,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "scripts/rig_api.py",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19:tests/results/public-delivery-anonymous-final.json:generic-api-key:667",
+      "commit": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19",
+      "path": "tests/results/public-delivery-anonymous-final.json",
+      "line": 667,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "e9528326f1a6b59efa54299d5ccaf6643b9aedb0:tests/results/public-delivery-public-clone.json:generic-api-key:556",
+      "commit": "e9528326f1a6b59efa54299d5ccaf6643b9aedb0",
+      "path": "tests/results/public-delivery-public-clone.json",
+      "line": 556,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "51d0e5a951465993d2ebf3556ef4eb870bc4d640:tests/results/public-delivery-local.json:generic-api-key:587",
+      "commit": "51d0e5a951465993d2ebf3556ef4eb870bc4d640",
+      "path": "tests/results/public-delivery-local.json",
+      "line": 587,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19:tests/results/public-delivery-windows.json:generic-api-key:656",
+      "commit": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19",
+      "path": "tests/results/public-delivery-windows.json",
+      "line": 656,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material. Digest additionally matched repository source bytes at recorded historical revision or newline normalization.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": false,
+      "verified_historical_or_newline_digest_matches": [
+        {
+          "commit": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19",
+          "newline_mode": "CRLF"
+        },
+        {
+          "commit": "2a01543fa8e638dd4fa370fd21007703b3067d8d",
+          "newline_mode": "CRLF"
+        }
+      ]
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:1459",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 1459,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:1521",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 1521,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:1543",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 1543,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:1620",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 1620,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:2928",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 2928,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:2992",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 2992,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:3014",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 3014,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/generation-final.json:generic-api-key:3093",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/generation-final.json",
+      "line": 3093,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "bd9406b8641c01d7a9e599ee60f85f1bfa5853dc:scripts/decomposition_cli.py:generic-api-key:112",
+      "commit": "bd9406b8641c01d7a9e599ee60f85f1bfa5853dc",
+      "path": "scripts/decomposition_cli.py",
+      "line": 112,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "python_parameter_expression",
+      "reason": "Exact source line contains only variable/attribute expressions for chroma-key configuration and numeric default; no string literal or credential assignment."
+    },
+    {
+      "fingerprint": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19:tests/results/public-delivery-linux.json:generic-api-key:656",
+      "commit": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19",
+      "path": "tests/results/public-delivery-linux.json",
+      "line": 656,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/milo-base.json:generic-api-key:3",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/milo-base.json",
+      "line": 3,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/milo-base.json:generic-api-key:17",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/milo-base.json",
+      "line": 17,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/luma-base.json:generic-api-key:3",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/luma-base.json",
+      "line": 3,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/luma-base.json:generic-api-key:17",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/luma-base.json",
+      "line": 17,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/milo-parts.json:generic-api-key:3",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/milo-parts.json",
+      "line": 3,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/milo-parts.json:generic-api-key:29",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/milo-parts.json",
+      "line": 29,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/luma-parts.json:generic-api-key:3",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/luma-parts.json",
+      "line": 3,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/handoffs/luma-parts.json:generic-api-key:29",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/handoffs/luma-parts.json",
+      "line": 29,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/luma/imagegen-jobs.json:generic-api-key:23",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/luma/imagegen-jobs.json",
+      "line": 23,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/luma/imagegen-jobs.json:generic-api-key:85",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/luma/imagegen-jobs.json",
+      "line": 85,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/luma/imagegen-jobs.json:generic-api-key:109",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/luma/imagegen-jobs.json",
+      "line": 109,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/luma/imagegen-jobs.json:generic-api-key:158",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/luma/imagegen-jobs.json",
+      "line": 158,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/luma/imagegen-jobs.json:generic-api-key:235",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/luma/imagegen-jobs.json",
+      "line": 235,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/luma/imagegen-jobs.json:generic-api-key:265",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/luma/imagegen-jobs.json",
+      "line": 265,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/milo/imagegen-jobs.json:generic-api-key:23",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+      "line": 23,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/milo/imagegen-jobs.json:generic-api-key:87",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+      "line": 87,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/milo/imagegen-jobs.json:generic-api-key:111",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+      "line": 111,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/milo/imagegen-jobs.json:generic-api-key:160",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+      "line": 160,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/milo/imagegen-jobs.json:generic-api-key:239",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+      "line": 239,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb:examples/production-pilot/acquisition/milo/imagegen-jobs.json:generic-api-key:269",
+      "commit": "092a47c9c106158fb1b52a0bfbaeadbbd13245fb",
+      "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+      "line": 269,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:67",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 67,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:79",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 79,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:163",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 163,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:178",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 178,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:1681",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 1681,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:1693",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 1693,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:1779",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 1779,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-final.json:generic-api-key:1794",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-final.json",
+      "line": 1794,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19:tests/results/public-delivery-macos.json:generic-api-key:656",
+      "commit": "246edb818f65e7fcd3fcfc9db4b98fe883a4fe19",
+      "path": "tests/results/public-delivery-macos.json",
+      "line": 656,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "sha256_evidence_digest",
+      "reason": "64-character lowercase hexadecimal value in file-hash inventory or explicitly named SHA-256 evidence field; key identifies source/fixture bytes, not authentication material.",
+      "field": "examples/state-selections/accessible-feedback.json",
+      "same_commit_file_digest_matches": true
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:67",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 67,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:79",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 79,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:163",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 163,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:178",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 178,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:1681",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 1681,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:1693",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 1693,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:1779",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 1779,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-after-cast-and-clips.json:generic-api-key:1794",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-after-cast-and-clips.json",
+      "line": 1794,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:13234",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 13234,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:13296",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 13296,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:13318",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 13318,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:13395",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 13395,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "luma",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:14703",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 14703,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:14767",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 14767,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "base",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:14789",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 14789,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    },
+    {
+      "fingerprint": "25453d3cc1825a2704975f84df671112fe53b781:examples/production-pilot/evidence/coverage-before-review.json:generic-api-key:14868",
+      "commit": "25453d3cc1825a2704975f84df671112fe53b781",
+      "path": "examples/production-pilot/evidence/coverage-before-review.json",
+      "line": 14868,
+      "rule": "generic-api-key",
+      "classification": "false_positive",
+      "category": "historical_local_generation_claim",
+      "reason": "32-hex UUID claim ID matches canonical job claim history; all matched jobs are completed/inactive and no longer carry this active token. Not an external service API credential.",
+      "canonical_jobs": [
+        {
+          "character": "milo",
+          "job": "parts",
+          "status": "generated",
+          "active_claim_matches": false
+        }
+      ],
+      "source_evidence": "scripts/hatch.py claim creates uuid.uuid4().hex; ingest/fail require local active job token and clear it after completion"
+    }
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0.0",
+  "generated_utc": "2026-11-13T16:50:46.151418+00:00",
+  "candidate_source_sha": "483107a3a1717ac75a3ff039225a583a3f55b496",
+  "base_sha": "b51207eb1ad58bde0d81548e27e480c557a59887",
+  "scope": "Cinematics contracts and silent H264/VP9 foundation, canonical pinned publication and stdlib path authority. Full CLI97, issues227/228 and cinematic film241 remain open.",
+  "source_prs": {
+    "278": "ae7ad8d109c07c1906069650a86d96bb23fa1a91",
+    "289": "f03122f2fcb670b7f7d2b2d7158adb922705cdb3"
+  },
+  "canonical_dependencies": [
+    "23e7fae372532cb21be414e3cf6257e27c89da45",
+    "20d26968111b443b0616d826b7a588c3872d80ed",
+    "27f3a730565ca5d93dc225cdb3be2ba6aacbb248",
+    "d330ea738500320d31248f093fdbf1597ec1602b",
+    "258e531c525589b0456e29de6ec732fae0ed8b0a"
+  ],
+  "checks": [
+    {
+      "command": "python -m unittest test_atomic_private_stage test_rig_directory_capability test_silent_video -v",
+      "tests_run": 36,
+      "passed": 36,
+      "skipped": 0,
+      "log": "canonical20-current-portable.log",
+      "log_sha256": "759404631ee79bc59d8be674daae8559e1a407aa95b7d9d2a199fc2c66367832",
+      "executed_source_ref": "a8376da3"
+    },
+    {
+      "command": "HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests/optional -p test_silent_video_native.py -v",
+      "tests_run": 42,
+      "passed": 42,
+      "skipped": 0,
+      "log": "stdlib-final-native.log",
+      "log_sha256": "237d59a7ef070e428de4c494be727ced21733ad49e55dfcca859a3847b3618ad",
+      "executed_source_ref": "583365ca"
+    },
+    {
+      "command": "python scripts/test_rig_gate.py schema-math",
+      "tests_run": 218,
+      "passed": 217,
+      "skipped": 1,
+      "log": "canonical-cap-schema-math.log",
+      "log_sha256": "07e2514386ad9ac46e4238494951def1a5f9ab5ab2abb35b0cae64d58b8021f6",
+      "executed_source_ref": "44944075"
+    }
+  ],
+  "source_binding_notes": [
+    "42 actual media cases and six retained videos executed at583365ca; subsequent483107a3 changes only the new stdlib test temporary-root fixture, not production bytes.",
+    "Schema/math218 cases executed before later shared-reader/model-adapter/path changes; this is prior regression evidence, not a claim that those tests reran after those changes.",
+    "36 portable tests include16 canonical descriptor proofs,4 atomic publication contracts and16 video contracts; supplemental3 stdlib-path tests are queued, not claimed passed here.",
+    "Generated schema parity and cinematic example succeeded before later shared-reader changes; generator/schema source bytes are unchanged."
+  ],
+  "source_hashes": {
+    ".github/workflows/atomic-private-stage.yml": "90dc632f941125df7a111144172d0cc54c58bfa3c9e4e1c8b54b1477fb24cf81",
+    ".github/workflows/silent-video.yml": "690491379b3fe04e598136294b5ac9faf0e4eaea88e5227369d84ea129e354b5",
+    "README.md": "487dcf99be4490f37d85ba75b60ba74001d249dd7c38e8c5f56ca9b1570886c4",
+    "SKILL.md": "90c86f4ad9f96d0a0b72996b4100d126e6c1fbc9961fd4a3149b414dcad50de9",
+    "examples/cinematics3d/README.md": "b160ae4c6d9d74e93a33f862a71cb5df0323a6ab8503c4054a3118caa589e2dd",
+    "examples/cinematics3d/exposure.json": "848d88224592bb5af8b3ae2926b446631d8e96cefeb4e6b12a070d453511cb67",
+    "examples/cinematics3d/grain.json": "b610620b4d39d43cd02a026a54a68903d4e51a68652da1ecae683e0bc3fa4ca7",
+    "examples/cinematics3d/look.json": "5966c85e34ff14d1b8dbe6fd39bc376955dcd60e164deb4eb6dd490dc72c98f0",
+    "examples/cinematics3d/scene-stack.json": "c3985aa5374ba18a06756bda9f754fb5c0a4a9ab79d41d22bc768f750126a7a1",
+    "examples/cinematics3d/scene.json": "759f472659091ea8896be8ec094adca0cd043789d5e633678288c0e4e57c7a18",
+    "examples/cinematics3d/shot-stack.json": "31ab01071ed697eb669178946f67cda79df10619f8884fc1931c9e5c3378b240",
+    "examples/cinematics3d/shot.json": "706f35278ac4a7f0690ff88d70ffbfba4a1df0cc4fb5853c286c0324f9881a16",
+    "profiles/cinematics3d-effect.schema.json": "e703a60c381eab73441ffe9e67a9b41240e3bbb9cc088256cf6adf61a80270a1",
+    "profiles/cinematics3d-graph.schema.json": "352c71c0153432ee2d546b84174b8e99b269bdd4ed038e06b1d95666546bd5c3",
+    "profiles/cinematics3d-preset.schema.json": "6ce0cd019bc82d8f50468fe2cfba033be5aa197cca04c80624624432ed35a077",
+    "profiles/cinematics3d-render.schema.json": "580f38316e0bef883d99303779c5e399eb7103888c2ddf06162c2ddaa9b04643",
+    "profiles/cinematics3d-scene.schema.json": "ef809a4f85d0754604f2ab64dd2536b17b42c8756150d4b560bbdf0a1da3439e",
+    "profiles/cinematics3d-shot.schema.json": "692ff866c41dd7f683278cb258b9f97a7bccfd880656b3160eb84cff27b23d91",
+    "profiles/cinematics3d-stack.schema.json": "63b0cc745d1002530bfcb36773970901021c2b41fb49b9192986ede66ea66d5e",
+    "references/atomic-publication.md": "fe8514d0479ba00a17d0af4726dfbc89b067b21de95ebc3d7f248da1eacfe79f",
+    "references/cinematics3d-contracts.md": "912a47a0c971d4f78af047fc1939cc580e68de9212a785936f86d4fda3d2c04c",
+    "references/directory-capability.md": "fe7dca37f74218ef57ed4d118728ab41369c78db602172b990fe0ed9f1047015",
+    "references/silent-video.md": "e694dff68608990cc17c2b136feee5ec57f43660cd68d3deabf42ca71541d75f",
+    "schemas/silent-video-v1/artifact.schema.json": "f86e12a70e54ba713f0da11138ae6f0f2d071489c7b65b39906e7c93f66b5075",
+    "schemas/silent-video-v1/capability.schema.json": "38b6452c576f8140c04313ac0fa9ea11c715681d372d30d5afcaf50328941180",
+    "schemas/silent-video-v1/job.schema.json": "edd0eda4229fb2b3e1d75a8a7cb0990e7269e75f7ced64562cfbd19ce26d0740",
+    "schemas/silent-video-v1/profile.schema.json": "8266407f8ffdaefd45dae43acbf1df01475e7910f802b7b3dc02b15471dc3412",
+    "schemas/silent-video-v1/request.schema.json": "b500cd90ede1e31d0b4d13fc9820f98982fc6ba70a162fa2d2cd7e850bee843d",
+    "schemas/silent-video-v1/source.schema.json": "09b137489c7a4171915ba79bb265218809664d827a0c59bbc3e5ac40ca92054b",
+    "scripts/atomic_publish.py": "f9f1e983dc152a3cfcc7f77c33b864540bdadf16085e556b788b38a06498c3c6",
+    "scripts/cinematics3d_contracts.py": "e81a1a6ece4f7b2c3d18b4edd5182dae10bec0645f3f87113be8305bf12e51a3",
+    "scripts/cinematics3d_example.py": "49de572a74e3499c3d6e51faa4b030b07f4a3e17849890f54f7d364a1a7d3d4b",
+    "scripts/decomposition_package.py": "5bb76f9a6b9d75c2bf11641d63b569300c0ded3e6a3a95484effe04400cf1737",
+    "scripts/demonstrate_silent_video.py": "256691cfa71e83a01332ae11009c642c4a4810f5bd5e4ed1550d64748e77f537",
+    "scripts/generate_schemas.py": "f24fdd19e25b04013b4386e2b14c7f3a84720c249c547c94d738884e29ed52e1",
+    "scripts/portable_paths.py": "83219b3ad08a64ed6da2390b6f906a01f7ad850cc3eaedaf3d986dc6e8196a57",
+    "scripts/rig_errors.py": "c8897fe69ae083b964c4db0ae9773ed0e38ea37d526d47e4a3720d73262d0572",
+    "scripts/rig_gltf.py": "d5b1cb52eb7acd776182973fc663b7b57f6b834817cad3d538e2da083a6f6e90",
+    "scripts/rig_models.py": "6447ed3746d93f6020aa469db15902c71846928ec70b7c7537e2d69ae84c3c3d",
+    "scripts/rig_obj.py": "2a1c243513f3c8fb339d9fb1c31693d788a4b2364bf4a47206fd5942d1996aa5",
+    "scripts/silent_video.py": "4a69f059ef314ea2875a10b4182b3c2c895907b0c590793d2ed237888db3bf45",
+    "scripts/test_rig_gate.py": "75f943ba204219214d696e783519b540dcb60876c7f31ea6ab26e11dfa13bffd",
+    "tests/optional/test_atomic_private_stage_linux.py": "16c2d2c21769d2baf8ff8b5f4a462174951f6d3bfe2443f05839f444923b7dc3",
+    "tests/optional/test_silent_video_native.py": "76059e981ca5becd0a85b225d253676c4121334a40130fa10b7e35a9f842d905",
+    "tests/test_atomic_private_stage.py": "fbc71343487b9d082165326155258ba8e82045a7751c484e53420acabc2a9ecf",
+    "tests/test_portable_paths.py": "7bce34047650ae91ebc47d6a503b86c7309fc5b7d9ab1f6af56739fcc3e73c25",
+    "tests/test_rig_cinematics3d_contracts.py": "738a36290d2730528f584461885b9ada07443765da7b46b8e47bafb4c2f6e1bb",
+    "tests/test_rig_directory_capability.py": "f83d0ba5f6a383b0b3cbf175df050b7575358c08c8efccf42aa42d44fc82be98",
+    "tests/test_rig_workflow.py": "7c26604b16cd3ed0d89bcb295c0d97c9f614f075abce5cff22faf083b3340ff1",
+    "tests/test_silent_video.py": "575b7798fc02ac67234b7b2a8bd22c7c546728b1c5383393d1cd12cde032e678"
+  },
+  "retained_actual_media": [
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/h264-24-1.mp4",
+      "sha256": "2a21b3eeb32c68e163973f7df677f39657c03f4c36351cb425d0a4e8b7696daa",
+      "bytes": 2993,
+      "frames": 12,
+      "audio_streams": 0,
+      "request": "h264-24-1-request.json",
+      "receipt": "h264-24-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/h264-25-1.mp4",
+      "sha256": "e4934049fd3f3569a620b3891c48168179a4c87f4321c19eed1d7c32a4bfae03",
+      "bytes": 2983,
+      "frames": 12,
+      "audio_streams": 0,
+      "request": "h264-25-1-request.json",
+      "receipt": "h264-25-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/h264-30-1.mp4",
+      "sha256": "bd343aaf58c37469e8a12c3870839d9f7e425fd86a43288ddac457a60c56c2fc",
+      "bytes": 2790,
+      "frames": 12,
+      "audio_streams": 0,
+      "request": "h264-30-1-request.json",
+      "receipt": "h264-30-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/h264-60-1.mp4",
+      "sha256": "bebd9367d327a5222c85422057fe9717e7017700d1a42cc8fc8ad820fdb82d2f",
+      "bytes": 2732,
+      "frames": 12,
+      "audio_streams": 0,
+      "request": "h264-60-1-request.json",
+      "receipt": "h264-60-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/h264-30000-1001.mp4",
+      "sha256": "d79b38f1675256c1ac21aabd4050761c54895896e208f580c7f8b1796e0562f9",
+      "bytes": 2789,
+      "frames": 12,
+      "audio_streams": 0,
+      "request": "h264-30000-1001-request.json",
+      "receipt": "h264-30000-1001-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/vp9.webm",
+      "sha256": "b79ab25f45d224aba23eae3672fcf1bdaf38fa6c093912c9bd3e53a81e4ef9d1",
+      "bytes": 1592,
+      "frames": 12,
+      "audio_streams": 0,
+      "request": "vp9-request.json",
+      "receipt": "vp9-receipt.json"
+    }
+  ],
+  "actual_media_evidence": "/home/complete/.cache/hatch-coordination-20261112/media-foundations-evidence/stdlib-final-retained-demo/acceptance.json",
+  "actual_media_evidence_sha256": "51247fbe6730c1a52cf20f1ecbda351557f7bc979e68c09407a1210dcbe6fa23",
+  "fixture": true,
+  "production_art": false,
+  "visual_review": "not-performed",
+  "prior_receipts": [
+    "receipt.json",
+    "receipt-capability-20261113.json"
+  ],
+  "validation_remaining": [
+    "Supplemental3 stdlib path tests queued; current-head CI and NEW independent whole-candidate review pending.",
+    "Canonical model-adapter actual geometry consumer evidence is owned by descriptor-capability author; no geometry proof fabricated here."
+  ]
+}

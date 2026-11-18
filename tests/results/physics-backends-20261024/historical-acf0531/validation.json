@@ -1,0 +1,328 @@
+{
+  "captured_at": "2026-10-24T04:07:46.388099+00:00",
+  "repository": "CompleteTech-Skills/hatch-pet",
+  "tested_head": "acf0531c9bbcd69dc3234b3f278d48a19ca95d94",
+  "dependencies": {
+    "main198": "bae65356567a10915658a6371c14ee9a4553db36",
+    "physics167": "7cff19f4d3d7c3c4c83f1a309f3a9300b6f9d941",
+    "scene59": "0fcde51d9b8ecc160c3023bf31891038bcf232f1"
+  },
+  "all_commands_completed": true,
+  "source_unchanged": true,
+  "results": [
+    {
+      "name": "lifecycle",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_rig_physics_backends.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 32.85589812102262,
+      "log": "tests/results/physics-backends-20261024/lifecycle.log",
+      "sha256": "f283533d98230159860a445ef1bf22a2c18dcdc0da11a264a3e6a5a02f8e77f9",
+      "bytes": 6971
+    },
+    {
+      "name": "physics-contracts",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_physics_contracts.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.6076229920145124,
+      "log": "tests/results/physics-backends-20261024/physics-contracts.log",
+      "sha256": "87f76816a2bba57ea957471ac32fd23d1d97d2dd1bc35b35f36016a2fdba092e",
+      "bytes": 3725
+    },
+    {
+      "name": "scene-contracts",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_scene3d_contracts.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 8.467602553893812,
+      "log": "tests/results/physics-backends-20261024/scene-contracts.log",
+      "sha256": "38f5dd567f7baf6e997f1e5bbce6e838608d9ddbfc5bd82b2e8b6e826a9ba12c",
+      "bytes": 10405
+    },
+    {
+      "name": "existing-schema-math",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/test_rig_gate.py",
+        "schema-math"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 7.930202685995027,
+      "log": "tests/results/physics-backends-20261024/existing-schema-math.log",
+      "sha256": "9b2b4d239527c4e6c46972cf2d39c860f55418141300b56b44323fb8c4c76c45",
+      "bytes": 6483
+    },
+    {
+      "name": "existing-isolation",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_rig_compatibility.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.5496883529704064,
+      "log": "tests/results/physics-backends-20261024/existing-isolation.log",
+      "sha256": "14e03e681cf3c13a84c88f063d8e480eb652161e8712bf978ac61db2a62753d5",
+      "bytes": 967
+    },
+    {
+      "name": "schema-check",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/generate_schemas.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.3543995670042932,
+      "log": "tests/results/physics-backends-20261024/schema-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "physics-schema-check",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_contracts.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.15501863206736743,
+      "log": "tests/results/physics-backends-20261024/physics-schema-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "template-check",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/generate_rig_templates.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.31566454900894314,
+      "log": "tests/results/physics-backends-20261024/template-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "name": "source-delivery",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/production_sources.py",
+        "verify-delivery"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.0725177070125937,
+      "log": "tests/results/physics-backends-20261024/source-delivery.log",
+      "sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8",
+      "bytes": 2916
+    },
+    {
+      "name": "blender-probe",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "probe",
+        "--smoke"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 14.279823872027919,
+      "log": "tests/results/physics-backends-20261024/blender-probe.log",
+      "sha256": "81a92af8d397a98972651e8adc5bb79cba4972a6dce551f29092a6e0d4177aac",
+      "bytes": 9005
+    },
+    {
+      "name": "pybullet-probe",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "probe",
+        "--backend",
+        "pybullet",
+        "--python",
+        "/home/complete/.cache/hatch-fleet/pybullet311/bin/python",
+        "--smoke"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 5.21375915594399,
+      "log": "tests/results/physics-backends-20261024/pybullet-probe.log",
+      "sha256": "845798b83d7985008f73c39db78b0eb42a6977e9f63c166e388523afd06dbb36",
+      "bytes": 5853
+    },
+    {
+      "name": "blender-demo",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "demo",
+        "/tmp/hatch-physics168/tests/results/physics-backends-20261024/blender-demo"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 6.976444722036831,
+      "log": "tests/results/physics-backends-20261024/blender-demo.log",
+      "sha256": "7b774f5734fbfef74ec8766bec22bf6bf09f38851e6bb0a424378f828635253a",
+      "bytes": 295
+    },
+    {
+      "name": "pybullet-demo",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "demo",
+        "--backend",
+        "pybullet",
+        "--python",
+        "/home/complete/.cache/hatch-fleet/pybullet311/bin/python",
+        "/tmp/hatch-physics168/tests/results/physics-backends-20261024/pybullet-demo"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.690973247983493,
+      "log": "tests/results/physics-backends-20261024/pybullet-demo.log",
+      "sha256": "d06f7354c5b9efc9a6b8653ce10237c63f3c19ba7ff76de7e8a5f8440d5f8f45",
+      "bytes": 296
+    },
+    {
+      "name": "blender-cache",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "verify",
+        "/tmp/hatch-physics168/tests/results/physics-backends-20261024/blender-demo/cache"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.4178674399154261,
+      "log": "tests/results/physics-backends-20261024/blender-cache.log",
+      "sha256": "47c4f4c112b143d95e019850081e9cfb0bf22ba09ebfd456a1fb9c97d95edb2e",
+      "bytes": 945
+    },
+    {
+      "name": "pybullet-cache",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "verify",
+        "/tmp/hatch-physics168/tests/results/physics-backends-20261024/pybullet-demo/cache"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.4227873709751293,
+      "log": "tests/results/physics-backends-20261024/pybullet-cache.log",
+      "sha256": "65a3816534deb97ec4a04ed45b026eb14713cd583c214f967d1414b6a8862437",
+      "bytes": 924
+    },
+    {
+      "name": "blender-frame12",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-B",
+        "scripts/physics_backends.py",
+        "inspect",
+        "/tmp/hatch-physics168/tests/results/physics-backends-20261024/blender-demo/cache",
+        "--frame",
+        "12"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.399045028956607,
+      "log": "tests/results/physics-backends-20261024/blender-frame12.log",
+      "sha256": "237ed2e9ae54c6696e0415e0a9a6d791adfd746f471d348263e98800625e9d7f",
+      "bytes": 693
+    },
+    {
+      "name": "host-versions",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "-m",
+        "pip",
+        "freeze"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.6491022959817201,
+      "log": "tests/results/physics-backends-20261024/host-versions.log",
+      "sha256": "45fb0810d8f69b08e8e297544a7fd57a93c124034694956daa6e6339f9c6bc07",
+      "bytes": 363
+    },
+    {
+      "name": "optional-versions",
+      "command": [
+        "/home/complete/.cache/hatch-fleet/pybullet311/bin/python",
+        "-m",
+        "pip",
+        "freeze"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.6177686450537294,
+      "log": "tests/results/physics-backends-20261024/optional-versions.log",
+      "sha256": "9d9ed302333a5c6f20a802f51fcb5230ad10b1aece364e4f7bee57efcd3ecc53",
+      "bytes": 29
+    },
+    {
+      "name": "authored-whitespace",
+      "command": [
+        "git",
+        "diff",
+        "acf0531^",
+        "acf0531",
+        "--check"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.010945098008960485,
+      "log": "tests/results/physics-backends-20261024/authored-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ],
+  "limitations": [
+    "Local Linux execution only; current-head hosted CI still required.",
+    "Unsigned retained execution evidence; no human or production-art approval.",
+    "Solver continuation/checkpoint restart unsupported.",
+    "Other physics categories and generalized rigid-body requirements remain open."
+  ]
+}
