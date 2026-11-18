@@ -247,6 +247,80 @@ class NativeVerificationTests(unittest.TestCase):
         source.write_text(json.dumps(document), encoding='utf-8')
         return source
 
+    def test_skinned_animation_reconciles_source_targets_and_every_key_time(self):
+        builder = GltfBuilder()
+        positions = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', bounds=True)
+        joints = builder.accessor([[0, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]], 'VEC4', component=5121)
+        weights = builder.accessor([[1, 0, 0, 0]] * 3, 'VEC4')
+        deltas = builder.accessor([[0, 0, 0.25]] * 3, 'VEC3', bounds=True)
+        identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+        inverse_child = [[1, 0, 0, -1], *identity[1:]]
+        inverse_binds = builder.accessor([identity, inverse_child], 'MAT4')
+        exact_times = [-0.0, 1 / 128, 1 / 32]
+        child_times = [0.0, 3 / 128, 1 / 32]
+        times = builder.accessor(exact_times, 'SCALAR', bounds=True)
+        child_input = builder.accessor(child_times, 'SCALAR', bounds=True)
+        root_translations = builder.accessor([[0, 0, 0], [0, 0.25, 0], [0, 0, 0]], 'VEC3')
+        child_translations = builder.accessor([[1, 0, 0], [1, 0.5, 0], [1, 0, 0]], 'VEC3')
+        morph_weights = builder.accessor([0, 0.5, 0], 'SCALAR')
+        primitive = dict(attributes=dict(POSITION=positions, JOINTS_0=joints, WEIGHTS_0=weights),
+                         targets=[dict(POSITION=deltas)])
+        joint_name = 'Private Fixture Joint'
+        builder.json.update(
+            scenes=[dict(nodes=[0, 1])],
+            nodes=[dict(mesh=0, skin=0), dict(name=joint_name, children=[2]),
+                   dict(name=joint_name, translation=[1, 0, 0])],
+            meshes=[dict(primitives=[primitive, primitive])],
+            skins=[dict(joints=[1, 2], inverseBindMatrices=inverse_binds)],
+            animations=[dict(samplers=[dict(input=times, output=root_translations),
+                                       dict(input=child_input, output=child_translations),
+                                       dict(input=times, output=morph_weights, interpolation='STEP')],
+                             channels=[dict(sampler=0, target=dict(node=1, path='translation')),
+                                       dict(sampler=1, target=dict(node=2, path='translation')),
+                                       dict(sampler=2, target=dict(node=0, path='weights'))])])
+        source = self.root / 'channel-lineage.glb'
+        builder.write(source)
+        reference = self.import_asset(source, category='animation', scale=1)
+        report = validate_asset(self.library, reference)
+        self.assertEqual(report['skeleton']['deform_bones'], 2)
+        self.assertEqual(len(report['skins']), 2)
+        self.assertEqual(report['hierarchy'][-1]['world_matrix'][0][3], 1)
+        tracks = report['clips'][0]['tracks']
+        self.assertEqual([(track['source_node'], track.get('source_primitive'), track['path'],
+                           track['interpolation'], track['keys']) for track in tracks],
+                         [(1, None, 'translation', 'LINEAR', 3),
+                          (2, None, 'translation', 'LINEAR', 3),
+                          (0, 0, 'weights', 'STEP', 3),
+                          (0, 1, 'weights', 'STEP', 3)])
+        for track, expected in zip(tracks, (exact_times, child_times, exact_times, exact_times), strict=True):
+            self.assertEqual(track['key_times_sha256'], object_hash(expected))
+            self.assertEqual(track['last_key_exact'], dict(numerator=1, denominator=32))
+        self.assertNotIn('private-fixture-joint', json.dumps(report).lower())
+        self.assertNotIn(joint_name, json.dumps(report))
+
+        def faulty_decode(fault):
+            def decode(*args, **kwargs):
+                model = load_character_model(*args, **kwargs)
+                tracks = next(iter(model.clips.values()))['tracks']
+                if fault == 'middle time':
+                    tracks[0]['times'][1] = 1 / 64
+                elif fault == 'signed zero':
+                    tracks[0]['times'][0] = 0.0
+                else:
+                    first, second = (0, 1) if fault == 'bone target' else (2, 3)
+                    tracks[first]['target'], tracks[second]['target'] = (
+                        tracks[second]['target'], tracks[first]['target'])
+                return model
+            return decode
+
+        for fault in ('bone target', 'primitive target', 'middle time', 'signed zero'):
+            with (self.subTest(fault=fault),
+                  patch('asset_library_validation.load_character_model', side_effect=faulty_decode(fault)),
+                  self.assertRaises(RigError) as error):
+                validate_asset(self.library, reference)
+            self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_ANIMATION')
+            self.assertNotIn(joint_name, json.dumps(error.exception.report))
+
     def test_unskinned_animation_reports_exact_source_end_and_rigid_fallback(self):
         report = validate_asset(self.library, self.import_asset(self.animated_source()))
         self.assertEqual(report['skins'], [])
