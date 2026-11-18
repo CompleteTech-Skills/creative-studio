@@ -286,7 +286,9 @@ def publish(result, destination, *, evidence=(), format='glb'):
     # edits cannot race the geometry/report pair used for this publication.
     result=deepcopy(result)
     require(result._reconstruction_signature==_result_signature(result),'RECON_STALE','Result changed while capturing its publication snapshot.')
-    require(isinstance(evidence,(list,tuple)) and len(evidence)<=64 and all(isinstance(e,Evidence) and type(e.payload) is bytes for e in evidence),
+    require(isinstance(evidence,(list,tuple)), 'RECON_SOURCE','Supply at most64captured observations.')
+    evidence = tuple(evidence[:65])
+    require(len(evidence)<=64 and all(isinstance(e,Evidence) and type(e.payload) is bytes for e in evidence),
             'RECON_SOURCE','Supply at most64captured observations.')
     require(sum(len(e.payload) for e in evidence)<=256*1024**2,'RECON_SOURCE_LIMIT','Evidence total exceeds256MiB.')
     for item in evidence:
