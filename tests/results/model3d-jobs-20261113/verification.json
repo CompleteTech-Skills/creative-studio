@@ -6,7 +6,7 @@
   "tests": 14,
   "result": "pass",
   "demonstration": {
-    "durable_root": "/home/complete/.cache/hatch-coordination-20261112/model50-demo-reviewed",
+    "durable_root": "<local-work-dir>/model3d-jobs-evidence",
     "command": "python scripts/demonstrate_model3d_jobs.py --destination NEW_DIR",
     "assets": [
       {

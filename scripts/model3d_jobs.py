@@ -20,7 +20,7 @@ import uuid
 import zipfile
 
 from atomic_publish import _rename_no_replace
-from rig_errors import (RigError, atomic_json, finite_json, job_lock, object_hash,
+from rig_errors import (RigError, atomic_json, finite_json, job_lock, normalize_root, object_hash,
                         open_payload, portable_name, read_json, require, safe_path,
                         sha256, timestamp)
 
@@ -79,7 +79,7 @@ def _request(value):
 def _root(root):
     root = Path(root).absolute()
     require(not root.is_symlink(), 'MODEL3D_JOB_PATH', 'A job root cannot be a symbolic link.')
-    return root
+    return normalize_root(root.parent)/root.name
 
 
 def _inventory(root, *, files, bytes_):
@@ -179,7 +179,7 @@ def create_job(root, request, *, inputs=None, budgets=None):
             for name, path in inputs.items():
                 source = Path(path).absolute()
                 target = safe_path(stage/'inputs', name); target.parent.mkdir(parents=True, exist_ok=True)
-                with open_payload(source.parent, source.name) as (stream, info):
+                with open_payload(normalize_root(source.parent), source.name) as (stream, info):
                     require(total+info.st_size <= budgets['input_bytes'], 'MODEL3D_JOB_LIMIT', 'Input bytes exceed the budget.')
                     count = 0
                     with target.open('xb') as out:
@@ -436,7 +436,7 @@ def _zip_preflight(stream, size):
 def _verify_archive(path, destination=None):
     from rig_errors import decode_json, MAX_JSON_BYTES
     source = Path(path).absolute()
-    with open_payload(source.parent, source.name) as (stream, info):
+    with open_payload(normalize_root(source.parent), source.name) as (stream, info):
         _zip_preflight(stream, info.st_size)
         return _verify_open_archive(stream, destination)
 
