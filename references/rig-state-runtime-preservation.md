@@ -363,3 +363,31 @@ skips. They include exact .9s equivalence, adjacent clocks, scaled future cycles
 cycle prefixes, actual skinned vertices, repaired overlapping contacts and real
 unreachable/unsatisfied controls. Full integrated gates and exact-head independent
 review remain separate requirements; no visual or production acceptance follows.
+
+## Reported elapsed time and interior native playback
+
+At published source `40c43775`, all 172 animation/IK methods passed before a
+fresh security reviewer reproduced a nonzero-origin interior STEP mismatch.
+The runtime now starts interior playback from the represented binary64
+`now - entered` value reported as `elapsed`, then retains exact authored
+duration arithmetic for interval boundaries and cycle ownership. Recomputing
+the subtraction as an exact rational could choose the preceding STEP key even
+though native playback at the reported elapsed value selected the next key.
+
+Four new independently authored methods compare actual native FK and skinned
+vertices at adjacent timestamps and zero/nonzero origins, reject native skin
+overflow with all nine runtime fields restored, preserve half-open loop starts,
+and capture the exact one-shot endpoint when rounded clock subtraction falls
+inside the final interval. Two methods failed on the preceding source; both
+endpoint controls passed. After the correction, all 26 methods across the new
+elapsed-phase, clock-validation, clock-phase and collapsed-prefix modules passed
+with zero skips and actual exit 0. The new module is included in the
+animation/IK gate. Full integrated execution, fresh exact-head independent
+review and required hosted checks remain mandatory.
+
+The combined refresh also preserves the concurrent native interior and finite
+validation-report regressions. Its schedule retains exact absolute interval
+ownership while native channel sampling uses the reported elapsed clock inside
+that interval; collapsed starts retain the shortest repeating recipe period.
+The earlier 26-method result describes the earlier correction, not this combined
+source. All new and existing modules remain enrolled for integrated execution.
