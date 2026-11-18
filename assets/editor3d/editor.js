@@ -20,6 +20,7 @@ let renderer,
   selection = new Set(),
   objects = new Map(),
   selectedBone = null,
+  outlinerFlagTarget = null,
   nodes = new Map(),
   boneObjects = new Map(),
   busy = false,
@@ -34,7 +35,8 @@ let renderer,
   clipDuration = 0,
   loadEpoch = 0,
   currentSnapshot = null,
-  previewActive = false;
+  previewActive = false,
+  sceneAvailable = false;
 const collapsed = new Set();
 const extensions = [];
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
@@ -117,6 +119,10 @@ async function upload(file) {
 }
 function nodeLocked(id) { return evaluatedStates.get(id)?.locked !== false; }
 function nodeSelectable(id) { return evaluatedStates.get(id)?.selectable === true; }
+function canRestoreFlags(id) {
+  const node = nodes.get(id);
+  return node && (node.locked || !node.visible);
+}
 function transformReason(id) {
   if (nodeLocked(id)) return "Object is locked by native scene state.";
   if (!nodeSelectable(id)) return "Object is not selectable in native scene state.";
@@ -161,6 +167,7 @@ function applyNativeState(value) {
   content.updateMatrixWorld(true);
 }
 function preview(scene) {
+  if (!sceneAvailable) return;
   playing = false;
   gizmo.detach();
   applyNativeState(scene.nodes);
@@ -168,6 +175,7 @@ function preview(scene) {
   refreshSelection();
 }
 function clearPreview() {
+  if (!sceneAvailable) return;
   applyNativeState(savedNativeState.nodes);
   previewActive = false;
   refreshSelection();
@@ -194,6 +202,32 @@ function setTransform(object, value) {
   object.quaternion.fromArray(value.rotation);
   object.scale.fromArray(value.scale);
   object.updateMatrix();
+}
+function dragTransforms(current) {
+  const primary = objects.get(current.primary);
+  primary.updateMatrixWorld(true);
+  const delta = primary.matrixWorld.clone().multiply(current.records.get(current.primary).world.clone().invert());
+  const transforms = new Map([[current.primary, localTransform(primary)]]);
+  for (const [id, record] of current.records) {
+    if (id === current.primary || transformReason(id)) continue;
+    const parent = objects.get(id).parent.matrixWorld;
+    const matrix = parent.clone().invert().multiply(delta).multiply(record.world);
+    const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), scale = new THREE.Vector3();
+    if (!matrix.elements.every(Number.isFinite) || !(matrix.determinant() > 0)) return null;
+    matrix.decompose(position, rotation, scale);
+    if (scale.toArray().some((value) => !(value > 1e-10))) return null;
+    const axes = scale.toArray().map((length, i) =>
+      new THREE.Vector3().setFromMatrixColumn(matrix, i).divideScalar(length));
+    if (Math.abs(axes[0].dot(axes[1])) > 1e-6 || Math.abs(axes[0].dot(axes[2])) > 1e-6 ||
+        Math.abs(axes[1].dot(axes[2])) > 1e-6) return null;
+    rotation.normalize();
+    const recomposed = new THREE.Matrix4().compose(position, rotation, scale);
+    // Match the native transform_for_matrix component-wise absolute and relative tolerances.
+    if (!recomposed.elements.every((value, i) =>
+      Math.abs(value - matrix.elements[i]) <= 1e-7 + 1e-7 * Math.abs(matrix.elements[i]))) return null;
+    transforms.set(id, { translation: position.toArray(), rotation: rotation.toArray(), scale: scale.toArray() });
+  }
+  return transforms;
 }
 function nativeCommands(commands) {
   return commands.flatMap((command) => {
@@ -260,9 +294,9 @@ function setBusy(value) {
   $("undo").disabled = busy || !currentSnapshot?.undo_available;
   $("redo").disabled = busy || !currentSnapshot?.redo_available;
   document.querySelectorAll("#group,#ungroup,#duplicate,#delete,#show-all,#collections input")
-    .forEach((control) => { control.disabled = busy; });
+    .forEach((control) => { control.disabled = busy || !sceneAvailable; });
   document.querySelectorAll("#outliner [data-id]")
-    .forEach((control) => { control.draggable = !busy && !nodeLocked(control.dataset.id); });
+    .forEach((control) => { control.draggable = !busy && nodeSelectable(control.dataset.id); });
 }
 function rejectPendingEdit() {
   if (!busy) return false;
@@ -270,7 +304,7 @@ function rejectPendingEdit() {
   return true;
 }
 async function commit(commands) {
-  if (rejectPendingEdit() || !commands.length) return;
+  if (!sceneAvailable || rejectPendingEdit() || !commands.length) return;
   setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
@@ -299,6 +333,7 @@ async function commit(commands) {
 }
 function select(id, add = false, toggle = false) {
   selectedBone = null;
+  outlinerFlagTarget = null;
   if (!add && !toggle) selection.clear();
   if (toggle && selection.has(id)) selection.delete(id);
   else if (objects.has(id) && nodeSelectable(id))
@@ -324,6 +359,7 @@ function boneSelection() {
 }
 function refreshSelection() {
   selection = new Set([...selection].filter(id => objects.has(id) && nodeSelectable(id)));
+  if (selection.size || !canRestoreFlags(outlinerFlagTarget)) outlinerFlagTarget = null;
   for (const row of $("outliner").querySelectorAll("[data-bone]"))
     row.setAttribute(
       "aria-selected",
@@ -334,7 +370,7 @@ function refreshSelection() {
   for (const button of $("outliner").querySelectorAll("[data-id]"))
     button.setAttribute(
       "aria-selected",
-      String(selection.has(button.dataset.id)),
+      String(selection.has(button.dataset.id) || outlinerFlagTarget === button.dataset.id),
     );
   for (const h of selectionHelpers) {
     overlays.remove(h);
@@ -353,7 +389,7 @@ function refreshSelection() {
   inspect();
 }
 function attach() {
-  if (!gizmo || busy || lost || previewActive || selectedBone || !transformSelectionAllowed()) {
+  if (!sceneAvailable || !gizmo || busy || lost || previewActive || selectedBone || !transformSelectionAllowed()) {
     gizmo?.detach();
     return;
   }
@@ -372,7 +408,6 @@ function disposeContent() {
   gizmo?.detach();
   mixers.forEach(({ mixer }) => mixer.stopAllAction());
   mixers = [];
-  nativeMaterials.clear();
   boneObjects.clear();
   objects.clear();
   nodes.clear();
@@ -385,16 +420,19 @@ function disposeContent() {
   const geometries = new Set(),
     materials = new Set(),
     textures = new Set();
+  function collectMaterials(value) {
+    for (const material of Array.isArray(value) ? value : [value]) {
+      if (!material || material === normalMaterial || material === solidMaterial || materials.has(material)) continue;
+      materials.add(material);
+      for (const property of Object.values(material))
+        if (property?.isTexture) textures.add(property);
+    }
+  }
+  for (const material of nativeMaterials.values()) collectMaterials(material);
+  nativeMaterials.clear();
   content.traverse((object) => {
     if (object.geometry) geometries.add(object.geometry);
-    for (const m of Array.isArray(object.material)
-      ? object.material
-      : [object.material])
-      if (m) {
-        materials.add(m);
-        for (const value of Object.values(m))
-          if (value?.isTexture) textures.add(value);
-      }
+    collectMaterials(object.material);
   });
   content.clear();
   geometries.forEach((x) => x.dispose());
@@ -471,7 +509,18 @@ async function assetObject(asset) {
   }
   throw Error(asset.message || "Unsupported geometry format.");
 }
+function setSceneAvailable(available) {
+  sceneAvailable = available;
+  overlays.visible = available;
+  document.querySelectorAll("nav :is(button,select,input):not(#undo,#redo,#refresh), " +
+    ".selection-tools button,#filter,#overlay-controls input,#clip,#play,#time,#show-all")
+    .forEach((control) => { control.disabled = !available; });
+  orbit.enabled = available && $("view").value !== "camera";
+  inspect();
+}
 async function install(snapshot) {
+  if (snapshot.revision < revision) return false;
+  const recoveringViewport = currentSnapshot?.viewport_state?.available === false;
   previewActive = false;
   currentSnapshot = snapshot;
   $("undo").disabled = busy || !snapshot.undo_available;
@@ -486,8 +535,23 @@ async function install(snapshot) {
     throw Error("The repository supplied no exact native viewport evaluation.");
   nativeTransformReadonly = savedNativeState.transform_readonly || {};
   if (savedNativeState.available === false) {
-    disposeContent(); evaluatedStates.clear(); selection.clear(); selectedBone = null;
-    $("outliner").replaceChildren(); $("collections").replaceChildren();
+    disposeContent();
+    evaluatedStates.clear();
+    selection.clear();
+    selectedBone = outlinerFlagTarget = activeNativeCameraId = null;
+    drag = null;
+    camera = orbit.object = gizmo.camera = perspective;
+    world.background = null;
+    renderer.toneMappingExposure = 1;
+    buildClips();
+    clipDuration = 0;
+    $("clock").textContent = "0 s";
+    $("outliner").replaceChildren();
+    $("collections").replaceChildren();
+    $("stats").textContent = "";
+    $("view-label").textContent = "Viewport unavailable";
+    resize();
+    setSceneAvailable(false);
     $("revision").textContent = "Revision " + revision + " · " + String(sha256).slice(0, 10);
     diagnostic(savedNativeState.error?.message || "Native viewport evaluation is unavailable.");
     $("status").textContent = "Saved revision " + revision + "; viewport unavailable.";
@@ -496,6 +560,7 @@ async function install(snapshot) {
   }
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
+  if (recoveringViewport) clearDiagnostic();
   disposeContent();
   $("revision").textContent =
     "Revision " + revision + " · " + String(sha256).slice(0, 10);
@@ -529,10 +594,11 @@ async function install(snapshot) {
             actual.traverse((o) => {
               o.geometry?.dispose();
             });
-            return;
+            return false;
           }
           object.add(actual);
         } catch (error) {
+          if (epoch !== loadEpoch) return false;
           diagnostic("Asset " + node.asset.id + ": " + error.message);
         }
       } else
@@ -613,7 +679,8 @@ async function install(snapshot) {
     visit(object);
   }
   applyNativeState(savedNativeState.nodes);
-  if ($("view").value === "camera") setView();
+  setSceneAvailable(true);
+  if (recoveringViewport || $("view").value === "camera") setView();
   for (const [id, object] of objects) {
     if ([...boneObjects.values()].some((b) => b.userData.ownerId === id)) {
       const helper = new THREE.SkeletonHelper(object);
@@ -653,6 +720,7 @@ async function reload(frame = false) {
 function buildOutliner() {
   const root = $("outliner");
   root.replaceChildren();
+  if (!sceneAvailable) return;
   const query = $("filter").value.toLowerCase();
   function add(node, depth) {
     if (
@@ -674,10 +742,18 @@ function buildOutliner() {
         " · " +
         node.type;
       button.title = node.id;
-      button.onclick = (e) =>
-        select(node.id, e.shiftKey, e.ctrlKey || e.metaKey);
-      button.draggable = !busy && !nodeLocked(node.id);
-      button.setAttribute("aria-disabled", String(!nodeSelectable(node.id)));
+      button.onclick = (e) => {
+        if (nodeSelectable(node.id)) {
+          select(node.id, e.shiftKey, e.ctrlKey || e.metaKey);
+        } else if (canRestoreFlags(node.id)) {
+          selectedBone = null;
+          selection.clear();
+          outlinerFlagTarget = node.id;
+          refreshSelection();
+        }
+      };
+      button.draggable = !busy && nodeSelectable(node.id);
+      button.setAttribute("aria-disabled", String(!nodeSelectable(node.id) && !canRestoreFlags(node.id)));
       button.ondragstart = (e) => e.dataTransfer.setData("text/plain", node.id);
       button.ondragover = (e) => e.preventDefault();
       button.ondrop = (e) => {
@@ -746,7 +822,7 @@ for (const kind of ["translation", "rotation", "scale"]) {
   $("transform-fields").append(row);
 }
 function inspect() {
-  const id = [...selection][0],
+  const id = outlinerFlagTarget || [...selection][0],
     node = nodes.get(id),
     object = objects.get(id);
   $("base-inspector")
@@ -756,10 +832,12 @@ function inspect() {
         !e.closest("#overlay-controls") &&
         !["clip", "play", "time", "show-all"].includes(e.id)
       )
-        e.disabled = !node || busy || nodeLocked(id) || previewActive ||
+        e.disabled = !node || busy || Boolean(outlinerFlagTarget) || nodeLocked(id) || previewActive ||
           ((e.closest("#transform-fields") || ["parent", "reset", "paste", "ground"].includes(e.id)) && !transformSelectionAllowed());
     });
-  $("locked").disabled = !node || busy || previewActive;
+  $("locked").disabled = !node || busy || previewActive || Boolean(outlinerFlagTarget && !node.locked);
+  if (outlinerFlagTarget && node && !busy && !previewActive && !node.visible)
+    $("visible").disabled = false;
   if (!node) {
     $("selected-name").textContent = "Select an object";
     $("selected-type").textContent = "";
@@ -772,7 +850,7 @@ function inspect() {
   $("name").value = node.name;
   $("visible").checked = node.visible;
   $("render-visible").checked = node.render.visible;
-  $("locked").checked = nodeLocked(id);
+  $("locked").checked = node.locked;
   if (selectedBone) {
     const bone = boneObjects.get(selectedBone);
     $("selected-name").textContent = bone.name;
@@ -928,7 +1006,9 @@ $("delete").onclick = () =>
   );
 $("name").onchange = () => commit(selectedPatch({ name: $("name").value }));
 $("visible").onchange = () =>
-  commit(selectedPatch({ visible: $("visible").checked }));
+  commit(outlinerFlagTarget
+    ? [{ op: "set-node", id: outlinerFlagTarget, patch: { visible: true } }]
+    : selectedPatch({ visible: $("visible").checked }));
 $("render-visible").onchange = () =>
   commit(
     roots().map((id) => ({
@@ -944,10 +1024,10 @@ $("render-visible").onchange = () =>
   );
 $("locked").onchange = () =>
   commit(
-    roots().map((id) => ({
+    (outlinerFlagTarget ? [outlinerFlagTarget] : roots()).map((id) => ({
       op: "set-node",
       id,
-      patch: { locked: $("locked").checked },
+      patch: { locked: outlinerFlagTarget ? false : $("locked").checked },
     })),
   );
 $("parent").onchange = () =>
@@ -1078,6 +1158,7 @@ function frameBox(box) {
   orbit.update();
 }
 function frameScene() {
+  if (!sceneAvailable) return;
   frameBox(new THREE.Box3().setFromObject(content));
 }
 $("frame").onclick = () => {
@@ -1106,6 +1187,7 @@ $("recall").onclick = () => {
   }
 };
 function setView() {
+  if (!sceneAvailable) return;
   let value = $("view").value;
   const center = orbit.target.clone(),
     distance = Math.max(camera.position.distanceTo(center), 1);
@@ -1275,10 +1357,14 @@ function resize() {
   }
   camera.updateProjectionMatrix();
 }
+function restoreDragTransforms(current) {
+  for (const [id, record] of current.records)
+    setTransform(objects.get(id), record.local);
+  content.updateMatrixWorld(true);
+}
 function cancelDrag() {
   if (!drag) return;
-  for (const [id, record] of drag.records)
-    setTransform(objects.get(id), record.local);
+  restoreDragTransforms(drag);
   drag = null;
   orbit.enabled = $("view").value !== "camera";
   gizmo.reset();
@@ -1302,7 +1388,7 @@ function initialize() {
     gizmo = new TransformControls(camera, renderer.domElement);
     world.add(gizmo.getHelper());
     gizmo.addEventListener("dragging-changed", (e) => {
-      orbit.enabled = $("view").value !== "camera" && !e.value;
+      orbit.enabled = sceneAvailable && $("view").value !== "camera" && !e.value;
       if (e.value) {
         content.updateMatrixWorld(true);
         drag = {
@@ -1320,39 +1406,29 @@ function initialize() {
       } else if (drag) {
         const current = drag;
         drag = null;
-        if ([...current.records.keys()].some(id => transformReason(id))) {
-          applyNativeState(savedNativeState.nodes);
-          diagnostic("Selected transforms are read-only in the native viewport.");
+        const blocked = [...current.records.keys()].some(id => transformReason(id));
+        const transforms = blocked ? null : dragTransforms(current);
+        if (!transforms) {
+          restoreDragTransforms(current);
+          refreshSelection();
+          diagnostic(blocked
+            ? "Selected transforms are read-only in the native viewport."
+            : "This multi-object drag would require shear, reflection or a singular transform.");
           return;
         }
-        commit(
-          [...current.records.keys()]
-            .filter((id) => !transformReason(id))
-            .map((id) => ({
-              op: "set-transform",
-              id,
-              transform: localTransform(objects.get(id)),
-            })),
-        );
+        commit([...transforms].map(([id, transform]) => ({ op: "set-transform", id, transform })));
       }
     });
     gizmo.addEventListener("objectChange", () => {
       if (drag) {
-        const primary = objects.get(drag.primary);
-        primary.updateMatrixWorld(true);
-        const delta = primary.matrixWorld
-          .clone()
-          .multiply(drag.records.get(drag.primary).world.clone().invert());
-        for (const [id, record] of drag.records) {
-          if (id === drag.primary || transformReason(id)) continue;
-          const object = objects.get(id),
-            matrix = object.parent.matrixWorld
-              .clone()
-              .invert()
-              .multiply(delta)
-              .multiply(record.world);
-          matrix.decompose(object.position, object.quaternion, object.scale);
-          object.updateMatrixWorld(true);
+        const transforms = dragTransforms(drag);
+        if (transforms) {
+          for (const [id, transform] of transforms) {
+            if (id === drag.primary) continue;
+            const object = objects.get(id);
+            setTransform(object, transform);
+            object.updateMatrixWorld(true);
+          }
         }
       }
       inspect();
@@ -1365,6 +1441,7 @@ function initialize() {
     );
     renderer.domElement.addEventListener("pointerup", (e) => {
       if (
+        !sceneAvailable ||
         drag ||
         gizmo.dragging ||
         !pointer ||
@@ -1416,6 +1493,7 @@ function initialize() {
     });
     new ResizeObserver(resize).observe($("viewport"));
     resize();
+    setSceneAvailable(false);
     reload(true).catch(diagnostic);
   } catch (e) {
     diagnostic("WebGL initialization failed: " + e.message);
@@ -1423,12 +1501,15 @@ function initialize() {
 }
 window.addEventListener("keydown", (e) => {
   if (e.target.matches("input,textarea,select")) return;
+  if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+    e.preventDefault();
+    historyCommand(e.shiftKey ? "redo" : "undo");
+    return;
+  }
+  if (!sceneAvailable) return;
   if (e.key === "Escape") {
     cancelDrag();
     select(null);
-  } else if ((e.ctrlKey || e.metaKey) && e.key === "z") {
-    e.preventDefault();
-    historyCommand(e.shiftKey ? "redo" : "undo");
   } else if (e.key.toLowerCase() === "f") $("frame").click();
   else if ({ g: "translate", r: "rotate", s: "scale" }[e.key.toLowerCase()]) {
     $("tool").value = { g: "translate", r: "rotate", s: "scale" }[

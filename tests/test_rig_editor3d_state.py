@@ -48,6 +48,12 @@ class EditorNativeStateTests(unittest.TestCase):
             free = deepcopy(mesh); free.update(id='free', name='Free mesh')
             free['transform']['translation'] = [-2, 0, 0]; document['nodes'].append(free)
             mesh['transform'].update(rotation=[0,0,math.sqrt(.5),math.sqrt(.5)], pivot=[1,0,0])
+        elif mode == 'multi-drag':
+            root['transform']['scale'] = [2, 1, 1]
+            free = deepcopy(mesh)
+            free.update(id='free', name='Free mesh', parent=None)
+            free['transform']['translation'] = [-2, 0, 0]
+            document['nodes'].append(free)
         elif mode == 'constraint':
             mesh['constraints'] = [dict(id='follow-camera', type='copy-transform', target='camera', influence=1)]
         elif mode == 'attachment':
@@ -508,3 +514,230 @@ class EditorNativeStateTests(unittest.TestCase):
                     self.assertEqual(page.evaluate('window.hatchEditor.errors'),['No native camera is available.'])
                 finally:browser.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_outliner_restores_own_flags_without_enabling_viewport_selection(self):
+        from playwright.sync_api import expect, sync_playwright
+        from browser_runtime import launch_chromium
+
+        repository, _ = self.fixture('plain')
+        server = EditorServer(repository)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as runtime, closing(launch_chromium(runtime)) as browser:
+                page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                page.goto(server.url)
+                page.wait_for_function('() => window.editorReady === true')
+                row = page.locator('[data-id="mesh"]')
+                locked, visible = page.locator('#locked'), page.locator('#visible')
+                x = page.get_by_label('translation X', exact=True)
+                row.click()
+                locked.click()
+                page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
+                row.click()
+                expect(locked).to_be_enabled()
+                expect(x).to_be_disabled()
+                self.assertEqual(page.evaluate('window.hatchEditor.selection'), [])
+                self.assertFalse(page.evaluate('!!window.hatchEditor.gizmo.object'))
+                locked.click()
+                page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2')
+                row.click()
+                expect(x).to_be_enabled()
+                visible.click()
+                page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
+
+                page.goto('about:blank')
+                page.goto(server.url)
+                page.wait_for_function('() => window.editorReady === true')
+                self.assertFalse(page.evaluate("window.hatchEditor.objects.get('mesh').visible"))
+                row.click()
+                expect(visible).to_be_enabled()
+                expect(x).to_be_disabled()
+                self.assertEqual(page.evaluate('window.hatchEditor.selection'), [])
+                self.assertFalse(page.evaluate('!!window.hatchEditor.gizmo.object'))
+                visible.click()
+                page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
+                row.click()
+                expect(x).to_be_enabled()
+                node = next(node for node in repository.snapshot()['scene']['nodes'] if node['id'] == 'mesh')
+                self.assertTrue(node['visible'])
+                self.assertFalse(node['locked'])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_multi_drag_rejects_shear_and_saves_representable_translation(self):
+        from playwright.sync_api import expect, sync_playwright
+        from browser_runtime import launch_chromium
+
+        repository, _ = self.fixture('multi-drag')
+        before = repository.snapshot()
+        server = EditorServer(repository)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as runtime, closing(launch_chromium(runtime)) as browser:
+                page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                page.goto(server.url)
+                page.wait_for_function('() => window.editorReady === true')
+                page.locator('[data-id="free"]').click()
+                page.locator('[data-id="mesh"]').click(modifiers=['Shift'])
+                page.locator('#isolate').click()
+                self.assertFalse(page.evaluate("window.hatchEditor.objects.get('camera').visible"))
+                page.select_option('#tool', 'rotate')
+                requests = []
+                page.on('request', lambda request: requests.append(request.url)
+                        if request.method == 'POST' and request.url.endswith('/api/commands') else None)
+                page.evaluate("""async () => {
+                  const THREE = await import('/vendor/build/three.module.min.js');
+                  const {gizmo, objects} = window.hatchEditor;
+                  if (gizmo.object !== objects.get('free')) throw Error('Expected the root-level primary');
+                  gizmo.dragging = true;
+                  gizmo.object.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 4);
+                  gizmo.dispatchEvent({type: 'objectChange'});
+                  gizmo.dragging = false;
+                }""")
+                expect(page.locator('#diagnostic')).to_contain_text('would require shear')
+                self.assertEqual(requests, [])
+                self.assertFalse(page.evaluate("window.hatchEditor.objects.get('camera').visible"))
+                self.assertEqual(repository.snapshot()['sha256'], before['sha256'])
+                np.testing.assert_allclose(page.evaluate("window.hatchEditor.objects.get('free').quaternion.toArray()"),
+                                           [0, 0, 0, 1], atol=1e-7)
+                np.testing.assert_allclose(page.evaluate("window.hatchEditor.objects.get('mesh').scale.toArray()"),
+                                           [1, 1, 1], atol=1e-7)
+
+                page.select_option('#tool', 'translate')
+                page.evaluate("""() => {
+                  const {gizmo} = window.hatchEditor;
+                  gizmo.dragging = true;
+                  gizmo.object.position.x += 2;
+                  gizmo.dispatchEvent({type: 'objectChange'});
+                  gizmo.dragging = false;
+                }""")
+                page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
+                self.assertEqual(len(requests), 1)
+                saved = repository.snapshot()
+                for identifier in ('free', 'mesh'):
+                    source = SceneGraph(before['scene']).evaluate_base(identifier)['world_matrix']
+                    result = SceneGraph(saved['scene']).evaluate_base(identifier)['world_matrix']
+                    offset = np.asarray(result)[:3, 3] - np.asarray(source)[:3, 3]
+                    np.testing.assert_allclose(offset, [2, 0, 0], atol=1e-7)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_shared_shading_reloads_dispose_native_material_and_texture_only(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+
+        repository, _ = self.fixture('plain')
+        server = EditorServer(repository)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as runtime, closing(launch_chromium(runtime)) as browser:
+                page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                page.goto(server.url)
+                page.wait_for_function('() => window.editorReady === true')
+                for mode in ('solid', 'normals'):
+                    page.select_option('#shading', 'material')
+                    page.evaluate("""async () => {
+                      const THREE = await import('/vendor/build/three.module.min.js');
+                      const mesh = window.hatchEditor.objects.get('mesh').children.find(child => child.isMesh)
+                        || window.hatchEditor.objects.get('mesh').getObjectByProperty('isMesh', true);
+                      const native = mesh.material;
+                      const texture = new THREE.CanvasTexture(document.createElement('canvas'));
+                      native.map = texture;
+                      native.needsUpdate = true;
+                      const fixture = window.resourceFixture = {native: 0, texture: 0, shared: 0};
+                      fixture.mesh = mesh;
+                      native.addEventListener('dispose', () => fixture.native++);
+                      texture.addEventListener('dispose', () => fixture.texture++);
+                    }""")
+                    page.select_option('#shading', mode)
+                    page.evaluate("""() => {
+                      const fixture = window.resourceFixture;
+                      fixture.preview = fixture.mesh.material;
+                      fixture.preview.addEventListener('dispose', () => fixture.shared++);
+                    }""")
+                    page.click('#refresh')
+                    page.wait_for_function("""() => {
+                      const object = window.hatchEditor.objects.get('mesh');
+                      const mesh = object?.getObjectByProperty('isMesh', true);
+                      return !!mesh && mesh !== window.resourceFixture.mesh &&
+                        mesh.material === window.resourceFixture.preview;
+                    }""")
+                    self.assertEqual(page.evaluate("""() => {
+                      const {native, texture, shared} = window.resourceFixture;
+                      return [native, texture, shared];
+                    }"""), [1, 1, 0])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_unavailable_exposure_keeps_saved_history_and_disables_scene_tools(self):
+        from playwright.sync_api import expect, sync_playwright
+        from browser_runtime import launch_chromium
+
+        repository, _ = self.fixture('plain')
+        initial = repository.snapshot()
+        server = EditorServer(repository)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with sync_playwright() as runtime, closing(launch_chromium(runtime)) as browser:
+                page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                errors = []
+                page.on('pageerror', lambda error: errors.append(str(error)))
+                page.goto(server.url)
+                page.wait_for_function('() => window.editorReady === true')
+                page.select_option('#view', 'camera')
+                page.evaluate('window.previousCamera = window.hatchEditor.camera')
+                repository.apply(0, dict(schema_version=1, commands=[
+                    dict(operation='configure-world', parameters=dict(properties=dict(exposure=21)))
+                ]), 'high-exposure', expected_sha256=initial['sha256'])
+                unavailable = repository.snapshot()
+                page.locator('#refresh').click()
+                expect(page.locator('#status')).to_have_text('Saved revision 1; viewport unavailable.')
+                expect(page.locator('#diagnostic')).to_contain_text('exposure is supported')
+                expect(page.locator('#revision')).to_contain_text(unavailable['sha256'][:10])
+                expect(page.locator('#view-label')).to_have_text('Viewport unavailable')
+                expect(page.locator('#outliner [data-id]')).to_have_count(0)
+                expect(page.locator('#stats')).to_be_empty()
+                for control in ('view', 'filter', 'all', 'frame', 'play', 'show-all', 'locked'):
+                    expect(page.locator('#' + control)).to_be_disabled()
+                expect(page.locator('#refresh')).to_be_enabled()
+                expect(page.locator('#undo')).to_be_enabled()
+                self.assertFalse(page.evaluate('window.editorReady'))
+                self.assertFalse(page.evaluate('window.previousCamera === window.hatchEditor.camera'))
+                self.assertEqual(page.evaluate('window.hatchEditor.objects.size'), 0)
+
+                page.locator('#viewport').focus()
+                page.keyboard.press('r')
+                expect(page.locator('#tool')).to_have_value('translate')
+                page.locator('#undo').click()
+                expect(page.locator('#status')).to_have_text('Loaded saved revision 2')
+                expect(page.locator('#diagnostic')).to_be_hidden()
+                expect(page.locator('#view')).to_be_enabled()
+                expect(page.locator('#filter')).to_be_enabled()
+                expect(page.locator('#view-label')).to_have_text('camera')
+                expect(page.locator('#outliner [data-id="mesh"]')).to_be_visible()
+                self.assertEqual(repository.snapshot()['sha256'], initial['sha256'])
+
+                page.locator('#redo').click()
+                expect(page.locator('#status')).to_have_text('Saved revision 3; viewport unavailable.')
+                self.assertEqual(repository.snapshot()['sha256'], unavailable['sha256'])
+                page.locator('#refresh').click()
+                expect(page.locator('#diagnostic')).to_contain_text('exposure is supported')
+                self.assertEqual(errors, [])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)

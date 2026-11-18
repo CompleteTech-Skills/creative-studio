@@ -36,7 +36,7 @@ class NativeReadRepository:
         return (self.root / path).read_bytes()
 
 
-def versioned_repository(root):
+def versioned_repository(root, *, extra_first_instance=False):
     """Load two validated immutable revisions of one real native mesh."""
     from copy import deepcopy
     from scene3d_example import build_example
@@ -63,6 +63,10 @@ def versioned_repository(root):
     project['dependency_lock'].append(reference)
     write('project.json', project)
     scene = read('example-scene.json')
+    if extra_first_instance:
+        first_instance = deepcopy(scene['nodes'][1])
+        first_instance.update(id='mesh-extra', name='Extra first mesh')
+        scene['nodes'].append(first_instance)
     node = deepcopy(scene['nodes'][1])
     node.update(id='mesh2', asset=reference)
     node['transform']['translation'] = [4, 0, 0]
@@ -113,6 +117,21 @@ class EditorViewportTests(unittest.TestCase):
                 limited = preview_snapshot(repository, repository.snapshot())
             self.assertTrue(all(asset['format'] == 'geometry' for asset in limited['viewport_assets'].values()))
 
+    def test_asset_exceeding_instance_budget_leaves_room_for_the_next_asset(self):
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        with TemporaryDirectory() as directory:
+            repository = versioned_repository(Path(directory) / 'native', extra_first_instance=True)
+            with patch('editor3d_viewer.MAX_PREVIEW_VERTICES', 4):
+                value = preview_snapshot(repository, repository.snapshot())
+            by_node = {node['id']: node for node in value['scene']['nodes']}
+            first = value['viewport_assets'][asset_identity(by_node['mesh']['asset'])]
+            second = value['viewport_assets'][asset_identity(by_node['mesh2']['asset'])]
+            self.assertEqual(first['format'], 'unavailable')
+            self.assertIn('Instanced geometry', first['message'])
+            self.assertEqual(second['format'], 'geometry')
+            self.assertEqual(len(second['meshes'][0]['positions']), 3)
+
     def test_restoring_same_content_retains_new_revision_and_redo_state(self):
         from tempfile import TemporaryDirectory
         from editor3d_repository import EditorRepository
@@ -133,6 +152,33 @@ class EditorViewportTests(unittest.TestCase):
                 self.assertFalse(restored['undo_available'])
             finally:
                 server.server_close()
+
+    def test_reload_retries_unavailable_projection_of_the_same_revision(self):
+        from unittest.mock import patch
+        server = EditorServer(self.repository)
+        try:
+            with patch('editor3d_viewer.preview_snapshot', side_effect=OSError('Preview staging unavailable')):
+                unavailable = server.snapshot()
+            self.assertFalse(unavailable['viewport_state']['available'])
+            self.assertEqual(unavailable['viewport_state']['error']['code'], 'EDITOR3D_VIEW_PROJECTION')
+            reloaded = server.snapshot()
+            self.assertTrue(reloaded['viewport_state']['available'])
+            self.assertEqual((reloaded['revision'], reloaded['sha256']),
+                             (unavailable['revision'], unavailable['sha256']))
+        finally:
+            server.server_close()
+
+    def test_native_read_interruption_preserves_the_verification_error(self):
+        from unittest.mock import patch
+        server = EditorServer(self.repository)
+        try:
+            with patch.object(self.repository, 'read_file', side_effect=OSError('Native snapshot read interrupted')):
+                with self.assertRaises(RigError) as caught:
+                    server.snapshot()
+            self.assertEqual(caught.exception.report['code'], 'EDITOR3D_VIEW_HASH')
+            self.assertTrue(server.snapshot()['viewport_state']['available'])
+        finally:
+            server.server_close()
 
     def test_corrupt_native_bytes_fail_before_preview(self):
         original = self.repository.read_file
@@ -192,6 +238,52 @@ class EditorHttpTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertIn("object-src 'none'", response.headers['Content-Security-Policy'])
                 self.assertEqual(response.headers['X-Content-Type-Options'], 'nosniff')
+
+    def test_saved_edit_acknowledged_when_exposure_exceeds_preview_range(self):
+        from tempfile import TemporaryDirectory
+        from editor3d_repository import EditorRepository
+
+        def snapshot():
+            with self.fetch('/api/snapshot') as response:
+                return json.load(response)
+
+        def mutate(route, base, transaction_id, **fields):
+            request = dict(expected_revision=base['revision'], expected_sha256=base['sha256'],
+                           transaction_id=transaction_id, **fields)
+            with self.fetch('/api/' + route, headers={'Content-Type': 'application/json'},
+                            data=json.dumps(request).encode()) as response:
+                self.assertEqual(response.status, 200)
+                return json.load(response)
+
+        source = ROOT / 'examples/scene3d-contracts'
+        with TemporaryDirectory() as directory:
+            repository = EditorRepository.create(source, Path(directory) / 'saved')
+            self.server.repository = repository
+            before = snapshot()
+            commands = dict(schema_version=1, commands=[dict(operation='configure-world',
+                parameters=dict(properties=dict(exposure=21)))])
+            edited = mutate('commands', before, 'high-exposure', commands=commands)
+            native = EditorRepository(repository.root).snapshot()
+            self.assertEqual(native['scene']['world']['exposure'], 21)
+            self.assertEqual((edited['revision'], edited['sha256']), (native['revision'], native['sha256']))
+            self.assertTrue(edited['undo_available'])
+            state = edited['viewport_state']
+            self.assertFalse(state['available'])
+            self.assertEqual((state['revision'], state['sha256']), (edited['revision'], edited['sha256']))
+            self.assertEqual(state['error']['code'], 'EDITOR3D_VIEW_EXPOSURE')
+            self.assertEqual(snapshot(), edited)
+
+            restored = mutate('undo', edited, 'undo-exposure')
+            self.assertTrue(restored['viewport_state']['available'])
+            self.assertTrue(restored['redo_available'])
+            self.assertEqual(restored['sha256'], before['sha256'])
+            replayed = mutate('commands', before, 'high-exposure', commands=commands)
+            self.assertEqual(replayed, restored)
+            self.assertEqual(len(repository.history()), 3)
+            redone = mutate('redo', restored, 'redo-exposure')
+            self.assertEqual(redone['sha256'], edited['sha256'])
+            self.assertEqual(redone['revision'], 3)
+            self.assertFalse(redone['viewport_state']['available'])
 
     def test_auth_origin_and_static_path_boundaries(self):
         for route, options in (

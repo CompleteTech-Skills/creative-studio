@@ -34,6 +34,7 @@ from scene3d_contracts import load_project
 FORMAT = 1
 MAX_METADATA_BYTES = 4 * 1024 * 1024
 MAX_COMMAND_BYTES = 1024 * 1024
+ARCHIVE_MAX_RATIO = 1000
 DEFAULT_LIMITS = dict(max_revisions=256, max_history=128, max_bytes=1024**3, max_file_bytes=64*1024**2,
                       max_files=10000, autosave_delay=1.0, autosave_interval=2.0)
 _ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
@@ -55,6 +56,15 @@ def _archive_snapshot(source):
         data = capture(stream)
         _require(len(data) == info.st_size, 'ARCHIVE', 'Archive changed while reading.')
         return data
+
+
+def _archive_compression(payload):
+    if len(payload) > ARCHIVE_MAX_RATIO:
+        # Match ZipFile's default raw DEFLATE stream and keep the verifier's limit.
+        compressed_size = len(zlib.compress(payload, wbits=-zlib.MAX_WBITS))
+        if len(payload) > ARCHIVE_MAX_RATIO * compressed_size:
+            return zipfile.ZIP_STORED
+    return zipfile.ZIP_DEFLATED
 
 
 def _archive_member(archive, info, snapshot):
@@ -140,6 +150,17 @@ def _sync_directory(path):
             os.fsync(fd)
         finally:
             os.close(fd)
+
+
+def _sync_directory_tree(root):
+    if os.name != 'posix':
+        return
+
+    def walk_error(error):
+        raise error
+
+    for directory, _, _ in os.walk(root, topdown=False, onerror=walk_error):
+        _sync_directory(directory)
 
 
 def _write_metadata(path, value):
@@ -303,6 +324,9 @@ class EditorRepository:
                                                        id=identifier, created_at=timestamp(), limits=limits))
             _write_metadata(stage / 'HEAD.json', dict(schema_version=FORMAT, revision=0, sha256=closure, undo=[], redo=[]))
             (stage / 'journal').mkdir()
+            _scan(stage, limits)
+            cls(stage)
+            _sync_directory_tree(stage)
             _rename_no_replace(stage, destination)
             _sync_directory(destination.parent)
         return cls(destination)
@@ -421,6 +445,7 @@ class EditorRepository:
                        expected_revision=head['revision'], expected_sha256=head['sha256'], revision=revision,
                        status='building', new_head=None, stage=None)
         _write_metadata(journal, pending)
+        _sync_directory(self.root)
         stage = Path(tempfile.mkdtemp(prefix='.editor-revision-', dir=safe_path(self.root, 'revisions')))
         pending['stage'] = stage.name; _write_metadata(journal, pending)
         try:
@@ -435,12 +460,16 @@ class EditorRepository:
                           scene_path=scene_path, transaction_id=transaction_id, request_sha256=transaction_hash,
                           action=action, label=label, created_at=timestamp(), inventory=bundle['inventory'])
             _write_metadata(stage / 'record.json', record)
+            _require(self._record(revision, directory=stage) == record,
+                     'HASH', 'Staged revision differs from its prepared record.')
             staged_files = _scan(stage / 'native', self.limits)
             _require(set(staged_files) == set(bundle['inventory']), 'HASH', 'Native adapter left uninventoried files in its snapshot.')
             current_bytes = sum(_scan(self.root, self.limits).values())
             _require(current_bytes <= self.limits['max_bytes'], 'LIMIT', 'New revision exceeds total repository byte budget.')
             next_head = dict(schema_version=FORMAT, revision=revision, sha256=record['snapshot_sha256'],
                              undo=undo[-self.limits['max_history']:], redo=redo[-self.limits['max_history']:])
+            _sync_directory_tree(stage)
+            _sync_directory(stage.parent)
             pending.update(status='verified', new_head=next_head)
             _write_metadata(journal, pending)
             _rename_no_replace(stage, safe_path(self.root, f'revisions/{revision:08d}'))
@@ -451,6 +480,7 @@ class EditorRepository:
             self._bundle(installed_record)
             _write_metadata(safe_path(self.root, 'HEAD.json'), next_head)
             journal.unlink()
+            _sync_directory(journal.parent)
         except Exception:
             # A verified/published revision is retained for explicit recovery.
             # An uncommitted private build can be removed without losing native inputs.
@@ -623,6 +653,9 @@ class EditorRepository:
             verified = item['status'] in ('verified', 'published')
             if verified and head == item['new_head']:
                 self._verify_recovery_revision(item, destination)
+                _sync_directory_tree(destination)
+                _sync_directory(destination.parent)
+                _sync_directory(self.root)
                 path.unlink()
                 _sync_directory(path.parent)
                 return self.snapshot()
@@ -634,11 +667,15 @@ class EditorRepository:
                 stage = safe_path(self.root, 'revisions/' + item['stage'])
                 _require(stage.is_dir(), 'RECOVERY', 'Verified private stage is missing.')
                 staged_record = self._verify_recovery_revision(item, stage)
+                _sync_directory_tree(stage)
                 _rename_no_replace(stage, destination)
                 _sync_directory(destination.parent)
             record = self._verify_recovery_revision(item, destination)
             _require(staged_record is None or record == staged_record,
                      'HASH', 'Installed revision differs from its verified stage.')
+            if staged_record is None:
+                _sync_directory_tree(destination)
+                _sync_directory(destination.parent)
             _write_metadata(safe_path(self.root, 'HEAD.json'), item['new_head'])
             self._head()
             path.unlink()
@@ -668,8 +705,9 @@ class EditorRepository:
         """Trusted in-process extension for an existing native subsystem adapter.
 
         ``builder(source_root, destination, scene_path)`` must publish a complete
-        new native snapshot and return its active scene path. Callables are never
-        deserialized or accepted by HTTP; route handlers select fixed adapters.
+        new native snapshot, flush its payload files, and return its active scene
+        path. Callables are never deserialized or accepted by HTTP; route handlers
+        select fixed adapters.
         """
         _check_id(transaction_id)
         request = dict(action='native-adapter', label=label, parameters=request)
@@ -856,7 +894,7 @@ class EditorRepository:
                         output.write(_regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
                         output.flush(); os.fsync(output.fileno())
                 EditorRepository(stage)._verify_all()
-                _sync_directory(stage)
+                _sync_directory_tree(stage)
                 _rename_no_replace(stage, destination)
                 _sync_directory(destination.parent)
         return EditorRepository(destination)
@@ -890,10 +928,12 @@ class EditorRepository:
             # Keep the writer and verifier on the same open temporary file.
             # No published pathname can redirect either one to replacement bytes.
             with tempfile.TemporaryFile(mode='w+b') as stream:
-                with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
+                with zipfile.ZipFile(stream, 'w') as archive:
                     for name, record in files.items():
-                        archive.writestr(name, _regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
-                    archive.writestr('archive-receipt.json', _bytes(receipt))
+                        payload = _regular_bytes(self.root, name, record, self.limits['max_file_bytes'])
+                        archive.writestr(name, payload, compress_type=_archive_compression(payload))
+                    metadata = _bytes(receipt)
+                    archive.writestr('archive-receipt.json', metadata, compress_type=_archive_compression(metadata))
                 stream.flush(); os.fsync(stream.fileno())
                 size = os.fstat(stream.fileno()).st_size
                 maximum = self.limits['max_bytes'] + MAX_METADATA_BYTES + self.limits['max_files'] * 4096
@@ -939,7 +979,7 @@ class EditorRepository:
                              not entry.is_dir() and (mode & 0o170000) in (0,0o100000) and
                              entry.file_size <= DEFAULT_LIMITS['max_file_bytes'] and
                              (entry.file_size == 0 or entry.compress_size > 0) and
-                             entry.file_size <= max(entry.compress_size, 1)*1000,
+                             entry.file_size <= max(entry.compress_size, 1)*ARCHIVE_MAX_RATIO,
                              'ARCHIVE', 'Unsafe, duplicate or excessively compressed archive member.')
                     names.add(name); aliases.add(alias)
                 _require('archive-receipt.json' in names and archive.getinfo('archive-receipt.json').file_size <= MAX_METADATA_BYTES,
@@ -981,7 +1021,7 @@ class EditorRepository:
             restored = cls(stage)
             _require(restored._verify_all() == receipt['head'], 'HASH', 'Archive HEAD differs from receipt.')
             _require(not restored.recovery(), 'RECOVERY', 'Archive contains interrupted transactions.')
-            _sync_directory(stage)
+            _sync_directory_tree(stage)
             _rename_no_replace(stage, destination)
             _sync_directory(destination.parent)
         return cls(destination)

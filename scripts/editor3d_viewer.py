@@ -61,8 +61,14 @@ def preview_snapshot(repository, snapshot):
     with tempfile.TemporaryDirectory(prefix='hatch-editor-preview-') as temporary:
         root = Path(temporary)
         for name, entry in inventory.items():
-            payload = repository.read_file(name, snapshot['sha256'])
-            require(len(payload) == entry['bytes'] and hashlib.sha256(payload).hexdigest() == entry['sha256'],
+            try:
+                payload = repository.read_file(name, snapshot['sha256'])
+            except RigError:
+                raise
+            except (OSError, ValueError, TypeError) as error:
+                raise RigError('EDITOR3D_VIEW_HASH', 'Could not read exact native snapshot bytes.') from error
+            require(isinstance(payload, bytes) and len(payload) == entry['bytes'] and
+                    hashlib.sha256(payload).hexdigest() == entry['sha256'],
                     'EDITOR3D_VIEW_HASH', 'Native snapshot bytes changed.')
             path = safe_path(root, name)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,9 +91,10 @@ def preview_snapshot(repository, snapshot):
                 require(decoded_vertices < MAX_PREVIEW_DECODED_VERTICES, 'EDITOR3D_VIEW_LIMIT', 'Decoded geometry exceeds the viewport budget.')
                 limits['vertices'] = min(limits['vertices'], MAX_PREVIEW_VERTICES, MAX_PREVIEW_DECODED_VERTICES-decoded_vertices)
                 imported = load_character_model(path, limits=limits)
-                decoded_vertices += imported.geometry.vertex_count
-                projected_vertices += imported.geometry.vertex_count * instances
-                require(projected_vertices <= MAX_PREVIEW_VERTICES, 'EDITOR3D_VIEW_LIMIT',
+                vertex_count = imported.geometry.vertex_count
+                decoded_vertices += vertex_count
+                instance_vertices = vertex_count * instances
+                require(projected_vertices + instance_vertices <= MAX_PREVIEW_VERTICES, 'EDITOR3D_VIEW_LIMIT',
                         'Instanced geometry exceeds the 500,000-vertex viewport budget.')
                 for dependency in imported.source_files:
                     relative = Path(dependency).resolve().relative_to(root).as_posix()
@@ -113,10 +120,11 @@ def preview_snapshot(repository, snapshot):
                             uv=mesh.attributes.get('TEXCOORD_0').tolist() if 'TEXCOORD_0' in mesh.attributes else None))
                     assets[identifier] = dict(format='geometry', meshes=meshes,
                                              materials=geometry.materials, images=images)
+                projected_vertices += instance_vertices
             except (RigError, ValueError, OSError) as error:
                 assets[identifier] = dict(format='unavailable', message=str(error))
         from editor3d_components import project_components
-        components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
+        components, _ = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
             max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES, max_decoded_vertices=MAX_PREVIEW_DECODED_VERTICES-decoded_vertices)
         from editor3d_state import project_editor_state
         try:
@@ -199,11 +207,30 @@ class EditorServer(HTTPServer):
         snapshot = self.repository.snapshot()
         key = (snapshot['revision'], snapshot['sha256'])
         with self.cache_lock:
-            if key not in self.cache:
-                self.cache[key] = preview_snapshot(self.repository, snapshot)
+            if key in self.cache:
+                return self.cache[key]
+            try:
+                preview = preview_snapshot(self.repository, snapshot)
+            except (RigError, ValueError, OSError, TypeError) as error:
+                # Persisted native state still supplies the revision, even when
+                # the optional WebGL projection cannot be built or encoded.
+                if isinstance(error, RigError):
+                    report = error.report
+                    if report['code'] not in ('EDITOR3D_VIEW_LIMIT', 'EDITOR3D_VIEW_EXPOSURE'):
+                        raise
+                    diagnostic = dict(code=report['code'], message=report['message'])
+                else:
+                    diagnostic = dict(code='EDITOR3D_VIEW_PROJECTION', message='Could not build the WebGL preview.')
+                return dict(revision=snapshot['revision'], sha256=snapshot['sha256'],
+                            undo_available=snapshot.get('undo_available', False),
+                            redo_available=snapshot.get('redo_available', False),
+                            viewport_state=dict(schema_version=1, available=False, revision=snapshot['revision'],
+                                                sha256=snapshot['sha256'], error=diagnostic))
+            if preview['viewport_state']['available']:
+                self.cache[key] = preview
                 while len(self.cache) > 2:
                     self.cache.popitem(last=False)
-            return self.cache[key]
+            return preview
 
     def service_actions(self):
         if self._checkpoint_future is not None and not self._checkpoint_future.done():

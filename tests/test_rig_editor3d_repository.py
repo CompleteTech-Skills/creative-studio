@@ -43,6 +43,73 @@ class EditorRepositoryTests(unittest.TestCase):
         self.assertEqual(self.mesh_x(self.repo.snapshot(0)),2)
         self.assertEqual(result['revision'],1)
 
+    def test_create_accounts_for_repository_metadata_before_publication(self):
+        from scene3d_contracts import load_project
+
+        bundle = load_project(self.source)
+        for limits in ({'max_files': len(bundle['inventory'])}, {'max_bytes': bundle['bytes']}):
+            with self.subTest(limits=limits):
+                destination = self.root / 'over-budget'
+                with self.assertRaises(RigError) as caught:
+                    EditorRepository.create(self.source, destination, limits=limits)
+                self.assertEqual(caught.exception.report['code'], 'EDITOR3D_LIMIT')
+                self.assertFalse(destination.exists())
+        self.assertEqual(load_project(self.source)['inventory'], bundle['inventory'])
+
+    def test_metadata_read_limit_is_checked_before_create_or_edit_publication(self):
+        import editor3d_repository as module
+
+        revision_record = self.repo.root / 'revisions' / '00000000' / 'record.json'
+        before = self.repo.snapshot()
+        limit = revision_record.stat().st_size
+        destination = self.root / 'oversized-record'
+        with patch.object(module, 'MAX_METADATA_BYTES', limit - 1):
+            with self.assertRaises(RigError) as created:
+                EditorRepository.create(self.source, destination)
+        self.assertEqual(created.exception.report['code'], 'EDITOR3D_LIMIT')
+        self.assertFalse(destination.exists())
+        with patch.object(module, 'MAX_METADATA_BYTES', limit):
+            with self.assertRaises(RigError) as edited:
+                self.repo.apply(0, self.move(8), 'oversized-record')
+        self.assertEqual(edited.exception.report['code'], 'EDITOR3D_LIMIT')
+        self.assertEqual(self.repo.snapshot(), before)
+        self.assertFalse(self.repo.recovery())
+
+    @unittest.skipUnless(os.name == 'posix', 'Native directory synchronization is POSIX-specific.')
+    def test_native_directories_are_synced_before_revision_is_verified(self):
+        import editor3d_repository as module
+
+        events = []
+        sync_directory = module._sync_directory
+        write_metadata = module._write_metadata
+
+        def sync(path):
+            events.append(('sync', Path(path)))
+            return sync_directory(path)
+
+        def write(path, value):
+            if path.parent.name == 'journal' and value.get('status') == 'verified':
+                events.append(('verified', path))
+            if path == self.repo.root / 'HEAD.json':
+                events.append(('head', path))
+            return write_metadata(path, value)
+
+        with patch.object(module, '_sync_directory', side_effect=sync), \
+             patch.object(module, '_write_metadata', side_effect=write):
+            saved = self.repo.apply(0, self.move(8), 'sync-native')
+        verified = next(index for index, (event, _) in enumerate(events) if event == 'verified')
+        stages = [path for _, path in events[:verified] if path.name == 'native']
+        self.assertEqual(len(stages), 1)
+        nested = stages[0] / 'versions' / 'example-scene'
+        self.assertIn(('sync', nested), events[:verified])
+        self.assertLess(events.index(('sync', nested)), events.index(('sync', stages[0])))
+        self.assertLess(events.index(('sync', stages[0])),
+                        events.index(('sync', stages[0].parent.parent)))
+        self.assertLess(events.index(('sync', stages[0].parent.parent)), verified)
+        head = events.index(('head', self.repo.root / 'HEAD.json'))
+        self.assertIn(('sync', self.repo.root / 'journal'), events[head + 1:])
+        self.assertEqual(EditorRepository(self.repo.root).snapshot()['sha256'], saved['sha256'])
+
     def test_apply_rejects_source_project_replaced_after_revision_validation(self):
         import editor3d_repository as module
         import scene3d_snapshot
@@ -412,6 +479,29 @@ raise AssertionError('writer was not excluded')
         self.repo.archive(self.root/'archive.zip');destination=self.root/'existing';destination.mkdir()
         with self.assertRaises(RigError):EditorRepository.restore_archive(self.root/'archive.zip',destination)
         self.assertTrue(destination.is_dir());self.assertEqual(list(destination.iterdir()),[])
+
+    def test_archive_restores_repetitive_native_provenance_bytes(self):
+        from scene3d_contracts import canonical_bytes
+
+        name = 'source-audit.txt'
+        payload = b'Native capture log\n' + b' ' * (4 * 1024 * 1024)
+        (self.source / name).write_bytes(payload)
+        project_path = self.source / 'project.json'
+        project = json.loads(project_path.read_bytes())
+        project['budgets']['max_bytes'] = 8 * 1024 * 1024
+        project['provenance']['inputs'].append(dict(path=name, sha256=hashlib.sha256(payload).hexdigest()))
+        project_path.write_bytes(canonical_bytes(project))
+        source = EditorRepository.create(self.source, self.root / 'editor-with-audit')
+
+        archive = self.root / 'audit.zip'
+        source.archive(archive)
+        with zipfile.ZipFile(archive) as zipped:
+            entry = zipped.getinfo('revisions/00000000/native/' + name)
+            self.assertEqual(entry.compress_type, zipfile.ZIP_STORED)
+        restored = EditorRepository.restore_archive(archive, self.root / 'restored-audit')
+        snapshot = restored.snapshot()
+        self.assertEqual(snapshot['sha256'], source.snapshot()['sha256'])
+        self.assertEqual(restored.read_file(name, snapshot['sha256']), payload)
 
     def test_archive_rejects_bytes_changed_after_verification(self):
         original = EditorRepository.verify_archive
