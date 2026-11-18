@@ -12,7 +12,7 @@ import rig_package
 from rig_contracts import validate_contract
 from rig_corrections import apply_rig_corrections
 from rig_errors import RigError,atomic_json,job_lock,read_json,sha256,timestamp
-from rig_jobs import run_step
+from rig_jobs import create_run,run_step
 from rig_models import load_rig,rig_signature
 from rig_package import package_rig,restore_rig
 from rig_review import apply_review
@@ -73,7 +73,6 @@ class RigWorkflowTests(unittest.TestCase):
                 with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
             self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
             return
-        from rig_jobs import create_run
         import shutil
         root=Path(self.temp.name)/'stage';root.mkdir()
         source=self.rig.root/self.rig.manifest['source']['path']
@@ -102,6 +101,50 @@ class RigWorkflowTests(unittest.TestCase):
         r=self.rig;self.assertTrue(r.manifest['source']['fixture']);self.assertEqual(sha256(r.root/r.manifest['source']['path']),r.manifest['source']['sha256'])
         (r.root/'identity.json').write_text('{}')
         with self.assertRaises(RigError):load_rig(r.root)
+    def test_hash_consistent_malformed_identity_has_structured_diagnostics(self):
+        original=read_json(self.rig.root/'identity.json')
+        malformed=[{},[],None,dict(original,schema_version=2),dict(original,fixture=1),
+                   dict(original,import_scale=False),dict(original,import_scale=-1),
+                   dict(original,import_scale=10001),dict(original,import_scale='1'),
+                   dict(original,coordinate_system={}),dict(original,attribution='')]
+        for value in malformed:
+            with self.subTest(value=value):
+                atomic_json(self.rig.root/'identity.json',value)
+                manifest=deepcopy(self.rig.manifest)
+                manifest['character']['identity_sha256']=sha256(self.rig.root/'identity.json')
+                atomic_json(self.rig.root/'rig.json',manifest)
+                with self.assertRaises(RigError) as caught:load_rig(self.rig.root)
+                self.assertEqual(caught.exception.report['code'],'RIG_IDENTITY_SCHEMA')
+    def test_historical_unit_scale_remains_hash_bound(self):
+        root = self.rig.root
+        path = root/'identity.json'
+        identity = read_json(path)
+        identity['import_scale'] = True
+        atomic_json(path, identity)
+        original_bytes = path.read_bytes()
+        with self.assertRaises(RigError) as caught:
+            load_rig(root)
+        self.assertEqual(caught.exception.report['code'], 'RIG_IDENTITY_CHANGED')
+
+        manifest = deepcopy(self.rig.manifest)
+        manifest['character']['identity_sha256'] = sha256(path)
+        atomic_json(root/'rig.json', manifest)
+        self.assertEqual(load_rig(root).manifest, manifest)
+        self.assertEqual(path.read_bytes(), original_bytes)
+
+    def test_writer_persists_numeric_unit_scale_for_true(self):
+        source = self.rig.root/self.rig.manifest['source']['path']
+        root = Path(self.temp.name)/'unit-scale'
+        with self.assertRaises(RigError) as caught:
+            create_run(source, root, scale=False)
+        self.assertEqual(caught.exception.report['code'], 'RIG_SCALE')
+        self.assertFalse(root.exists())
+
+        created = create_run(source, root, scale=True)
+        scale = read_json(root/'identity.json')['import_scale']
+        self.assertIs(type(scale), int)
+        self.assertEqual(scale, 1)
+        self.assertEqual(load_rig(root).manifest, created.manifest)
     def test_strict_schema_rejects_unknown_and_nonfinite(self):
         for mutate in (lambda v:v.update(extra=True),lambda v:v['skeleton']['bones'][0]['head'].__setitem__(0,float('nan'))):
             value=deepcopy(self.rig.manifest);mutate(value)
