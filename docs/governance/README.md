@@ -43,3 +43,21 @@ Before closing #216, append or link immutable evidence for current-head CI,
 independent policy review, final settings readback, a rejected direct update (or
 equivalent rule evaluation), and the five historical workflow dispositions.
 The review and release requirements are in [the release policy](../release-policy.md).
+
+The [2026-11-17 live readback](readback-20261117.json) records the enforced
+protection settings, repository security settings, and the states of all five
+historical workflow registrations. On the recorded main commit, all 15 checks
+required from GitHub Actions app 15368 were successful.
+[Hosted rig checks](https://github.com/CompleteTech-Skills/creative-studio/actions/runs/44152094436) ·
+[Delivery](https://github.com/CompleteTech-Skills/creative-studio/actions/runs/44152093932) ·
+[Model3D](https://github.com/CompleteTech-Skills/creative-studio/actions/runs/44152093975)
+
+GitHub reported a conflict-free, up-to-date non-draft PR as blocked while
+required Delivery jobs were in progress. The receipt records the exact base,
+candidate head, evaluated state, and check observations. The readback used
+read-only requests. The older activation receipt documents which activation-time
+responses could not be recovered. The live record also identifies the archived
+November 13 evidence by SHA-256. That archive contains activation-time readbacks,
+the exact original before setting values, and the reviewed workflow retirement
+disposition. The complete security and alerts response envelopes from before
+activation remain incomplete.

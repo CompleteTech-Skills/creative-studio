@@ -13,8 +13,8 @@ from typing import Any
 import zipfile
 import numpy as np
 
-from rig_contracts import DEFAULT_LIMITS, validate_contract
-from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
+from rig_contracts import COORDINATES, DEFAULT_LIMITS, valid_import_scale, validate_contract
+from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, require,
                         safe_path, sha256, normalize_root)
 
 
@@ -510,8 +510,21 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)
     require(budget.hash(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
-    identity=budget.json(safe_path(root, 'identity.json', exists=True),
-                expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
+    identity = budget.json(safe_path(root, 'identity.json', exists=True),
+                           expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
+    require(isinstance(identity, dict) and set(identity) == {
+                'schema_version', 'id', 'source_sha256', 'fixture', 'origin',
+                'attribution', 'coordinate_system', 'import_scale', 'approved_artwork'},
+            'RIG_IDENTITY_SCHEMA', 'Identity must contain the complete versioned source record.')
+    require(type(identity['schema_version']) is int and identity['schema_version'] == 1
+            and isinstance(identity['id'], str) and isinstance(identity['source_sha256'], str)
+            and isinstance(identity['origin'], str) and type(identity['fixture']) is bool
+            and type(identity['approved_artwork']) is bool
+            and isinstance(identity['attribution'], str) and 0 < len(identity['attribution']) <= 4096
+            and identity['coordinate_system'] == COORDINATES
+            # Older writers could persist True for unit scale. Its exact bytes remain hash-bound.
+            and (identity['import_scale'] is True or valid_import_scale(identity['import_scale'])),
+            'RIG_IDENTITY_SCHEMA', 'Identity fields do not match the supported source contract.')
     require(identity['id']==manifest['character']['id']==manifest['id'] and identity['fixture']==manifest['source']['fixture']
             and identity['source_sha256']==manifest['source']['sha256'] and identity['origin']==manifest['source']['origin'],
             'RIG_IDENTITY_CHANGED','Source origin, fixture classification and character identity must match their immutable record.')
