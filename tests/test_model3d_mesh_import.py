@@ -61,22 +61,23 @@ class MeshImportTests(unittest.TestCase):
     def test_trusted_root_alias_is_canonicalized_without_accepting_child_links(self):
         if not hasattr(os, 'symlink'):
             self.skipTest('Symlinks are unavailable.')
-        from rig_errors import open_payload
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             real = root/'real'; real.mkdir()
-            (real/'bytes.bin').write_bytes(b'unchanged')
+            model = real/'mesh.glb'
+            export_geometry(self.geometry(), model)
+            digest = hashlib.sha256(model.read_bytes()).hexdigest()
             alias = root/'alias'
             try:
                 alias.symlink_to(real, target_is_directory=True)
             except OSError:
                 self.skipTest('This host cannot create symlinks.')
-            with open_payload(alias, 'bytes.bin') as (stream, info):
-                self.assertEqual(stream.read(), b'unchanged')
-            (real/'child.bin').symlink_to(real/'bytes.bin')
+            with import_mesh(alias/model.name) as captured:
+                self.assertEqual(captured.model.geometry.vertex_count, 3)
+                self.assertEqual(captured.source_records[0]['sha256'], digest)
+            (real/'child.glb').symlink_to(model)
             with self.assertRaises(RigError):
-                with open_payload(alias, 'child.bin'):
-                    pass
+                import_mesh(alias/'child.glb')
 
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
