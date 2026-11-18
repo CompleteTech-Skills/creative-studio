@@ -160,6 +160,13 @@ class TextureTests(unittest.TestCase):
         slope=np.tile(np.arange(4,dtype=np.float32),(3,1))/4
         normal=t.normal_from_height(slope,wrap='clamp')
         self.assertLess(normal[1,1,0],.5)
+        # Source raster rows run down; positive tangent Y points up. A height
+        # rising toward later raster rows therefore tilts the normal toward +Y.
+        vertical=np.tile(np.arange(4,dtype=np.float32)[:,None],(1,3))/4
+        vertical_normal=t.normal_from_height(vertical,wrap='clamp')
+        self.assertGreater(vertical_normal[1,1,1],.5)
+        self.assertAlmostEqual(float(vertical_normal[1,1,0]),.5)
+        self.assertLess(t.normal_from_height(vertical[::-1].copy(),wrap='clamp')[1,1,1],.5)
         np.testing.assert_allclose(np.linalg.norm(normal[:,:,:3]*2-1,axis=-1),1,atol=1e-6)
 
     def test_mipmaps_odd_dimension_average_and_normals(self):
@@ -202,6 +209,90 @@ class TextureTests(unittest.TestCase):
         with self.assertRaises(RigError):t.validate_uvs([uv],[[0,1,9]])
         with self.assertRaises(RigError):t.validate_uvs([uv],[[0,1,2]],tangents=np.zeros((6,4)))
 
+    def test_uv_zero_area_faces_consume_budget_without_overlapping(self):
+        uv = [[0, 0], [1, 0], [0, 1], [.25, .25], [.25, .25], [.25, .25]]
+        valid, collapsed = [0, 1, 2], [3, 4, 5]
+        for faces, collapsed_index in [([valid, collapsed], 1), ([collapsed, valid], 0)]:
+            with self.subTest(collapsed_index=collapsed_index):
+                report = t.validate_uvs([uv], faces, max_pairs=1)['sets'][0]
+                self.assertEqual(report['degenerate_triangles'], [collapsed_index])
+                self.assertEqual(report['overlap_pairs'], [])
+                self.assertEqual(report['overlap_pairs_tested'], 1)
+                self.assertTrue(report['overlap_complete'])
+
+    def test_uv_signed_area_recovers_finite_determinant_cancellation(self):
+        extent = 2**30
+        vertices = [
+            (0, 0), (extent, extent - 1), (extent + 1, extent),
+            (0, 0), (extent + 1, extent), (extent, extent - 1),
+        ]
+        for faces, mirrored in (([[0, 1, 2], [3, 4, 5]], [1]),
+                                ([[3, 4, 5], [0, 1, 2]], [0])):
+            with self.subTest(faces=faces):
+                report = t.validate_uvs([vertices], faces, max_pairs=1)["sets"][0]
+                self.assertEqual(report["degenerate_triangles"], [])
+                self.assertEqual(report["mirrored_triangles"], mirrored)
+                self.assertEqual(report["overlap_pairs"], [[0, 1]])
+                self.assertEqual(report["overlap_pairs_tested"], 1)
+                self.assertTrue(report["overlap_complete"])
+
+    def test_uv_small_positive_area_still_overlaps(self):
+        uv = [[0, 0], [1, 0], [0, 1], [0, 0], [2e-6, 0], [0, 2e-6]]
+        for faces in [([0, 1, 2], [3, 4, 5]), ([3, 4, 5], [0, 1, 2])]:
+            with self.subTest(faces=faces):
+                report = t.validate_uvs([uv], faces)['sets'][0]
+                self.assertEqual(report['degenerate_triangles'], [])
+                self.assertEqual(report['overlap_pairs'], [[0, 1]])
+
+    def test_uv_overlap_is_translation_invariant(self):
+        uv = np.array([[0, 0], [1, 0], [0, 1],
+                       [.25, .25], [1.25, .25], [.25, 1.25],
+                       [.75, .75], [1.75, .75], [.75, 1.75]])
+        first, overlapping, separated = [0, 1, 2], [3, 4, 5], [6, 7, 8]
+        for offset in (0, 1e9, -1e12):
+            for faces in ([first, overlapping], [overlapping, first]):
+                with self.subTest(offset=offset, faces=faces):
+                    report = t.validate_uvs([uv + offset], faces)['sets'][0]
+                    self.assertEqual(report['overlap_pairs'], [[0, 1]])
+            with self.subTest(offset=offset, faces=[first, separated]):
+                report = t.validate_uvs([uv + offset], [first, separated])['sets'][0]
+                self.assertEqual(report['overlap_pairs'], [])
+
+    def test_uv_mixed_scales_preserve_small_face_position(self):
+        large = [[-1e16, -1e16], [1e16, -1e16], [-1e16, 1e16]]
+        small = [[.25, .25], [.5, .25], [.25, .5]]
+        for direction, expected in ((1, []), (-1, [[0, 1]])):
+            uv = large + [[direction * x, direction * y] for x, y in small]
+            for faces in ([[0, 1, 2], [3, 4, 5]], [[3, 4, 5], [0, 1, 2]]):
+                with self.subTest(direction=direction, faces=faces):
+                    report = t.validate_uvs([uv], faces)['sets'][0]
+                    self.assertEqual(report['overlap_pairs'], expected)
+                    self.assertEqual(report['overlap_pairs_tested'], 1)
+                    self.assertTrue(report['overlap_complete'])
+
+    def test_uv_clip_normalizes_large_opposite_edge_distances(self):
+        # The first vertical clip edge has signed distances of +/-1e308
+        # to the horizontal subject edge endpoints.
+        uv = [[-1e154, 0], [1e154, 0], [0, .5e154],
+              [0, .5e154], [0, -.5e154], [.6e154, 0]]
+        for faces in ([[0, 1, 2], [3, 4, 5]], [[3, 4, 5], [0, 1, 2]]):
+            with self.subTest(faces=faces):
+                report = t.validate_uvs([uv], faces)['sets'][0]
+                self.assertEqual(report['overlap_pairs'], [[0, 1]])
+
+    def test_uv_arithmetic_overflow_is_a_typed_failure(self):
+        cases = [
+            ([[-1e308, 0], [1e308, 0], [0, 1]], [[0, 1, 2]]),
+            ([[0, 0], [1e200, 0], [0, 1e200]], [[0, 1, 2]]),
+            ([[0, 0], [1e200, 0], [0, 1e-100], [1e-100, 0], [0, 1e200]],
+             [[0, 1, 2], [0, 3, 4]]),
+        ]
+        for uv, faces in cases:
+            with self.subTest(uv=uv):
+                with self.assertRaises(RigError) as caught:
+                    t.validate_uvs([uv], faces)
+                self.assertEqual(caught.exception.report['code'], 'TEXTURE_UV')
+
     def test_uv_adjacent_edges_are_not_overlap_and_work_is_bounded(self):
         uv=[[0,0],[1,0],[0,1],[1,1]]
         self.assertEqual(t.validate_uvs([uv],[[0,1,2],[1,3,2]])['sets'][0]['overlap_pairs'],[])
@@ -220,15 +311,33 @@ class TextureTests(unittest.TestCase):
 
     def test_source_publication_is_exact_and_never_overwrites(self):
         data=png(np.zeros((2,2,3),np.uint8))
-        with tempfile.TemporaryDirectory() as root:
-            destination=Path(root)/'new'
+        with tempfile.TemporaryDirectory() as temporary:
+            # Every destination ancestor must be a real directory. Resolve the
+            # temporary root because macOS places it below the /var symlink.
+            root=Path(temporary).resolve()
+            destination=root/'new'
+            if not (sys.platform.startswith('linux') or sys.platform=='darwin'):
+                with self.assertRaises(RigError) as caught:
+                    t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+                self.assertEqual(caught.exception.report['code'],'TEXTURE_PLATFORM')
+                self.assertFalse(destination.exists())
+                return
             receipt=t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='self-authored fixture',license_id='CC0')
             self.assertEqual((destination/'source.bin').read_bytes(),data)
             self.assertEqual(receipt['source']['sha256'],hashlib.sha256(data).hexdigest())
-            with self.assertRaises(RigError):t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
-            link=Path(root)/'link'
-            try:link.symlink_to(destination,target_is_directory=True)
-            except OSError:return
-            with self.assertRaises(RigError):t.publish_texture(data,link/'escape',role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+            with self.assertRaises(RigError) as caught:
+                t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+            self.assertEqual(caught.exception.report['code'],'TEXTURE_EXISTS')
+            (root/'real'/'nested').mkdir(parents=True)
+            link=root/'link'
+            try:link.symlink_to(root/'real',target_is_directory=True)
+            except OSError:self.skipTest('Symbolic links are unavailable on this filesystem.')
+            # Both a symlinked parent and a symlinked higher ancestor reject.
+            for target in (link/'escape',link/'nested'/'escape'):
+                with self.subTest(target=target),self.assertRaises(RigError) as caught:
+                    t.publish_texture(data,target,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+                self.assertEqual(caught.exception.report['code'],'TEXTURE_PATH')
+            self.assertEqual(sorted(x.name for x in (root/'real').iterdir()),['nested'])
+            self.assertEqual(list((root/'real'/'nested').iterdir()),[])
 
 if __name__=='__main__':unittest.main()

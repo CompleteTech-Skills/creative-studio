@@ -567,38 +567,117 @@ def validate_uvs(uv_sets, triangles, *, tangents=None, max_pairs=1_000_000):
             and (faces>=0).all(), "TEXTURE_UV", "Expected bounded nonnegative integer triangle indices.")
     require(isinstance(uv_sets,(list,tuple)) and len(uv_sets)<=8, "TEXTURE_UV", "At most eight UV sets are supported.")
     report={"missing":not bool(uv_sets),"sets":[],"tangent_convention":"gltf-xyzw-opengl-positive-y"}
-    def cross(a,b): return float(a[0]*b[1]-a[1]*b[0])
-    def area(poly):return abs(sum(cross(poly[i],poly[(i+1)%len(poly)]) for i in range(len(poly))))/2 if len(poly)>2 else 0
-    def overlap(a,b):
-        poly=[p.copy() for p in a]
-        if cross(b[1]-b[0],b[2]-b[0])<0:b=b[::-1]
+    def cross(a, b):
+        return a[0] * b[1] - a[1] * b[0]
+
+    roundoff = 4 * np.finfo(np.float64).eps
+
+    def exact_local(triangle, origin):
+        from fractions import Fraction
+
+        offsets = [Fraction(float(value)) for value in origin]
+        return np.array([[Fraction(float(value)) - offset
+                          for value, offset in zip(point, offsets)]
+                         for point in triangle], dtype=object)
+
+    def signed_area(triangle):
+        first, second = triangle[1:] - triangle[0]
+        positive = first[0] * second[1]
+        negative = first[1] * second[0]
+        determinant = positive - negative
+        if abs(determinant) > roundoff * max(abs(positive), abs(negative)):
+            return determinant / 2, False
+        exact = exact_local(triangle, triangle[0])
+        return float(cross(exact[1], exact[2]) / 2), True
+
+    def overlap(a, b, *, exact):
+        # Use the same origin for either face order. If shifting the pair loses
+        # more than roundoff at a face's own scale, clip the six input vertices
+        # as exact binary rationals. The clipper still has only three edges.
+        origin = np.minimum(a.min(axis=0), b.min(axis=0))
+        shifted_a, shifted_b = a - origin, b - origin
+        if (exact
+                or np.any(abs(shifted_a + origin - a) > roundoff * np.ptp(a, axis=0))
+                or np.any(abs(shifted_b + origin - b) > roundoff * np.ptp(b, axis=0))):
+            shifted_a, shifted_b = (exact_local(triangle, origin) for triangle in (a, b))
+            if cross(shifted_a[1] - shifted_a[0], shifted_a[2] - shifted_a[0]) == 0:
+                return False
+            winding = cross(shifted_b[1] - shifted_b[0], shifted_b[2] - shifted_b[0])
+            if winding == 0:
+                return False
+            if winding < 0:
+                shifted_b = shifted_b[::-1]
+        poly, b = list(shifted_a), shifted_b
         for j in range(3):
-            p,q=b[j],b[(j+1)%3];old=poly;poly=[]
-            if not old:break
-            for k,current in enumerate(old):
-                previous=old[k-1];dc=cross(q-p,current-p);dp=cross(q-p,previous-p)
-                if (dc>=0)!=(dp>=0):poly.append(previous+(current-previous)*(dp/(dp-dc)))
-                if dc>=0:poly.append(current)
-        return area(poly)>1e-12
-    vertex_count=None
-    for index,values in enumerate(uv_sets):
-        values=np.asarray(values,np.float64)
+            if not poly:
+                return False
+            p = b[j]
+            edge = b[(j + 1) % 3] - p
+            old, poly = poly, []
+            previous = old[-1]
+            dp = cross(edge, previous - p)
+            for current in old:
+                dc = cross(edge, current - p)
+                if (dc >= 0) != (dp >= 0):
+                    # An edge crossing lies between endpoints. Normalize the two
+                    # distances before adding them to avoid overflow in the ratio.
+                    near, far = previous, current
+                    near_distance, far_distance = abs(dp), abs(dc)
+                    if near_distance > far_distance:
+                        near, far = far, near
+                        near_distance, far_distance = far_distance, near_distance
+                    ratio = near_distance / far_distance
+                    poly.append(near + (far - near) * (ratio / (1 + ratio)))
+                if dc >= 0:
+                    poly.append(current)
+                previous, dp = current, dc
+
+        if len(poly) < 3:
+            return False
+        origin = poly[0]
+        area = sum(cross(poly[i] - origin, poly[i + 1] - origin) / 2
+                   for i in range(1, len(poly) - 1))
+        return abs(area) > 1e-12
+
+    def summarize(index, mapped):
+        areas = [signed_area(triangle) for triangle in mapped]
+        signed = np.array([area for area, _ in areas])
+        pairs = []
+        tested = 0
+        exhausted = False
+        for i in range(len(mapped)):
+            for j in range(i):
+                if tested >= max_pairs:
+                    exhausted = True
+                    break
+                tested += 1
+                # Zero-area triangles cannot bound a clipping polygon.
+                if signed[i] == 0 or signed[j] == 0:
+                    continue
+                a, b = mapped[i], mapped[j]
+                if np.any(a.max(axis=0) <= b.min(axis=0)) or np.any(b.max(axis=0) <= a.min(axis=0)):
+                    continue
+                if overlap(a, b[::-1] if signed[j] < 0 else b, exact=areas[i][1] or areas[j][1]):
+                    pairs.append([j, i])
+            if exhausted:
+                break
+        return {"set": index, "degenerate_triangles": np.flatnonzero(np.abs(signed) <= 1e-12).tolist(),
+                "mirrored_triangles": np.flatnonzero(signed < 0).tolist(), "overlap_pairs": pairs,
+                "overlap_complete": not exhausted, "overlap_pairs_tested": tested}
+
+    vertex_count = None
+    for index, values in enumerate(uv_sets):
+        values = np.asarray(values, np.float64)
         require(values.ndim==2 and values.shape[1]==2 and len(values)<=1_000_000 and np.isfinite(values).all()
                 and (not faces.size or int(faces.max())<len(values)), "TEXTURE_UV", "UV set does not cover finite mesh vertices.")
-        if vertex_count is None:vertex_count=len(values)
-        require(len(values)==vertex_count,"TEXTURE_UV","UV sets must cover the same vertices.")
-        mapped=values[faces];signed=np.array([cross(t[1]-t[0],t[2]-t[0])/2 for t in mapped])
-        pairs=[];tested=0;exhausted=False
-        for i in range(len(faces)):
-            for j in range(i):
-                if tested>=max_pairs:exhausted=True;break
-                tested+=1
-                if np.any(mapped[i].max(axis=0)<=mapped[j].min(axis=0)) or np.any(mapped[j].max(axis=0)<=mapped[i].min(axis=0)):continue
-                if overlap(mapped[i],mapped[j]):pairs.append([j,i])
-            if exhausted:break
-        report['sets'].append({"set":index,"degenerate_triangles":np.flatnonzero(np.abs(signed)<=1e-12).tolist(),
-                 "mirrored_triangles":np.flatnonzero(signed<0).tolist(),"overlap_pairs":pairs,
-                 "overlap_complete":not exhausted,"overlap_pairs_tested":tested})
+        if vertex_count is None:
+            vertex_count = len(values)
+        require(len(values) == vertex_count, "TEXTURE_UV", "UV sets must cover the same vertices.")
+        try:
+            with np.errstate(over="raise", invalid="raise", divide="raise", under="ignore"):
+                report["sets"].append(summarize(index, values[faces]))
+        except FloatingPointError as exc:
+            raise RigError("TEXTURE_UV", "UV overlap arithmetic exceeded the finite numeric range.") from exc
     if tangents is not None:
         tangent=np.asarray(tangents,np.float64)
         require(vertex_count is not None and tangent.shape==(vertex_count,4) and np.isfinite(tangent).all()
