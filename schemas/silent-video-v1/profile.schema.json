@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Silent video profile v1",
+  "enum": [
+    {
+      "container": "mp4",
+      "codec": "h264",
+      "encoder": "libx264",
+      "extension": ".mp4",
+      "pixel_format": "yuv420p",
+      "alpha": "opaque",
+      "color": "untagged-sdr",
+      "precision": 8,
+      "crf": 18,
+      "preset": "veryfast"
+    },
+    {
+      "container": "webm",
+      "codec": "vp9",
+      "encoder": "libvpx-vp9",
+      "extension": ".webm",
+      "pixel_format": "yuv420p",
+      "alpha": "opaque",
+      "color": "untagged-sdr",
+      "precision": 8,
+      "crf": 30,
+      "preset": "good"
+    }
+  ]
+}
