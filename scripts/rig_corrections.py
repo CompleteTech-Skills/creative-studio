@@ -18,6 +18,7 @@ def apply_rig_corrections(rig, correction, *, persist=True):
             'RIG_STALE_CORRECTION', 'Correction targets a different rig revision; rebase it against the current rig.')
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
     specs=[];evidence={}
+    directly_edited_bones=set()
     if result.manifest['skeleton']:
         for bone in result.skeleton['bones']:
             specs.append({k:deepcopy(bone[k]) for k in ('id','role','parent','head','tail','deform','mirror','roll')})
@@ -65,6 +66,7 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                             if target in expression['bones']:expression['bones'][renamed]=expression['bones'].pop(target)
                         target=renamed
             evidence[target]=dict(source='human-landmark',reference='Correction by '+correction['author']+': '+correction['reason'],confidence=1.)
+            directly_edited_bones.add(target)
             skeleton_changed=True
         elif operation=='weights':
             require(not skeleton_changed, 'RIG_CORRECTION_ORDER', 'Regenerate binding after skeletal edits before editing weights.')
@@ -132,13 +134,14 @@ def apply_rig_corrections(rig, correction, *, persist=True):
             for key in ('skeleton','controllers','attachments','uncertainties'):result.manifest[key]=fitted[key]
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True
+            directly_edited_bones.clear()
     if skeleton_changed:
         skeleton=skeleton_from_heads(specs,identifier=result.skeleton['id'],version=next_version(result.skeleton['version']))
         for b in skeleton['bones']:b['evidence']=evidence[b['id']]
         result.manifest['skeleton']=skeleton
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
         for u in result.manifest['uncertainties']:
-            if evidence.get(u['element'],{}).get('source')=='human-landmark':u['resolution']='corrected'
+            if u['element'] in directly_edited_bones:u['resolution']='corrected'
     validate_skeleton(result.skeleton,result.manifest['limits'])
     validate_controllers(result.skeleton,result.manifest['controllers'])
     bone_ids={b['id'] for b in result.skeleton['bones']}
