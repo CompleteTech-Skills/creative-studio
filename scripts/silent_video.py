@@ -341,6 +341,8 @@ def _failure_diagnostics(evidence, message, limit):
         record['command'] = [redact(value) if isinstance(value, str) else value
                              for value in record['command']]
         for field in ('stdout', 'stderr'):
+            if field not in record:
+                continue  # A failed launch has no observed process transcript.
             record[field], clipped = bounded(record[field], record.get(field + '_truncated', False))
             if clipped:
                 record[field + '_truncated'] = True
@@ -361,7 +363,7 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
             record = {'command': list(command), 'started': False,
                       'launch_error': {'errno': exc.errno}, 'stdout': '', 'stderr': ''}
             evidence, message = _failure_diagnostics({'command_failure': record},
-                'media command could not start (OS error '+str(exc.errno)+')', limits['max_log_bytes'])
+                'media command launch failed: could not start (OS error '+str(exc.errno)+')', limits['max_log_bytes'])
             failure = ValueError(message)
             failure.evidence = evidence
             raise failure from None

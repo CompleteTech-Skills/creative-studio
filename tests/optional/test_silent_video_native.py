@@ -312,6 +312,39 @@ class SilentMedia(core.SilentContracts):
             for field in ('video_stream_count','audio_stream_count','other_stream_count'):
                 self.assertNotIn(field,value)
 
+    def test_os_decoder_launch_failure_retains_completed_stages_and_hashes(self):
+        artifact = self.root / 'launch-control.mp4'
+        video.encode(self.request, self.root, artifact)
+        before = artifact.read_bytes()
+        private = self.root / 'SYNTHETIC_PRIVATE_DECODER_DIR'
+        private.mkdir()
+        decoder = private / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
+        decoder.write_bytes(b'Offline placeholder in an unsupported executable format.\n')
+        decoder.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, 'launch failed') as failed:
+            video.verify_export(artifact, self.request, ffmpeg=decoder)
+        request_path = self.root / 'launch-request.json'
+        request_path.write_text(json.dumps(self.request), encoding='utf-8')
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()),
+            'verify-export', str(artifact), '--request', str(request_path), '--require-silent'],
+            env=dict(os.environ, PATH=str(private) + os.pathsep + os.environ['PATH']),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        for evidence in (failed.exception.evidence, json.loads(result.stdout)):
+            self.assertFalse(evidence['verified'])
+            self.assertEqual(evidence['artifact_sha256'], hashlib.sha256(before).hexdigest())
+            self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+            self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+            for stage in ('probe', 'timeline'):
+                self.assertEqual(evidence[stage]['exit_status'], 0)
+                self.assertTrue(evidence[stage]['stdout'])
+            self.assertIsInstance(evidence['decode']['launch_error']['errno'], int)
+            self.assertIs(evidence['decode']['started'], False)
+            self.assertEqual((evidence['decode']['stdout'], evidence['decode']['stderr']), ('', ''))
+            self.assertNotIn('exit_status', evidence['decode'])
+            self.assertNotIn(private.name, json.dumps(evidence) + str(failed.exception))
+        self.assertEqual(artifact.read_bytes(), before)
+
     @unittest.skipUnless(os.name == 'posix', 'actual ENOEXEC fixture requires POSIX executable semantics')
     def test_actual_decode_launch_failure_preserves_two_successful_probes(self):
         artifact = self.root / 'launch-evidence.mp4'

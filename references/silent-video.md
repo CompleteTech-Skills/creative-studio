@@ -287,7 +287,12 @@ PY
 Failure evidence retains the artifact, request and source-manifest hashes and
 `verified: false`. Once a media process starts, a failed command retains its
 argument list, observed exit status, stdout and stderr under `command_failure`
-and its verifier stage (`probe`, `timeline` or `decode`). Each transcript stays
+and its verifier stage (`probe`, `timeline` or `decode`). An OS launch refusal
+instead records the command
+aliases and numeric OS error code with `started: false`, empty capture buffers
+and no exit status. Empty buffers do not claim that a process ran; prior
+completed verification stages and available identity hashes remain attached.
+Each transcript stays
 within the request's `max_log_bytes` byte limit, including UTF-8 replacement.
 Truncated streams carry an explicit truncation flag; timeout failures carry
 `timed_out: true` and the observed terminated-process status.

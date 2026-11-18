@@ -188,6 +188,24 @@ class SilentContracts(unittest.TestCase):
                     self.assertTrue(raw['stdout_truncated'])
                     self.assertTrue(raw['stderr_truncated'])
 
+    def test_launch_failure_has_no_invented_process_observations(self):
+        import errno
+        command = [str(self.root / 'synthetic-private-tool-dir' / 'ffmpeg'), '-version']
+        for code in (errno.ENOENT, errno.EACCES, errno.ENOEXEC):
+            with self.subTest(code=code), patch.object(video.subprocess, 'Popen',
+                    side_effect=OSError(code, 'synthetic launch refusal', command[0])):
+                with self.assertRaisesRegex(ValueError, 'launch failed') as failed:
+                    video._run(command, video.DEFAULT_LIMITS)
+            record = failed.exception.evidence['command_failure']
+            self.assertEqual(record['launch_error'], {'errno': code})
+            self.assertEqual(record['command'], ['ffmpeg', '-version'])
+            self.assertIs(record['started'], False)
+            self.assertEqual((record['stdout'], record['stderr']), ('', ''))
+            for field in ('exit_status', 'timed_out'):
+                self.assertNotIn(field, record)
+            self.assertNotIn('synthetic-private-tool-dir',
+                             str(failed.exception) + json.dumps(failed.exception.evidence))
+
     def test_malformed_successful_probe_survives_python_and_cli_failure(self):
         import contextlib,io
         artifact=self.root/'corrupt.mp4';artifact.write_bytes(b'synthetic malformed media')

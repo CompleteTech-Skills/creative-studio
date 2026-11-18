@@ -48,8 +48,8 @@ native silent-media workflow. Current-head execution remains pending at authorin
 
 ## Later failure-evidence correction (#525 / #227)
 
-The correction based on main `3358f0d533984c522e9e8df5c6fe92b6a69bb4af`
-passed 44 portable tests and 68 tests in the optional native suite locally on
+The earlier launch correction integrated with main `24ffdd8a586cde58782b88c10785e1e0ece569be`
+passed 45 portable tests and 70 tests in the optional native suite locally on
 Linux, with no skips. The native suite includes inherited portable contract
 tests and actual FFmpeg/ffprobe 7.1.5 checks on synthetic media. An actual
 corrupt MP4 produced ffprobe exit 1; Python and CLI failures retained the raw
@@ -72,8 +72,8 @@ replace command-owned absolute directory paths with stable aliases. Byte limits
 are reapplied after replacement. A separate contract fixture proves that a
 truncated strict-decode transcript cannot succeed merely because the retained
 prefix contains only whitespace; that fixture is not a native artifact bypass.
-The 44 portable cases combine the core, capabilities and production-adapter
-modules; the core module alone contains 29 cases. A real long temporary path
+The 45 portable cases combine the core, capabilities and production-adapter
+modules; the core module alone contains 30 cases. A real long temporary path
 that is cut inside ffprobe's stderr is also redacted in Python and CLI evidence.
 Stale source errors identify the frame index without copying relative source
 names. Portable deeply nested JSON fixtures exercise the installed JSON parser's
@@ -97,6 +97,16 @@ checks both spellings and partial error messages. The corresponding Windows
 branch exercises an actual Unicode replacement-character filename; it is not
 evidence of POSIX byte-path behavior on Windows. Original valid-Unicode cases
 remain unchanged.
+
+An actual OS refusal to launch an unsupported decoder retains the completed
+probe/timeline records and all available identity hashes through Python and CLI.
+Its stage record contains the command aliases, OS error code and `started: false`,
+with empty capture buffers and no invented process exit status. Portable
+injected launch errors separately cover missing, denied and invalid executables.
+An initial 70-test native run had one failure: the long non-UTF-8 path case
+observed ffprobe status -9 rather than its asserted status 1. The unchanged
+two-case targeted rerun and full 70-test rerun both passed with zero skips; the
+initial failure is retained as historical evidence, not reported as a pass.
 
 The original 17 core and 30 native test method bodies remain unchanged. The new
 regressions failed on the preceding source before the correction. Independent
