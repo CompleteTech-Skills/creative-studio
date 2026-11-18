@@ -53,8 +53,8 @@ separate adapter. Input limits are the tighter of the library, snapshot
 and caller limits. The native preflight estimates aggregate geometry
 work before decoding. The importer checks the projected packed GLB size and
 reserves combined geometry and preview memory before assigning the remaining
-budget to the native texture reader. Blender, OBJ, basis changes, batch import and generation remain
-outside this slice of #139.
+budget to the native texture reader. General Blender ingestion, OBJ, arbitrary
+basis changes, batch import, and general asset generation remain open in #139.
 
 Run the focused tests with the optional rig Python dependencies, Node.js,
 and the pinned offline `gltf-validator` package from `tools/rig/package-lock.json`.
@@ -63,3 +63,43 @@ and the pinned offline `gltf-validator` package from `tools/rig/package-lock.jso
 HATCH_GLTF_VALIDATOR_ROOT=/path/to/node_modules/gltf-validator \
   PYTHONPATH=scripts:tests python -m unittest test_rig_asset_library_import -v
 ```
+
+## Packed Blender triangle fixture
+
+On Linux with `/usr/bin/prlimit` and `wait4`, set `HATCH_BLENDER` to Blender 4.5.3
+build `67807e1800cc` and use the same library and license metadata.
+
+```python
+reference = ImportPipeline(library).import_blender_fixture(
+    identity=identity,
+    version="1.0.0",
+    metadata=metadata,
+    license_file="/path/to/license.txt",
+)
+```
+
+The fixed worker builds a static, untextured triangle in a private workspace,
+packs its dependency closure, and writes the scene to a Blender library file.
+The library stores scene data without the workspace file-browser state. A
+separate Blender process reopens the exact original with auto-execution
+disabled. Both calls share the configured Blender process deadline. Linux
+enforces the virtual address space limit, set to eight times the configured
+resident budget to allow Blender's memory mappings. Each child's
+kernel-reported peak RSS must fit the resident budget before the adapter
+admits its output. The fixture API takes no source path, and
+`import_asset` rejects `.blend` paths before launching Blender.
+
+The canonical version retains exact Blender bytes at `source/fixture.blend`,
+the direct export at `source/model.glb`, and the normalized runtime payload at
+`normalized.glb`. Both GLBs pass the pinned Khronos Validator 2.0.0-dev.3.10.
+The native reader checks the triangle's coordinates and winding in right-handed
+Y-up meters. `import-report.json` retains both process observations, the
+Blender build and worker hash, and the source and derivative digests.
+To replay the recorded argument arrays, use a fresh private working directory
+for `<workspace>`, the configured Blender executable for `<blender>`, and the
+packaged `scripts/asset_import_worker.py` for `<worker>`. Run `create` before
+`reopen` in the same directory within the reported shared deadline.
+The fixture covers one mesh without external resources, materials, rigs, or animation.
+
+Run the focused suite with `HATCH_BLENDER` and the validator path set to
+exercise the Blender roundtrip.
