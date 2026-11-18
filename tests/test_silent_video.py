@@ -212,6 +212,22 @@ class SilentContracts(unittest.TestCase):
             self.assertIn('<media-path-truncated>', record['stderr'])
             self.assertLessEqual(len(record['stderr'].encode()), 1024)
 
+    def test_filesystem_byte_spelling_is_redacted_after_diagnostic_decoding(self):
+        marker = 'SYNTHETIC_FILESYSTEM_BYTE_PATH'
+        path = self.root / (marker + '\udcff')
+        for index in range(6):
+            path /= str(index) + 'x' * 180
+        path /= 'artifact.mp4'
+        displayed = os.fsencode(str(path)).decode('utf-8', 'replace')
+        for truncated in (False, True):
+            transcript = displayed[:150] if truncated else displayed + ': synthetic error'
+            evidence = {'probe': {'command': [sys.executable, str(path)], 'exit_status': 1,
+                                 'stdout': '', 'stderr': transcript, 'stderr_truncated': truncated}}
+            with self.subTest(truncated=truncated):
+                result, message = video._failure_diagnostics(evidence, transcript, 1024)
+                self.assertNotIn(marker, json.dumps(result) + message)
+                self.assertLessEqual(len(result['probe']['stderr'].encode()), 1024)
+
     def test_probe_and_timeline_nesting_errors_keep_python_and_cli_evidence(self):
         import contextlib, io
         artifact = self.root / 'nested-probe.mp4'

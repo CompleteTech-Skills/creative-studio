@@ -310,10 +310,14 @@ def _failure_diagnostics(evidence, message, limit):
             substitutions[argument] = path.name if index == 0 else '<media-workdir>/' + path.name
             if path.parent != path.parent.parent:
                 substitutions.setdefault(str(path.parent), '<media-tool-dir>' if index == 0 else '<media-workdir>')
-    # Native diagnostics can use slash-normalized or JSON-escaped Windows paths.
+    # Native diagnostics use filesystem bytes decoded through the transcript's
+    # UTF-8 replacement boundary, which can differ from POSIX surrogateescape.
+    # Also admit slash-normalized or JSON-escaped Windows spellings.
     for path, alias in list(substitutions.items()):
-        substitutions.setdefault(path.replace('\\', '/'), alias)
-        substitutions.setdefault(json.dumps(path)[1:-1], alias)
+        for spelling in (path, os.fsencode(path).decode('utf-8', 'replace')):
+            substitutions.setdefault(spelling, alias)
+            substitutions.setdefault(spelling.replace('\\', '/'), alias)
+            substitutions.setdefault(json.dumps(spelling)[1:-1], alias)
     ordered = sorted(substitutions, key=len, reverse=True)
     def redact(value, truncated=False):
         if truncated:
@@ -340,7 +344,7 @@ def _failure_diagnostics(evidence, message, limit):
             record[field], clipped = bounded(record[field], record.get(field + '_truncated', False))
             if clipped:
                 record[field + '_truncated'] = True
-    return result, bounded(message)[0]
+    return result, bounded(message, truncated=True)[0]
 
 
 def _run(command, limits, *, cancel=None, output=None, pass_fds=()):

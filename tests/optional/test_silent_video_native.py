@@ -478,6 +478,41 @@ class SilentMedia(core.SilentContracts):
                 self.assertFalse(report['verified'])
                 self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
 
+    def test_filesystem_byte_workdir_is_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_NON_UTF8_WORKDIR'
+        # POSIX exercises an actual non-UTF-8 filename byte. Windows uses its
+        # actual Unicode replacement-character filename as a native control.
+        suffix = os.fsdecode(b'\xff') if os.name == 'posix' else '\ufffd'
+        artifact = self.root / 'byte-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        request_path = self.root / 'byte-path-request.json'
+        request_path.write_text(json.dumps(request))
+        for long_path in (False, True):
+            private = self.root / (marker + suffix + str(long_path))
+            if long_path:
+                for index in range(6):
+                    private /= str(index) + 'x' * 180
+            private.mkdir(parents=True)
+            with self.subTest(long_path=long_path):
+                with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                self.assertEqual(failed.exception.evidence['probe']['exit_status'], 1)
+                self.assertEqual(bool(failed.exception.evidence['probe'].get('stderr_truncated')), long_path)
+                self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['probe']['exit_status'], 1)
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
     def test_historical_full_probe_receipt_accepts_only_matching_authoritative_facts(self):
         artifact=self.root/'historical-receipt.mp4'
         receipt=video.encode(self.request,self.root,artifact)

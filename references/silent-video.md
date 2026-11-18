@@ -105,6 +105,8 @@ families and protocols to local files. They still detect the actual container;
 an edit list disguised as a supported media file is refused before following
 its referenced inputs. Failure transcripts exclude unrelated metadata and
 replace command-owned paths, including a path cut at a UTF-8 capture boundary.
+Their matching spellings also cover POSIX filesystem bytes that decode to
+replacement characters in a native tool's transcript.
 
 It requires exactly one video and zero audio/subtitle/data/attachment streams;
 checks the explicit codec, container, pixel format, resolution, square samples,
