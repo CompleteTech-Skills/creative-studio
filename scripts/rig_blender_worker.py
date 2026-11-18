@@ -37,7 +37,10 @@ def activate_clip(name):
         if obj.type=='ARMATURE':
             for bone in obj.pose.bones:bone.matrix_basis=Matrix.Identity(4)
         if obj.type=='MESH' and obj.data.shape_keys:
-            for key in obj.data.shape_keys.key_blocks:key.value=0.
+            # Restore source defaults before an action overrides its authored
+            # channels. Unanimated and omitted morph channels retain these values.
+            defaults=json.loads(obj.get('hatch_rest_morph_weights','{}'))
+            for key in obj.data.shape_keys.key_blocks:key.value=defaults.get(key.name,0.)
     return matched
 
 
@@ -193,7 +196,18 @@ def main():
         bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False)
         bpy.context.scene.render.fps=job.get('fps',24);bpy.context.scene.frame_start=0
         bpy.ops.import_scene.gltf(filepath=job['input'],merge_vertices=False,import_pack_images=True,bone_heuristic='BLENDER',disable_bone_shape=True)
-        for obj in bpy.data.objects:obj['hatch_rest_basis']=json.dumps([list(row) for row in obj.matrix_basis])
+        for obj in bpy.data.objects:
+            obj['hatch_rest_basis']=json.dumps([list(row) for row in obj.matrix_basis])
+        meshes = (obj for obj in bpy.data.objects if obj.type == 'MESH')
+        for mesh_id, obj in native_mesh_objects(meshes).items():
+            if not obj.data.shape_keys:
+                continue
+            if mesh_id not in job['morph_defaults']:
+                raise ValueError('Imported mesh lost its native morph-default identity')
+            defaults = job['morph_defaults'][mesh_id]
+            if set(defaults) - set(obj.data.shape_keys.key_blocks.keys()):
+                raise ValueError('Imported mesh lost an authored morph default')
+            obj['hatch_rest_morph_weights'] = json.dumps(defaults)
         manifest=json.loads(Path(job['manifest']).read_text());add_authoring_controls(manifest, job['socket_rest'])
         bpy.context.scene.frame_start=0;bpy.context.scene.frame_end=round(job.get('duration',2)*bpy.context.scene.render.fps)
         activate_clip('neutral');bpy.context.scene.frame_set(0)
