@@ -1,0 +1,166 @@
+{
+  "integral_float_raw_sources": {
+    "api_snapshot": "verified",
+    "cli_exit": 0,
+    "source_files": 8,
+    "source_sha256": {
+      "example-animation.json": "95cdf7e55acd586943318a799ddb74095465cd12f66a829a2a1b0494c0e6412e",
+      "triangle.obj": "f35f79225a9f04bd331d1095628cb1167409357db03405a45be22c8e0478848a",
+      "triangle.json": "7a54a602e478d10d3849310c2dc8a20f10df562f38b3555f8fa170223eeeb1b9",
+      "example-scene.json": "4e6c3e7e9c7c9c9ad1715b5ac7148de33a52c950a762532e9d6b921ba9572aaf",
+      "example-prefab.json": "df4c10b1dcb487b055bf417e90c97e846e92a7ce117295ac943c4902c2720bd8",
+      "example-shot.json": "42ecb16d37dcc118260a7f3dbe34d5d742348607ba8c7a2fda5ca67fe566fc63",
+      "example-render.json": "49590ec7e7f3f146f40a97af7b9764a72eafa58ab9d92ab2b78920d4179c0f28",
+      "project.json": "7276f8c568b21516cca519152c88114c712782410a5d9f558652437e15bf135b"
+    },
+    "raw_bytes_unchanged": true,
+    "metadata_floats_preserved": true,
+    "derived_documents": 1
+  },
+  "texture_service_imports": [
+    {
+      "case": "png",
+      "route": "glb",
+      "accepted": true,
+      "error_code": null,
+      "source_sha256": "c1b1adf11f7e06a7c6b7d5a14f436497d690647a9076e4d80f188805a83d09fe",
+      "image_sha256": "1c27a76376aa1c4feb39dbb2891edfab3b751488dabc4bc9bccadfbac326df08"
+    },
+    {
+      "case": "png",
+      "route": "external",
+      "accepted": true,
+      "error_code": null,
+      "source_sha256": "1b0e71a707efd17bd21776dde75dd7f730f46a2306cc029876e0c72463df16a7",
+      "image_sha256": "1c27a76376aa1c4feb39dbb2891edfab3b751488dabc4bc9bccadfbac326df08"
+    },
+    {
+      "case": "png",
+      "route": "data-uri",
+      "accepted": true,
+      "error_code": null,
+      "source_sha256": "cc6a14669dc6788461757fa625383a749760f5314279cc86a09471b50db2b938",
+      "image_sha256": "1c27a76376aa1c4feb39dbb2891edfab3b751488dabc4bc9bccadfbac326df08"
+    },
+    {
+      "case": "jpeg",
+      "route": "glb",
+      "accepted": true,
+      "error_code": null,
+      "source_sha256": "4622010610e200b4434e4c63dd3b37887f73fbb469d7843965dd9a496b2792fa",
+      "image_sha256": "f7aa64cf9f5f369a45ee48c602577ff4f7d7da1bdb1fc674ea907dae6cd284ec"
+    },
+    {
+      "case": "jpeg",
+      "route": "external",
+      "accepted": true,
+      "error_code": null,
+      "source_sha256": "637cb1270f9be480fa2735949980d568709006c7bf999bc952d8595ffede5f6e",
+      "image_sha256": "f7aa64cf9f5f369a45ee48c602577ff4f7d7da1bdb1fc674ea907dae6cd284ec"
+    },
+    {
+      "case": "jpeg",
+      "route": "data-uri",
+      "accepted": true,
+      "error_code": null,
+      "source_sha256": "b6f46fbe2b0bea1bfa078359bb38fc169df2cdc08c313f081b30159869926589",
+      "image_sha256": "f7aa64cf9f5f369a45ee48c602577ff4f7d7da1bdb1fc674ea907dae6cd284ec"
+    },
+    {
+      "case": "jpeg-cut-5",
+      "route": "glb",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "6d4d911ae1acc99140e60937f658bd5f59d5662c242bc26ce0a146c225d9cb61",
+      "image_sha256": "df1a0aba6e5de7580f1c200a349e3b1986916e2b46d627e2f95b91ad2e4fe8e2"
+    },
+    {
+      "case": "jpeg-cut-5",
+      "route": "external",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "4538657e7362d61fa85082ab2faeeddea50b1c90dd96166c1f1a5848960af806",
+      "image_sha256": "df1a0aba6e5de7580f1c200a349e3b1986916e2b46d627e2f95b91ad2e4fe8e2"
+    },
+    {
+      "case": "jpeg-cut-5",
+      "route": "data-uri",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "428c24658fcd734d4cfbb0bec8cd1a8c06dcf2da865c589d4ace16d906090c6f",
+      "image_sha256": "df1a0aba6e5de7580f1c200a349e3b1986916e2b46d627e2f95b91ad2e4fe8e2"
+    },
+    {
+      "case": "jpeg-cut-20",
+      "route": "glb",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "8e759eb66103650e322b8881d1349d85fe44184ddbc9c454e07ef1758c691d37",
+      "image_sha256": "5e07ea43618540bf5bcb1bc6c00fd10b3b07cf5e6bb92a706a84f9a3ea6d3ef5"
+    },
+    {
+      "case": "jpeg-cut-20",
+      "route": "external",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "4019d9807ac9bf6e24b30a1b3c1e8487f6cc478fc29a0580553496eea8b57ff2",
+      "image_sha256": "5e07ea43618540bf5bcb1bc6c00fd10b3b07cf5e6bb92a706a84f9a3ea6d3ef5"
+    },
+    {
+      "case": "jpeg-cut-20",
+      "route": "data-uri",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "67d15ae0a351db370aecaeb5d2e31f2c8b0d14d6748fb7df548482873b102a11",
+      "image_sha256": "5e07ea43618540bf5bcb1bc6c00fd10b3b07cf5e6bb92a706a84f9a3ea6d3ef5"
+    },
+    {
+      "case": "jpeg-cut-100",
+      "route": "glb",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "af92a63e7a62cb36000f5320180f5c19860805fb9477ff6d39ae7f046aa06616",
+      "image_sha256": "d76f68ad392848f32cdacdc948283f8b4143863e74affbadb3c8f65f53fa8063"
+    },
+    {
+      "case": "jpeg-cut-100",
+      "route": "external",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "475211c273b55cbc9827fce57ec5bb3e86c86df647b73983a83220e6e7f12834",
+      "image_sha256": "d76f68ad392848f32cdacdc948283f8b4143863e74affbadb3c8f65f53fa8063"
+    },
+    {
+      "case": "jpeg-cut-100",
+      "route": "data-uri",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "2ea72f1f60157f8070728ba27c94098b12cb0efc06593ee2c9558559e14b2291",
+      "image_sha256": "d76f68ad392848f32cdacdc948283f8b4143863e74affbadb3c8f65f53fa8063"
+    },
+    {
+      "case": "jpeg-cut-300",
+      "route": "glb",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "cd50d6b99108492ea19d480de8e60173f39c41203d7b178f44e097c81a6d6c80",
+      "image_sha256": "461f033e52da0a24c5c3ca7ed85108bf4015e4d6636a988345195fee071f02f3"
+    },
+    {
+      "case": "jpeg-cut-300",
+      "route": "external",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "8cbba1012e2310a1f1966fc2bcd6e53d6df0dfc36f74074c2bc0834fb9c73a30",
+      "image_sha256": "461f033e52da0a24c5c3ca7ed85108bf4015e4d6636a988345195fee071f02f3"
+    },
+    {
+      "case": "jpeg-cut-300",
+      "route": "data-uri",
+      "accepted": false,
+      "error_code": "RIG_TEXTURE_DECODE",
+      "source_sha256": "62b83f59d61e0f9c6899bd402d1a78cf8bac855013d4ce1857b95b3a43f29475",
+      "image_sha256": "461f033e52da0a24c5c3ca7ed85108bf4015e4d6636a988345195fee071f02f3"
+    }
+  ]
+}

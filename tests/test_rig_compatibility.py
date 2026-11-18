@@ -62,7 +62,7 @@ failed=[case for case in cases if type(case).__name__=='_FailedTest']
 assert not failed,[(case.id(),str(case._exception)) for case in failed]
 assert len(ids)>=790,len(ids)
 assert len(ids)==len(set(ids)),'duplicate test discovery'
-assert not any(name.startswith(('test_rig_', 'test_model3d_')) for name in ids),ids
+assert not any(name.startswith(('test_rig_', 'test_model3d_', 'test_render3d_')) for name in ids),ids
 assert sum(name.startswith('test_production_pilot.') for name in ids)==13
 assert any(name.startswith('test_production_workflow.') for name in ids)
 assert any(name.startswith('test_decomposition_review.') for name in ids)

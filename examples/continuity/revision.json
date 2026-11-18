@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "continuity-revision",
+  "identity_id": "robot",
+  "revision_id": "robot-r1",
+  "semantic_version": "1.0.0",
+  "parent_revision_id": null,
+  "asset": {
+    "id": "fixture",
+    "version": "1.0.0",
+    "path": "mesh.obj",
+    "sha256": "255781d0b7345ac14d332a09cac513e0c508d693ab5dfe15bcc7d37532840235",
+    "kind": "mesh"
+  },
+  "geometry": {
+    "id": "fixture",
+    "version": "1.0.0",
+    "path": "mesh.obj",
+    "sha256": "255781d0b7345ac14d332a09cac513e0c508d693ab5dfe15bcc7d37532840235",
+    "kind": "mesh"
+  },
+  "components": [
+    {
+      "id": "fixture",
+      "parent_id": null,
+      "local_transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh": {
+        "id": "fixture",
+        "version": "1.0.0",
+        "path": "mesh.obj",
+        "sha256": "255781d0b7345ac14d332a09cac513e0c508d693ab5dfe15bcc7d37532840235",
+        "kind": "mesh"
+      },
+      "materials": []
+    }
+  ],
+  "materials": [],
+  "textures": [],
+  "rig": null,
+  "skin_weights": [],
+  "morphs": [],
+  "attachments": [],
+  "coordinates": {
+    "handedness": "right",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "quaternion": "XYZW",
+    "angles": "radian"
+  },
+  "rest_pose": null,
+  "bounds": null,
+  "geometry_statistics": {
+    "status": "unverified",
+    "vertices": null,
+    "triangles": null,
+    "components": null,
+    "measured_by": null
+  },
+  "source_provenance": {
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "attribution": "fixture",
+    "license": "fixture",
+    "created_at": "2026-10-24T00:00:00Z",
+    "native_receipts": []
+  },
+  "dependencies": [],
+  "reference_renders": [
+    {
+      "id": "reference",
+      "version": "1.0.0",
+      "path": "reference.ppm",
+      "sha256": "8dee30e2caa26a23f15a2e903788b34b4bd247a15ccb4feed7ec8b3db1bc71ee",
+      "kind": "evidence"
+    }
+  ],
+  "review_records": [],
+  "visual_spec": {
+    "description": "fixture",
+    "constraints": [],
+    "approved_variations": [],
+    "default_pose": null,
+    "default_expressions": []
+  },
+  "created_at": "2026-10-24T00:00:00Z"
+}
