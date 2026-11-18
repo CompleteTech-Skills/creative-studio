@@ -33,6 +33,15 @@ jobs:
       - run: python -m unittest discover -s tests -p 'test_model3d_*.py' -v 2>&1 | tee model3d-tests.log
       - run: python scripts/model3d.py validate --file examples/model3d-contracts/robotic.json --root . > model3d-verification.json
       - run: python scripts/model3d.py capabilities > model3d-capabilities.json
+      - name: Editor3D archive restore and exact autosave on Windows
+        if: runner.os == 'Windows'
+        run: |
+          PYTHONPATH='scripts;tests' python -m unittest -v \
+            test_rig_editor3d_repository.EditorRepositoryTests.test_save_as_and_archive_restore_preserve_all_revisions_and_bytes \
+            test_rig_editor3d_repository.EditorRepositoryTests.test_debounced_autosave_does_not_commit_incomplete_drag_or_erase_undo \
+            test_rig_editor3d_repository.EditorRepositoryTests.test_auto_checkpoint_schedules_new_commits_and_history_only \
+            test_rig_editor3d_repository.EditorRepositoryTests.test_autosave_refuses_portable_slot_alias_and_edits_remain_writable \
+            2>&1 | tee editor3d-windows-persistence.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -41,5 +50,6 @@ jobs:
             model3d-tests.log
             model3d-verification.json
             model3d-capabilities.json
+            editor3d-windows-persistence.log
           if-no-files-found: error
           retention-days: 30
