@@ -1,11 +1,14 @@
-"""Bounded, offline glTF 2.0 ingestion into the canonical AssetLibrary."""
+"""Bounded offline glTF and static OBJ ingestion into the canonical AssetLibrary."""
 from contextlib import contextmanager
 from copy import deepcopy
+from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
 import struct
 import tempfile
+
+import numpy as np
 
 import scene3d_import
 
@@ -13,7 +16,7 @@ from asset_library import AssetLibrary, detect_format, file_record, read_source_
 from asset_library_contracts import MAX_FILE_BYTES, seal, validate
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, decode_json, require, timestamp
-from rig_gltf import MATERIAL_EXTENSIONS, preflight_gltf, read_gltf
+from rig_gltf import DTYPES, GltfDocument, MATERIAL_EXTENSIONS, build_static_gltf, preflight_gltf, read_gltf
 from rig_import import load_character_model
 from rig_interop import validate_gltf
 from rig_load_limits import _JSON_FACTOR, effective_limits
@@ -21,6 +24,7 @@ from scene3d_import import _dump, _local_uri, _wireframe_preview, source_snapsho
 
 BLENDER_VALIDATOR = '2.0.0-dev.3.10'
 TOOL = 'hatch-native-gltf-import'
+OBJ_TOOL = 'hatch-native-obj-import'
 VERSION = '1.0.0'
 # These extensions use retained node/material/texture indices and do not
 # introduce additional external resources or buffer offsets.
@@ -102,6 +106,89 @@ def _inspect(snapshot, limits):
         for name, entry in snapshot['inventory'].items()
     ]
     return document, images, inventory, embedded, preflight
+
+
+_OBJ_PRECISION_BATCH = 4096
+# Covers the gathered source and rounded coordinates and vectorized predicates.
+_OBJ_PRECISION_BYTES_PER_TRIANGLE = 768
+_OBJ_PRECISION_EXACT_WORKSPACE = 16 * 1024
+
+
+def _has_exact_triangle_area(points):
+    corners = [[Fraction(float(coordinate)) for coordinate in point] for point in points]
+    left = [b - a for a, b in zip(corners[0], corners[1])]
+    right = [c - a for a, c in zip(corners[0], corners[2])]
+    return any(left[i] * right[j] != left[j] * right[i] for i, j in ((0, 1), (1, 2), (2, 0)))
+
+
+def _check_obj_float32_triangles(geometry):
+    for mesh in geometry.meshes:
+        for start in range(0, len(mesh.triangles), _OBJ_PRECISION_BATCH):
+            triangles = mesh.triangles[start:start + _OBJ_PRECISION_BATCH]
+            source = mesh.positions[triangles]
+            with np.errstate(over='ignore', under='ignore'):
+                rounded = source.astype(DTYPES[5126]).astype(np.float64)
+            require(np.isfinite(rounded).all(), 'RIG_EXPORT_ACCESSOR',
+                    'OBJ coordinates must be finite at glTF precision.')
+            changed = np.any(rounded != source, axis=(1, 2))
+            if not changed.any():
+                continue
+
+            # The determinant test is performed in float64 on float32 inputs,
+            # so products neither underflow nor overflow. A conservative error
+            # bound identifies ambiguous results for exact dyadic arithmetic.
+            left = rounded[:, 1] - rounded[:, 0]
+            right = rounded[:, 2] - rounded[:, 0]
+            first = left * np.roll(right, -1, axis=1)
+            second = np.roll(left, -1, axis=1) * right
+            error = 8 * np.finfo(np.float64).eps * (np.abs(first) + np.abs(second))
+            certified = np.any(np.abs(first - second) > error, axis=1)
+            for index in np.flatnonzero(changed & ~certified):
+                require(_has_exact_triangle_area(rounded[index]) or not _has_exact_triangle_area(source[index]),
+                        'RIG_OBJ_PRECISION', 'Converting OBJ to glTF precision collapses a source triangle.')
+
+
+def _inspect_source(snapshot, limits):
+    path = snapshot['path']
+    if path.suffix != '.obj':
+        return _inspect(snapshot, limits)
+
+    from rig_obj import import_obj
+
+    geometry = import_obj(path, limits=limits, geometry_only=True).geometry
+    # The supported accessors use 32-bit values. Reserve the retained arrays,
+    # builder buffers and scratch, and the synthesized JSON graph up front.
+    geometry_bytes = packed_bytes = 0
+    metadata_workspace = 4096
+    for mesh in geometry.meshes:
+        arrays = (mesh.positions, mesh.triangles, *mesh.attributes.values())
+        geometry_bytes += sum(array.nbytes for array in arrays)
+        packed_bytes += 4 * sum(array.size for array in arrays)
+        metadata_workspace += 16384 + 64 * (len(mesh.id) + len(mesh.name))
+    output_limit = min(MAX_FILE_BYTES, limits['source_bytes'], limits['dependency_bytes'])
+    require(28 + packed_bytes <= output_limit, 'ASSET_IMPORT_LIMIT',
+            'Converted OBJ binary cannot fit in the normalized GLB budget.')
+    synthesis_workspace = 4 * geometry_bytes + 4 * packed_bytes + metadata_workspace
+    _admit_memory(synthesis_workspace, limits, 'OBJ glTF synthesis')
+    batch_triangles = min(_OBJ_PRECISION_BATCH, geometry.triangle_count)
+    _admit_memory(geometry_bytes + _OBJ_PRECISION_EXACT_WORKSPACE
+                  + _OBJ_PRECISION_BYTES_PER_TRIANGLE * batch_triangles,
+                  limits, 'OBJ coordinate precision')
+    _check_obj_float32_triangles(geometry)
+    builder = build_static_gltf(geometry, generate_normals=False)
+    del geometry
+    document = GltfDocument(path, builder.json, [builder.binary], limits)
+    encoder = json.JSONEncoder(ensure_ascii=False, separators=(',', ':'), allow_nan=False)
+    json_bytes = sum(len(fragment.encode('utf-8')) for fragment in encoder.iterencode(document.json))
+    binary_bytes = len(builder.binary)
+    encoded_bytes = 28 + json_bytes + (-json_bytes % 4) + binary_bytes + (-binary_bytes % 4)
+    require(encoded_bytes <= output_limit, 'ASSET_IMPORT_LIMIT',
+            'Converted OBJ glTF cannot fit in the normalized GLB budget.')
+    preflight = preflight_gltf(document, encoded_bytes=encoded_bytes, limits=limits)
+    preflight.update(obj_source_bytes=snapshot['total_bytes'],
+                     generated_json_bytes=json_bytes, generated_binary_bytes=binary_bytes)
+    inventory = [dict(path=path.name, roles=['source'], **snapshot['inventory'][path.name])]
+    return document, {}, inventory, [], preflight
 
 
 def _normalization_plan(document, images, scale, fixture, preflight):
@@ -214,25 +301,27 @@ class ImportPipeline:
     def _snapshot(self, source, root, *, retained_bytes=0):
         total_limit = min(scene3d_import.MAX_SOURCE_BYTES, self.limits['dependency_bytes'])
         require(retained_bytes < total_limit, 'RIG_LIMIT_DEPENDENCIES',
-                'Captured source leaves no budget for glTF.')
+                'Captured source leaves no budget for the import.')
         snapshot = source_snapshot(source, root,
             maximum_file_bytes=min(MAX_FILE_BYTES, self.limits['source_bytes']),
-            maximum_total_bytes=total_limit - retained_bytes)
+            maximum_total_bytes=total_limit - retained_bytes, allow_geometry_obj=True)
         snapshot.pop('document')
         return snapshot
 
     def probe(self, source):
-        """Inspect declarations and report exact closure prior to geometry decoding."""
+        """Inspect exact source closure and budget the native representation."""
         with _private_diagnostics('source'):
             with tempfile.TemporaryDirectory(prefix='asset-gltf-probe-') as temporary:
                 snapshot = self._snapshot(source, Path(temporary) / 'source')
-                _, _, inventory, embedded, preflight = _inspect(snapshot, self.limits)
-                return dict(format=snapshot['path'].suffix[1:], original_filename=snapshot['original_filename'],
-                            files=inventory, embedded=embedded, preflight=preflight, geometry_validated=False)
+                _, _, inventory, embedded, preflight = _inspect_source(snapshot, self.limits)
+                fmt = snapshot['path'].suffix[1:]
+                return dict(format=fmt, original_filename=snapshot['original_filename'],
+                            files=inventory, embedded=embedded, preflight=preflight,
+                            geometry_validated=fmt == 'obj')
 
     def import_asset(self, source, *, identity, version, metadata, license_file,
                      unit_scale=1.0, fixture=False):
-        """Independently validate source/output and publish one immutable version."""
+        """Validate the captured source and GLB, then publish one immutable version."""
         return self._import(source, identity, version, metadata, license_file, unit_scale, fixture,
                             blender_fixture=False)
 
@@ -276,7 +365,8 @@ class ImportPipeline:
             original, source, blender = create_fixture(root / 'blender', fixture_limits)
         retained_bytes = blender['source_bytes'] if blender is not None else 0
         snapshot = self._snapshot(source, root / 'source', retained_bytes=retained_bytes)
-        document, images, inventory, embedded, preflight = _inspect(snapshot, self.limits)
+        is_obj = snapshot['path'].suffix == '.obj'
+        document, images, inventory, embedded, preflight = _inspect_source(snapshot, self.limits)
         declarations = {name: len(document.json.get(name, []))
                         for name in ('skins', 'animations', 'materials', 'textures')}
         extras = document.json['asset'].get('extras', {})
@@ -300,7 +390,7 @@ class ImportPipeline:
         _admit_memory(decode_reserved + 1, self.limits, 'native decode')
         decode_limits = {**self.limits, 'memory_bytes': self.limits['memory_bytes'] - decode_reserved}
         del output
-        source_validation = _checked(snapshot['path'], self.limits)
+        source_validation = None if is_obj else _checked(snapshot['path'], self.limits)
         output_validation = _checked(normalized, self.limits)
         model = load_character_model(normalized, limits=decode_limits)
         if blender is not None:
@@ -308,18 +398,24 @@ class ImportPipeline:
                                        source_validation, output_validation)
         preview = _wireframe_preview(model.geometry, root / 'diagnostic.png')
         (root / 'license.txt').write_bytes(license_bytes)
-        _dump(root / 'source-khronos.json', source_validation)
+        if source_validation is not None:
+            _dump(root / 'source-khronos.json', source_validation)
         _dump(root / 'normalized-khronos.json', output_validation)
         _dump(root / 'import-report.json', dict(schema_version=1, original_filename=snapshot['original_filename'],
             source_files=inventory, embedded=embedded, preflight=preflight, fixture=fixture,
             **({'blender': blender} if blender is not None else {}),
-            operation='pack glTF buffers and textures into GLB and apply explicit scene-root units',
+            operation=('convert static OBJ mesh geometry into GLB and apply explicit scene-root units'
+                       if is_obj else 'pack glTF buffers and textures into GLB and apply explicit scene-root units'),
+            **({'source_geometry_reader': 'hatch-native-obj', 'source_validation': 'native-geometry'}
+               if is_obj else {}),
             coordinate_system='glTF right-handed Y-up', source_unit_scale=scale,
-            source_sha256=source_validation['asset_sha256'], normalized_sha256=output_validation['asset_sha256'],
+            source_sha256=inventory[0]['sha256'] if is_obj else source_validation['asset_sha256'],
+            normalized_sha256=output_validation['asset_sha256'],
             declarations=declarations, native_decode_reserved_bytes=decode_reserved,
-            unit_scale_scope='scene-root transforms and native world-space bone tails',
-            unchanged_metadata_lengths=['camera clipping planes', 'orthographic camera magnitudes',
-                                        'punctual light range'],
+            unit_scale_scope=('scene-root transforms' if is_obj
+                              else 'scene-root transforms and native world-space bone tails'),
+            unchanged_metadata_lengths=[] if is_obj else ['camera clipping planes',
+                'orthographic camera magnitudes', 'punctual light range'],
             diagnostic=dict(preview, width=256, height=256, visual_approval=False,
                             geometry='base-mesh-before-morphs-and-skinning'),
             native_observation=dict(vertices=model.geometry.vertex_count, triangles=model.geometry.triangle_count,
@@ -353,22 +449,26 @@ class ImportPipeline:
                   *, blender=None):
         original = {f'source/{entry["path"]}': entry for entry in inventory}
         roles = {path: 'source' for path in original}
-        roles.update({'normalized.glb': 'payload', 'license.txt': 'license', 'diagnostic.png': 'evidence',
-                      'source-khronos.json': 'evidence', 'normalized-khronos.json': 'evidence',
-                      'import-report.json': 'evidence'})
+        is_obj = snapshot['path'].suffix == '.obj'
+        roles.update({'normalized.glb': 'payload', 'license.txt': 'license', 'diagnostic.png': 'evidence'})
+        if not is_obj:
+            roles['source-khronos.json'] = 'evidence'
+        roles.update({'normalized-khronos.json': 'evidence', 'import-report.json': 'evidence'})
         if blender is not None:
             roles.update({'source/fixture.blend': 'source', 'source/model.glb': 'evidence'})
         paths = {path: root / path for path in roles}
         records = {path: file_record(paths[path], path, role) for path, role in roles.items()}
         sources = [records[path] for path in original]
         created = timestamp()
-        origin = 'Native local glTF import'
-        tools = [dict(name=TOOL, version=VERSION), dict(name='Khronos glTF Validator', version=validator)]
+        origin = 'Native local static OBJ import' if is_obj else 'Native local glTF import'
+        importer = OBJ_TOOL if is_obj else TOOL
+        tools = [dict(name=importer, version=VERSION), dict(name='Khronos glTF Validator', version=validator)]
         source_records = [dict(file=records[path], source_uri='local:' + original[path]['path'],
                     original_filename=(snapshot['original_filename'] if 'source' in original[path]['roles']
                                        else original[path]['path']),
                     acquired_at=created, author=metadata['author']) for path in original]
-        conversions = [dict(tool=TOOL, version=VERSION, timestamp=created, operation='Pack and normalize GLB',
+        operation = 'Convert static OBJ to GLB' if is_obj else 'Pack and normalize GLB'
+        conversions = [dict(tool=importer, version=VERSION, timestamp=created, operation=operation,
                             inputs=sources, outputs=[records['normalized.glb'], records['import-report.json']])]
         if blender is not None:
             origin = 'App-authored packed Blender triangle fixture'

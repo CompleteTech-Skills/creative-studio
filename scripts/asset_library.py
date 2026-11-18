@@ -151,8 +151,13 @@ def detect_format(payload: bytes) -> tuple[AssetFormat, str]:
         except (RigError, ValueError): pass
     try:
         lines = payload.decode('utf-8').splitlines()
-        if any(line.startswith('v ') for line in lines) and any(line.startswith('f ') for line in lines):
-            return 'obj', 'model/obj'
+        needed = {'v', 'f'}
+        for line in lines:
+            fields = line.split(maxsplit=1)
+            if len(fields) == 2:
+                needed.discard(fields[0])
+                if not needed:
+                    return 'obj', 'model/obj'
     except UnicodeError: pass
     return 'binary', 'application/octet-stream'
 
