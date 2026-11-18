@@ -89,14 +89,22 @@ accumulate their authored root displacement. Existing exact-cycle fallback and
 finite-motion guards remain; there is no arbitrary cycle-count cap. Transition
 rollback and captured-source crossfade behavior are retained.
 
+Within a multi-clip recipe, internal intervals are half-open: the next clip
+owns an exact internal boundary. This avoids solving the outgoing clip's old
+contact at the instant the incoming clip begins. The final non-looping clip
+still clamps to its endpoint. The independent two-clip oracle covers that
+boundary as well as accumulated complete sequence cycles.
+
 The reported synthetic case uses root translation from zero to 0.5 meters on X
 over one second, contact target `[0, 1.5, 0]`, fixed pole `[0, 0, 1]` and runtime
 time 2.25 seconds. The original source's post-solve placement cannot reproduce
 the native bend direction after repeated embedded motion. This diagnosis and
 the fix's ordering are source-derived, not an executed numerical result.
-Independent regression coverage must compare full FK and actual skinned
-geometry for embedded loops, in-place loops and displaced recipe entry; endpoint
-agreement alone is insufficient.
+The independent regression module compares full FK and actual skinned geometry
+for embedded loops, in-place controls, displaced recipe entry, multi-clip
+alignment and world-space aim constraints. A negative control distinguishes
+endpoint agreement from the complete pose. Its numerical behavior still needs
+execution on the integrated revision.
 
 This is an in-memory Python API. Durable jobs, event dispatch, explicit catalog
 recovery, authored reduced-motion execution and detailed dependency inventories
@@ -114,8 +122,10 @@ The existing integration has already added `test_rig_state_runtime.py` to the
 `animation-ik` group in `scripts/test_rig_gate.py`. Its original 16 tests remain
 byte-for-byte preserved. The direct evaluator contact test remains in the
 existing `test_rig_animation.py` group member. The independent
-`test_rig_state_runtime_contacts.py` regression module must also be included by
-the root integrator without removing other gate entries.
+`test_rig_state_runtime_contacts.py` regression module is also included in that
+gate without removing other entries. All six new methods use the real native
+solver and deformation functions; no execution result is inferred from their
+presence.
 Run the focused tests and release gates against the final integrated revision:
 
 ```bash

@@ -410,4 +410,6 @@ zero model calls and does not generate the catalog's missing animations.
 
 The optional Python `rig_state_runtime.RigStateRuntime` executes selected validated clip recipes with caller-supplied monotonic seconds. Use `evaluate(now)`, `request(state, now)` and `cancel(now)` for bounded transitions, incoming priority/interruption policy, completion edges and cancellation into selected executable `static-neutral`. Interrupted crossfades preserve the evaluated source pose; sparse target morphs return to authored defaults. Embedded root motion accumulates across recipes while in-place clips retain their cycle reset. Rejected requests and exhausted completion chains restore prior runtime state. Reconstruct the runtime after rig or clip changes.
 
+Runtime root placement is applied before native constraints and contact IK, retaining authored world-space poles and constraint points. Internal multi-clip intervals are half-open; the final non-looping endpoint remains clamped. Numerical regressions compare every joint transform and complete skinned positions.
+
 Event dispatch, explicit catalog recovery, reduced-motion execution and detailed dependency discovery remain deferred. See [bounded runtime preservation](rig-state-runtime-preservation.md) for exact source boundaries, retained tests and remaining verification gates.

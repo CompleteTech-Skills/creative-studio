@@ -82,7 +82,7 @@ class RigStateRuntime:
             start = evaluate_animation(self.rig, clip, 0)['pose']
             end = evaluate_animation(self.rig, clip, clip['duration'])['pose']
             delta = self._root(end)-self._root(start) if clip['root_motion'] == 'embedded' else np.zeros(3)
-            if local <= clip['duration'] or index == len(clips)-1:
+            if local < clip['duration'] or index == len(clips)-1:
                 pose = evaluate_animation(self.rig, clip, min(local, clip['duration']))['pose']
                 prior_delta = cycle_delta.copy()
                 break
