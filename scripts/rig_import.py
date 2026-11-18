@@ -11,7 +11,7 @@ import zlib
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import RigError, require, sha256, slug, timestamp
+from rig_errors import RigError, require, slug, timestamp
 from rig_geometry import analyze_geometry, vertex_normals
 from rig_gltf import GltfDocument, _index, node_matrix, read_gltf, scene_graph
 from rig_math import decompose, transform_points
@@ -298,12 +298,11 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
                 loop=False, tracks=tracks, events=[], contacts=[], root_motion='embedded', interruptible=True,
                 reduced_motion_pose='neutral', provenance=dict(schema_version=1, tool_version='1.0.0',
                 operation='Imported existing glTF animation', created_at=timestamp(),
-                input_hashes={'source': sha256(document.path)}, ancestry=[]))
+                input_hashes={'source': document.source_sha256}, ancestry=[]))
     return clips
 
 
-def _gltf_model(path, *, scale=1., limits=None, source_reader=None,
-                _animation_targets=None) -> ImportedModel:
+def _gltf_model(path, *, scale=1., limits=None, source_reader=None, _animation_targets=None) -> ImportedModel:
     document = read_gltf(path, limits, source_reader=source_reader)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
     parents, world, order = scene_graph(document, import_scale=scale)
