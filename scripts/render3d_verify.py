@@ -52,6 +52,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     # Strict structure and bounded inflate before the independent PNG decoder.
     require(stream.read(8) == b'\x89PNG\r\n\x1a\n', 'corrupt-output', 'Not a PNG file.')
     header, ended, count, inflated, inflater = None, False, 0, 0, zlib.decompressobj()
+    idat_started = idat_ended = False
     while not ended:
         prefix = stream.read(8)
         require(len(prefix) == 8, 'corrupt-output', 'Truncated PNG chunk.')
@@ -78,8 +79,14 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
         require(kind not in (b'acTL',b'fcTL',b'fdAT'),'corrupt-output','Animated PNG is not a single render frame.')
         require(kind in (b'IHDR',b'IDAT',b'IEND') or kind[0]&32,
                 'unsupported-feature','Unsupported critical PNG chunk.')
+        require(kind != b'tRNS', 'unsupported-feature',
+                'PNG color-key transparency is unsupported; use explicit RGBA samples.')
+        if kind != b'IDAT' and idat_started:
+            idat_ended = True
         if kind == b'IDAT':
-            require(not inflater.eof, 'corrupt-output', 'Trailing compressed PNG stream.')
+            require(not idat_ended, 'corrupt-output', 'PNG IDAT chunks must be consecutive.')
+            idat_started = True
+            require(not inflater.eof or length == 0, 'corrupt-output', 'Trailing compressed PNG stream.')
             expanded=inflater.decompress(payload,header[3]-inflated+1);inflated+=len(expanded)
             require(inflated <= header[3] and not inflater.unconsumed_tail and not inflater.unused_data,
                     'corrupt-output', 'PNG decompressed data exceeds declared dimensions.')
@@ -119,7 +126,11 @@ def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
     try:
         header=reader.header();window=header['dataWindow']
         width,height=window.max.x-window.min.x+1,window.max.y-window.min.y+1
-        require([width,height] == list(resolution),'corrupt-output','EXR dimensions differ from request.')
+        expected_window=(0,0,resolution[0]-1,resolution[1]-1)
+        for name in ('dataWindow','displayWindow'):
+            frame=header[name]
+            require((frame.min.x,frame.min.y,frame.max.x,frame.max.y) == expected_window,
+                    'corrupt-output',f'EXR {name} must match the zero-origin requested full frame.')
         channels=header['channels']
         require(0 < len(channels) <= 64,'corrupt-output','EXR channel count is outside supported bounds.')
         require(width*height*4*len(channels) <= memory_bytes,'system-memory','EXR decoded channels exceed memory budget.')
