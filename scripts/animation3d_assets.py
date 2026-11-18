@@ -535,11 +535,13 @@ def _validate_bindings(project, documents, native, snapshot_root):
     def clip_targets(clip, bound=None, scene=None, actor_id=None):
         require(not any(clip.get(field) for field in ('constraints','procedural_modifiers','entry_pose','exit_pose')),
                 'ANIMATION_OWNER', 'Named clip constraints, modifiers and poses need explicit native adapters.')
+        require(actor_id is None or bound is not None or 'rig_binding' not in clip,
+                'ANIMATION_OWNER', 'A clip rig binding requires a verified rig on its contextual actor.')
         own = rig_for(clip['rig_binding']) if 'rig_binding' in clip else None
         if own is not None and bound is not None:
             require(own.manifest['id'] == bound.manifest['id'] and own.manifest['version'] == bound.manifest['version'],
                     'ANIMATION_TARGET', 'Clip rig differs from actor rig; retargeted output must bind its actual rig.')
-        rig = own if own is not None else bound
+        rig = own if actor_id is None else bound
         for track in clip['tracks']: track_target(track, rig, scene, actor_id)
         root = clip['root_motion']
         if root['enabled']:

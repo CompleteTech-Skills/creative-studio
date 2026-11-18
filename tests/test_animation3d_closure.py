@@ -522,6 +522,49 @@ class NativeClosureRegressionTests(unittest.TestCase):
                 resolve()
             self.assertEqual(unregistered.exception.report['code'], 'ANIMATION_TARGET')
 
+    def test_contextual_clip_cannot_supply_an_unbound_actor_rig(self):
+        _, clip, rig_ref = self.bound_clip()
+        self.assertTrue(self.check()['source_ready'])
+        scene, native_ref = self.native_scene()
+        layer = deepcopy(LAYER)
+        actor = dict(actor_id='actor', model={**native_ref, 'kind': 'model'},
+                     initial_transform=dict(position=[0, 0, 0], rotation=[0, 0, 0, 1], scale=[1, 1, 1]),
+                     animation_layers=[layer], constraints=[])
+        scene['actors'] = [actor]
+        machine = self.values['state-machine']
+        placement = dict(id='placement', layer_id='body', start_frame=0, duration_frames=24, source_in_frame=0,
+                         playback_rate=dict(numerator=1, denominator=1), blend_in_frames=0,
+                         blend_out_frames=0, weight=1, enabled=True)
+        skeletal_target = clip['tracks'][0]['target']
+
+        def admit(use_state):
+            clip_ref = self.put('clip.json', clip, 'clip')
+            self.project['clips'] = [clip_ref]
+            if use_state:
+                machine['states'][0]['clip'] = clip_ref
+                actor['state_machine'] = self.put('machine.json', machine, 'state-machine')
+            else:
+                placement['clip'] = clip_ref
+            self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+            return self.check()
+
+        for use_state in (False, True):
+            with self.subTest(use_state=use_state):
+                layer['placements'] = [] if use_state else [placement]
+                clip['rig_binding'] = rig_ref
+                clip['tracks'][0]['target'] = skeletal_target
+                with self.assertRaises(RigError) as rejected:
+                    admit(use_state)
+                self.assertEqual(rejected.exception.report['code'], 'ANIMATION_OWNER')
+
+                del clip['rig_binding']
+                with self.assertRaises(RigError) as unbound:
+                    admit(use_state)
+                self.assertEqual(unbound.exception.report['code'], 'ANIMATION_TARGET')
+
+                clip['tracks'][0]['target'] = dict(kind='node', node_id='root', property='translation')
+                self.assertTrue(admit(use_state)['source_ready'])
+
     def test_actor_retarget_profile_pins_its_actual_target_rig(self):
         from rig_errors import object_hash
 
