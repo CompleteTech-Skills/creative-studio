@@ -337,3 +337,29 @@ on the preceding head; the latter now rejects without changing any of the nine
 runtime fields, source data or replay geometry. Together with the previous
 clock and completion modules, all 22 methods passed in 28.030 seconds, exit 0,
 zero skips. Full corrected gates and fresh exact-head review remain required.
+
+## Exact cycle boundaries and final contact validation
+
+Recipe duration, complete-cycle offsets and within-cycle prefixes retain the exact
+values represented by authored floating-point durations until the final absolute
+clock boundary is rounded. Equivalent unrolled and looping recipes therefore
+select the same half-open interval. A unique rounded clip start samples local
+zero. When multiple successive starts collapse onto one timestamp, the relative
+clock uses the shortest repeating clip sequence. It rounds that period and its
+cumulative prefixes once, selects the interval from the remainder, and subtracts
+the selected prefix once. Embedded root displacement sums the exact
+represented endpoint differences across complete cycles and preceding clips,
+then rounds once for native placement. This preserves residual travel after
+opposing motions and supports cycle counts beyond floating-point range.
+
+The canonical rig validator consumes `final_contacts` for final orientation and
+convergence decisions, while `contacts` continues to retain each original solve
+receipt. A later solver may repair an earlier intermediate miss, and a final
+unreachable goal remains a failed validation even when its angle is correct.
+
+Eleven independently authored native clock/validation methods reproduced five
+failing methods on predecessor7397872b and all pass after this correction, zero
+skips. They include exact .9s equivalence, adjacent clocks, scaled future cycles,
+cycle prefixes, actual skinned vertices, repaired overlapping contacts and real
+unreachable/unsatisfied controls. Full integrated gates and exact-head independent
+review remain separate requirements; no visual or production acceptance follows.

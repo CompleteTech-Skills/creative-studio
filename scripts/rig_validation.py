@@ -59,7 +59,7 @@ def contact_metrics(rig, clip) -> dict:
         world = evaluate_fk(rig.skeleton, evaluated['pose'])
         for index in sample_indices:
             positions[index].append(world[endpoints[index]][:3, 3])
-        receipts = {(row['id'], row['chain']): row for row in evaluated['contacts']}
+        receipts = {(row['id'], row['chain']): row for row in evaluated['final_contacts']}
         for index, goal in oriented.items():
             contact = contacts[index]
             if not contact_is_active(contact, evaluated['time'], clip['duration']):

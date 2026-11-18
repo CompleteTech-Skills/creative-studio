@@ -3,9 +3,11 @@
 This in-memory scheduler is intentionally separate from durable rig jobs. It
 never generates missing clips or turns numerical playback into visual approval.
 """
+from bisect import bisect_right
 from copy import deepcopy
 from contextlib import contextmanager
 from fractions import Fraction
+from itertools import accumulate
 import math
 from sys import float_info
 import numpy as np
@@ -74,15 +76,56 @@ class RigStateRuntime:
                 'State has no selected executable clip recipe.')
 
     def _duration(self):
-        # Round the complete sum once, just as each interval prefix below.
-        # A tiny final clip must still own a completed recipe's endpoint.
-        return float(sum((Fraction(self.rig.clips[c]['duration'])
-                          for c in self.recipes[self.state]['clips']), Fraction()))
+        # Keep represented durations exact across recipe and cycle grouping.
+        # Only the final absolute scheduled boundary is rounded to a float.
+        return sum((Fraction(self.rig.clips[c]['duration'])
+                    for c in self.recipes[self.state]['clips']), Fraction())
 
     def _boundary(self, elapsed):
         # Positive intervals cannot complete at their own entry timestamp,
         # even when their duration is smaller than that timestamp's spacing.
-        return max(self.entered+elapsed, math.nextafter(self.entered, math.inf))
+        try:
+            scheduled = float(Fraction(self.entered)+Fraction(elapsed))
+        except OverflowError:
+            scheduled = math.inf
+        return max(scheduled, math.nextafter(self.entered, math.inf))
+
+    def _collapsed_elapsed(self, elapsed, clips, starts):
+        # Whole-recipe unrolling must not change the native remainder clock.
+        # Use the shortest repeating clip sequence as its represented period.
+        count = len(clips)
+        for size in range(1, count//2+1):
+            if count % size == 0 and clips[:size]*(count//size) == clips:
+                count = size
+                break
+        period = starts[count]
+        cycles, phase = divmod(elapsed, Fraction(float(period)))
+        phase = float(phase)
+        prefixes = [float(start) for start in starts[:count]]
+        index = bisect_right(prefixes, phase)-1
+        duration = float(starts[index+1]-starts[index])
+        local = min(phase-prefixes[index], math.nextafter(duration, -math.inf))
+        return cycles*period + starts[index] + Fraction(local)
+
+    def _loop_elapsed(self, now, elapsed, clips, starts):
+        # At most one exact interval boundary can own this rounded timestamp.
+        # If several boundaries collapse here, use the relative native clock.
+        # Looking one boundary beyond each side of the containing interval is
+        # sufficient: rounded edges of an increasing schedule are monotonic.
+        period = starts[-1]
+        count = len(starts)-1
+        cycles, phase = divmod(elapsed, period)
+        interval = cycles*count + bisect_right(starts, phase)-1
+        matched = None
+        for edge in range(max(0, interval-1), interval+3):
+            cycle, index = divmod(edge, count)
+            offset = cycle*period + starts[index]
+            boundary = self._boundary(offset) if edge else self.entered
+            if boundary == now:
+                if matched is not None:
+                    return self._collapsed_elapsed(elapsed, clips, starts)
+                matched = offset
+        return elapsed if matched is None else matched
 
     def _root(self, pose):
         name = self.rig.skeleton['root']
@@ -101,13 +144,37 @@ class RigStateRuntime:
             return evaluate_track(track, time)
         return np.asarray(next(b['rest']['translation'] for b in self.rig.skeleton['bones'] if b['id'] == name))
 
+    def _root_placement(self, clips, selected, cycles):
+        # Each preceding clip contributes once more than the complete cycles.
+        # Accumulate represented coordinates before rounding so cancellation
+        # cannot change displacement when the same recipe is unrolled.
+        root = self._authored_root(self.rig.clips[clips[0]], 0)
+        start = self._authored_root(self.rig.clips[clips[selected]], 0)
+        placement = [Fraction(float(a))-Fraction(float(b))+Fraction(float(c))
+                     for a, b, c in zip(root, start, self.root_offset)]
+        for index, name in enumerate(clips):
+            clip = self.rig.clips[name]
+            count = cycles + (index < selected)
+            if count and clip['root_motion'] == 'embedded':
+                initial = self._authored_root(clip, 0)
+                final = self._authored_root(clip, clip['duration'])
+                for axis in range(3):
+                    placement[axis] += count*(Fraction(float(final[axis]))-Fraction(float(initial[axis])))
+        try:
+            return np.array([float(coordinate) for coordinate in placement])
+        except OverflowError as exc:
+            raise RigError('RIG_STATE_TIME', 'Requested runtime time exceeds finite root-motion representation.') from exc
+
     def _sample(self, now):
         recipe = self.recipes[self.state]
         elapsed = max(0., now-self.entered)
         clips = recipe['clips']
-        duration = self._duration()
+        starts = list(accumulate((Fraction(self.rig.clips[name]['duration']) for name in clips),
+                                 initial=Fraction()))
+        period = starts[-1]
+        duration = float(period)
         looping = recipe['completion'] is None and self.rig.clips[clips[-1]]['loop']
-        completed = not looping and now >= self._boundary(duration)
+        completed = not looping and now >= self._boundary(period)
         holding = completed and recipe['completion'] is not None
         if not looping and recipe['completion'] is not None:
             # A scheduled endpoint is authoritative: subtraction can round it
@@ -116,80 +183,35 @@ class RigStateRuntime:
         blend_elapsed = elapsed
         if now >= self._boundary(self.blend_seconds) and not (holding and duration < self.blend_seconds):
             blend_elapsed = max(blend_elapsed, self.blend_seconds)
-        cycles = elapsed//duration if looping else 0.
-        local = elapsed % duration if looping else min(elapsed, duration)
-        absolute_intervals = not looping
-        cycle_offset = 0.
-        if looping and math.isfinite(cycles):
-            original_cycles = cycles
-            cycle_start = self.entered+cycles*duration
-            cycle_end = self.entered+(cycles+1)*duration
-            if cycle_end > cycle_start:
-                # Correct cancellation at a representable complete-cycle edge.
-                if now >= cycle_end:
-                    cycles += 1
-                elif now < cycle_start and cycles > 0:
-                    cycles -= 1
-                if cycles != original_cycles:
-                    local = max(0., min(math.nextafter(duration, -math.inf),
-                                       local+(original_cycles-cycles)*duration))
-                cycle_offset = cycles*duration
-                absolute_intervals = True
-        phase = local
-        cycle_delta = np.zeros(3)
-        prior_duration = 0.
-        exact_duration = Fraction()
-        first_root = self._authored_root(self.rig.clips[clips[0]], 0)
+        exact_elapsed = Fraction(now)-Fraction(self.entered)
+        if looping:
+            cycles, cycle_phase = divmod(self._loop_elapsed(now, exact_elapsed, clips, starts), period)
+        else:
+            cycles, cycle_phase = 0, exact_elapsed
         for index, name in enumerate(clips):
             clip = self.rig.clips[name]
-            start = self._authored_root(clip, 0)
-            end = self._authored_root(clip, clip['duration'])
-            delta = end-start if clip['root_motion'] == 'embedded' else np.zeros(3)
-            exact_duration += Fraction(clip['duration'])
-            end_duration = float(exact_duration)
-            boundary = self._boundary(cycle_offset+end_duration)
-            # Collapsed absolute cycle bounds still use the same once-rounded
-            # cumulative prefixes; repeated subtraction changes half-open key
-            # ownership and can hide an invalid incoming sample.
-            selected = not completed and (now < boundary if absolute_intervals else phase < end_duration)
+            if looping:
+                selected = cycle_phase < starts[index+1]
+            else:
+                selected = not completed and now < self._boundary(starts[index+1])
             if selected or index == len(clips)-1:
                 if completed:
                     local = clip['duration']
+                elif not looping and index and now == self._boundary(starts[index]):
+                    local = 0.
                 else:
-                    # Rounded absolute boundaries decide interval ownership,
-                    # but cannot replace the elapsed/remainder clock inside it.
-                    # Subtracting a rounded large-origin cycle start changes
-                    # interior key selection and can hide invalid samples.
-                    local = max(0., phase-prior_duration)
-                    if absolute_intervals and now == self.entered+(cycle_offset+prior_duration):
-                        local = 0.
+                    local = max(0., float(cycle_phase-starts[index]))
                 # Every interval is half-open except a known completed final
                 # non-looping clip. Equivalent floating-point sums can disagree
                 # at a loop edge, without making its terminal STEP key visible.
                 if not completed:
                     local = min(local, math.nextafter(clip['duration'], -math.inf))
-                sampled_root = self._authored_root(clip, min(local, clip['duration']))
-                prior_delta = cycle_delta.copy()
                 break
-            cycle_delta += delta
-            prior_duration = end_duration
-        total_delta = sum((self._authored_root(self.rig.clips[c], self.rig.clips[c]['duration'])
-                           - self._authored_root(self.rig.clips[c], 0) for c in clips if self.rig.clips[c]['root_motion'] == 'embedded'), np.zeros(3))
-        motion_error = 'Requested runtime time exceeds finite root-motion representation.'
+        placement = self._root_placement(clips, index, cycles)
         with np.errstate(over='ignore', invalid='ignore'):
-            if math.isfinite(cycles):
-                repeated_delta = cycles*total_delta
-            else:
-                # The cycle count can overflow even when its displacement fits.
-                require(np.isfinite(total_delta).all(), 'RIG_STATE_TIME', motion_error)
-                exact_cycles = Fraction(elapsed)//Fraction(duration)
-                try:
-                    repeated_delta = np.array([float(exact_cycles*Fraction(float(delta))) for delta in total_delta])
-                except OverflowError as exc:
-                    raise RigError('RIG_STATE_TIME', motion_error) from exc
-            translation = first_root+sampled_root-start+self.root_offset+prior_delta+repeated_delta
-            placement = first_root-start+self.root_offset+prior_delta+repeated_delta
-        require(np.isfinite(translation).all() and np.isfinite(placement).all(), 'RIG_STATE_TIME', motion_error)
+            translation = self._authored_root(clip, local)+placement
+        require(np.isfinite(translation).all(), 'RIG_STATE_TIME',
+                'Requested runtime time exceeds finite root-motion representation.')
         # Place the root and contact targets before native constraints and IK.
         # Translating an already solved pose changes its relation to fixed world
         # poles/constraint points, so matching the endpoint alone is insufficient.
