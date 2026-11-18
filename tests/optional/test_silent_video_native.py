@@ -108,6 +108,67 @@ class SilentMedia(core.SilentContracts):
         with self.assertRaises(ValueError):
             video.verify_export(output, self.request)
 
+    def test_verify_export_cli_rejects_concatenated_aac_and_accepts_silent_video(self):
+        contaminated = self.root / 'concatenated-aac.mp4'
+        # Join two three-frame segments, each with 125 ms of silent audio.
+        segments = (
+            '[0:v]split[v0][v1];'
+            '[v0]trim=end_frame=3,setpts=PTS-STARTPTS[first_video];'
+            '[v1]trim=start_frame=3,setpts=PTS-STARTPTS[second_video];'
+            '[1:a]asplit[a0][a1];'
+            '[a0]atrim=duration=0.125,asetpts=PTS-STARTPTS[first_audio];'
+            '[a1]atrim=duration=0.125,asetpts=PTS-STARTPTS[second_audio];'
+            '[first_video][first_audio][second_video][second_audio]'
+            'concat=n=2:v=1:a=1[joined_video][audio];'
+            '[joined_video]setsar=1[video]'
+        )
+        self.ffmpeg('-framerate', '24', '-i', self.root / '%06d.png',
+                    '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=mono',
+                    '-filter_complex', segments, '-map', '[video]', '-map', '[audio]',
+                    '-r', '24', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-c:a', 'aac', contaminated)
+        streams = self.independent_probe(contaminated)['streams']
+        self.assertEqual([(stream['codec_type'], stream['codec_name'])
+                          for stream in streams], [('video', 'h264'), ('audio', 'aac')])
+        self.assertEqual(int(streams[0]['nb_read_frames']), len(self.paths))
+        self.assertGreater(int(streams[1]['nb_read_frames']), 0)
+
+        silent = self.root / 'silent-control.mp4'
+        video.encode(self.request, self.root, silent)
+        request_path = self.root / 'request.json'
+        request_path.write_text(json.dumps(self.request), encoding='utf-8')
+
+        def verify(path):
+            return subprocess.run(
+                [sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                 str(path), '--request', str(request_path), '--root', str(self.root),
+                 '--require-silent'],
+                capture_output=True, text=True, timeout=30,
+            )
+
+        result = verify(contaminated)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        refusal = json.loads(result.stdout)
+        self.assertEqual(refusal['schema_version'], 1)
+        self.assertIs(refusal['verified'], False)
+        self.assertEqual(refusal['error'], 'silent artifact requires exactly one '
+                                          'video stream and zero audio/other streams')
+        self.assertEqual(refusal['video_stream_count'], 1)
+        self.assertEqual(refusal['audio_stream_count'], 1)
+        self.assertEqual(refusal['other_stream_count'], 0)
+        self.assertEqual(refusal['probe']['exit_status'], 0)
+
+        result = verify(silent)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assert_receipt(receipt, silent)
+        self.assertEqual(receipt['schema_version'], 1)
+        self.assertEqual(receipt['kind'], 'silent-video-verification')
+        self.assertEqual(receipt['other_stream_count'], 0)
+        self.assertEqual(receipt['frame_count'], len(self.paths))
+        self.assertEqual(receipt['decode']['exit_status'], 0)
+        self.assertEqual(receipt['decode']['stderr'], '')
+
     def test_zero_valued_opus_track_is_not_silent_delivery(self):
         request = video.make_request(self.source, profile='vp9-webm')
         silent = self.root / 'video.webm'
