@@ -323,30 +323,35 @@ class BudgetLedger:
                     'over_budget':any(Decimal(row['spent'][key]) > Decimal(row['reserved'][key]) for key in METRICS)}
         return self._change(expected_revision,idempotency_key,'settle',payload,mutate)
 
+    def _release_row(self, state, reservation_id, outcome):
+        """One eligibility check for preflight and the locked ledger mutation."""
+        _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
+        row = state['reservations'][reservation_id]
+        _need(row['state'] == 'reserved', 'UNCERTAIN', 'Uncertain/final reservations cannot be released.')
+        published = [event['payload'] for event in state['events'] if event['action'] == 'native-claim' and
+                     event['payload']['reservation_id'] == reservation_id]
+        _need(outcome != 'unstarted' or not (row['attempts'] or published),
+              'STATE', 'Started or published work cannot be released as unstarted.')
+        if published:
+            _require_generic_reconciliation(self, row)
+            _need(_native_remainder_known(self, row, published[-1]['token']), 'UNCERTAIN',
+                  'The latest published native attempt needs reconciled usage before cancellation.')
+        if re.fullmatch(r'native-[0-9a-f]{64}', row['operation_id']):
+            admission = next(event for event in state['events'] if event['action'] == 'reserve' and
+                             event['payload']['operation_id'] == row['operation_id'])
+            intent = _native_admission(self, admission)
+            _need(intent is None or intent.get('publication_protocol') == 1 or
+                  outcome == 'canceled-known' and _native_remainder_known(self, row), 'STATE',
+                  'Historical native publication is unknown; explicit reconciliation is required.')
+        return row
+
     def release(self, reservation_id, *, outcome, expected_revision, idempotency_key, evidence):
         _id(reservation_id)
         _need(outcome in ('unstarted','canceled-known'), 'INPUT', 'Release requires known nonexecuted remainder.')
         proof = _evidence(evidence);_need(bool(proof), 'EVIDENCE', 'Release requires evidence that remaining work is not running.')
         payload=dict(reservation_id=reservation_id,outcome=outcome,evidence=proof)
         def mutate(state):
-            _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
-            row=state['reservations'][reservation_id]
-            _need(row['state']=='reserved', 'UNCERTAIN', 'Uncertain/final reservations cannot be released.')
-            published = [event['payload'] for event in state['events'] if event['action'] == 'native-claim' and
-                         event['payload']['reservation_id'] == reservation_id]
-            _need(outcome!='unstarted' or not (row['attempts'] or published),
-                  'STATE', 'Started or published work cannot be released as unstarted.')
-            if published:
-                _require_generic_reconciliation(self, row)
-                _need(_native_remainder_known(self, row, published[-1]['token']), 'UNCERTAIN',
-                      'The latest published native attempt needs reconciled usage before cancellation.')
-            if re.fullmatch(r'native-[0-9a-f]{64}', row['operation_id']):
-                admission = next(event for event in state['events'] if event['action'] == 'reserve' and
-                                 event['payload']['operation_id'] == row['operation_id'])
-                intent = _native_admission(self, admission)
-                _need(intent is None or intent.get('publication_protocol') == 1 or
-                      outcome == 'canceled-known' and _native_remainder_known(self, row), 'STATE',
-                      'Historical native publication is unknown; explicit reconciliation is required.')
+            row = self._release_row(state, reservation_id, outcome)
             row['state']='released';row['held']={key:'0' for key in METRICS}
             return {'reservation_id':reservation_id,'state':'released','spent':deepcopy(row['spent'])}
         return self._change(expected_revision,idempotency_key,'release',payload,mutate)
@@ -537,8 +542,11 @@ def _native_operation_id(run_id, job, hashes, fixture, policy, handoff=None):
 
 
 def _handoff_hashes(value):
-    _need(isinstance(value, dict) and set(value) == {'extraction-settings.json', 'profile.json'} and
+    fields = {'extraction-settings.json', 'profile.json'}
+    _need(isinstance(value, dict) and set(value) in (fields, fields | {'@generation-job'}) and
           isinstance(value['profile.json'], str) and re.fullmatch(r'[0-9a-f]{64}', value['profile.json']) and
+          ('@generation-job' not in value or isinstance(value['@generation-job'], str) and
+           re.fullmatch(r'[0-9a-f]{64}', value['@generation-job'])) and
           (value['extraction-settings.json'] is None or
            isinstance(value['extraction-settings.json'], str) and
            re.fullmatch(r'[0-9a-f]{64}', value['extraction-settings.json'])),
@@ -634,10 +642,9 @@ def _native_admission(ledger, event):
     if not isinstance(identifier, str) or not re.fullmatch(r'native-[0-9a-f]{64}', identifier):
         return None
     proof = _native_proof(ledger, payload.get('evidence'), {'native-budget-intent'})
-    if proof is None:
+    if (proof is None or proof.get('operation_id') != identifier or
+            event['idempotency_key'] != identifier + ':reserve'):
         return None
-    _need(event['idempotency_key'] == identifier + ':reserve', 'BINDING',
-          'Native admission differs from its retained reserve identity.')
     return _read_native_intent(ledger, payload['evidence'][-1], identifier)
 
 
@@ -953,7 +960,23 @@ class NativeBudget:
                   publication['reservation_id'] == reservation_id and
                   publication['attempt'] == attempts.index(token) + 1,
                   'BINDING', 'Native journal lost its published claim; recover the original claim journal.')
-        retained_events = {event['key']: event for event in operation['events']}
+        retained_events = {}
+        for event in operation['events']:
+            payload = event['payload']
+            release = payload.get('token') is None
+            fields = {'token', 'id', 'outcome', 'evidence'}
+            _need(set(payload) == (fields if release else fields | {'usage', 'measurement_source', 'resolves'}),
+                  'BINDING', 'Native observation fields differ from the retained protocol.')
+            kind = 'native-budget-release' if release else 'native-budget-usage'
+            prefix = 'native-release-' if release else 'native-observation-'
+            proof = _native_proof(self.ledger, event['evidence'], {kind})
+            expected = {'kind': kind, 'fixture': self.data['fixture_mode'],
+                        'operation_id': operation['operation_id'], **payload}
+            _need(proof == expected and payload.get('evidence') == event['evidence'][:-1] and
+                  event['key'] == prefix + object_hash([operation['operation_id'], payload.get('id')]) and
+                  event['key'] not in retained_events,
+                  'BINDING', 'Native observation differs from its complete retained proof.')
+            retained_events[event['key']] = event
         for ledger_event in ledger_events:
             payload = ledger_event['payload']
             if (ledger_event['action'] not in ('settle', 'release') or
@@ -1155,8 +1178,8 @@ class NativeBudget:
         import uuid
         import hatch
         operation = job.get('budget_operation')
-        handoff = self.claim_handoff if self.claim_handoff is not None else hatch.claim_handoff_identity(self.root)
-        _need(handoff == hatch.claim_handoff_identity(self.root), 'BINDING',
+        handoff = self.claim_handoff if self.claim_handoff is not None else hatch.claim_handoff_identity(self.root, job)
+        _need(handoff == hatch.claim_handoff_identity(self.root, job), 'BINDING',
               'Captured native handoff changed before admission.')
         _need(operation is None or operation['input_hashes'] == input_hashes, 'BINDING',
               'Budgeted inputs changed before reservation admission.')
@@ -1309,8 +1332,10 @@ class NativeBudget:
         key = 'native-release-' + object_hash([operation['operation_id'], idempotency_key])
         existing = next((event for event in operation['events'] if event['key'] == key), None)
         if existing is None:
-            row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
-            _need(row['state'] == 'reserved', 'UNCERTAIN', 'Only a known reserved remainder can be released.')
+            # Do not retain a deterministically invalid cancellation intent:
+            # replaying it would prevent later explicit measured recovery.
+            with job_lock(self.ledger.root):
+                self.ledger._release_row(self.ledger.snapshot()['state'], operation['reservation_id'], outcome)
             retained = proof + [self._proof({
                 'kind': 'native-budget-release', 'fixture': self.data['fixture_mode'],
                 'operation_id': operation['operation_id'], **payload})]

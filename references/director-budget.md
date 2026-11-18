@@ -137,7 +137,13 @@ only the native journal therefore cannot erase admitted or published authority.
 A new native reserve intent records publication protocol version 1. It binds
 the presence or absence and exact hash of optional extraction settings and the
 complete captured profile digest into the operation identity, in addition to the
-original request, generation projection and prompt hashes. An older intent
+original request, generation projection and prompt hashes. Current admission
+also includes `@generation-job`, a digest of the ordered attachment descriptors
+and the primary/retry prompt roles. Equal file hashes do not authorize changing
+attachment order or notes. A pending intent must retain this exact descriptor
+identity; restoring it recovers the original unpublished token. Older protocol-1
+intents without this digest remain available for accounting recovery but cannot
+issue another handoff under the stronger descriptor boundary. An older intent
 without that marker cannot prove that a missing
 publication event means no handoff was issued. Its authentic historical usage
 remains recoverable, but it cannot issue further work or use an `unstarted`
@@ -402,6 +408,47 @@ change between durable intent and settlement, cancellation before usage or after
 a newer token, and real parent-directory replacement during prompt staging.
 Windows exercises the native pinned-parent refusal when directory renaming is
 denied; POSIX verifies the foreign replacement is untouched and no claim issues.
+
+### Complete retained identity and readable recovery journals
+
+Every native usage or release observation is checked against its complete
+immutable retained proof before replay: operation, observation ID, token, usage,
+outcome, original evidence, measurement source and uncertainty resolutions.
+The journal's event key must derive from that same operation and observation.
+Changing a mutable journal cannot rename an unknown observation or manufacture
+a resolution. Direct generic evidence stays generic unless the reserve key and
+proof both identify that reservation's own native operation; another operation's
+authentic proof cannot block an unrelated native run.
+
+Native cancellation runs the ledger's own eligibility check before retaining a
+new cancellation intent, and the ledger repeats it inside its mutation lock.
+A deterministically refused historical `unstarted` cancellation therefore does
+not poison subsequent explicit measured recovery. This does not infer zero
+usage or discard an existing durable accounting intent after a transient error.
+
+Generation prompt paths must match the job's prepared primary and retry paths
+before claiming or augmenting either prompt. Row claims compare the captured
+canonical-base digest with its approved review, in addition to the captured
+calibration digest. Descriptor and byte checks are repeated at publication;
+validating an earlier version of a path does not approve its replacement.
+
+Native journal publication bounds the exact encoded UTF-8 JSON, including
+escaping, metadata and all accumulated history, by the same `MAX_SOURCE_BYTES`
+limit used for reopening it. A refusal retains the preceding readable journal.
+If reservation admission already committed, its original pending intent remains
+for explicit recovery or cancellation; no handoff is returned and no history is
+deleted to make the payload fit.
+
+Two independently authored modules add 28 regression/control methods. On the
+preceding published `1e9aa0fa`, the identity/recovery module ran 13 methods with
+10 assertion failures, and the retained-payload module ran 15 methods with 31
+failure/subtest assertions, with no errors or skips. With the correction all
+28 passed in 31.260 seconds, exit 0, zero skips. Fixtures use actual local native
+journals, immutable ledger revisions and synthetic image bytes. The journal-size
+cases use a consistently lowered 128 KiB policy with real JSON encode/save/read;
+these are scaled-policy executions, not full 64 MiB payload or provider evidence.
+Exact-head full gates, independent correctness/security review and hosted
+platform checks remain required.
 
 ### Owned receipt paths and platform checks
 

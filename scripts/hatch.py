@@ -61,8 +61,15 @@ def claim_settings_identity(root):
     return {'extraction-settings.json': input_digest(path) if present else None}
 
 
-def claim_handoff_identity(root):
-    return {**claim_settings_identity(root), 'profile.json': input_digest(Path(root) / 'profile.json')}
+def claim_job_identity(job):
+    """Bind attachment order/descriptors and the primary/retry prompt roles."""
+    return {'@generation-job': object_hash({key: job.get(key) for key in
+            ('input_images', 'prompt_file', 'retry_prompt_file')})}
+
+
+def claim_handoff_identity(root, job=None):
+    return {**claim_settings_identity(root), 'profile.json': input_digest(Path(root) / 'profile.json'),
+            **(claim_job_identity(job) if job is not None else {})}
 
 
 @contextmanager
@@ -320,6 +327,7 @@ def manifest(root, *, recovery=False):
         prompt = 'prompts/base-pet.md' if name == 'base' else f'prompts/rows/{name}.md'
         if job.get('output_path') != f'decoded/{name}.png' or job.get('prompt_file') != prompt:
             raise ValueError('malformed generation paths for ' + name)
+        validate_prompt_paths(job)
         images = job.get('input_images')
         if not isinstance(images, list) or any(not isinstance(image, dict) or not isinstance(image.get('path'), str) for image in images):
             raise ValueError('malformed identity references for ' + name)
@@ -375,7 +383,19 @@ def source_origin(job):
 
 
 def save(root, data):
-    atomic(root / 'imagegen-jobs.json', data)
+    # Retain the exact reader bound after JSON escaping and accumulated history.
+    # Refusal keeps the preceding journal readable and cannot publish a claim.
+    payload = (json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
+    atomic_bytes(Path(root).resolve() / 'imagegen-jobs.json', payload)
+
+
+def validate_prompt_paths(job):
+    name = job['id']
+    expected = 'prompts/base-pet.md' if name == 'base' else f'prompts/rows/{name}.md'
+    retry = expected if name == 'base' else f'prompts/row-retries/{name}.md'
+    if (job.get('prompt_file') != expected or
+            'retry_prompt_file' in job and job['retry_prompt_file'] != retry):
+        raise ValueError('generation prompts must use their prepared job-specific paths')
 
 
 def event(data, name, **details):
@@ -650,6 +670,7 @@ def claim(root, data, name):
     root = Path(root).resolve()
     reconcile(root, data)
     job = job_for(data, name)
+    validate_prompt_paths(job)
     if job['status'] == 'running':
         raise ValueError('generation is already running; reconcile its existing token with ingest or fail')
     if job['status'] == 'generated':
@@ -696,10 +717,13 @@ def claim(root, data, name):
     settings_payload = capture(settings_path) if settings_path.exists() or settings_path.is_symlink() else None
     settings_identity = {'extraction-settings.json': hashlib.sha256(settings_payload).hexdigest()
                          if settings_payload is not None else None}
-    handoff_identity = {**settings_identity, 'profile.json': hashlib.sha256(captured[root / 'profile.json']).hexdigest()}
+    handoff_identity = {**settings_identity, 'profile.json': hashlib.sha256(captured[root / 'profile.json']).hexdigest(),
+                        **claim_job_identity(job)}
     settings = json.loads(settings_payload) if settings_payload is not None else request.get('extraction', {})
     if name != 'base' and job.get('prompt_settings_hash') != settings_identity['extraction-settings.json']:
         raise ValueError('captured calibration differs from the approved row prompt')
+    if name != 'base' and data.get('base_review', {}).get('canonical_hash') != hashes.get('references/canonical-base.png'):
+        raise ValueError('captured canonical base differs from its approved review')
     warnings = style_warnings(root, request=request, profile=profile, settings=settings)
     input_images = [{**x, 'path': str(inside(root, x['path']))} for x in job['input_images']]
     tool_arguments = {'transparent_background':
@@ -710,7 +734,7 @@ def claim(root, data, name):
     # A refusal here retains the durable reservation and unpublished token intent.
     # Never reread mutable inputs with ordinary file/JSON readers after admission.
     def check_captured_inputs():
-        if (inputs(root, job) != hashes or claim_handoff_identity(root) != handoff_identity or
+        if (inputs(root, job) != hashes or claim_handoff_identity(root, job) != handoff_identity or
                 any(input_bytes(path) != payload for path, payload in captured.items()) or
                 budget is not None and job['budget_operation'].get('handoff_hashes') != handoff_identity):
             raise ValueError('generation inputs changed during claim admission')

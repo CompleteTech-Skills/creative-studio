@@ -659,6 +659,7 @@ def claim_generation(root, binding_id, job):
                 raise ValueError('production generation concurrency bound reached; reconcile an existing token')
             _, binding, run, data = next(item for item in current if item[0] == binding_id)
             selected = hatch.job_for(data, job)
+            hatch.validate_prompt_paths(selected)
             if selected['status'] in ('running', 'generated'):
                 raise ValueError('generation is already running or generated; reconcile or explicitly repair first')
             if selected.get('attempts', 0) >= report['limits']['attempts_per_job']:
