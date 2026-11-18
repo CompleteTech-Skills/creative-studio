@@ -8,7 +8,7 @@ import numpy as np
 from rig_contracts import DEFAULT_LIMITS, validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import atomic_json, read_json, require
-from rig_ik import solve_ik, validate_chain
+from rig_ik import chain_reachable, solve_ik, validate_chain
 from rig_math import IDENTITY_Q, decompose, qangle, qinverse, qmul, quaternion, slerp, vector
 from rig_models import RigAsset
 from rig_skeleton import evaluate_fk, neutral_pose
@@ -128,7 +128,10 @@ def apply_animation_controls(rig: RigAsset, clip: dict, pose: dict, local_time: 
             require(math.isfinite(report['residual_m']) and (angle is None or math.isfinite(angle)),
                     'RIG_NONFINITE', 'Final contact residual exceeds finite representation.')
             report['orientation_residual_rad'] = angle
-            report['converged'] = bool(report['converged'] and report['residual_m'] <= chain['tolerance']
+            # Another solve can invalidate or satisfy an earlier contact.
+            # Preserve historical solver flags only in the per-solve report.
+            report['reachable'] = chain_reachable(rig.skeleton, chain, pose, report['target'])
+            report['converged'] = bool(report['reachable'] and report['residual_m'] <= chain['tolerance']
                                       and (angle is None or angle <= 1e-5))
     return dict(pose=pose, contacts=reports, final_contacts=final_reports, constraints_applied=changes)
 

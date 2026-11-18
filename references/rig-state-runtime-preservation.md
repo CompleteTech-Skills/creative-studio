@@ -259,3 +259,33 @@ assertion/subtest failures, zero errors and zero skips on source `38fafd68`;
 the corrected focused run passed all six in 2.801 seconds. These are executed
 synthetic native FK, IK and skin-deformation results. The final published tree
 still requires independent review and exact-head protected hosted checks.
+
+### Representable completion boundaries
+
+Runtime completion and internal clip selection compare against absolute clock
+boundaries. A positive interval cannot finish at its entry timestamp when that
+timestamp's spacing exceeds the duration. Recipe durations and interval prefixes
+sum the exact represented durations before rounding once; a known completed
+non-looping recipe always samples its final clip's exact endpoint, including a
+final clip shorter than the preceding prefix's floating-point spacing. Ordinary
+and looping intervals remain half-open, so their terminal STEP key cannot flash
+before the next clip or cycle. An unavailable completion holds the composed
+boundary pose; a non-looping state without a completion edge can finish its
+ordinary transition fade after its clip ends.
+
+The native direction normalizer scales finite vectors before computing their
+length. Large representable world-space aim directions retain their direction.
+Final contact reports recompute reachability and convergence from final geometry
+after all native solves; per-solve reports remain separate historical results.
+
+Linux/Python 3.12.14 source `671349bd` passed 142 animation/IK tests and 63
+skinning tests, with no skips. Its schema/math gate ran 318 tests: 317 passed and
+the explicitly gated Blender optical case skipped; discovery of 1,377 isolated
+2D tests did not execute those tests. Subsequent source `66ebef1b` passed all 144
+animation/IK tests in 257.029 seconds, exit 0, zero skips, but independent review
+then reproduced inaccurate multi-clip prefixes and a missed tiny final endpoint.
+Two new independently authored regressions failed on that source. With the
+single-rounding prefix and final-endpoint correction, all 14 completion and
+numerical-boundary methods passed in 13.178 seconds, exit 0, zero skips. The
+earlier full-gate pass does not establish the corrected tree's full-gate result;
+that tree still needs full execution, independent review and protected CI.

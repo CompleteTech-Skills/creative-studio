@@ -41,6 +41,19 @@ def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
     return points, lengths
 
 
+def _reachability(points, lengths, target):
+    distance = math.dist(target, points[0])
+    require(math.isfinite(distance), 'RIG_NONFINITE', 'IK target distance exceeds finite representation.')
+    lower = max(0., float(lengths.max()-(lengths.sum()-lengths.max())))
+    return distance, lower, bool(lower-1e-7 <= distance <= lengths.sum()+1e-7)
+
+
+def chain_reachable(skeleton: dict, chain: dict, pose: dict, target) -> bool:
+    """Measure the native chain range on the supplied, possibly final, pose."""
+    points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
+    return _reachability(points, lengths, vector(target))[2]
+
+
 def validate_chain(skeleton: dict, chain: dict) -> None:
     validate_contract(chain, 'IKChain')
     bones = {b['id']: b for b in skeleton['bones']}
@@ -117,10 +130,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     names = chain['bones']
     points, lengths = _chain_points_and_lengths(skeleton, names, result)
     origin = points[0].copy()
-    distance = math.dist(target, origin)
-    require(math.isfinite(distance), 'RIG_NONFINITE', 'IK target distance exceeds finite representation.')
-    lower = max(0., float(lengths.max()-(lengths.sum()-lengths.max())))
-    reachable = lower-1e-7 <= distance <= lengths.sum()+1e-7
+    distance, lower, reachable = _reachability(points, lengths, target)
     direction = (target-origin)/distance if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
     constrained = constraint_order(skeleton, list(constraints))
     orientation = orientation if orientation is not None else chain.get('orientation')

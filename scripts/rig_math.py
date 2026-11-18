@@ -25,9 +25,14 @@ def vector(value: Sequence[float], size: int = 3) -> np.ndarray:
 
 def unit(value: Sequence[float]) -> np.ndarray:
     a = vector(value)
-    length = np.linalg.norm(a)
-    require(length > EPS, 'RIG_ZERO_VECTOR', 'A direction vector cannot be zero.')
-    return a / length
+    # Normalize after scaling so a finite direction cannot silently collapse
+    # to zero when its squared norm (or even its full norm) overflows.
+    scale = float(np.max(np.abs(a)))
+    require(scale > 0, 'RIG_ZERO_VECTOR', 'A direction vector cannot be zero.')
+    scaled = a / scale
+    length = math.hypot(*scaled)
+    require(scale > EPS / length, 'RIG_ZERO_VECTOR', 'A direction vector cannot be zero.')
+    return scaled / length
 
 
 def quaternion(value: Sequence[float], *, strict: bool = False) -> np.ndarray:

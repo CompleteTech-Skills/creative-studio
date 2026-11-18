@@ -73,7 +73,15 @@ class RigStateRuntime:
                 'State has no selected executable clip recipe.')
 
     def _duration(self):
-        return sum(self.rig.clips[c]['duration'] for c in self.recipes[self.state]['clips'])
+        # Round the complete sum once, just as each interval prefix below.
+        # A tiny final clip must still own a completed recipe's endpoint.
+        return float(sum((Fraction(self.rig.clips[c]['duration'])
+                          for c in self.recipes[self.state]['clips']), Fraction()))
+
+    def _boundary(self, elapsed):
+        # Positive intervals cannot complete at their own entry timestamp,
+        # even when their duration is smaller than that timestamp's spacing.
+        return max(self.entered+elapsed, math.nextafter(self.entered, math.inf))
 
     def _root(self, pose):
         name = self.rig.skeleton['root']
@@ -93,21 +101,58 @@ class RigStateRuntime:
         clips = recipe['clips']
         duration = self._duration()
         looping = recipe['completion'] is None and self.rig.clips[clips[-1]]['loop']
+        completed = not looping and now >= self._boundary(duration)
+        holding = completed and recipe['completion'] is not None
+        if not looping and recipe['completion'] is not None:
+            # A scheduled endpoint is authoritative: subtraction can round it
+            # back into the interior. Holding also freezes an unfinished fade.
+            elapsed = duration if completed else min(elapsed, duration)
+        if now >= self._boundary(self.blend_seconds) and not (holding and duration < self.blend_seconds):
+            elapsed = max(elapsed, self.blend_seconds)
         cycles = elapsed//duration if looping else 0.
         local = elapsed % duration if looping else min(elapsed, duration)
+        absolute_intervals = not looping
+        cycle_offset = 0.
+        if looping and math.isfinite(cycles):
+            cycle_start = self.entered+cycles*duration
+            cycle_end = self.entered+(cycles+1)*duration
+            if cycle_end > cycle_start:
+                # Correct cancellation at a representable complete-cycle edge.
+                if now >= cycle_end:
+                    cycles += 1
+                elif now < cycle_start and cycles > 0:
+                    cycles -= 1
+                cycle_offset = cycles*duration
+                absolute_intervals = True
         cycle_delta = np.zeros(3)
+        prior_duration = 0.
+        exact_duration = Fraction()
         first_root = self._authored_root(self.rig.clips[clips[0]], 0)
         for index, name in enumerate(clips):
             clip = self.rig.clips[name]
             start = self._authored_root(clip, 0)
             end = self._authored_root(clip, clip['duration'])
             delta = end-start if clip['root_motion'] == 'embedded' else np.zeros(3)
-            if local < clip['duration'] or index == len(clips)-1:
+            exact_duration += Fraction(clip['duration'])
+            end_duration = float(exact_duration)
+            boundary = self._boundary(cycle_offset+end_duration)
+            selected = not completed and (now < boundary if absolute_intervals else local < clip['duration'])
+            if selected or index == len(clips)-1:
+                if completed:
+                    local = clip['duration']
+                elif absolute_intervals:
+                    local = max(0., now-(self.entered+(cycle_offset+prior_duration)))
+                # Every interval is half-open except a known completed final
+                # non-looping clip. Equivalent floating-point sums can disagree
+                # at a loop edge, without making its terminal STEP key visible.
+                if not completed:
+                    local = min(local, math.nextafter(clip['duration'], -math.inf))
                 sampled_root = self._authored_root(clip, min(local, clip['duration']))
                 prior_delta = cycle_delta.copy()
                 break
             local -= clip['duration']
             cycle_delta += delta
+            prior_duration = end_duration
         total_delta = sum((self._authored_root(self.rig.clips[c], self.rig.clips[c]['duration'])
                            - self._authored_root(self.rig.clips[c], 0) for c in clips if self.rig.clips[c]['root_motion'] == 'embedded'), np.zeros(3))
         motion_error = 'Requested runtime time exceeds finite root-motion representation.'
@@ -233,7 +278,7 @@ class RigStateRuntime:
         status = 'playing'
         while self.recipes[self.state]['completion'] is not None:
             # A short clip at a large timestamp can round back to its start.
-            boundary = max(self.entered+self._duration(), math.nextafter(self.entered, math.inf))
+            boundary = self._boundary(self._duration())
             if now < boundary:
                 break
             target = self.recipes[self.state]['completion']
