@@ -360,6 +360,8 @@ class EditorBrowserTests(EditorHttpTests):
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.goto(self.server.url)
                 page.wait_for_function('() => window.editorReady === true')
+                # The scene is installed before requestAnimationFrame draws it.
+                page.wait_for_function('() => window.hatchEditor.renderer.info.render.calls > 0')
                 self.assertGreater(page.evaluate('() => window.hatchEditor.renderer.info.render.calls'), 0)
                 page.locator('[data-id="mesh"]').click()
                 self.assertEqual(page.evaluate('() => window.hatchEditor.selection'), ['mesh'])
