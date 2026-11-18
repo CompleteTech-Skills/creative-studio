@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "hatch-3d-rig-job",
+  "id": "fixture",
+  "status": "animation-ready",
+  "rig_sha256": "a203dc40362a8bc0a42a17804507b585a2813294c4a4794c0a581160f0ee0ca8",
+  "steps": {},
+  "limits": {
+    "source_bytes": 268435456,
+    "dependency_bytes": 1073741824,
+    "vertices": 1000000,
+    "triangles": 2000000,
+    "bones": 256,
+    "influences": 4,
+    "morphs": 128,
+    "clips": 64,
+    "keyframes": 250000,
+    "duration": 120,
+    "fps": 60,
+    "memory_bytes": 2147483648,
+    "solver_iterations": 128,
+    "timeout_seconds": 300,
+    "archive_files": 10000,
+    "archive_bytes": 1073741824,
+    "attempts": 3
+  },
+  "history": [
+    {
+      "operation": "import",
+      "at": "2026-11-13T02:56:25Z",
+      "signature": "7e69b432946e0dfebf13f9b75487fc0babef99f7e04761e8548f7d39ef89623b"
+    },
+    {
+      "operation": "test-fixture",
+      "at": "2026-11-13T02:56:25Z",
+      "signature": "a203dc40362a8bc0a42a17804507b585a2813294c4a4794c0a581160f0ee0ca8"
+    }
+  ]
+}

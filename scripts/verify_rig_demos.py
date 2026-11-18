@@ -74,7 +74,7 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
             selected='walk' if 'walk' in rig.clips else 'hinge-sweep'
             with tempfile.TemporaryDirectory(prefix='hatch-demo-blender-preview-') as temporary:
                 preview=render_blender_preview(rig,Path(temporary)/'frames',clip=selected,times=[0.,.65],
-                    blend_path=rig.root/'exports/character.blend')
+                    blend_path=rig.root/'exports/character.blend',blend_sha256=report['sha256'])
                 folder=rig.root/'preview/blender';folder.mkdir(parents=True,exist_ok=True)
                 for frame in preview['frames']:
                     source=Path(frame['path']);shutil.copyfile(source,folder/source.name);frame['path']='preview/blender/'+source.name

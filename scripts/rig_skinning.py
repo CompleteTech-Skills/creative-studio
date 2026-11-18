@@ -125,6 +125,16 @@ def validate_skin(skin: SkinWeights, mesh: Mesh, skeleton: dict, limits=None) ->
     require(indices.dtype.kind in 'iu' and indices.min() >= 0 and indices.max() < len(skin.joints),
             'RIG_SKIN_INDEX', 'Joint indices must reference the skin joint array.')
     require(np.isfinite(weights).all() and np.all(weights >= 0), 'RIG_WEIGHTS', 'Weights must be finite and nonnegative.')
+    # An authored nondeform control may appear in a skin palette, but it must
+    # never carry an effective influence. Keep the boundary exact, without an
+    # epsilon that could launder positive normalized integer or tiny weights.
+    by_id={bone['id']:bone for bone in skeleton['bones']}
+    nondeform=np.array([by_id[name]['deform'] is False for name in skin.joints],dtype=bool)
+    if nondeform.any():
+        contradictory=nondeform[indices] & (weights>0)
+        require(not contradictory.any(),'RIG_SKIN_DEFORM_FLAG',
+                'A nondeform bone has positive effective skin weights.',asset=mesh.id,
+                observed=sorted(skin.joints[int(j)] for j in np.unique(indices[contradictory])))
     error = float(np.max(np.abs(weights.sum(axis=1)-1)))
     require(error <= 1e-4, 'RIG_WEIGHT_NORMALIZATION', 'Vertex weights must sum to one.', observed=error)
     for i in range(indices.shape[1]):
