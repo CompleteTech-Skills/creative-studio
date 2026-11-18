@@ -104,7 +104,14 @@ def slerp(a: Sequence[float], b: Sequence[float], weight: float) -> np.ndarray:
 
 
 def qangle(a: Sequence[float], b: Sequence[float] = IDENTITY_Q) -> float:
-    a, b = quaternion(a), quaternion(b)
+    def normalized(value):
+        q = vector(value, 4)
+        peak = np.max(np.abs(q))
+        # Scale large inputs before squaring while keeping the native
+        # quaternion's absolute near-zero threshold for small inputs.
+        return quaternion(q / peak if peak > 1 else q)
+
+    a, b = normalized(a), normalized(b)
     # The shorter chord selects the nearest quaternion sign. Its length
     # retains small rotations even when the dot product rounds to one.
     difference = math.hypot(*(a - b))

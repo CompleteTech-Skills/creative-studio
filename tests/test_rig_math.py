@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from rig_errors import RigError
-from rig_math import (BLENDER_FROM_CANONICAL, axis_angle, compose, decompose, qangle, qbetween,
+from rig_math import (BLENDER_FROM_CANONICAL, EPS, axis_angle, compose, decompose, qangle, qbetween,
                       qmatrix, quaternion, slerp, transform_points)
 from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone, skeleton_from_heads, validate_skeleton
 from rig_gltf import GltfBuilder, export_geometry, node_matrix
@@ -38,6 +38,16 @@ class RigMathTests(unittest.TestCase):
                 self.assertAlmostEqual(qangle(scaled, base), angle, delta=1e-15)
         self.assertEqual(qangle(base, [-component for component in base]), 0.0)
         self.assertEqual(qangle([0, 0, 1, 0]), math.pi)
+
+    def test_quaternion_angle_handles_finite_scales_and_rejects_near_zero(self):
+        self.assertEqual(qangle([1e200, 0, 0, 0], [0, 0, 0, 1e200]), math.pi)
+        self.assertEqual(qangle([0, 0, 0, 1e200], [0, 0, 0, -1e200]), 0.0)
+        self.assertAlmostEqual(qangle([0, 0, 1e308, 1e308]), math.pi / 2)
+        for scalar in (0.0, math.nextafter(EPS, 0.0), EPS):
+            with self.subTest(scalar=scalar), self.assertRaises(RigError) as error:
+                qangle([0, 0, 0, scalar])
+            self.assertEqual(error.exception.report['code'], 'RIG_QUATERNION')
+        self.assertEqual(qangle([0, 0, 0, math.nextafter(EPS, math.inf)]), 0.0)
 
     def test_gltf_invertibility_is_independent_of_units_and_axis_magnitudes(self):
         for scale in ([1e-6]*3, [1e6]*3, [1e-100]*3, [1e100]*3,
