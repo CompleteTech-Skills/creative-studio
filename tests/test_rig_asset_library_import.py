@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import shutil
 import tempfile
+from types import SimpleNamespace
 import traceback
 import unittest
 from unittest.mock import patch
@@ -233,7 +234,7 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(self.library.list_references(), [])
 
     @unittest.skipUnless(
-        os.environ.get('HATCH_BLENDER') and Path('/usr/bin/prlimit').is_file(),
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
         'Requires pinned Blender 4.5.3 on Linux with prlimit',
     )
     def test_blender_fixture_retains_original_and_two_verified_derivatives(self):
@@ -253,6 +254,17 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(normalization['inputs'], blender['outputs'])
         self.assertEqual(report['blender']['inspection']['build'], '67807e1800cc')
         self.assertEqual(report['blender']['inspection']['external_dependencies'], 0)
+        for stage in ('create', 'reopen'):
+            process = report['blender'][stage]
+            self.assertEqual(process['peak_rss_source'], 'linux-wait4')
+            self.assertGreater(process['peak_rss_bytes'], 0)
+            self.assertLessEqual(process['peak_rss_bytes'], process['resident_budget_bytes'])
+            self.assertEqual(process['status'], 'completed')
+            self.assertEqual(process['exit_code'], 0)
+            self.assertEqual(process['argv'][-4:], ['--python', '<worker>', '--', stage])
+            self.assertIn('<blender>', process['argv'])
+            self.assertEqual(process['cwd'], '<workspace>')
+        self.assertNotIn(b'asset-gltf-import-', reopened.read_file(reference, original['path']))
         self.assertEqual(report['native_observation']['triangles'], 1)
         self.assertEqual(report['native_observation']['vertices'], 3)
         for record, digest, magic in (
@@ -275,4 +287,26 @@ class NativeImportTests(unittest.TestCase):
                 self.import_source(self.root / 'unknown.blend', fixture=True)
             self.assertEqual(error.exception.report['code'], 'SCENE3D_IMPORT_FORMAT')
             worker.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit and wait4',
+    )
+    def test_blender_final_peak_rss_is_admitted_before_publication(self):
+        system_wait4 = os.wait4
+        budget = self.pipeline.limits['memory_bytes']
+
+        def excessive_peak(pid, flags):
+            child, status, usage = system_wait4(pid, flags)
+            if child == pid:
+                usage = SimpleNamespace(ru_maxrss=budget // 1024 + 1)
+            return child, status, usage
+
+        with patch('asset_import_blender.os.wait4', side_effect=excessive_peak):
+            with self.assertRaises(RigError) as error:
+                self.pipeline.import_blender_fixture(
+                    identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assertEqual(error.exception.report['observed'], budget + 1024)
         self.assertEqual(self.library.list_references(), [])

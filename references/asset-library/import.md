@@ -66,7 +66,7 @@ HATCH_GLTF_VALIDATOR_ROOT=/path/to/node_modules/gltf-validator \
 
 ## Packed Blender triangle fixture
 
-On Linux with `/usr/bin/prlimit`, set `HATCH_BLENDER` to Blender 4.5.3
+On Linux with `/usr/bin/prlimit` and `wait4`, set `HATCH_BLENDER` to Blender 4.5.3
 build `67807e1800cc` and use the same library and license metadata.
 
 ```python
@@ -79,9 +79,14 @@ reference = ImportPipeline(library).import_blender_fixture(
 ```
 
 The fixed worker builds a static, untextured triangle in a private workspace,
-packs its dependency closure, and saves and reopens it in separate Blender
-processes with auto-execution disabled. Both calls share the configured
-Blender process deadline. The fixture API takes no source path, and
+packs its dependency closure, and writes the scene to a Blender library file.
+The library stores scene data without the workspace file-browser state. A
+separate Blender process reopens the exact original with auto-execution
+disabled. Both calls share the configured Blender process deadline. Linux
+enforces the virtual address space limit, set to eight times the configured
+resident budget to allow Blender's memory mappings. Each child's
+kernel-reported peak RSS must fit the resident budget before the adapter
+admits its output. The fixture API takes no source path, and
 `import_asset` rejects `.blend` paths before launching Blender.
 
 The canonical version retains exact Blender bytes at `source/fixture.blend`,
@@ -90,6 +95,10 @@ the direct export at `source/model.glb`, and the normalized runtime payload at
 The native reader checks the triangle's coordinates and winding in right-handed
 Y-up meters. `import-report.json` retains both process observations, the
 Blender build and worker hash, and the source and derivative digests.
+To replay the recorded argument arrays, use a fresh private working directory
+for `<workspace>`, the configured Blender executable for `<blender>`, and the
+packaged `scripts/asset_import_worker.py` for `<worker>`. Run `create` before
+`reopen` in the same directory within the reported shared deadline.
 The fixture covers one mesh without external resources, materials, rigs, or animation.
 
 Run the focused suite with `HATCH_BLENDER` and the validator path set to
