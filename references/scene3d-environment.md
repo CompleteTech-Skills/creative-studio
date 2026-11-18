@@ -8,7 +8,9 @@ existing Scene3D snapshot service. Destinations must be new directories.
 
 A recipe contains exactly `id`, `version` (currently integer 1), `seed`
 (unsigned 32-bit integer), `generator`, `parameters`, and `budget` (maximum
-emitted nodes). The same recipe produces the same geometry and node IDs.
+emitted nodes). Published recipe IDs start with a lowercase letter, contain
+only lowercase ASCII letters, digits, and hyphens, and fit within 46 characters.
+Individual generators can impose shorter limits. The same recipe produces the same geometry and node IDs.
 `primitive` accepts `kind` and `dimensions`; the available kinds are box, plane,
 cylinder, cone, sphere, capsule, torus, stairs, ramp, pipe, beam, platform, door,
 window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygon), and curve (capped straight spans).
@@ -16,8 +18,12 @@ window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygo
 prepares up to sixteen distinct named recipes and publishes one snapshot. A
 failure anywhere publishes nothing. Optional maps select recipe IDs: offsets are
 local three-vectors and parents are exact node IDs (including earlier batch
-outputs). Placements are recorded beside each persisted recipe. One batch
-increments the scene revision once. `create_environments(destination, recipes,
+outputs). Placements are recorded beside each persisted recipe. Omitting a
+placement entry keeps that recipe's stored value. For a new recipe, the defaults
+are a zero offset and the scene root. A map entry of `None` explicitly restores
+the corresponding default. The singular `apply_recipe` uses the same rules for
+its `offset` and `parent` keyword arguments. One batch increments the scene
+revision once. `create_environments(destination, recipes,
 offsets=None, parents=None)` constructs a first project through this batch API.
 
 Meshes use meters, right-handed Y-up coordinates and counterclockwise exterior
@@ -57,8 +63,8 @@ OBJ projection: one named `surface`, with no invented source material index or
 Blender local slot index. Adding this projection creates a new immutable asset
 identity even when its OBJ bytes match an earlier generated asset. Existing
 projects and their old pins remain reopenable during regeneration upgrades.
-Material overrides and renderer-local assignment use the shared projection
-adapter; adding the descriptor alone does not claim translated PBR materials.
+The projection records logical slot metadata. The Blender inspection demo
+assigns its own clay materials.
 
 Generated assets and recipes have exact file hashes. Generated nodes retain
 fingerprints and stable IDs. Regeneration preserves changed nodes, manual
