@@ -6,6 +6,7 @@ art. The integration cases execute the installed FFmpeg and ffprobe binaries.
 from copy import deepcopy
 from fractions import Fraction
 import hashlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,115 @@ class SilentContracts(unittest.TestCase):
                                          fps={'numerator': 24, 'denominator': 1},
                                          origin='synthetic')
         self.request = video.make_request(self.source)
+
+    def _simulated_verification_records(self):
+        # Portable contract fixtures: these records do not establish real media
+        # probing or decoding. The optional suite executes those processes.
+        probe = {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p',
+            'width': 64, 'height': 48, 'nb_read_frames': '6', 'sample_aspect_ratio': '1:1',
+            'display_aspect_ratio': '4:3', 'avg_frame_rate': '24/1', 'time_base': '1/12288'}],
+            'format': {'format_name': 'mp4', 'duration': '0.25'}}
+        timeline = {'frames': [{'best_effort_timestamp': i * 512} for i in range(6)]}
+        return [dict(command=['simulated-probe'], exit_status=0, stdout=json.dumps(probe), stderr=''),
+                dict(command=['simulated-timeline'], exit_status=0, stdout=json.dumps(timeline), stderr=''),
+                dict(command=['simulated-decode'], exit_status=0, stdout='', stderr='')]
+
+    def test_simulated_launch_errors_keep_prior_stages_and_cli_evidence(self):
+        import contextlib, io
+        artifact = self.root / 'launch-fixture.mp4'
+        artifact.write_bytes(b'portable simulated artifact')
+        request_path = self.root / 'launch-request.json'
+        request_path.write_text(json.dumps(self.request))
+        original_run = video._run
+        private_tool = str(self.root / 'SYNTHETIC_PRIVATE_TOOL_DIRECTORY' / 'ffmpeg')
+        for stage_index, stage in enumerate(('probe', 'timeline', 'decode')):
+            for error_number in (errno.ENOEXEC, errno.EACCES, errno.ENOENT):
+                for cli in (False, True):
+                    records = iter(self._simulated_verification_records()[:stage_index])
+                    def run(command, limits, **options):
+                        observed = next(records, None)
+                        return observed if observed is not None else original_run(command, limits, **options)
+                    with self.subTest(stage=stage, errno=error_number, cli=cli), \
+                         patch.object(video, '_binary', return_value=private_tool), \
+                         patch.object(video, '_run', side_effect=run), \
+                         patch.object(subprocess, 'Popen', side_effect=OSError(error_number, 'fixture launch failure', private_tool)):
+                        if cli:
+                            transcript = io.StringIO()
+                            with patch.object(sys, 'argv', ['silent_video', 'verify-export', str(artifact),
+                                '--request', str(request_path), '--require-silent']), \
+                                 contextlib.redirect_stdout(transcript), self.assertRaises(SystemExit) as exited:
+                                video.main()
+                            self.assertEqual(exited.exception.code, 1)
+                            evidence = json.loads(transcript.getvalue())
+                        else:
+                            with self.assertRaises(ValueError) as failed:
+                                video.verify_export(artifact, self.request)
+                            evidence = failed.exception.evidence
+                            self.assertNotIn('SYNTHETIC_PRIVATE_TOOL_DIRECTORY', str(failed.exception))
+                        self.assertFalse(evidence['verified'])
+                        self.assertEqual(evidence['artifact_sha256'], video.file_hash(artifact))
+                        self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+                        self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+                        self.assertEqual(evidence['artifact_sha256_scope'], 'verification-snapshot')
+                        self.assertNotIn('SYNTHETIC_PRIVATE_TOOL_DIRECTORY', json.dumps(evidence))
+                        observed = evidence[stage]
+                        self.assertIs(observed['started'], False)
+                        self.assertEqual(observed['launch_error']['errno'], error_number)
+                        self.assertNotIn('exit_status', observed)
+                        self.assertEqual(observed['stdout'], '')
+                        self.assertEqual(observed['stderr'], '')
+                        for prior in ('probe', 'timeline')[:stage_index]:
+                            self.assertEqual(evidence[prior]['exit_status'], 0)
+                        if stage_index == 0:
+                            self.assertNotIn('video_stream_count', evidence)
+                        for later in ('probe', 'timeline', 'decode')[stage_index+1:]:
+                            self.assertNotIn(later, evidence)
+
+    def test_simulated_caller_artifact_rerecheck_keeps_snapshot_evidence(self):
+        import contextlib, io
+        request = deepcopy(self.request)
+        request['limits']['max_output_bytes'] = 1024
+        request_path = self.root / 'reread-request.json'
+        request_path.write_text(json.dumps(request))
+        artifact = self.root / 'SYNTHETIC_PRIVATE_ARTIFACT.mp4'
+        original_bytes = b'portable simulated artifact'
+        for mutation in ('changed', 'oversized', 'removed', 'unchanged'):
+            for cli in (False, True):
+                artifact.write_bytes(original_bytes)
+                records = iter(self._simulated_verification_records())
+                def run(command, limits, **options):
+                    observed = next(records)
+                    if observed['command'] == ['simulated-decode']:
+                        if mutation == 'changed': artifact.write_bytes(b'revised caller bytes')
+                        elif mutation == 'oversized': artifact.write_bytes(b'x' * 1025)
+                        elif mutation == 'removed': artifact.unlink()
+                    return observed
+                with self.subTest(mutation=mutation, cli=cli), \
+                     patch.object(video, '_binary', return_value=sys.executable), patch.object(video, '_run', side_effect=run):
+                    if cli:
+                        transcript = io.StringIO()
+                        with patch.object(sys, 'argv', ['silent_video', 'verify-export', str(artifact),
+                            '--request', str(request_path), '--require-silent']), contextlib.redirect_stdout(transcript):
+                            if mutation == 'unchanged': video.main()
+                            else:
+                                with self.assertRaises(SystemExit) as exited: video.main()
+                                self.assertEqual(exited.exception.code, 1)
+                        evidence = json.loads(transcript.getvalue())
+                    elif mutation == 'unchanged':
+                        evidence = video.verify_export(artifact, request)
+                    else:
+                        with self.assertRaises(ValueError) as failed: video.verify_export(artifact, request)
+                        evidence = failed.exception.evidence
+                    self.assertEqual(evidence['verified'], mutation == 'unchanged')
+                    self.assertEqual(evidence['artifact_sha256'], hashlib.sha256(original_bytes).hexdigest())
+                    self.assertEqual(evidence['request_sha256'], video._digest(request))
+                    self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+                    for stage in ('probe', 'timeline', 'decode'):
+                        self.assertEqual(evidence[stage]['exit_status'], 0)
+                    if mutation != 'unchanged':
+                        self.assertEqual(evidence['artifact_sha256_scope'], 'verification-snapshot')
+                        self.assertEqual(evidence['artifact_bytes'], len(original_bytes))
+                        self.assertNotIn('SYNTHETIC_PRIVATE_ARTIFACT', json.dumps(evidence))
 
     def test_nonzero_command_retains_structured_evidence(self):
         command=[sys.executable,'-c',"import sys; print('fixture stdout'); print('fixture stderr',file=sys.stderr); sys.exit(7)"]

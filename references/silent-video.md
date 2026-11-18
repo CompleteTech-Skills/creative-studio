@@ -291,6 +291,12 @@ and its verifier stage (`probe`, `timeline` or `decode`). Each transcript stays
 within the request's `max_log_bytes` byte limit, including UTF-8 replacement.
 Truncated streams carry an explicit truncation flag; timeout failures carry
 `timed_out: true` and the observed terminated-process status.
+If the operating system cannot launch a media executable, the attempted command
+instead carries `started: false`, `launch_error.errno` and empty stdout/stderr.
+It has no `exit_status`: no media executable returned a status. Earlier completed
+probe or timeline observations remain available, including stream counts only
+when the actual probe established them. The launch summary omits the operating
+system exception's filename and retains the same bounded path aliases.
 Failed exported records replace absolute executable and temporary-directory
 paths with stable tool/work-directory aliases in commands, transcripts and the
 error message. Per-stream byte limits apply after this replacement. Capture
@@ -316,3 +322,23 @@ sanitization of arbitrary output from a substituted tool executable.
 Python exceptions expose this evidence, and the existing
 `verify-export --require-silent` CLI includes it in its JSON failure response.
 These records are failure diagnostics, never successful export receipts.
+
+The caller's artifact is reread after snapshot verification. A changed, oversized,
+missing or unsafe caller artifact still fails and retains completed snapshot
+observations. Failure records label `artifact_sha256_scope: verification-snapshot`
+and retain `artifact_bytes` for that captured snapshot; the hash never claims to
+identify revised caller bytes. The request and source-manifest hashes retain
+their existing identities.
+
+Portable regressions simulate launch errors at every verifier stage and final
+caller changes, including missing/oversized files and unchanged controls. These
+fixtures are contract checks, not native decode evidence. The optional native
+suite uses real six-frame synthetic H.264 media: an executable-format failure
+occurs after two successful installed ffprobe commands, with no started FFmpeg
+decode executable or observed decode exit status. Another case changes the
+caller bytes after capture while installed ffprobe and FFmpeg successfully
+verify the original snapshot; a local CLI wrapper performs actual FFmpeg decode
+before changing the caller fixture. Both Python and CLI reject, retain the
+snapshot hashes and command results, and omit synthetic private path markers.
+Successful unchanged native verification remains a control. These synthetic
+media checks do not establish production rendering or artistic acceptance.

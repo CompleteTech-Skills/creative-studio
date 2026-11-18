@@ -352,7 +352,19 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     start = time.monotonic()
     failure = None
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
+        except OSError as exc:
+            # Popen never returned a media process. An errno is an observed
+            # launch failure, not an exit status or a tool transcript; do not
+            # copy OSError's caller-controlled filename into the report.
+            record = {'command': list(command), 'started': False,
+                      'launch_error': {'errno': exc.errno}, 'stdout': '', 'stderr': ''}
+            evidence, message = _failure_diagnostics({'command_failure': record},
+                'media command could not start (OS error '+str(exc.errno)+')', limits['max_log_bytes'])
+            failure = ValueError(message)
+            failure.evidence = evidence
+            raise failure from None
         try:
             while True:
                 status = process.poll()
@@ -679,26 +691,32 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
                 output.write(chunk)
                 digest.update(chunk)
         diagnostics = {'schema_version': 1, 'verified': False, 'artifact_sha256': digest.hexdigest(),
+                       'artifact_sha256_scope': 'verification-snapshot', 'artifact_bytes': count,
                        'request_sha256': _digest(request), 'source_manifest_sha256': _digest(request['source'])}
         try:
             result = _verify_snapshot(snapshot, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
                                       cancel=cancel, diagnostics=diagnostics)
-        except ValueError as exc:
+            checked = hashlib.sha256()
+            checked_bytes = 0
+            try:
+                with _open_source(path.parent, path.name) as original:
+                    for chunk in iter(lambda: original.read(1024*1024), b''):
+                        checked_bytes += len(chunk)
+                        if checked_bytes > limit:
+                            raise ValueError('artifact changed beyond byte budget')
+                        checked.update(chunk)
+            except (ValueError, OSError):
+                raise ValueError('artifact could not be safely reread after independent verification') from None
+            if digest.hexdigest() != result['artifact_sha256'] or checked.hexdigest() != result['artifact_sha256']:
+                raise ValueError('artifact changed during independent verification')
+        except (ValueError, OSError) as exc:
+            if isinstance(exc, OSError):
+                exc = ValueError('media verification filesystem operation failed (OS error '+str(exc.errno)+')')
             evidence, message = _failure_diagnostics(
                 {**getattr(exc, 'evidence', {}), **diagnostics}, str(exc), request['limits']['max_log_bytes'])
             exc.evidence = evidence
             exc.args = (message,)
-            raise
-        checked = hashlib.sha256()
-        checked_bytes = 0
-        with _open_source(path.parent, path.name) as original:
-            for chunk in iter(lambda: original.read(1024*1024), b''):
-                checked_bytes += len(chunk)
-                if checked_bytes > limit:
-                    raise ValueError('artifact changed beyond byte budget')
-                checked.update(chunk)
-        if digest.hexdigest() != result['artifact_sha256'] or checked.hexdigest() != result['artifact_sha256']:
-            raise ValueError('artifact changed during independent verification')
+            raise exc from None
         return result
 
 

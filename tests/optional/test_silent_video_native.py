@@ -6,6 +6,7 @@ art. The integration cases execute the installed FFmpeg and ffprobe binaries.
 from copy import deepcopy
 from fractions import Fraction
 import hashlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -310,6 +311,101 @@ class SilentMedia(core.SilentContracts):
         for value in (evidence,report):
             for field in ('video_stream_count','audio_stream_count','other_stream_count'):
                 self.assertNotIn(field,value)
+
+    @unittest.skipUnless(os.name == 'posix', 'actual ENOEXEC fixture requires POSIX executable semantics')
+    def test_actual_decode_launch_failure_preserves_two_successful_probes(self):
+        artifact = self.root / 'launch-evidence.mp4'
+        video.encode(self.request, self.root, artifact)
+        digest = video.file_hash(artifact)
+        control = video.verify_export(artifact, self.request)
+        self.assert_receipt(control, artifact)
+        tool_dir = self.root / 'SYNTHETIC_PRIVATE_LAUNCH_TOOL_DIRECTORY'
+        tool_dir.mkdir()
+        invalid = tool_dir / 'ffmpeg'
+        invalid.write_bytes(b'synthetic executable with no executable format\n')
+        invalid.chmod(0o755)
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, self.request, ffmpeg=invalid)
+        request_path = self.root / 'launch-evidence-request.json'
+        request_path.write_text(json.dumps(self.request))
+        env = dict(os.environ, PATH=str(tool_dir) + os.pathsep + os.environ.get('PATH', ''))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        report = json.loads(result.stdout)
+        for evidence in (failed.exception.evidence, report):
+            self.assertFalse(evidence['verified'])
+            self.assertEqual(evidence['artifact_sha256'], digest)
+            self.assertEqual(evidence['artifact_sha256_scope'], 'verification-snapshot')
+            self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+            self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+            self.assertEqual(evidence['video_stream_count'], 1)
+            self.assertEqual(evidence['audio_stream_count'], 0)
+            for stage in ('probe', 'timeline'):
+                self.assertEqual(evidence[stage]['exit_status'], 0)
+                self.assertTrue(json.loads(evidence[stage]['stdout']))
+            self.assertEqual(len(json.loads(evidence['timeline']['stdout'])['frames']), 6)
+            self.assertIs(evidence['decode']['started'], False)
+            self.assertEqual(evidence['decode']['launch_error']['errno'], errno.ENOEXEC)
+            self.assertNotIn('exit_status', evidence['decode'])
+            self.assertEqual(evidence['decode']['stdout'], '')
+            self.assertEqual(evidence['decode']['stderr'], '')
+            self.assertNotIn(tool_dir.name, json.dumps(evidence))
+        self.assertNotIn(tool_dir.name, str(failed.exception))
+        self.assertEqual(video.file_hash(artifact), digest)
+
+    def test_actual_caller_artifact_change_retains_completed_snapshot_verification(self):
+        artifact = self.root / 'SYNTHETIC_PRIVATE_CALLER_ARTIFACT.mp4'
+        video.encode(self.request, self.root, artifact)
+        original_bytes = artifact.read_bytes()
+        digest = hashlib.sha256(original_bytes).hexdigest()
+        self.assert_receipt(video.verify_export(artifact, self.request), artifact)
+        changed = []
+        def mutate_after_snapshot():
+            if not changed:
+                artifact.write_bytes(b'revised synthetic caller artifact')
+                changed.append(True)
+            return False
+        with self.assertRaisesRegex(ValueError, 'artifact changed') as failed:
+            video.verify_export(artifact, self.request, cancel=mutate_after_snapshot)
+        self.assertEqual(changed, [True])
+        self.assertNotEqual(video.file_hash(artifact), digest)
+        artifact.write_bytes(original_bytes)
+        tool_dir = self.root / 'SYNTHETIC_PRIVATE_MUTATION_TOOL_DIRECTORY'
+        tool_dir.mkdir()
+        wrapper = tool_dir / 'ffmpeg'
+        # This synthetic local wrapper really decodes through installed FFmpeg,
+        # then revises only the caller fixture. It does not forge process results.
+        wrapper.write_text('#!' + sys.executable + '\n'
+            'import os, subprocess, sys\nfrom pathlib import Path\n'
+            'result = subprocess.run([os.environ["SILENT_TEST_REAL_FFMPEG"], *sys.argv[1:]])\n'
+            'Path(os.environ["SILENT_TEST_CALLER_ARTIFACT"]).write_bytes(b"revised synthetic caller artifact")\n'
+            'sys.exit(result.returncode)\n')
+        wrapper.chmod(0o755)
+        request_path = self.root / 'mutation-evidence-request.json'
+        request_path.write_text(json.dumps(self.request))
+        env = dict(os.environ, PATH=str(tool_dir) + os.pathsep + os.environ.get('PATH', ''),
+                   SILENT_TEST_REAL_FFMPEG=shutil.which('ffmpeg'), SILENT_TEST_CALLER_ARTIFACT=str(artifact))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        self.assertNotEqual(video.file_hash(artifact), digest)
+        for evidence in (failed.exception.evidence, json.loads(result.stdout)):
+            self.assertFalse(evidence['verified'])
+            self.assertEqual(evidence['artifact_sha256'], digest)
+            self.assertEqual(evidence['artifact_bytes'], len(original_bytes))
+            self.assertEqual(evidence['artifact_sha256_scope'], 'verification-snapshot')
+            self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+            self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+            for stage in ('probe', 'timeline', 'decode'):
+                self.assertEqual(evidence[stage]['exit_status'], 0)
+            self.assertEqual(len(json.loads(evidence['timeline']['stdout'])['frames']), 6)
+            for marker in (tool_dir.name, artifact.name):
+                self.assertNotIn(marker, json.dumps(evidence))
 
     def test_failed_probe_redacts_owned_temporary_paths_in_python_and_cli(self):
         marker = 'SYNTHETIC_WORKDIR_MARKER'
