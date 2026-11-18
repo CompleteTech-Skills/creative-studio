@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -105,6 +106,21 @@ class CapabilityTest(unittest.TestCase):
         self.assertEqual(result['outcome'],'supported_fallback')
         self.assertEqual(result['checks'][0]['measurements']['device'],'cpu')
 
+    def test_cpu_renderer_fallback_requires_cpu_device(self):
+        owner, request = self.bound('gpu-rendering')
+        execute = owner.execute
+        for device in ('gpu', None):
+            def execute_with_device(check):
+                result = execute(check)
+                result['measurements']['device'] = device
+                return result
+
+            with self.subTest(device=device), patch.object(owner, 'execute', side_effect=execute_with_device):
+                result = self.engine(owner).run(request)
+                self.assertEqual(result['outcome'], 'failed')
+                self.assertEqual(result['checks'][0]['unsatisfied_gates'], ['execution'])
+                self.assertTrue(result['checks'][0]['error'].startswith('CONTINUITY_CAPABILITY_DEVICE:'))
+
     def test_missing_backend_does_not_suppress_independent_geometry(self):
         owner, request=self.bound('geometry-inspection')
         request['checks']+=self.request('blender-native-inspection','physics-continuation','graphical-editor')['checks']
@@ -140,6 +156,45 @@ class CapabilityTest(unittest.TestCase):
     def test_cancellation_remains_explicit(self):
         result=self.engine().run(self.request('physics-continuation'),canceled=lambda:True)
         self.assertEqual(result['outcome'],'canceled')
+
+    def test_late_cancellation_preserves_asserted_failures_and_aggregate(self):
+        owner, request = self.image_owner_and_request()
+        request['checks'][0]['resources']['cpu_seconds'] = 1
+        request['checks'].append(self.request('physics-continuation')['checks'][0])
+        request['checks'][1]['id'] = 'check-1'
+
+        for owner_outcome, wall, cpu, expected, gate in (
+            ('partial', 2, 0, 'failed', 'resource-cpu_seconds'),
+            ('partial', 0, 2, 'failed', 'resource-cpu_seconds'),
+            ('failed', 0, 0, 'failed', None),
+            ('partial', 0, 0, 'canceled', 'cancellation'),
+        ):
+            finished = False
+
+            def execute(check):
+                nonlocal finished
+                finished = True
+                return dict(outcome=owner_outcome, evidence=[], measurements={},
+                            verified_fields=[], limitations=['Fixture owner result'])
+
+            timers = SimpleNamespace(monotonic=lambda: wall if finished else 0,
+                                     process_time=lambda: cpu if finished else 0)
+            with self.subTest(owner_outcome=owner_outcome, wall=wall, cpu=cpu), patch.object(
+                owner, 'execute', side_effect=execute,
+            ), patch('continuity_capabilities.time', timers):
+                result = self.engine(owner).run(request, canceled=lambda: finished)
+                first, second = result['checks']
+                self.assertTrue(finished)
+                self.assertEqual(result['outcome'], expected)
+                self.assertEqual(first['outcome'], expected)
+                self.assertEqual(first['unsatisfied_gates'], [gate] if gate else [])
+                self.assertIn('Fixture owner result', first['limitations'])
+                self.assertEqual(second['outcome'], 'canceled')
+                self.assertEqual(second['unsatisfied_gates'], ['cancellation'])
+                if gate == 'resource-cpu_seconds':
+                    self.assertTrue(first['error'].startswith('CONTINUITY_CAPABILITY_LIMIT:'))
+                    measured = first['measurements']['admission_resources']
+                    self.assertEqual((measured['wall_seconds'], measured['process_cpu_seconds']), (wall, cpu))
 
     def test_fallback_disallowed_blocks(self):
         owner, request=self.bound('geometry-inspection');request['checks'][0]['allow_fallback']=False
@@ -365,6 +420,27 @@ class CapabilityTest(unittest.TestCase):
                 self.assertEqual(result['integrity'], 'failed')
                 self.assertEqual(result['checks'][0]['unsatisfied_gates'], ['integrity'])
                 self.assertTrue(result['checks'][0]['error'].startswith(code + ':'))
+
+    def test_partial_and_visual_review_require_evidence_for_verified_fields(self):
+        owner, request = self.image_owner_and_request()
+        request['checks'][0]['required_fields'] = ['image-masters']
+        for outcome in ('partial', 'needs_visual_review'):
+            for fields in ([], ['image-masters']):
+                with self.subTest(outcome=outcome, fields=fields), patch.object(
+                    owner, 'execute', return_value=dict(outcome=outcome, evidence=[],
+                                                       measurements={}, verified_fields=fields, limitations=[]),
+                ):
+                    result = self.engine(owner).run(request)
+                    row = result['checks'][0]
+                    self.assertIn('image-masters', row['missing_fields'])
+                    if fields:
+                        self.assertEqual(result['outcome'], 'failed')
+                        self.assertEqual(result['integrity'], 'failed')
+                        self.assertEqual(row['unsatisfied_gates'], ['integrity'])
+                        self.assertTrue(row['error'].startswith('CONTINUITY_CAPABILITY_EVIDENCE:'))
+                    else:
+                        self.assertEqual(result['outcome'], outcome)
+                        self.assertEqual(result['integrity'], 'verified')
 
     def test_image_master_preflight_refuses_count_and_size_before_reading(self):
         first = self.root / 'small-master.png'

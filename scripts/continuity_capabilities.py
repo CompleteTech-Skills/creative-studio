@@ -669,11 +669,14 @@ class Admission:
                     mandatory.add('source-conversion-binding')
                 missing = sorted(mandatory - set(fields))
                 status = result['outcome']
-                if status == 'executed' and not result['evidence']:
-                    raise ValueError('CONTINUITY_CAPABILITY_EVIDENCE: execution has no retained artifacts')
-                if check['capability'] == 'gpu-rendering' and (check['gpu_required'] or not fallback):
-                    if not isinstance(result['measurements'], dict) or result['measurements'].get('device') != 'gpu':
-                        raise ValueError('CONTINUITY_CAPABILITY_DEVICE: actual GPU execution is required')
+                if (status == 'executed' or fields) and not result['evidence']:
+                    raise CapabilityRefusal('CONTINUITY_CAPABILITY_EVIDENCE', 'integrity',
+                                            'Execution claims require retained artifacts')
+                if check['capability'] == 'gpu-rendering' and status in ('executed', 'partial', 'needs_visual_review'):
+                    expected_device = 'cpu' if snap['implementation_id'] == 'tested-cpu-renderer' else 'gpu'
+                    if (result['measurements'] or {}).get('device') != expected_device:
+                        raise CapabilityRefusal('CONTINUITY_CAPABILITY_DEVICE', 'execution',
+                                                f'Actual {expected_device.upper()} execution is required')
                 if snap['implementation_id'] == 'deterministic-rules':
                     if not isinstance(result['measurements'],dict) or result['measurements'].get('model_invoked') is not False:
                         raise ValueError('CONTINUITY_CAPABILITY_FALLBACK: deterministic fallback must identify that no model executed')
@@ -685,8 +688,11 @@ class Admission:
                 missing = sorted(set(missing)|set(categorical))
                 if elapsed > check['resources']['cpu_seconds'] or cpu_used > check['resources']['cpu_seconds']:
                     status = 'failed'
+                    item['error'] = 'CONTINUITY_CAPABILITY_LIMIT: check wall or CPU reservation exceeded'
                     item['unsatisfied_gates'].append('resource-cpu_seconds')
-                if canceled(): status = 'canceled'
+                if status != 'failed' and canceled():
+                    status = 'canceled'
+                    item['unsatisfied_gates'].append('cancellation')
                 if status == 'executed' and missing: status = 'partial'
                 if status == 'executed' and fallback: status = 'supported_fallback'
                 if status == 'needs_visual_review' or ((check['needs_visual_approval'] or check['capability'] == 'visual-comparison') and status in ('executed','supported_fallback','partial')):
