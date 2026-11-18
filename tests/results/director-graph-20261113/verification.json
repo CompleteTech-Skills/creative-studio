@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "source_head": "28caa97a09427c564a5440174d6ffc9ac57a6e51",
+  "base": "69b6264b78231dad54e00302437fb6b499f9945c",
+  "source_sha256": {
+    "scripts/director_graph.py": "5df4668d907028f42a26688da9958315816fa1bbdd9eb68127290ccc962a4f40",
+    "scripts/demonstrate_director_graph.py": "d41fbc5c147150f7262e2d4c0c6309e06b4a6d2b9cfeb9a0dad8c17a79f6733d",
+    "scripts/director_capabilities.py": "6fa5537ccb4ff4d567b3a1805d08b353df0ad74a11cb55ce1d7d575b2cc37caa",
+    "tests/test_director_graph.py": "cc1eea51486c8de44f335fa714c589d7243b5c8c6e8be96637392735d173b05a",
+    "profiles/director-execution-plan.schema.json": "a812003fc3ff6af8ff071e0949819d6152431057cf43c6eec85ce18240a8f4e1",
+    "scripts/generate_schemas.py": "6912fa15e6f5a812152684d21ce136a5a5c86299bce64b62831ee4546dff9f5a"
+  },
+  "tests": {
+    "command": "PYTHONPATH=scripts:tests /home/complete/.cache/hatch-fleet/rig-py312/bin/python -m unittest test_director_graph test_director_capabilities test_rig_director_capabilities test_rig_compatibility -v",
+    "count": 41,
+    "seconds": 10.142,
+    "status": "passed",
+    "graph_tests": 19,
+    "compatibility_discovery_only": 1016,
+    "log_sha256": "ade72bed60588a9878752f2e6bc4e1e07b7bef442a01e86f4580d3182fe59b06"
+  },
+  "generated_schema_check": {
+    "command": "/home/complete/.cache/hatch-fleet/rig-py312/bin/python scripts/generate_schemas.py --check",
+    "exit_code": 0
+  },
+  "demonstration": {
+    "command": "/home/complete/.cache/hatch-fleet/rig-py312/bin/python scripts/demonstrate_director_graph.py --destination /home/complete/.cache/hatch-coordination-20261112/director26-release-proof",
+    "exit_code": 0,
+    "native_obj_probe_executed": true,
+    "production_jobs_executed": false,
+    "graph_sha256": "df9323ab41d2804ae0cd5326d24b551ea398dcb7b6aa08232eb795163c3ed0c3"
+  },
+  "limits": [
+    "Synthetic plan; no production jobs submitted",
+    "Native execution must verify future outputs",
+    "No hosted CI or independent review claimed"
+  ]
+}

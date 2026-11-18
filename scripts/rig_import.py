@@ -171,26 +171,54 @@ def _images(document: GltfDocument) -> list[TextureImage]:
     return images
 
 
-def _import_skeleton(document: GltfDocument, parents, world, order, scale):
-    nodes = document.json['nodes'];skins = document.json.get('skins', [])
-    deform = set()
+def skeleton_nodes(document: GltfDocument, parents, world, order):
+    """Select and admit native bones before constructing their records."""
+    nodes = document.json['nodes']
+    skins = document.json.get('skins', [])
+    needed, deform = set(), set()
+    root_count = 0
+
+    def include(node):
+        nonlocal root_count
+        while node is not None and node not in needed:
+            needed.add(node)
+            node = parents.get(node)
+            if node is None:
+                root_count += 1
+            require(len(needed) + (root_count > 1) <= document.limits['bones'],
+                    'RIG_LIMIT_BONES', 'Bone budget exceeded.')
+
     for skin in skins:
         joints = skin.get('joints', [])
-        require(bool(joints) and len(set(joints)) == len(joints), 'RIG_SKIN_JOINT', 'Imported skin joints must be nonempty and unique.')
+        require(bool(joints), 'RIG_SKIN_JOINT', 'Imported skin joints must be nonempty and unique.')
+        seen = set()
         for joint in joints:
-            _index(joint, len(nodes), 'joint');require(joint in world, 'RIG_SKIN_SCENE', 'Skin joint is outside the selected scene.')
-        deform.update(joints)
-    animated_nodes = {c['target']['node'] for a in document.json.get('animations', []) for c in a.get('channels', [])
-                      if c['target'].get('path') != 'weights' and 'node' in c.get('target', {})}
-    require(animated_nodes <= set(world), 'RIG_ANIMATION_SCENE', 'Animation targets nodes outside the selected scene.')
-    if not skins and not animated_nodes:return None, {}, world
-    # Unskinned parts get a rigid joint at their original scene transform.
-    rigid = {i for i in order if 'mesh' in nodes[i] and 'skin' not in nodes[i]}
-    deform.update(rigid)
-    needed = set(deform) | animated_nodes
-    for i in list(needed):
-        while i in parents:
-            i = parents[i];needed.add(i)
+            _index(joint, len(nodes), 'joint')
+            require(joint not in seen, 'RIG_SKIN_JOINT', 'Imported skin joints must be nonempty and unique.')
+            require(joint in world, 'RIG_SKIN_SCENE', 'Skin joint is outside the selected scene.')
+            seen.add(joint)
+            deform.add(joint)
+            include(joint)
+    for animation in document.json.get('animations', []):
+        for channel in animation.get('channels', []):
+            target = channel['target']
+            if target.get('path') != 'weights' and 'node' in target:
+                node = target['node']
+                require(node in world, 'RIG_ANIMATION_SCENE', 'Animation targets nodes outside the selected scene.')
+                include(node)
+    # Unskinned parts get a rigid joint when the scene needs a skeleton.
+    if needed:
+        for node in order:
+            if 'mesh' in nodes[node] and 'skin' not in nodes[node]:
+                deform.add(node)
+                include(node)
+    return needed, deform, root_count > 1
+
+
+def _import_skeleton(document: GltfDocument, parents, world, order, scale):
+    nodes = document.json['nodes']
+    needed, deform, virtual = skeleton_nodes(document, parents, world, order)
+    if not needed:return None, {}, world
     order = [i for i in order if i in needed]
     ids, used = {}, set()
     for i in order:
@@ -199,7 +227,6 @@ def _import_skeleton(document: GltfDocument, parents, world, order, scale):
         require(isinstance(name, str) and name not in used, 'RIG_DUPLICATE_BONE', 'Imported bone identity is repeated.')
         ids[i] = name;used.add(name)
     roots = [i for i in order if i not in parents]
-    virtual = len(roots) > 1
     normalized = {i: np.diag([scale, scale, scale, 1.]) @ world[i] for i in order}
     bones = []
     if virtual:
