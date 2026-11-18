@@ -86,11 +86,12 @@ def _animation_workspace(document, order, limits):
     keys = scalars = tracks = 0
     expected_clips = []
     for animation in animations:
-        expected_tracks = []
+        expected_channels = []
         samplers = animation['samplers']
         for channel in animation['channels']:
             sampler = samplers[_index(channel['sampler'], len(samplers), 'animation sampler')]
-            times = accessors[_index(sampler['input'], len(accessors), 'key times')]
+            input_index = _index(sampler['input'], len(accessors), 'key times')
+            times = accessors[input_index]
             values = accessors[_index(sampler['output'], len(accessors), 'key values')]
             target = channel['target']
             path = target['path']
@@ -101,11 +102,12 @@ def _animation_workspace(document, order, limits):
                     'Expanded native animation tracks exceed the aggregate key budget.')
             scalars += copies * values['count'] * WIDTHS[values['type']]
             tracks += copies
-            expected_tracks.extend([(path, sampler.get('interpolation', 'LINEAR'),
-                                     times['count'])] * copies)
-        expected_clips.append(expected_tracks)
+            expected_channels.append((target['node'], path, sampler.get('interpolation', 'LINEAR'),
+                                      input_index, copies))
+        expected_clips.append(expected_channels)
     # Retained Python float lists may repeat accessor values per target and
-    # need room alongside NumPy validation buffers and exact-time summaries.
+    # need room alongside NumPy validation buffers, source input time reads
+    # and exact-time summaries.
     return 128 * keys + 64 * scalars + 1024 * tracks, expected_clips
 
 
@@ -155,7 +157,8 @@ def _preflight(path, size, limits):
     image_bytes = sum(size for _, _, size in image_views)
     require(image_bytes <= limits['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES',
             'Expanded embedded textures exceed the verification byte limit.')
-    # Admit simultaneous loader, geometry analysis and native raster allocations.
+    # Admit the retained preflight document alongside the loader, geometry
+    # analysis and native raster allocations.
     # Analysis includes transient topology, vertex and nearest-neighbor arrays.
     animation_reserve, expected_clips = _animation_workspace(document, order, limits)
     reserve = (raw['estimated_memory_bytes'] + 4 * size + image_bytes
@@ -174,10 +177,42 @@ def _preflight(path, size, limits):
         require(pixels <= 16_777_216 and total_pixels * 16 <= decode_limits['memory_bytes'] // 2,
                 'RIG_LIMIT_TEXTURE', 'Embedded textures exceed the native raster admission budget.')
         dimensions.append((width, height))
-    return raw, hierarchy, len(document.json.get('materials', [])), dimensions, decode_limits, expected_clips
+    materials = len(document.json.get('materials', []))
+    return raw, hierarchy, materials, dimensions, decode_limits, document, expected_clips
 
 
-def _measure_rig(model, limits, expected_clips):
+def _measure_tracks(clip, channels, document, targets):
+    expected_count = sum(channel[-1] for channel in channels)
+    require(len(clip['tracks']) == expected_count, 'ASSET_TECHNICAL_ANIMATION',
+            'Source and decoded animation track counts differ.',
+            expected=expected_count, observed=len(clip['tracks']))
+    summaries = []
+    tracks = iter(clip['tracks'])
+    for node, path, interpolation, input_index, copies in channels:
+        destinations = targets['meshes'].get(node, []) if path == 'weights' else [targets['bones'].get(node)]
+        require(len(destinations) == copies, 'ASSET_TECHNICAL_ANIMATION',
+                'Source and decoded animation target counts differ.')
+        # Read one admitted input sequence at a time, including sparse values.
+        times = document.accessor(input_index).ravel().tolist()
+        time_hash = object_hash(times)
+        for primitive, destination in enumerate(destinations):
+            track = next(tracks)
+            require(destination is not None and track['target'] == destination
+                    and track['path'] == path and track['interpolation'] == interpolation,
+                    'ASSET_TECHNICAL_ANIMATION', 'Source and decoded animation track targets or modes differ.')
+            require(len(track['times']) == len(times) and object_hash(track['times']) == time_hash,
+                    'ASSET_TECHNICAL_ANIMATION',
+                    'Source and decoded animation key times differ.')
+            summary = dict(source_node=node, path=path, interpolation=interpolation,
+                           keys=len(times), first_key_exact=_ratio(times[0]),
+                           last_key_exact=_ratio(times[-1]), key_times_sha256=time_hash)
+            if path == 'weights':
+                summary['source_primitive'] = primitive
+            summaries.append(summary)
+    return summaries
+
+
+def _measure_rig(model, limits, document, expected_clips, targets):
     require(len(model.clips) == len(expected_clips), 'ASSET_TECHNICAL_ANIMATION',
             'Preflight and decoded animation clip counts differ.',
             expected=len(expected_clips), observed=len(model.clips))
@@ -209,21 +244,12 @@ def _measure_rig(model, limits, expected_clips):
                 raise RigError('ASSET_TECHNICAL_SKIN', 'Unknown native GLB binding classification.')
     clips = []
     keys = 0
-    for clip, expected_tracks in zip(model.clips.values(), expected_clips, strict=True):
-        observed_tracks = [(track['path'], track['interpolation'], len(track['times']))
-                           for track in clip['tracks']]
-        require(observed_tracks == expected_tracks, 'ASSET_TECHNICAL_ANIMATION',
-                'Preflight and decoded animation track coverage differ.',
-                expected=len(expected_tracks), observed=len(observed_tracks))
-        track_keys = sum(len(track['times']) for track in clip['tracks'])
-        keys += track_keys
+    for clip, expected_channels in zip(model.clips.values(), expected_clips, strict=True):
+        tracks = _measure_tracks(clip, expected_channels, document, targets)
+        keys += sum(track['keys'] for track in tracks)
         require(keys <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
                 'Expanded native animation tracks exceed the aggregate key budget.')
         metrics = validate_animation(rig, clip)
-        tracks = [dict(path=track['path'], interpolation=track['interpolation'],
-                       keys=len(track['times']), first_key_exact=_ratio(track['times'][0]),
-                       last_key_exact=_ratio(track['times'][-1]),
-                       key_times_sha256=object_hash(track['times'])) for track in clip['tracks']]
         source_end = max(track['times'][-1] for track in clip['tracks'])
         clips.append(dict(source_end_exact=_ratio(source_end),
                           native_playback_duration_exact=_ratio(clip['duration']),
@@ -232,7 +258,7 @@ def _measure_rig(model, limits, expected_clips):
 
 
 def _native_report(path, record, limits):
-    raw, hierarchy, materials, dimensions, decode_limits, expected_clips = _preflight(
+    raw, hierarchy, materials, dimensions, decode_limits, document, expected_clips = _preflight(
         path, record['bytes'], limits)
     independent = validate_gltf(path, timeout=min(120, limits['timeout_seconds']))
     issues = independent.get('issues')
@@ -247,7 +273,8 @@ def _native_report(path, record, limits):
     require(isinstance(version, str)
             and re.fullmatch(r'[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-dev(?:\.[0-9]{1,4}){1,4})?', version),
             'ASSET_TECHNICAL_VALIDATION', 'Independent validator version must use a recognized format.')
-    model = load_character_model(path, limits=decode_limits)
+    targets = {}
+    model = load_character_model(path, limits=decode_limits, _animation_targets=targets)
     require(model.report['source_sha256'] == record['sha256'], 'ASSET_TECHNICAL_HASH',
             'Native import must decode the exact registered bytes.')
     geometry = {key: model.report[key] for key in _GEOMETRY_FIELDS}
@@ -266,7 +293,7 @@ def _native_report(path, record, limits):
         textures.append(dict(width=width, height=height, mime_type=image.mime_type,
                              sha256=hashlib.sha256(image.data).hexdigest()))
     authored_textures = len(model.geometry.textures)
-    skeleton, skins, rigid_bindings, clips = _measure_rig(model, limits, expected_clips)
+    skeleton, skins, rigid_bindings, clips = _measure_rig(model, limits, document, expected_clips, targets)
     capabilities = ['mesh']
     for capability, observed in (('material', materials), ('texture', authored_textures), ('skin', skins),
                                  ('animation', clips), ('morph', any(m['morph_targets'] for m in meshes))):
