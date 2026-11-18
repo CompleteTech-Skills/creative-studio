@@ -38,11 +38,22 @@ def local_to_world(local, parent):
 
 
 def quaternion_log(value):
+    """Return the short-hemisphere log, with a fixed axis sign at a half-turn.
+
+    For an exactly zero scalar, make the largest-magnitude axis component
+    positive, breaking equal-magnitude ties in XYZ order.
+    """
     q = quaternion(_bounded(value))
-    # q and -q denote the same orientation; choose the short hemisphere.
-    if q[3] < 0: q = -q
-    length = np.linalg.norm(q[:3])
-    return np.zeros(3) if length < 1e-12 else q[:3] * math.atan2(length, q[3]) / length
+    axis, scalar = q[:3], q[3]
+    if scalar < 0:
+        axis, scalar = -axis, -scalar
+    elif scalar == 0:
+        if axis[np.argmax(np.abs(axis))] < 0:
+            axis = -axis
+        axis = np.where(axis == 0, 0.0, axis)
+        scalar = 0.0
+    length = np.linalg.norm(axis)
+    return np.zeros(3) if length < 1e-12 else axis * math.atan2(length, scalar) / length
 
 
 def quaternion_exp(value):
