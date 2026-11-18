@@ -349,7 +349,11 @@ class BudgetLedger:
                 _require_generic_reconciliation(self, row)
             if intent is not None and outcome in ('complete', 'failed'):
                 # Record direct expenditure, including overruns, while preserving an active native owner.
-                keep_native_open = native is None and _unfinished_native(state, row)
+                # Historical owners have no publication log that can prove
+                # closure. Direct measurements retain their hold until the
+                # enrolled owner supplies genuine terminal evidence.
+                keep_native_open = native is None and (
+                    'publication_protocol' not in intent or _unfinished_native(state, row))
                 _need(not _native_pending_usage(self, row, native, owner_verified=owner_verified), 'UNCERTAIN',
                       'Resolve every token-bound native unknown before final ledger settlement.')
             for key in METRICS:
@@ -1025,7 +1029,7 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
         if existing is not None:
             return deepcopy(config)
         data['director_budget'] = config
-        hatch.save(root, data)
+        hatch._save_admitted(root, data)
     return deepcopy(config)
 
 
@@ -1373,7 +1377,7 @@ class NativeBudget:
 
     def _save(self):
         import hatch
-        hatch.save(self.root, self.data)
+        hatch._save_admitted(self.root, self.data)
 
     def _proof(self, value):
         with tempfile.TemporaryDirectory(prefix='.native-budget-', dir=self.ledger.root.parent) as temporary:

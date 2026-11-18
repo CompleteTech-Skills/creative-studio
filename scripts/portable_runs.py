@@ -22,6 +22,7 @@ def _unique_json_object(pairs):
 
 
 def migrate(root):
+    root = Path(root).resolve()
     import hatch
     data = hatch.read(root / 'imagegen-jobs.json')
     if data.get('schema_version') == 3:
@@ -59,7 +60,7 @@ def migrate(root):
         job['history'].append({'event': 'schema-migrated', 'old_evidence_valid': valid, 'time': hatch.time.time()})
     hatch.invalidate(data, 'schema migration requires extraction v4 and fresh visual review')
     hatch.event(data, 'schema-migrated', source=2, destination=3, backup=backup.name)
-    hatch.save(root, data)
+    hatch._save_admitted(root, data)
     return {'migrated': True, 'schema_version': 3, 'backup': str(backup),
             'revalidation_required': 'Run validate, inspect review UI and record a fresh visual review. Running claims must be reconciled first.'}
 
@@ -158,12 +159,12 @@ def restore_run(archive_path, destination):
                 hatch.event(data, 'external-receipt-retained', kind=key, previous=previous)
         data.pop('pending_install', None)
         hatch.event(data, 'restored', archive_sha256=hatch.digest(archive_path), revalidation_required=revalidate)
-        hatch.save(stage, data)
+        hatch._save_admitted(stage, data)
         hatch.manifest(stage)
         if not revalidate and not hatch._review_ok(stage, data):
             revalidate = True
             hatch.invalidate(data, 'restored artifacts do not satisfy current validation and review')
-            hatch.save(stage, data)
+            hatch._save_admitted(stage, data)
         _rename_no_replace(stage, destination)
     finally:
         if stage.exists():

@@ -115,7 +115,7 @@ def prepare(root: Path, character: str):
         result = hatch.prepare(root, args)
         data = hatch.manifest(root)
         data['limits'].update(attempts_per_job=1, concurrency=1, generation_calls=2)
-        hatch.save(root, data)
+        hatch._save_admitted(root, data)
         return result
     except BaseException:
         # Only remove inputs exclusively created here, and leave any replacement

@@ -268,7 +268,7 @@ def prepare_from_decomposition(root, destination, args=None, component_ids=(), o
             hatch.event(data, 'decomposition-reused', decomposition_sha256=origin['decomposition_sha256'],
                         source_sha256=origin['source_sha256'], selected_components=selected_ids,
                         operation=intent['operation'], semantic_status=origin['semantic_status'])
-            hatch.save(prepared, data)
+            hatch._save_admitted(prepared, data)
             if any(getattr(args, flag, None) is not None for flag in ('max_attempts', 'concurrency', 'max_calls', 'estimate_units', 'unit_budget')):
                 hatch.configure_limits(prepared, data, args)
             # Normal generator metadata contains run_dir; move the fully prepared
@@ -280,7 +280,7 @@ def prepare_from_decomposition(root, destination, args=None, component_ids=(), o
             # points at staging; compute its current base dependency hashes again.
             base = hatch.job_for(data, 'base')
             base['input_hashes'] = hatch.inputs(prepared, base)
-            hatch.save(prepared, data)
+            hatch._save_admitted(prepared, data)
             if _inventory(root) != inventory:
                 raise ValueError('source decomposition changed during forward preparation')
             os.replace(prepared, destination)

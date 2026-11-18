@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -393,7 +394,30 @@ def _journal_payload(data):
     return payload
 
 
+@dataclass(frozen=True)
+class _AdmittedRoot:
+    """In-process writer provenance; never derive this from journal fields."""
+    path: str
+
+    def __fspath__(self):
+        return self.path
+
+
+def _save_admitted(root, data):
+    """Keep an operation's earlier root admission through the public save hook."""
+    return save(_AdmittedRoot(os.path.abspath(root)), data)
+
+
 def save(root, data):
+    # A direct save is a fresh admission of its caller-supplied destination.
+    # An active operation carries its canonical name out of band, so neither
+    # a replaced leaf nor a replaced ancestor is resolved during publication.
+    root = Path(root.path) if isinstance(root, _AdmittedRoot) else Path(root).resolve()
+    with _input_parent(root / 'imagegen-jobs.json') as (parent, leaf):
+        _save_at(parent, leaf, data)
+
+
+def _save_at(parent, leaf, data):
     # Retain the exact reader bound after JSON escaping and accumulated history.
     # Refusal keeps the preceding journal readable and cannot publish a claim.
     payload = _journal_payload(data)
@@ -404,9 +428,7 @@ def save(root, data):
             bounded = _journal_payload(future)
             if len(bounded) > MAX_SOURCE_BYTES:
                 raise ValueError('native journal needs reserved space for terminal accounting and recovery')
-    # Callers retain their admitted absolute run name. Resolving it again here
-    # would follow a replacement alias before the no-follow parent pin opens.
-    atomic_bytes(Path(os.path.abspath(root)) / 'imagegen-jobs.json', payload)
+    _atomic_bytes_at(parent, leaf, payload)
 
 
 def validate_prompt_paths(job):
@@ -479,7 +501,7 @@ def revise_profile(root, data, path):
             job['status'] = 'pending'
             job['history'].append({'event': 'profile-generation-changed', 'time': time.time()})
     event(data, 'profile-revised', previous=before, current=after, generation=generation, extraction=extraction)
-    save(root, data)
+    _save_admitted(root, data)
     return {'generation_stale': generation, 'extraction_stale': extraction, 'review_required': True}
 
 
@@ -587,7 +609,7 @@ def reconcile(root, data):
             changed = True
     if changed:
         invalidate(data, 'changed generation inputs or outputs')
-        save(root, data)
+        _save_admitted(root, data)
     return changed
 
 def _relocate(value, stage, root):
@@ -683,7 +705,7 @@ def recover_prepare(root):
     if (root / 'imagegen-jobs.json').is_file():
         data = manifest(root)
         event(data, 'prepare-recovered', preserved_previous=str(backup) if backup.exists() else None)
-        save(root, data)
+        _save_admitted(root, data)
 
 
 def claim(root, data, name):
@@ -775,7 +797,7 @@ def claim(root, data, name):
                             'utf8': prompt_text},
         'input_images': json.loads(json.dumps(job['input_images'])),
         'identity': request.get('identity', {}), 'resolved_style': request.get('resolved_style')})
-    save(root, data)
+    _save_admitted(root, data)
     if budget is not None:
         budget.publish_claim(job, token)
     check_captured_inputs()
@@ -877,7 +899,7 @@ def record_base_review(root, data, note, accept_color_warning=False):
     data['base_review'] = {'canonical_hash': digest(root / 'references/canonical-base.png'),
                            'settings_hash': digest(root / 'extraction-settings.json'), 'time': time.time(),
                            'note': note, 'accepted_color_warning': accept_color_warning}
-    save(root, data)
+    _save_admitted(root, data)
     return {'base_reviewed': True, 'calibration': settings}
 
 
@@ -921,7 +943,7 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
     with Image.open(source) as image:
         image.verify()
     invalidate(data, 'ingest ' + name)
-    save(root, data)  # A crash during file replacement cannot leave approval valid.
+    _save_admitted(root, data)  # A crash during file replacement cannot leave approval valid.
     output = inside(root, job['output_path'])
     output.parent.mkdir(parents=True, exist_ok=True)
     temp = output.with_name(output.name + '.' + uuid.uuid4().hex + '.incoming')
@@ -943,7 +965,7 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
                            'source_path': str(source), 'output_hash': job['output_hash'],
                            'model_call': job['model_call'], 'generation_receipt': receipt})
     job.pop('token', None)
-    save(root, data)
+    _save_admitted(root, data)
     return {'generated': name, 'fixture': fixture, 'settings': read(root / 'extraction-settings.json') if name == 'base' else None}
 
 def fail(root, data, name, token, reason, *, budget_usage=None):
@@ -962,14 +984,14 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
                 job['history'].append({'event': 'outcome-uncertain', 'time': time.time(),
                                        'reason': reason, 'token': token,
                                        'budget_observation': budget_usage['id']})
-                save(root, data)
+                _save_admitted(root, data)
             return {'uncertain': name, 'token': token}
         budget.authorize_finalization(job, token, budget_usage)
     job.update(status='failed')
     job['history'].append({'event': 'failed', 'time': time.time(), 'reason': reason, 'token': token})
     job.pop('token', None)
     job.pop('stale', None)
-    save(root, data)
+    _save_admitted(root, data)
     if budget is not None:
         budget.retain_finalization(job)
     return {'failed': name, 'remaining_attempts': max(0, data.get('limits', {}).get('attempts_per_job', RETRIES) - job['attempts'])}
@@ -994,7 +1016,7 @@ def repair(root, data, name, reason):
             p = inside(root, job[key])
             with p.open('a', encoding='utf-8') as out:
                 out.write('\nRepair required: ' + reason + '\n')
-    save(root, data)
+    _save_admitted(root, data)
     return {'pending': sorted(affected), 'reason': reason}
 
 
@@ -1045,7 +1067,7 @@ def configure(root, data, args):
         return {'settings': settings, 'pending': [], 'changed': []}
     generation_change = bool(set(changed) & {'background', 'chroma_key'})
     invalidate(data, 'generation background changed' if generation_change else 'deterministic extraction calibration changed: ' + ', '.join(changed))
-    save(root, data)
+    _save_admitted(root, data)
     atomic(root / 'extraction-settings.json', settings)
     event(data, 'extraction-configured', previous=previous, current=settings,
           previous_base_review=data.get('base_review'))
@@ -1061,7 +1083,7 @@ def configure(root, data, args):
             job['prompt_settings_hash'] = digest(root / 'extraction-settings.json')
             job['history'].append({'event': 'settings-changed', 'time': time.time(),
                                    'changed': changed, 'stage': 'generation' if generation_change else 'extraction'})
-    save(root, data)
+    _save_admitted(root, data)
     return {'settings': settings, 'pending': pending, 'changed': changed, 'model_call_required': bool(pending)}
 
 
@@ -1089,7 +1111,7 @@ def derive(root, data, name, reason, approved):
     job['derived_from'] = rule['source']
     hashes = inputs(root, job)
     invalidate(data, 'explicitly approved derivation ' + name)
-    save(root, data)
+    _save_admitted(root, data)
     with Image.open(inside(root, source_job['output_path'])) as source:
         mirrored = mirror_strip_preserving_frame_order(source, spec['frames'])
     output = inside(root, job['output_path'])
@@ -1103,7 +1125,7 @@ def derive(root, data, name, reason, approved):
     job.update(status='generated', input_hashes=hashes, output_hash=digest(output),
                derived_from=rule['source'], derivation_receipt=receipt, source_origin='derived')
     job['history'].append({'event': 'derived', 'output_hash': job['output_hash'], **receipt})
-    save(root, data)
+    _save_admitted(root, data)
     return receipt
 
 
@@ -1130,18 +1152,18 @@ def operation(root, data, kind):
         event(data, 'interrupted-operation', operation=old)
     record = {'id': uuid.uuid4().hex, 'kind': kind, 'status': 'running', 'started_at': time.time()}
     data['operation'] = record
-    save(root, data)
+    _save_admitted(root, data)
     try:
         yield record
     except BaseException as exc:
         record.update(status='failed', ended_at=time.time(), error=str(exc))
         event(data, 'operation-failed', operation=dict(record))
-        save(root, data)
+        _save_admitted(root, data)
         raise
     else:
         record.update(status='complete', ended_at=time.time())
         event(data, 'operation-complete', operation=dict(record))
-        save(root, data)
+        _save_admitted(root, data)
 
 
 def validate(root, data):
@@ -1262,7 +1284,7 @@ def review(root, data, receipt):
     data['gates']['reviewed'] = {'hash': digest(root / 'qa/visual-review.json'), 'accepted': value['accepted'],
                                 'artifact_hashes': artifact_hashes(root)}
     data['gates'].pop('packaged', None)
-    save(root, data)
+    _save_admitted(root, data)
     return {'reviewed': True, 'accepted': value['accepted'], 'fixture': data['fixture_mode']}
 
 
@@ -1448,7 +1470,7 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
         data['gates']['installed'] = recovered
         data.pop('pending_install', None)
         event(data, 'install-recovered', **recovered)
-        save(root, data)
+        _save_admitted(root, data)
         return recovered
     _existing_install(destination)
     stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-stage-', dir=destination.parent))
@@ -1459,7 +1481,7 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
         shutil.copytree(package_path, stage, dirs_exist_ok=True)
         verify_package(stage)
         data['pending_install'] = {'destination': str(destination)}
-        save(root, data)
+        _save_admitted(root, data)
         atomic(journal, {'backup': str(backup), 'stage': str(stage), 'receipt_hash': digest(stage / 'receipt.json'),
                          'previous_hashes': tree_hashes(destination) if destination.exists() else None})
         if destination.exists():
@@ -1481,7 +1503,7 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
         journal.unlink(missing_ok=True)
         data.pop('pending_install', None)
         event(data, 'installation-rolled-back', destination=str(destination))
-        save(root, data)
+        _save_admitted(root, data)
         raise
     finally:
         if stage.exists():
@@ -1491,7 +1513,7 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
                                   'receipt_hash': digest(destination / 'receipt.json'), 'app_integration_verified': False}
     data.pop('pending_install', None)
     event(data, 'installed', **data['gates']['installed'])
-    save(root, data)
+    _save_admitted(root, data)
     return data['gates']['installed']
 
 
@@ -1521,7 +1543,7 @@ def rollback(root, data):
             raise
     data['gates'].pop('installed', None)
     event(data, 'rolled-back', destination=str(destination), displaced=str(displaced))
-    save(root, data)
+    _save_admitted(root, data)
     return {'restored': str(destination), 'displaced': str(displaced)}
 
 
@@ -1569,7 +1591,7 @@ def cleanup(root, data, mode, apply):
                                  'accepted_artifacts': artifacts, 'files': archive_hashes,
                                  'capabilities': 're-extract all rows without generation' if mode == 'repair' else 'identity and receipts retained; deleted row sources require new generation',
                                  'prior_rollout_images_removed': False}
-            save(root, data)
+            _save_admitted(root, data)
             for p in candidates:
                 p.unlink()
         finally:
@@ -1646,11 +1668,11 @@ def resume(root, data):
                 data.setdefault('gates', {})['installed'] = recovered
             event(data, 'install-recovered', **recovered)
         data.pop('pending_install', None)
-        save(root, data)
+        _save_admitted(root, data)
     if data.get('operation', {}).get('status') == 'running':
         data['operation'].update(status='interrupted', ended_at=time.time())
         event(data, 'operation-interrupted', operation=dict(data['operation']))
-        save(root, data)
+        _save_admitted(root, data)
     result = status(root, data)
     result['next'] = 'Reconcile each running token with ingest or fail. Claim pending/failed jobs within the retry bound. Validate rebuilds missing or stale deterministic artifacts. No generation is launched automatically.'
     return result
@@ -1676,7 +1698,7 @@ def configure_limits(root, data, args):
         raise ValueError('--unit-budget needs --estimate-units in user-defined units; no price is inferred')
     data['limits'] = value
     event(data, 'limits-configured', limits=value)
-    save(root, data)
+    _save_admitted(root, data)
     return {'limits': value, 'measurements': 'claims count includes failed and unresolved calls; monetary usage is unavailable'}
 
 
@@ -1701,7 +1723,7 @@ def annotate(root, data, name, path):
     invalidate(data, 'extraction annotation changed for ' + name)
     atomic(root / 'annotations' / (name + '.json'), value)
     event(data, 'annotation-recorded', state=name, sha256=digest(root / 'annotations' / (name + '.json')))
-    save(root, data)
+    _save_admitted(root, data)
     return {'annotation': name, 'generation_reused': True, 'visual_review_required': True}
 
 

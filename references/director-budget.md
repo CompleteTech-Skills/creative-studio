@@ -611,6 +611,10 @@ receipt remains reserved; it does not release the native remainder or discard
 a native observation that has been saved but not yet charged. Unresolved native
 unknowns still require their token-bound reconciliation. Cancellation requires
 immutable evidence that the published native token has finalized.
+Historical admissions lack publication records, so their absence cannot prove
+that a native owner has stopped. A direct terminal measurement still records
+its exact delta but retains the remainder; the original owner must provide
+terminal evidence or the existing explicit historical cancellation attestation.
 
 For a measured retry, Hatch first saves the original failed owner and only then
 retains a `native-finalize` ledger event. That event binds the token, exact
@@ -639,6 +643,12 @@ reading or validating its inputs. This preserves ordinary system temporary
 directory aliases across platforms. The later journal write still uses the
 admitted canonical name and no-follow parent capability; it does not resolve
 a replacement alias at publication time.
+A direct `save` is a fresh destination admission and pins that resolved directory
+before serializing. Internal lifecycle writers instead carry their already
+admitted canonical root out of band through the same save hook; neither a
+replacement leaf nor a replacement ancestor is resolved again. Journal fields
+such as `run_dir` never choose the write destination. Imported-art admission
+normalizes its root before checking that the originals are outside the run.
 
 Earlier descriptor formats without `@journal-headroom` remain recovery-only.
 For an original unstarted reservation, retain nonexecution evidence and call
