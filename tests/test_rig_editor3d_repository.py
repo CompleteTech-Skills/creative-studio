@@ -362,6 +362,33 @@ raise AssertionError('writer was not excluded')
         self.assertTrue(self.repo.recovery()[0]['can_recover'])
         self.assertEqual(self.mesh_x(self.repo.recover('before-publish',0)),8)
 
+    def test_verified_journal_recovers_an_already_installed_revision(self):
+        import editor3d_repository as module
+        write_metadata = module._write_metadata
+
+        def stop_after_install(path, value):
+            if path.parent.name == 'journal' and value['status'] == 'published':
+                raise OSError('injected interruption after install')
+            write_metadata(path, value)
+
+        before = self.repo.snapshot()
+        source_bytes = (self.source / 'triangle.obj').read_bytes()
+        with patch.object(module, '_write_metadata', side_effect=stop_after_install):
+            with self.assertRaises(OSError):
+                self.repo.apply(0, self.move(8), 'after-install')
+
+        reopened = EditorRepository(self.repo.root)
+        item, = reopened.recovery()
+        self.assertEqual(item['status'], 'verified')
+        self.assertTrue(item['can_recover'])
+        self.assertEqual(reopened.snapshot(), before)
+        recovered = reopened.recover('after-install', 0, expected_sha256=before['sha256'])
+        self.assertEqual(self.mesh_x(recovered), 8)
+        self.assertEqual(EditorRepository(self.repo.root).snapshot(), recovered)
+        self.assertFalse(reopened.recovery())
+        self.assertEqual(reopened.read_file('triangle.obj', before['sha256']), source_bytes)
+        self.assertEqual((self.source / 'triangle.obj').read_bytes(), source_bytes)
+
     def test_read_file_is_bound_to_snapshot_inventory(self):
         view=self.repo.snapshot()
         for path in ('../secret','HEAD.json','unknown.obj'):

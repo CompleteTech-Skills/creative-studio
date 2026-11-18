@@ -320,12 +320,17 @@ class EditorRepository:
         _require(record['snapshot_sha256'] == value['sha256'], 'HASH', 'HEAD differs from its immutable revision.')
         return value
 
-    def _record(self, revision):
+    def _record(self, revision, *, directory=None):
         _require(type(revision) is int and 0 <= revision < self.limits['max_revisions'], 'REVISION', 'Invalid revision number.')
-        value = _read_json(safe_path(self.root, f'revisions/{revision:08d}/record.json', exists=True))
+        if directory is None:
+            path = safe_path(self.root, f'revisions/{revision:08d}/record.json', exists=True)
+        else:
+            path = safe_path(directory, 'record.json', exists=True)
+        value = _read_json(path)
         required = {'schema_version','revision','parent','snapshot_sha256','project_sha256','scene_path',
                     'transaction_id','request_sha256','action','label','created_at','inventory'}
-        _require(set(value) == required and value['schema_version'] == FORMAT and value['revision'] == revision,
+        _require(set(value) == required and type(value['schema_version']) is int and value['schema_version'] == FORMAT and
+                 type(value['revision']) is int and value['revision'] == revision,
                  'REVISION', 'Invalid immutable revision record.')
         _require(isinstance(value['inventory'], dict) and 0 < len(value['inventory']) <= self.limits['max_files'],
                  'REVISION', 'Invalid snapshot inventory.')
@@ -335,7 +340,8 @@ class EditorRepository:
                      0 <= record['bytes'] <= self.limits['max_file_bytes'] and isinstance(record['sha256'], str) and
                      re.fullmatch('[0-9a-f]{64}', record['sha256']), 'REVISION', 'Invalid immutable file record.')
         _require(_digest(value['inventory']) == value['snapshot_sha256'], 'HASH', 'Revision inventory digest differs.')
-        _require(value['scene_path'] in value['inventory'], 'SCENE', 'Revision scene is absent from its inventory.')
+        _require(isinstance(value['scene_path'], str) and value['scene_path'] in value['inventory'],
+                 'SCENE', 'Revision scene is absent from its inventory.')
         _check_id(value['transaction_id'])
         return value
 
@@ -344,8 +350,9 @@ class EditorRepository:
         _require(path.is_dir(), 'REVISION', 'Native snapshot is missing.')
         return path
 
-    def _bundle(self, record):
-        root = self._native_root(record['revision'])
+    def _bundle(self, record, *, root=None):
+        if root is None:
+            root = self._native_root(record['revision'])
         # Hash all retained closure bytes, including source/provenance inputs.
         for name, expected in record['inventory'].items():
             _regular_bytes(root, name, expected, self.limits['max_file_bytes'])
@@ -537,7 +544,7 @@ class EditorRepository:
         item = _read_json(path)
         fields = {'schema_version','transaction_id','request_sha256','expected_revision','expected_sha256',
                   'revision','status','new_head','stage'}
-        _require(isinstance(item,dict) and set(item) == fields and item['schema_version'] == FORMAT and
+        _require(set(item) == fields and type(item['schema_version']) is int and item['schema_version'] == FORMAT and
                  item['status'] in ('building','verified','published') and type(item['expected_revision']) is int and
                  type(item['revision']) is int and item['revision'] == item['expected_revision'] + 1 and
                  0 < item['revision'] < self.limits['max_revisions'], 'RECOVERY', 'Malformed transaction journal.')
@@ -549,10 +556,13 @@ class EditorRepository:
         if item['stage'] is not None:
             _require(isinstance(item['stage'],str) and re.fullmatch(r'\.editor-revision-[a-zA-Z0-9_-]+',item['stage']),
                      'RECOVERY', 'Invalid private stage path.')
-        if item['status'] != 'building':
+        if item['status'] == 'building':
+            _require(item['new_head'] is None, 'RECOVERY', 'A building transaction cannot have a new HEAD.')
+        else:
             value=item['new_head']
             _require(isinstance(value,dict) and set(value)=={'schema_version','revision','sha256','undo','redo'} and
-                     value['schema_version']==FORMAT and value['revision']==item['revision'] and
+                     type(value['schema_version']) is int and value['schema_version']==FORMAT and
+                     type(value['revision']) is int and value['revision']==item['revision'] and
                      isinstance(value['sha256'],str) and re.fullmatch('[0-9a-f]{64}',value['sha256']) and
                      all(isinstance(value[k],list) and len(value[k])<=self.limits['max_history'] and
                          all(type(n) is int and 0<=n<item['revision'] for n in value[k]) for k in ('undo','redo')),
@@ -573,32 +583,66 @@ class EditorRepository:
             result.append(item)
         return result
 
+    def _verify_recovery_revision(self, item, directory):
+        _require(directory.is_dir() and not getattr(directory, 'is_junction', lambda: False)(),
+                 'RECOVERY', 'Recovery revision must be an ordinary directory.')
+        record = self._record(item['revision'], directory=directory)
+        _require(type(record['parent']) is int and record['parent'] == item['expected_revision'] and
+                 record['transaction_id'] == item['transaction_id'] and record['request_sha256'] == item['request_sha256'],
+                 'RECOVERY', 'Journal transaction or parent differs from the immutable revision.')
+        parent = self._record(record['parent'])
+        _require(parent['snapshot_sha256'] == item['expected_sha256'],
+                 'HASH', 'Journal expected digest differs from the immutable parent revision.')
+        _require(record['snapshot_sha256'] == item['new_head']['sha256'],
+                 'HASH', 'Journal differs from verified revision.')
+        _require(record['action'] in ('apply', 'undo', 'redo', 'restore', 'native-adapter') and
+                 isinstance(record['label'], str) and 0 < len(record['label']) <= 256 and
+                 isinstance(record['created_at'], str) and
+                 re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z', record['created_at']),
+                 'REVISION', 'Invalid immutable transaction metadata.')
+        files = _scan(directory, self.limits)
+        expected_files = {'record.json', *('native/' + name for name in record['inventory'])}
+        _require(set(files) == expected_files, 'HASH', 'Recovery revision contains files outside its immutable closure.')
+        bundle = self._bundle(record, root=safe_path(directory, 'native'))
+        _require(record['project_sha256'] == bundle['inventory']['project.json']['sha256'],
+                 'HASH', 'Revision project digest differs from the verified native project.')
+        scene = bundle['documents'].get(record['scene_path'])
+        _require(scene is not None and scene['kind'] == 'scene3d-scene',
+                 'SCENE', 'Revision scene is absent from the verified native project.')
+        return record
+
     def recover(self, transaction_id, expected_revision, *, expected_sha256=None):
         _check_id(transaction_id)
         with job_lock(self.root):
-            head=self._head(); self._check_expected(head,expected_revision,expected_sha256)
-            path=safe_path(self.root,'journal/'+hashlib.sha256(transaction_id.encode()).hexdigest()+'.json',exists=True)
-            item=self._journal(path)
-            if head==item['new_head']:
-                self._bundle(self._record(head['revision']));path.unlink();_sync_directory(path.parent)
+            head = self._head()
+            self._check_expected(head, expected_revision, expected_sha256)
+            journal_name = hashlib.sha256(transaction_id.encode()).hexdigest() + '.json'
+            path = safe_path(self.root, 'journal/' + journal_name, exists=True)
+            item = self._journal(path)
+            destination = safe_path(self.root, f"revisions/{item['revision']:08d}")
+            verified = item['status'] in ('verified', 'published')
+            if verified and head == item['new_head']:
+                self._verify_recovery_revision(item, destination)
+                path.unlink()
+                _sync_directory(path.parent)
                 return self.snapshot()
-            _require(item['status'] in ('verified','published') and
-                     item['expected_revision']==head['revision'] and item['expected_sha256']==head['sha256'],
-                     'STALE','Interrupted transaction does not match current HEAD.')
-            destination=safe_path(self.root,f"revisions/{item['revision']:08d}")
+            _require(verified and item['expected_revision'] == head['revision'] and item['expected_sha256'] == head['sha256'],
+                     'STALE', 'Interrupted transaction does not match current HEAD.')
+            staged_record = None
             if not destination.exists():
-                _require(item['stage'] is not None,'RECOVERY','Verified private stage is missing.')
-                stage=safe_path(self.root,'revisions/'+item['stage'])
-                _require(stage.is_dir(),'RECOVERY','Verified private stage is missing.')
-                staged_record=_read_json(safe_path(stage,'record.json',exists=True))
-                bundle=load_project(safe_path(stage,'native'))
-                _require(staged_record['inventory']==bundle['inventory'] and
-                         _digest(bundle['inventory'])==item['new_head']['sha256'], 'HASH','Staged closure changed.')
-                _rename_no_replace(stage,destination);_sync_directory(destination.parent)
-            record=self._record(item['revision']);self._bundle(record)
-            _require(item['new_head']['sha256']==record['snapshot_sha256'], 'HASH','Journal differs from verified revision.')
-            _write_metadata(safe_path(self.root,'HEAD.json'),item['new_head'])
-            self._head();path.unlink();_sync_directory(path.parent)
+                _require(item['stage'] is not None, 'RECOVERY', 'Verified private stage is missing.')
+                stage = safe_path(self.root, 'revisions/' + item['stage'])
+                _require(stage.is_dir(), 'RECOVERY', 'Verified private stage is missing.')
+                staged_record = self._verify_recovery_revision(item, stage)
+                _rename_no_replace(stage, destination)
+                _sync_directory(destination.parent)
+            record = self._verify_recovery_revision(item, destination)
+            _require(staged_record is None or record == staged_record,
+                     'HASH', 'Installed revision differs from its verified stage.')
+            _write_metadata(safe_path(self.root, 'HEAD.json'), item['new_head'])
+            self._head()
+            path.unlink()
+            _sync_directory(path.parent)
         return self.snapshot()
 
     def discard_incomplete(self, transaction_id, expected_revision, *, expected_sha256=None):
