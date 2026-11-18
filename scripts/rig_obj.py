@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 import shlex
+from time import monotonic
 import numpy as np
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import require, safe_path, sha256, slug, normalize_root
@@ -11,16 +12,29 @@ from rig_geometry import analyze_geometry
 from rig_models import Geometry, Mesh, TextureImage, validate_geometry
 
 
-def import_obj(path: Path, *, scale=1., limits=None):
+def import_obj(path: Path, *, scale=1., limits=None, geometry_only=False):
     from rig_import import ImportedModel, _decode_texture
     limits = limits or DEFAULT_LIMITS;path = Path(path)
     path = normalize_root(path.parent)/path.name
-    require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'OBJ exceeds the encoded source budget.')
+    source_size = path.stat().st_size
+    require(source_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'OBJ exceeds the encoded source budget.')
+    # Reserve decoded lines, tokenizer records and face expansion before allocating them.
+    text_workspace = 32 * source_size
+    deadline = monotonic() + limits['timeout_seconds'] if geometry_only else None
+    if geometry_only:
+        require(text_workspace <= limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
+                'OBJ text exceeds its parsing workspace.')
+    triangle_count = 0
+    expanded_vertices = 0
     require(math.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'OBJ scale must be positive.')
     vertices, uv, normals, groups, dependencies = [], [], [], {}, [path]
     materials = [dict(name='Default material')];material_ids = {'default': 0};images = [];textures = []
     total_texture_pixels = 0
     current_group, current_material = 'mesh', 0
+
+    def check_deadline():
+        require(monotonic() < deadline, 'RIG_OBJ_TIMEOUT',
+                'OBJ geometry parsing exceeded its time budget.')
 
     def numbers(values, minimum):
         require(len(values) >= minimum, 'RIG_OBJ_NUMBER', 'OBJ numeric record is incomplete.')
@@ -60,9 +74,24 @@ def import_obj(path: Path, *, scale=1., limits=None):
                 material['pbrMetallicRoughness']['baseColorTexture'] = dict(index=len(textures)-1)
 
     for line in path.read_text('utf-8').splitlines():
+        if geometry_only:
+            check_deadline()
         fields = shlex.split(line, comments=True)
         if not fields:continue
         key, values = fields[0], fields[1:]
+        if geometry_only:
+            require(line.split(maxsplit=1)[0] == key, 'RIG_OBJ_RECORD',
+                    'Use an unquoted OBJ record name.')
+            require(key not in ('mtllib', 'usemtl'), 'RIG_OBJ_MATERIAL',
+                    'Geometry-only OBJ import does not accept material declarations.')
+            require(key in ('v', 'vt', 'vn', 'g', 'o', 's', 'f'), 'RIG_OBJ_RECORD',
+                    'Unsupported geometry-only OBJ record.')
+            width = {'v': 3, 'vt': 2, 'vn': 3}.get(key)
+            require(width is None or len(values) == width, 'RIG_OBJ_NUMBER',
+                    'Unsupported geometry-only OBJ coordinate width.')
+            if key == 's':
+                require(values in (['off'], ['0']), 'RIG_OBJ_RECORD',
+                        'Provide explicit normals and disable smoothing groups.')
         if key == 'v':
             vertices.append(numbers(values, 3));require(len(vertices) <= limits['vertices'], 'RIG_LIMIT_VERTICES', 'OBJ vertex budget exceeded.')
         elif key == 'vt':uv.append(numbers(values, 2))
@@ -74,19 +103,30 @@ def import_obj(path: Path, *, scale=1., limits=None):
         elif key in ('g', 'o'):current_group = ' '.join(values) or 'mesh'
         elif key == 'f':
             require(3 <= len(values) <= 256, 'RIG_OBJ_FACE', 'OBJ faces need 3–256 vertices.')
+            triangle_count += len(values) - 2
+            require(triangle_count <= limits['triangles'], 'RIG_LIMIT_TRIANGLES', 'OBJ triangle budget exceeded.')
+            if geometry_only:
+                require(text_workspace + 2048 * triangle_count <= limits['memory_bytes'],
+                        'RIG_LIMIT_MEMORY', 'OBJ triangle expansion exceeds its parsing workspace.')
             face = []
             for value in values:
                 parts = value.split('/');require(len(parts) <= 3, 'RIG_OBJ_FACE', 'Invalid OBJ face tuple.')
                 indices = []
                 for part, length in zip(parts+['']*(3-len(parts)), [len(vertices), len(uv), len(normals)]):
                     if not part:indices.append(None);continue
-                    index = int(part);index = index-1 if index > 0 else length+index
+                    index = int(part)
+                    require(index != 0, 'RIG_OBJ_INDEX', 'OBJ indices start at one.')
+                    index = index-1 if index > 0 else length+index
                     require(0 <= index < length, 'RIG_OBJ_INDEX', 'OBJ face references an invalid vertex/UV/normal.');indices.append(index)
                 require(indices[0] is not None, 'RIG_OBJ_INDEX', 'OBJ face requires vertex positions.');face.append(tuple(indices))
             bucket = groups.setdefault((current_group, current_material), [])
-            for triangle in triangulate_polygon(np.asarray([vertices[v[0]] for v in face],float)):
+            triangles = triangulate_polygon(np.asarray([vertices[v[0]] for v in face], float))
+            if geometry_only:
+                check_deadline()
+            for triangle in triangles:
                 bucket.append([face[i] for i in triangle])
-            require(sum(len(g) for g in groups.values()) <= limits['triangles'], 'RIG_LIMIT_TRIANGLES', 'OBJ triangle budget exceeded.')
+            if geometry_only:
+                require(len(groups) <= 10000, 'RIG_LIMIT_NODES', 'OBJ groups exceed the native node limit.')
     meshes = []
     for i, ((name, material), faces) in enumerate(groups.items()):
         lookup = {};position_array = [];uv_array = [];normal_array = [];triangles = []
@@ -95,9 +135,14 @@ def import_obj(path: Path, *, scale=1., limits=None):
         require(has_uv or all(v[1] is None for f in faces for v in f),'RIG_OBJ_UV','Complete missing UV corners or separate the untextured faces before import.')
         require(has_normals or all(v[2] is None for f in faces for v in f),'RIG_OBJ_NORMAL','Complete or remove partial OBJ normals before import.')
         for face in faces:
+            if geometry_only:
+                check_deadline()
             triangle = []
             for vertex in face:
                 if vertex not in lookup:
+                    expanded_vertices += 1
+                    require(expanded_vertices <= limits['vertices'], 'RIG_LIMIT_VERTICES',
+                            'OBJ expanded vertex budget exceeded.')
                     lookup[vertex] = len(position_array);position_array.append(vertices[vertex[0]])
                     if has_uv:uv_array.append(uv[vertex[1]])
                     if has_normals:normal_array.append(normals[vertex[2]])
@@ -108,13 +153,22 @@ def import_obj(path: Path, *, scale=1., limits=None):
             attributes['TEXCOORD_0'] = np.asarray(uv_array, dtype=float)
             attributes['TEXCOORD_0'][:,1]=1-attributes['TEXCOORD_0'][:,1]
         if has_normals:
-            n = np.asarray(normal_array, dtype=float);lengths = np.linalg.norm(n, axis=1)
-            require(np.all(lengths > 1e-8), 'RIG_NORMAL', 'OBJ normals cannot be zero.');attributes['NORMAL'] = n/lengths[:, None]
+            n = np.asarray(normal_array, dtype=float)
+            if geometry_only:
+                magnitude = np.max(np.abs(n), axis=1)
+                require(np.all(magnitude > 0), 'RIG_NORMAL', 'OBJ normals cannot be zero.')
+                n /= magnitude[:, None]
+            lengths = np.linalg.norm(n, axis=1)
+            require(np.all(lengths > 1e-8), 'RIG_NORMAL', 'OBJ normals cannot be zero.')
+            attributes['NORMAL'] = n / lengths[:, None]
         meshes.append(Mesh(f'{slug(name)}-{i}', np.asarray(position_array, dtype=float)*scale,
                            np.asarray(triangles, dtype=np.int64), material, attributes, name=name))
     geometry = Geometry(meshes, materials, images, textures)
     validate_geometry(geometry, limits)
     require(sum(p.stat().st_size for p in set(dependencies)) <= limits['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES', 'OBJ dependencies exceed their budget.')
+    if geometry_only:
+        check_deadline()
+        return ImportedModel(geometry, dependencies, report={})
     report = analyze_geometry(geometry, limits)
     report.update(import_format='.obj', scale_conversion=scale, preserved_existing_rig=False, preserved_animation_clips=0,
                   source_sha256=sha256(path), warnings=['OBJ imports geometry/materials only; skeletons and animations are not present in this format.',

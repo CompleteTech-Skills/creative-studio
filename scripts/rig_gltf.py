@@ -351,7 +351,7 @@ class GltfBuilder:
             atomic_bytes(destination, struct.pack('<4sII', b'glTF', 2, 12+len(chunks))+chunks)
 
 
-def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes=None, root_node=None):
+def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes=None, root_node=None, generate_normals=True):
     from rig_geometry import vertex_normals
     from rig_models import validate_geometry
     validate_geometry(geometry)
@@ -365,7 +365,8 @@ def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes
     for mesh in geometry.meshes:
         attributes = {'POSITION': builder.accessor(mesh.positions, 'VEC3', target=34962, bounds=True)}
         source_attributes = dict(mesh.attributes)
-        source_attributes.setdefault('NORMAL', vertex_normals(mesh.positions, mesh.triangles))
+        if generate_normals and 'NORMAL' not in source_attributes:
+            source_attributes['NORMAL'] = vertex_normals(mesh.positions, mesh.triangles)
         for name, values in source_attributes.items():
             attributes[name] = builder.accessor(values, 'VEC'+str(values.shape[1]), target=34962)
         primitive = dict(attributes=attributes, indices=builder.accessor(mesh.triangles.ravel(), 'SCALAR', 5125, target=34963),
@@ -396,12 +397,19 @@ def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes
     return mesh_nodes
 
 
+def build_static_gltf(geometry, *, generate_normals=True):
+    """Build a self-contained glTF document and buffer from unrigged geometry."""
+    builder = GltfBuilder()
+    nodes = _export_geometry(builder, geometry, generate_normals=generate_normals)
+    builder.json['scenes'] = [dict(nodes=list(nodes.values()))]
+    builder.json['buffers'] = [dict(byteLength=len(builder.binary))]
+    return builder
+
+
 def export_geometry(geometry, destination: str | Path, *, provenance=None) -> dict:
     """Export actual unrigged input geometry for reproducible import demonstrations."""
     from rig_errors import sha256
-    builder = GltfBuilder()
-    nodes = _export_geometry(builder, geometry)
-    builder.json['scenes'] = [dict(nodes=list(nodes.values()))]
+    builder = build_static_gltf(geometry)
     if provenance:builder.json['asset']['extras'] = dict(hatchSource=provenance)
     builder.write(destination)
     return dict(path=str(destination), sha256=sha256(destination), vertices=geometry.vertex_count, skinned=False)
