@@ -412,6 +412,7 @@ def release_budget(root, data, name, *, idempotency_key, outcome, evidence):
 
 def reconcile(root, data):
     """Invalidate stale work without ever launching or duplicating generation."""
+    root = Path(root).resolve()
     budget = _native_budget(root, data, recovery=True)
     if budget is not None:
         budget.reconcile()
@@ -619,6 +620,7 @@ def claim(root, data, name):
 
 def select_base(root, data, source_origin=None):
     """Calibrate from the actual selected image, never a text-only fallback guess."""
+    root = Path(root).resolve()
     from prepare_pet_run import CHROMA_KEY_CANDIDATES, parse_hex_color, regenerate_prompts
     from extract_strip_frames import mask_background, pixels
     path = root / 'references/canonical-base.png'
