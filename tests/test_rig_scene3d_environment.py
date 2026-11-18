@@ -375,7 +375,8 @@ class EnvironmentTests(unittest.TestCase):
             scene['metadata']['generator_recipe_test']=stored
             scene['recipes']=[dict(path=stored,sha256=sha)]
             staged=root/'staged'
-            snapshot_project(source,staged,SceneGraph(scene),scene_path=path,extra_payloads={stored:raw})
+            snapshot_project(source,staged,SceneGraph(scene),scene_path=path,extra_payloads={stored:raw},
+                             expected_project_sha256=bundle['inventory']['project.json']['sha256'])
             reopened=load_project(staged);path=reopened['project']['scenes'][-1]['path']
             output=root/'output'
             with self.assertRaises(RigError) as failure:
@@ -412,7 +413,8 @@ class EnvironmentTests(unittest.TestCase):
             transform=deepcopy(generated['transform']);transform['translation']=[1,2,3]
             graph.set_transform('test-mesh',transform)
             edited=root/'edited'
-            snapshot_project(first,edited,graph,scene_path=path)
+            snapshot_project(first,edited,graph,scene_path=path,
+                             expected_project_sha256=bundle['inventory']['project.json']['sha256'])
             path=load_project(edited)['project']['scenes'][-1]['path']
 
             switched=root/'switched'
@@ -426,7 +428,8 @@ class EnvironmentTests(unittest.TestCase):
                              generated['metadata']['generated_fingerprint'])
             graph.delete('test-mesh')
             deleted=root/'deleted'
-            snapshot_project(switched,deleted,graph,scene_path=path)
+            snapshot_project(switched,deleted,graph,scene_path=path,
+                             expected_project_sha256=bundle['inventory']['project.json']['sha256'])
             path=load_project(deleted)['project']['scenes'][-1]['path']
 
             restored=root/'restored'
