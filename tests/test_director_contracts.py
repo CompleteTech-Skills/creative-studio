@@ -188,6 +188,75 @@ class DirectorContractTests(unittest.TestCase):
                     with self.subTest(missing=key), self.assertRaises(jsonschema.ValidationError):
                         validator.validate(missing)
 
+    def test_project_v2_migration_requires_observed_complete_milestone_reports(self):
+        original = self.sample('director-project')
+        before = deepcopy(original)
+        reports = {name: dict(timestamp='2026-11-13T12:00:00Z',
+            required_inputs=[deepcopy(original['brief'])], artifact_refs=[], validation_results=[],
+            evidence_refs=[], failure_reason=None, remaining_work=['Not executed; contract fixture only.'])
+            for name in dc.MILESTONES}
+        migrated = dc.migrate_project_v2(original, reports,semantic_version="2.0.0")
+        self.assertEqual(original, before)
+        self.assertEqual(migrated['schema_version'], 2)
+        dc.validate_document(json.loads(json.dumps(migrated)))
+        dc.validate_document(json.loads((ROOT/'examples/director-contracts/project-v2-fixture.json').read_text()))
+        for field in reports['planning']:
+            changed = deepcopy(migrated)
+            del changed['milestones'][0][field]
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                dc.validate_document(changed)
+        with self.assertRaises(ValueError):
+            dc.migrate_project_v2(original, {},semantic_version="2.0.0")
+        for changes in ({'timestamp':'not-a-timestamp'}, {'timestamp':'2026-11-13T12:00:00'},
+                        {'timestamp':'2026-11-13 12:00:00Z'}, {'timestamp':'2026-02-30T12:00:00Z'},
+                        {'timestamp':'2026-11-13T12:00:00+00:60'}, {'timestamp':'2026-11-13T12:00:00-01:99'},
+                        {'timestamp':'2026-11-13T12:00:00+24:00'},
+                        {'status':'failed'},
+                        {'status':'passed','remaining_work':[]}, {'remaining_work':[]}):
+            changed = deepcopy(migrated)
+            changed['milestones'][0].update(changes)
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                dc.validate_document(changed)
+
+    def test_v1_public_definitions_keep_persisted_binding_semantics(self):
+        # Digests captured from merged main b512 before adding v2 definitions.
+        expected = {'project':'36eebb5717a6767cd7653ad4966aacecc06f9a5df6a180de4bf809402ea52262',
+            'milestone':'7a0679395b5f61efa3678c3171a36475ec1e3b3691e1c4b5f65e40d79aa835ae',
+            'output-execution-graph':'93e8658bb5c6b0078e7e91049e8ebde3edbbd82d371026b12de9515cfcfc7005'}
+        from rig_errors import object_hash
+        definitions=dc.schemas()['director.schema.json']['$defs']
+        for name,digest in expected.items():
+            self.assertEqual(object_hash(definitions[name]),digest)
+
+    def test_additive_versions_preserve_historical_exact_byte_bundle(self):
+        if not (hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+            with self.assertRaises(ValueError):dc.validate_bundle(self.documents,root=ROOT)
+            return
+        dc.validate_bundle(self.documents,root=ROOT)
+
+    def test_project_v2_passed_milestones_keep_execution_and_review_separate(self):
+        original = self.sample('director-project')
+        artifact = deepcopy(original['brief'])
+        reports = {name:dict(timestamp='2026-11-13T12:00:00Z',required_inputs=[artifact],
+            artifact_refs=[],validation_results=[],evidence_refs=[],failure_reason=None,
+            remaining_work=['Requires actual execution.']) for name in dc.MILESTONES}
+        project = dc.migrate_project_v2(original,reports,semantic_version="2.0.0")
+        planning = project['milestones'][0]
+        planning.update(status='passed',artifact_refs=[artifact],evidence=[artifact],
+            evidence_refs=[artifact],remaining_work=[],validation_results=[dict(check='structure',
+                status='passed',evidence=[artifact],diagnostics=[])])
+        dc.validate_document(project)
+        self.assertEqual(project['milestones'][1]['status'],'unverified')
+        for mutation in (lambda m:m.update(evidence_refs=[]),
+                         lambda m:m['validation_results'][0].update(status='unverified'),
+                         lambda m:m.update(failure_reason='Unresolved failure')):
+            changed=deepcopy(project)
+            mutation(changed['milestones'][0])
+            with self.assertRaises(ValueError):dc.validate_document(changed)
+        visual = next(m for m in project['milestones'] if m['name']=='visual_qa')
+        visual.update(deepcopy(planning),name='visual_qa')
+        with self.assertRaises(ValueError):dc.validate_document(project)
+
     def test_artifact_paths_and_exact_identity_are_checked(self):
         validator = self.structural_validator('artifact-ref')
         original = self.sample('director-project')
@@ -224,9 +293,25 @@ class DirectorContractTests(unittest.TestCase):
         request['context']['deadline'] = '2030-01-01t00:00:00z'
         dc.validate_document(request)
         dc.validate_method_request('CapabilityRegistry.probe', request)
-        request['context']['deadline'] = '2030-01-01t25:00:00z'
-        with self.assertRaises(dc.RigError):
-            dc.validate_document(request)
+        for deadline in ('2030-01-01t25:00:00z','2030-01-01T00:00:00+00:60',
+                         '2030-01-01T00:00:00-01:99','2030-01-01 00:00:00Z'):
+            request['context']['deadline'] = deadline
+            with self.subTest(deadline=deadline),self.assertRaises(dc.RigError):
+                dc.validate_document(request)
+
+    def test_canonical_rfc3339_parser_rejects_normalized_iso_overflow(self):
+        from datetime import timedelta
+        for timestamp,offset in [('2030-01-01t00:00:00z',0),
+                                 ('2030-01-01T00:00:00+23:59',1439),
+                                 ('2030-01-01T00:00:00-23:59',-1439),
+                                 ('2028-02-29T12:30:15.125+05:30',330)]:
+            parsed=dc.parse_rfc3339(timestamp)
+            self.assertEqual(parsed.utcoffset(),timedelta(minutes=offset))
+        for timestamp in (None,123,'x'*65,'2030-02-29T00:00:00Z','2030-01-01T00:00:00+0060',
+                          '2030-01-01T00:00:00+00:60','2030-01-01T00:00:00-01:99',
+                          '2030-01-01T00:60:00Z','2030-01-01T00:00:60Z','2030-01-01T00:00:00+24:00'):
+            with self.subTest(timestamp=timestamp),self.assertRaises(dc.RigError):
+                dc.parse_rfc3339(timestamp)
 
     def test_context_rejects_implicit_network_and_paid_authority(self):
         original = self.sample('director-request')
