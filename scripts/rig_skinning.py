@@ -221,12 +221,15 @@ def smooth_weights(mesh: Mesh, skin: SkinWeights, *, iterations=4, strength=.3) 
     dense = np.zeros((len(mesh.positions), len(skin.joints)))
     for k in range(skin.indices.shape[1]):dense[np.arange(len(dense)), skin.indices[:, k]] += skin.weights[:, k]
     edges, _ = mesh_edges(mesh.triangles)
-    degree = np.bincount(edges.ravel(), minlength=len(dense)).clip(min=1)[:, None]
+    degree = np.bincount(edges.ravel(), minlength=len(dense))[:, None]
+    isolated = degree[:, 0] == 0
+    degree = degree.clip(min=1)
     original = dense.copy()
     for _ in range(iterations):
         neighbours = np.zeros_like(dense)
         np.add.at(neighbours, edges[:, 0], dense[edges[:, 1]]);np.add.at(neighbours, edges[:, 1], dense[edges[:, 0]])
         dense = (1-strength)*dense+strength*neighbours/degree
+        dense[isolated] = original[isolated]
         dense[skin.locked] = original[skin.locked]
     result = deepcopy(skin);result.indices, result.weights = _prune(dense, skin.indices.shape[1])
     result.method = 'manual'
