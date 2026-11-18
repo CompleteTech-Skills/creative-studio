@@ -49,7 +49,7 @@ native silent-media workflow. Current-head execution remains pending at authorin
 ## Later failure-evidence correction (#525 / #227)
 
 The correction based on main `3358f0d533984c522e9e8df5c6fe92b6a69bb4af`
-passed 42 portable tests and 63 tests in the optional native suite locally on
+passed 43 portable tests and 66 tests in the optional native suite locally on
 Linux, with no skips. The native suite includes inherited portable contract
 tests and actual FFmpeg/ffprobe 7.1.5 checks on synthetic media. An actual
 corrupt MP4 produced ffprobe exit 1; Python and CLI failures retained the raw
@@ -72,13 +72,22 @@ replace command-owned absolute directory paths with stable aliases. Byte limits
 are reapplied after replacement. A separate contract fixture proves that a
 truncated strict-decode transcript cannot succeed merely because the retained
 prefix contains only whitespace; that fixture is not a native artifact bypass.
-The 42 portable cases combine the core, capabilities and production-adapter
-modules; the core module alone contains 27 cases. A real long temporary path
+The 43 portable cases combine the core, capabilities and production-adapter
+modules; the core module alone contains 28 cases. A real long temporary path
 that is cut inside ffprobe's stderr is also redacted in Python and CLI evidence.
 Stale source errors identify the frame index without copying relative source
 names. Portable deeply nested JSON fixtures exercise the installed JSON parser's
 actual nesting error at both probe and timeline stages; simulated command results
 are explicitly contract evidence, not native ffprobe behavior.
+
+Actual corrupt-media cases cover all four UTF-8 capture alignments in a long
+Unicode directory name through Python and CLI. Incomplete trailing code points
+are deferred at a truncated capture boundary so replacement characters cannot
+hide an otherwise known path prefix. Probe and decode inputs permit only the
+MOV/MP4 and Matroska/WebM demuxer families and the local file protocol. Actual
+FFconcat edit lists disguised with either supported extension are rejected
+before referenced clip names can be opened or echoed. The format is still
+independently detected, and every stream remains in the admission inventory.
 
 The original 17 core and 30 native test method bodies remain unchanged. The new
 regressions failed on the preceding source before the correction. Independent

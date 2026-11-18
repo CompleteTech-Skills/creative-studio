@@ -95,9 +95,16 @@ changing the representative decoded-pixel comparison contract.
 Independent verification copies the encoded bytes into another private snapshot
 so a mutable source pathname cannot switch between probe and decode. It runs:
 
-- unfiltered `ffprobe -count_frames -show_streams -show_format -of json`;
+- `ffprobe -count_frames -show_entries` for verifier-owned stream and format
+  fields, without filtering the stream inventory;
 - actual frame enumeration with integer presentation timestamps;
 - `ffmpeg -xerror -err_detect explode` decoding of the complete video.
+
+All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
+families and protocols to local files. They still detect the actual container;
+an edit list disguised as a supported media file is refused before following
+its referenced inputs. Failure transcripts exclude unrelated metadata and
+replace command-owned paths, including a path cut at a UTF-8 capture boundary.
 
 It requires exactly one video and zero audio/subtitle/data/attachment streams;
 checks the explicit codec, container, pixel format, resolution, square samples,

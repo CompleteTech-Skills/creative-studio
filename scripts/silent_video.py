@@ -6,6 +6,7 @@ renderers supply exact PNG inventories and never supply arbitrary FFmpeg flags.
 from __future__ import annotations
 
 import argparse
+import codecs
 import copy
 from contextlib import contextmanager, ExitStack
 from fractions import Fraction
@@ -43,6 +44,7 @@ PROFILES = {
                  'extension': '.webm', 'pixel_format': 'yuv420p', 'alpha': 'opaque',
                  'color': 'untagged-sdr', 'precision': 8, 'crf': 30, 'preset': 'good'},
 }
+VERIFY_INPUT_OPTIONS = ('-format_whitelist', 'mov,matroska,webm', '-protocol_whitelist', 'file')
 
 
 # Query only verifier-owned facts, without selecting away any stream types.
@@ -375,7 +377,11 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
             raw = raw[:limits['max_log_bytes']]
             # Replacement characters and partial UTF-8 tails must not expand
             # the retained transcript beyond the configured byte ceiling.
-            normalized = raw.decode('utf-8', 'replace').encode('utf-8')
+            # A capture boundary is not an invalid input character. Defer an
+            # incomplete trailing code point so it cannot hide a known path
+            # prefix behind an inserted replacement character during redaction.
+            decoder = codecs.getincrementaldecoder('utf-8')('replace')
+            normalized = decoder.decode(raw, final=not truncated).encode('utf-8')
             record[name] = normalized[:limits['max_log_bytes']].decode('utf-8', 'ignore')
             if truncated or len(normalized) > limits['max_log_bytes']:
                 record[name+'_truncated'] = True
@@ -539,7 +545,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         return observed
 
     entries = 'stream='+','.join(PROBE_STREAM_FIELDS)+':format='+','.join(PROBE_FORMAT_FIELDS)
-    inspected = execute('probe', [probe, '-v', 'error', '-count_frames', '-show_entries', entries,
+    inspected = execute('probe', [probe, *VERIFY_INPUT_OPTIONS, '-v', 'error', '-count_frames', '-show_entries', entries,
                       '-of', 'json', str(path.resolve())])
     try:
         data = json.loads(inspected['stdout'])
@@ -590,7 +596,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             raise ValueError('encoded presentation duration mismatch')
     except (KeyError, TypeError, ZeroDivisionError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('malformed/incomplete ffprobe evidence') from exc
-    timeline = execute('timeline', [probe, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
+    timeline = execute('timeline', [probe, *VERIFY_INPUT_OPTIONS, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
                      '-show_entries', 'frame=best_effort_timestamp,pkt_duration', '-of', 'json', str(path.resolve())],
                     )
     try:
@@ -604,7 +610,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     except (KeyError, TypeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('malformed frame timestamp evidence') from exc
     decoded = execute('decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
-                    '-err_detect', 'explode', '-i', str(path.resolve()), '-map', '0:v:0',
+                    '-err_detect', 'explode', *VERIFY_INPUT_OPTIONS, '-i', str(path.resolve()), '-map', '0:v:0',
                     '-an', '-sn', '-dn', '-f', 'null', '-'])
     if decoded.get('stderr_truncated'):
         raise ValueError('strict decode diagnostics were truncated')
@@ -618,7 +624,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             for index in sorted({0, expected_count//2, expected_count-1}):
                 output = Path(tmp)/('decoded-%d.png' % index)
                 execute('pixel_decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
-                      '-i', str(path.resolve()), '-map', '0:v:0', '-an', '-sn', '-dn',
+                      *VERIFY_INPUT_OPTIONS, '-i', str(path.resolve()), '-map', '0:v:0', '-an', '-sn', '-dn',
                       '-vf', 'select=eq(n\\,%d)' % index, '-frames:v', '1', '-threads', '1',
                       str(output)], output=output)
                 expected = _image(_read_frame(root, source['frames'][index]['path']),

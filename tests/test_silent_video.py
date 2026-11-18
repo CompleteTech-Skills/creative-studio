@@ -197,6 +197,21 @@ class SilentContracts(unittest.TestCase):
                 self.assertTrue(evidence['probe']['stderr_truncated'])
                 self.assertLessEqual(len(evidence['probe']['stderr'].encode()), 1024)
 
+    def test_incomplete_utf8_capture_does_not_hide_known_path_prefixes(self):
+        marker = 'SYNTHETIC_UNICODE_COMMAND_PATH'
+        for pad in range(4):
+            path = self.root / (marker + 'x' * pad)
+            for index in range(6):
+                path = path / (str(index) + '\U0001f600' * 45)
+            command = [sys.executable, '-c', 'import sys; sys.stderr.write(sys.argv[1]); sys.exit(7)', str(path)]
+            with self.subTest(pad=pad), self.assertRaises(ValueError) as failed:
+                video._run(command, dict(video.DEFAULT_LIMITS, max_log_bytes=1024))
+            record = failed.exception.evidence['command_failure']
+            self.assertNotIn(marker, json.dumps(failed.exception.evidence) + str(failed.exception))
+            self.assertTrue(record['stderr_truncated'])
+            self.assertIn('<media-path-truncated>', record['stderr'])
+            self.assertLessEqual(len(record['stderr'].encode()), 1024)
+
     def test_probe_and_timeline_nesting_errors_keep_python_and_cli_evidence(self):
         import contextlib, io
         artifact = self.root / 'nested-probe.mp4'

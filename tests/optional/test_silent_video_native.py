@@ -423,6 +423,61 @@ class SilentMedia(core.SilentContracts):
         self.assertNotIn(marker, result.stdout + result.stderr)
         self.assertFalse(json.loads(result.stdout)['verified'])
 
+    def test_unicode_workdir_capture_boundaries_are_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_UNICODE_WORKDIR'
+        artifact = self.root / 'unicode-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        request_path = self.root / 'unicode-path-request.json'
+        request_path.write_text(json.dumps(request))
+        for pad in range(4):
+            private = self.root / (marker + 'x' * pad)
+            for index in range(6):
+                private = private / (str(index) + '\U0001f600' * 45)
+            private.mkdir(parents=True)
+            with self.subTest(pad=pad):
+                with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                record = failed.exception.evidence['probe']
+                self.assertTrue(record['stderr_truncated'])
+                self.assertIn('<media-path-truncated>', record['stderr'])
+                self.assertLessEqual(len(record['stderr'].encode()), 1024)
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertTrue(report['probe']['stderr_truncated'])
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_disguised_edit_lists_cannot_open_or_echo_referenced_clip_names(self):
+        marker = 'SYNTHETIC_EDITORIAL_CLIP_NAME'
+        for profile in ('h264-mp4', 'vp9-webm'):
+            with self.subTest(profile=profile):
+                request = video.make_request(self.source, profile)
+                artifact = self.root / ('workprint' + video.PROFILES[profile]['extension'])
+                artifact.write_text("ffconcat version 1.0\nfile '" + marker + ".mp4'\n")
+                with self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                self.assertNotEqual(failed.exception.evidence['probe']['exit_status'], 0)
+                self.assertNotIn('video_stream_count', failed.exception.evidence)
+                request_path = self.root / ('edit-list-request-' + profile + '.json')
+                request_path.write_text(json.dumps(request))
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
     def test_historical_full_probe_receipt_accepts_only_matching_authoritative_facts(self):
         artifact=self.root/'historical-receipt.mp4'
         receipt=video.encode(self.request,self.root,artifact)
