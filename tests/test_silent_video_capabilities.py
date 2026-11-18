@@ -44,7 +44,9 @@ class SilentCapabilityContracts(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='silent-capability-mock-')
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        # System temporary paths may have aliased ancestors on macOS. The
+        # capability tests provide a physical path to reach media admission.
+        self.root = Path(temporary.name).resolve(strict=True)
         self.tools = {}
         for name in ('ffmpeg', 'ffprobe'):
             stub = self.root / name
