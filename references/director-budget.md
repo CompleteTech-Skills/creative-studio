@@ -146,13 +146,22 @@ A pending preclaim intent reuses its token after restart. Estimates, known spent
 totals, held capacity and individual observations are reported separately;
 unavailable metrics remain visible in observations.
 
-Opted-in run relocation is deliberately unsupported, including sibling restore
-and whole-project relocation. The persisted hashes of canonical run and owner
-locations must still match before any handoff. An archive may preserve the run
-for inspection, but a differently restored location cannot mint another token
-against the original reservation. Restore ordinary legacy runs using their
-unchanged portability workflow. A supported relocation/migration transaction
-would require separate ownership and accounting reconciliation.
+Restoration of opted-in accounting authority is deliberately unsupported at
+every location, including rollback to the original canonical path. The native
+and project restore owners reject budgeted archives before publishing a restored
+directory. This prevents a preclaim archive from replacing newer claim history
+while the original work and reservation may still be outstanding. Original
+directories, archives and current ledgers are preserved.
+
+The accounting hooks also reject existing native `restored` and workflow
+`project-restored` history markers, including enrollment of a restored legacy
+run; restored legacy projects cannot be newly enrolled either. Canonical-location
+hashes remain an additional relocation check; they are
+not proof that a same-path snapshot is current. No budget restoration or
+migration transaction is implemented in this slice. Such support requires
+explicit reconciliation of the original claim and current ledger, not removal
+of restore history. Ordinary unbudgeted legacy restore and claim behavior
+remains unchanged.
 
 This first lane supports one budgeted operation per job. Explicit repair cannot
 reopen a settled reservation or erase spend; new work requires a separately

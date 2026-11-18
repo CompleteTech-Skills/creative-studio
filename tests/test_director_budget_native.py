@@ -472,12 +472,13 @@ class NativeBudgetTests(unittest.TestCase):
         with hatch.ownership(original):
             archive_run(original, hatch.manifest(original), archive)
         restored = owner / 'restored'
-        restore_run(archive, restored)
-        self.assertEqual(hatch.manifest(original)['run_id'], hatch.manifest(restored)['run_id'])
-        self.claim(original)
-        with self.assertRaises(RigError):
-            self.claim(restored)
-        self.assertEqual(hatch.job_for(hatch.manifest(restored), 'base')['attempts'], 0)
+        token = self.claim(original)['token']
+        before = ledger.snapshot()
+        with self.assertRaisesRegex(ValueError, 'budgeted acquisitions'):
+            restore_run(archive, restored)
+        self.assertFalse(restored.exists())
+        self.assertEqual(ledger.snapshot(), before)
+        self.assertEqual(hatch.job_for(hatch.manifest(original), 'base')['token'], token)
         rows = list(ledger.snapshot()['state']['reservations'].values())
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['reserved']['provider_calls'], '1')
@@ -494,3 +495,79 @@ class NativeBudgetTests(unittest.TestCase):
         self.assertNotEqual(first['token'], second['token'])
         self.assertNotIn('director_budget', hatch.manifest(restored))
         self.assertEqual(self.ledger.snapshot()['state']['revision'], 0)
+
+    def test_same_path_preclaim_archive_cannot_reissue_outstanding_native_work(self):
+        from portable_runs import archive_run, restore_run
+        owner = self.owner / 'rollback-owner'
+        original = self.prepare('rollback-owner/original')
+        limits = quantities(provider_calls=1, amount=2)
+        ledger = BudgetLedger.create(owner / 'ledger', limits,
+                                    provider_limits={'imagegen': limits}, currency='USD')
+        bind_native_budget(original, ledger.root, owner_root=owner, provider='imagegen',
+            estimate=limits, retry_allowance=0,
+            evidence=[ledger.retain_evidence(self.owner / 'evidence.json')])
+        archive = self.owner / 'preclaim-rollback.zip'
+        with hatch.ownership(original):
+            archive_run(original, hatch.manifest(original), archive)
+        token = self.claim(original)['token']
+        before = ledger.snapshot()
+        newer_bytes = (original / 'imagegen-jobs.json').read_bytes()
+        preserved = owner / 'preserved-newer-original'
+        original.rename(preserved)
+        self.assertFalse(original.exists())
+        # The old archive's canonical path matches, while external work may remain outstanding.
+        with self.assertRaisesRegex(ValueError, 'budgeted acquisitions'):
+            restore_run(archive, original)
+        self.assertFalse(original.exists())  # No restored owner can return another handoff.
+        self.assertEqual(ledger.snapshot(), before)
+        self.assertEqual((preserved / 'imagegen-jobs.json').read_bytes(), newer_bytes)
+        saved = hatch.read(preserved / 'imagegen-jobs.json')
+        self.assertEqual(hatch.job_for(saved, 'base')['token'], token)
+        rows = list(ledger.snapshot()['state']['reservations'].values())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['held']['provider_calls'], '1')
+
+    def test_same_path_project_restore_cannot_rollback_budget_and_native_authority(self):
+        project = self.owner / 'rollback-project'
+        build_fixture_project(project)
+        value = hatch.read(project / 'project.json')
+        value['limits']['max_generation_calls'] = 1
+        hatch.atomic(project / 'project.json', value)
+        root = self.prepare('rollback-project/acquisition/run')
+        limits = quantities(provider_calls=1, amount=2)
+        ledger = BudgetLedger.create(project / 'ledger', limits,
+                                    provider_limits={'imagegen': limits}, currency='USD')
+        bind_native_budget(root, ledger.root, owner_root=project, provider='imagegen',
+            estimate=limits, retry_allowance=0,
+            evidence=[ledger.retain_evidence(self.owner / 'evidence.json')])
+        workflow.bind_generation_run(project, 'run', root, ['synthetic'])
+        archive = self.owner / 'preclaim-project.zip'
+        workflow.archive_project(project, archive)
+        token = workflow.claim_generation(project, 'run', 'base')['token']
+        before = ledger.snapshot()
+        newer_bytes = (root / 'imagegen-jobs.json').read_bytes()
+        preserved = self.owner / 'preserved-newer-project'
+        project.rename(preserved)
+        with self.assertRaisesRegex(ValueError, 'budgeted projects'):
+            workflow.restore_project(archive, project)
+        self.assertFalse(project.exists())
+        self.assertEqual(BudgetLedger(preserved / 'ledger').snapshot(), before)
+        saved_path = preserved / 'acquisition/run/imagegen-jobs.json'
+        self.assertEqual(saved_path.read_bytes(), newer_bytes)
+        self.assertEqual(hatch.job_for(hatch.read(saved_path), 'base')['token'], token)
+        self.assertEqual(len(before['state']['reservations']), 1)
+
+    def test_existing_native_restore_marker_cannot_be_enrolled_into_budget_authority(self):
+        from portable_runs import archive_run, restore_run
+        original = self.prepare('restored-enrollment-source')
+        archive = self.owner / 'unbudgeted-enrollment.zip'
+        with hatch.ownership(original):
+            archive_run(original, hatch.manifest(original), archive)
+        restored = self.owner / 'restored-enrollment'
+        restore_run(archive, restored)
+        self.assertTrue(any(event['event'] == 'restored' for event in hatch.manifest(restored)['history']))
+        before = self.ledger.snapshot()
+        with self.assertRaisesRegex(RigError, 'Restored'):
+            self.bind(restored)
+        self.assertNotIn('director_budget', hatch.manifest(restored))
+        self.assertEqual(self.ledger.snapshot(), before)

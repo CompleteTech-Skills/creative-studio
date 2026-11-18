@@ -388,6 +388,15 @@ def execute(ledger, request, *, evidence_root, provider='local', unknown_price_c
 NATIVE_OWNER_FILE = 'director-budget-owner.json'
 
 
+def _require_unrestored_budget(record):
+    """Existing native/project restore receipts never renew accounting authority."""
+    history = record.get('history', [])
+    _need(isinstance(history, list) and all(isinstance(item, dict) for item in history),
+          'RESTORED', 'Accounting requires intact native restoration history.')
+    _need(not any(item.get('event') in ('restored', 'project-restored') for item in history),
+          'RESTORED', 'Restored runs/projects cannot authorize budgeted work without a reconciliation transaction.')
+
+
 def _native_owner_identity(owner, ledger_root, genesis):
     return dict(schema_version=1, kind='native-budget-owner',
                 owner_location_sha256=object_hash(str(owner)),
@@ -416,6 +425,7 @@ def require_production_budget(root, state, run, data):
         _need('director_budget' not in state, 'BINDING',
               'Every acquisition in this budgeted project must opt into its ledger.')
         return
+    _require_unrestored_budget(state)
     budget = NativeBudget(run, data)
     _need(budget.owner == root, 'BINDING', 'Production acquisition must use its project budget owner.')
     expected = _native_owner_binding(root, budget.ledger.root, budget.config['genesis'])
@@ -458,6 +468,7 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
         if root != owner:
             locks.enter_context(hatch.ownership(root))
         data = hatch.manifest(root)
+        _require_unrestored_budget(data)
         config.update(run_id=data['run_id'], fixture=data['fixture_mode'],
                       request_sha256=hatch.digest(root / 'pet_request.json'),
                       run_location_sha256=object_hash(str(root)))
@@ -472,6 +483,7 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
         if (owner / 'project.json').is_file():
             import production_workflow as workflow
             project_state = workflow._state(owner)
+            _require_unrestored_budget(project_state)
             _need(project_state.get('director_budget', association) == association, 'BINDING',
                   'Production project already belongs to a different ledger.')
             for binding in project_state['generation_bindings'].values():
@@ -511,6 +523,7 @@ class NativeBudget:
 
     def __init__(self, root, data):
         self.root, self.data = Path(root).resolve(), data
+        _require_unrestored_budget(data)
         self.config = data['director_budget']
         config = self.config
         _need(isinstance(config, dict) and set(config) == {
@@ -529,6 +542,9 @@ class NativeBudget:
               'PATH', 'Invalid native accounting owner.')
         owner = self.root if depth == 0 else self.root.parents[depth - 1]
         self.owner = owner
+        project_state = owner / 'production-workflow.json'
+        if project_state.is_file():
+            _require_unrestored_budget(hatch.read(project_state))
         from pathlib import PurePosixPath
         relative = config['ledger_path']
         _need(isinstance(relative, str) and relative and '\\' not in relative and ':' not in relative,
