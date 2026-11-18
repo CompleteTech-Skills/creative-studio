@@ -194,6 +194,8 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
             records = source_snapshot.source_records
             require(isinstance(records, list) and 0 < len(records) <= limits['archive_files'],
                     'MODEL3D_SOURCE', 'Source inventory is missing or too large.')
+            entry = source_snapshot.provenance.get('source_entry', '')
+            is_obj_source = Path(entry).suffix.lower() == '.obj'
             source_records = []
             for record in records:
                 name = 'source/' + record['path']
@@ -202,8 +204,10 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
                 target = safe_path(stage, name)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 digest = hashlib.sha256(); count = 0
+                minimum = 0 if is_obj_source and record['path'] != entry else 1
                 with _open_payload(source_snapshot.root, record['path']) as (stream, info):
-                    require(info.st_size == record['bytes'] and 0 < info.st_size <= limits['source_bytes'],
+                    require(info.st_size == record['bytes']
+                            and minimum <= info.st_size <= limits['source_bytes'],
                             'MODEL3D_SOURCE', 'Source snapshot size changed or exceeds limits.')
                     with target.open('xb') as output:
                         while chunk := stream.read(1024**2):

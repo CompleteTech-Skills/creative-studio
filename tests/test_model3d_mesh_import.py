@@ -10,8 +10,11 @@ from unittest.mock import patch
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from model3d_mesh_import import import_mesh, import_canonical
+from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError
 from rig_gltf import export_geometry
+from rig_import import load_character_model
+from rig_jobs import create_run
 from rig_models import Geometry, Mesh
 
 class MeshImportTests(unittest.TestCase):
@@ -105,6 +108,79 @@ class MeshImportTests(unittest.TestCase):
             self.assertEqual(result.model.geometry.triangle_count,3)
             np.testing.assert_allclose(result.model.report['dimensions_m'],[.02,.02,0])
         self.assertEqual(p.read_bytes(),before)
+
+    def test_obj_direct_source_cap_accepts_integral_float(self):
+        obj = self.root/'mesh.obj'
+        obj.write_bytes(b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        model = load_character_model(obj, limits={**DEFAULT_LIMITS, 'source_bytes': 96.0})
+        self.assertEqual(model.geometry.triangle_count, 1)
+        with self.assertRaises(RigError) as caught:
+            load_character_model(obj, limits={**DEFAULT_LIMITS, 'source_bytes': 96.5})
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_SOURCE')
+
+    def test_obj_dependency_budget_diagnostics_in_direct_and_managed_import(self):
+        obj = self.root/'mesh.obj'
+        obj.write_bytes(b'mtllib library\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        mtl = self.root/'library'
+        texture = self.root/'texture'
+        destination = self.root/'run'
+        cases = (
+            ('RIG_LIMIT_MTL', b'#' + b' ' * 1024**2, b'', {}),
+            ('RIG_LIMIT_MTL', b'#' + b' ' * 96, b'', {'source_bytes': 96}),
+            ('RIG_LIMIT_TEXTURE', b'newmtl color\nmap_Kd texture\n', b'x' * 97, {'source_bytes': 96}),
+            ('RIG_LIMIT_DEPENDENCIES', b'# library\n', b'', {'dependency_bytes': obj.stat().st_size + 9}),
+        )
+        operations = {
+            'direct': lambda limits: load_character_model(obj, limits={**DEFAULT_LIMITS, **limits}),
+            'managed': lambda limits: create_run(obj, destination, limits=limits),
+        }
+        for code, material_data, texture_data, limits in cases:
+            mtl.write_bytes(material_data)
+            texture.write_bytes(texture_data)
+            for name, operation in operations.items():
+                with self.subTest(code=code, limits=limits, operation=name):
+                    with self.assertRaises(RigError) as caught:
+                        operation(limits)
+                    self.assertEqual(caught.exception.report['code'], code)
+                    self.assertFalse(destination.exists())
+
+    def test_obj_empty_mtl_is_admitted_and_retained_verbatim(self):
+        obj = self.root/'mesh.obj'
+        obj.write_bytes(b'mtllib library\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        mtl = self.root/'library'
+        mtl.write_bytes(b'')
+        limits = {'dependency_bytes': obj.stat().st_size}
+        direct = load_character_model(obj, limits={**DEFAULT_LIMITS, **limits})
+        self.assertEqual(direct.geometry.triangle_count, 1)
+        with import_mesh(obj, limits=limits) as snapshot:
+            self.assertEqual(snapshot.model.geometry.triangle_count, 1)
+        managed = create_run(obj, self.root/'run')
+        self.assertEqual(managed.geometry.triangle_count, 1)
+        self.assertEqual((managed.root/'source/library').read_bytes(), b'')
+        self.assertIn({'path': 'source/library', 'sha256': hashlib.sha256(b'').hexdigest()},
+                      managed.manifest['source']['dependencies'])
+
+    def test_snapshot_rejects_empty_entry_and_texture(self):
+        obj = self.root/'mesh.obj'
+        obj.write_bytes(b'')
+        with self.assertRaises(RigError) as caught:
+            import_mesh(obj)
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_SOURCE')
+
+        obj.write_bytes(b'mtllib library\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        (self.root/'library').write_bytes(b'newmtl color\nmap_Kd texture\n')
+        (self.root/'texture').write_bytes(b'')
+        with self.assertRaises(RigError) as caught:
+            import_mesh(obj)
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_SOURCE')
+
+    def test_snapshot_missing_parent_keeps_structured_source_error(self):
+        obj = self.root/'absent/mesh.obj'
+        with self.assertRaises(RigError) as caught:
+            create_run(obj, self.root/'run')
+        self.assertEqual(caught.exception.report['code'], 'RIG_SOURCE')
+        self.assertFalse((self.root/'run').exists())
+
     def test_invalid_paths_counts_and_geometry(self):
         p=self.root/'bad.obj';p.write_text('v 0 0 0\nf 1 2 3\n')
         with self.assertRaises(RigError):import_mesh(p)
@@ -113,7 +189,6 @@ class MeshImportTests(unittest.TestCase):
         p.write_text('mtllib ../escape.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
         with self.assertRaises(RigError):import_mesh(p)
     def test_real_existing_skin_morph_animation_identity(self):
-        from rig_import import load_character_model
         source=Path(__file__).resolve().parents[1]/'examples/rig-3d/winged-creature/exports/character.glb'
         # Copy authentic retained fixture bytes into a new entry directory.
         p=self.root/'rig.glb';p.write_bytes(source.read_bytes())
@@ -133,6 +208,32 @@ class MeshImportTests(unittest.TestCase):
                 self.assertEqual(set(actual.morphs),set(wanted.morphs))
                 np.testing.assert_array_equal(actual.positions,wanted.positions)
             self.assertEqual(result.source_records[0]['sha256'],hashlib.sha256(source.read_bytes()).hexdigest())
+
+    def test_controlled_reader_preserves_animation_targets_and_decoded_source_hash(self):
+        fixture = Path(__file__).resolve().parents[1]/'examples/rig-3d/winged-creature/exports/character.glb'
+        original = fixture.read_bytes()
+        source = self.root/'animated.glb'
+        source.write_bytes(original)
+        expected_targets = {}
+        load_character_model(source, _animation_targets=expected_targets)
+        self.assertTrue(expected_targets['bones'])
+        self.assertTrue(expected_targets['meshes'])
+
+        def capture(path, maximum):
+            self.assertEqual(path, source)
+            self.assertLessEqual(len(original), maximum)
+            source.write_bytes(b'Changed after capture')
+            return original
+
+        targets = {}
+        model = load_character_model(source, source_reader=capture, _animation_targets=targets)
+        digest = hashlib.sha256(original).hexdigest()
+        self.assertEqual(targets, expected_targets)
+        self.assertEqual(model.report['source_sha256'], digest)
+        self.assertTrue(model.clips)
+        for clip in model.clips.values():
+            self.assertEqual(clip['provenance']['input_hashes']['source'], digest)
+
     def test_original_mutation_after_capture_does_not_change_geometry(self):
         import rig_import
         p=self.root/'mesh.obj';p.write_bytes(b'o mesh\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
