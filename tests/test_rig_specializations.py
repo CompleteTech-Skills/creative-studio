@@ -9,10 +9,11 @@ from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_contr
 from rig_attachments import socket_world,attach_prop,detach_prop,transfer_prop,prop_world,solve_grasp
 from rig_skeleton import neutral_pose,evaluate_fk,mirror_pose
 from rig_skinning import evaluate_deformation
-from rig_math import decompose,axis_angle
+from rig_math import decompose,axis_angle,compose,qmatrix
 from rig_errors import RigError
 from rig_states import rig_capabilities,map_states
-from rig_models import validate_geometry
+from rig_models import Geometry,Mesh,RigAsset,SkinWeights,validate_geometry
+from rig_skeleton import skeleton_from_heads,validate_skeleton
 
 
 class RigSpecializationTests(unittest.TestCase):
@@ -38,6 +39,98 @@ class RigSpecializationTests(unittest.TestCase):
         self.assertEqual(first,second);self.assertIn('wing-root.right',first['bones'])
         with self.assertRaises(RigError):appendage_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),tail_curl=.5)
         with self.assertRaises(RigError):finger_controls(self.creature,p,side='left',curl=.5)
+    def test_controls_follow_anatomical_hierarchy_not_bone_array_order(self):
+        human=deepcopy(self.humanoid);human.skeleton['bones'].reverse()
+        normal=finger_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),side='right',curl=.4,spread=.7)
+        reordered=finger_controls(human,neutral_pose(human.skeleton),side='right',curl=.4,spread=.7)
+        self.assertEqual(normal,reordered)
+        creature=deepcopy(self.creature);creature.skeleton['bones'].reverse()
+        normal=appendage_controls(self.creature,neutral_pose(self.creature.skeleton),time=.3,tail_wag=.6,secondary=.4)
+        reordered=appendage_controls(creature,neutral_pose(creature.skeleton),time=.3,tail_wag=.6,secondary=.4)
+        self.assertEqual(normal,reordered)
+    def test_wing_twist_changes_only_requested_side_and_real_geometry(self):
+        rig=self.creature;neutral=neutral_pose(rig.skeleton)
+        twisted=appendage_controls(rig,neutral,wing_twist=.8,wing_side='left')
+        before=evaluate_deformation(rig,neutral);after=evaluate_deformation(rig,twisted)
+        self.assertTrue(any(name.endswith('.left') for name in twisted['bones']))
+        rest_world=evaluate_fk(rig.skeleton,neutral);posed_world=evaluate_fk(rig.skeleton,twisted)
+        for name in rest_world:
+            if name.startswith('wing-') and name.endswith('.right'):
+                np.testing.assert_allclose(posed_world[name],rest_world[name],atol=1e-12)
+        self.assertGreater(max(np.max(np.abs(after[name]['positions']-data['positions']))
+                               for name,data in before.items()),.01)
+        for value in (-1.01,1.01,float('nan')):
+            with self.assertRaises(RigError):appendage_controls(rig,neutral,wing_twist=value)
+        with self.assertRaises(RigError):appendage_controls(rig,neutral,wing_side='front')
+        with self.assertRaises(RigError):appendage_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),wing_twist=.5)
+    def test_imported_wing_twist_uses_authored_length_not_local_y(self):
+        skeleton=skeleton_from_heads([dict(id='wing-root.left',role='wing-root.left',
+            parent=None,head=[0,0,0],tail=[1,0,0])])
+        skeleton['bones'][0]['rest']['rotation']=[0,0,0,1]
+        validate_skeleton(skeleton)
+        positions=np.array([[0.,0.,0.],[1.,0.,0.],[.5,.2,0.]])
+        mesh=Mesh('wing',positions,np.array([[0,1,2]]))
+        weights=SkinWeights('wing',['wing-root.left'],np.zeros((3,1),dtype=np.int64),
+                            np.ones((3,1)),np.eye(4)[None,:,:])
+        rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},Geometry([mesh]),{'wing':weights})
+        pose=appendage_controls(rig,neutral_pose(skeleton),wing_twist=.7,wing_side='left')
+        actual=evaluate_deformation(rig,pose)['wing']['positions']
+        np.testing.assert_allclose(actual[:2],positions[:2],atol=1e-12)
+        self.assertGreater(abs(actual[2,2]),.05)
+    def test_wing_twist_preserves_length_under_nonuniform_rest_scale_and_parent_transform(self):
+        # Imported frames need not align +Y to the authored length. Parent scale
+        # stays in the world mapping; local scale is applied before the twist.
+        cases=[
+            (None,[0,0,0,1],[2.,1.,1.],[1.,1.,0.]),
+            (None,axis_angle([1,2,3],.4).tolist(),[2.,.7,1.3],[.8,1.1,.4]),
+            (compose([.4,-.3,.2],axis_angle([1,2,3],.6),[1.5,.8,2.]),
+             [0,0,0,1],[2.,.7,1.3],[.8,1.1,.4]),
+            (compose([.4,-.3,.2],axis_angle([1,2,3],.6),[1.4,1.4,1.4]),
+             axis_angle([2,-1,1],.5).tolist(),[2.,.7,1.3],[.8,1.1,.4])]
+        for parent,rotation,scale,direction in cases:
+            with self.subTest(parent=parent is not None,rotation=rotation):
+                parent_world=np.eye(4) if parent is None else parent
+                translation=[0.,0.,0.] if parent is None else [.3,.4,.2]
+                rest=parent_world @ compose(translation,rotation,scale)
+                head=rest[:3,3];frame=parent_world[:3,:3] @ qmatrix(rotation)
+                tail=head+frame @ direction
+                specs=[]
+                if parent is not None:
+                    specs.append(dict(id='body',role='body',parent=None,
+                        head=parent[:3,3].tolist(),tail=(parent[:3,3]+parent[:3,1]).tolist()))
+                specs.append(dict(id='wing-root.left',role='wing-root.left',
+                    parent=None if parent is None else 'body',head=head.tolist(),tail=tail.tolist()))
+                skeleton=skeleton_from_heads(specs)
+                if parent is not None:skeleton['bones'][0]['rest']=decompose(parent)
+                skeleton['bones'][-1]['rest']=dict(translation=translation,rotation=rotation,scale=scale)
+                validate_skeleton(skeleton)
+                positions=np.array([head,tail,head+frame @ [0.,0.,.3]])
+                mesh=Mesh('wing',positions,np.array([[0,1,2]]))
+                weights=SkinWeights('wing',['wing-root.left'],np.zeros((3,1),dtype=np.int64),
+                                    np.ones((3,1)),np.linalg.inv(rest)[None,:,:])
+                rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},
+                             Geometry([mesh]),{'wing':weights})
+                neutral=neutral_pose(skeleton)
+                np.testing.assert_allclose(evaluate_deformation(rig,neutral)['wing']['positions'],
+                                           positions,rtol=0,atol=1e-12)
+                axis=np.asarray(direction)/np.linalg.norm(direction)
+                vectors=np.linalg.solve(frame,(positions-head).T).T
+                for amount in (-1.,0.,.7,1.):
+                    with self.subTest(amount=amount):
+                        pose=appendage_controls(rig,neutral,wing_twist=amount,wing_side='left')
+                        actual=evaluate_deformation(rig,pose)['wing']['positions']
+                        # Independent Rodrigues oracle in the pre-scale rotation
+                        # space, then restore the complete parent world mapping.
+                        angle=-amount*.7
+                        rotated=(vectors*np.cos(angle)+np.cross(axis,vectors)*np.sin(angle)
+                                 +np.outer(vectors @ axis,axis)*(1-np.cos(angle)))
+                        expected=head+rotated @ frame.T
+                        np.testing.assert_allclose(actual,expected,rtol=0,atol=1e-12)
+                        np.testing.assert_allclose(actual[:2],positions[:2],rtol=0,atol=1e-12)
+                        if amount:self.assertGreater(np.linalg.norm(actual[2]-positions[2]),.01)
+                        else:np.testing.assert_allclose(actual,positions,rtol=0,atol=1e-12)
+                self.assertEqual(neutral,neutral_pose(skeleton))
+
     def test_expression_conflicts_and_unavailable_controls_fail(self):
         r=deepcopy(self.humanoid);r.manifest['facial']['expressions']['blink']['incompatible']=['squint']
         r.manifest['facial']['expressions']['squint']=dict(schema_version=1,morphs={'blink':.5},bones={},incompatible=['blink'])
@@ -124,6 +217,24 @@ class RigSpecializationTests(unittest.TestCase):
         self.assertGreater(max(np.max(np.abs(after[name]['positions']-value['positions']))
                                for name,value in before.items()),.01)
         self.assertIn('expressive-face',rig_capabilities(r))
+    def test_state_work_estimate_counts_unique_existing_clips_without_generation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory)
+            result=map_states(rig,recipes={'static-neutral':['bend','neutral','bend']},selected=['static-neutral'])
+            estimate=result['work_estimate']
+            self.assertEqual(estimate['clip_ids'],['bend','neutral'])
+            self.assertEqual(estimate['unique_clips'],2)
+            self.assertEqual(estimate['duration_seconds'],2.)
+            self.assertEqual(estimate['frame_samples'],26)
+            self.assertEqual(estimate['keyframes'],5)
+            self.assertEqual(estimate['keyframe_scalar_values'],20)
+            self.assertEqual(estimate['float64_position_bytes_per_frame'],96)
+            self.assertEqual(estimate['float64_all_sample_position_bytes'],2496)
+            self.assertEqual(estimate['model_calls'],0)
+            self.assertIsNone(estimate['encoded_output_bytes'])
+            missing=map_states(rig,recipes={'static-neutral':'missing'},selected=['static-neutral'])
+            self.assertEqual(missing['work_estimate']['frame_samples'],0)
+            self.assertEqual(missing['work_estimate']['unique_clips'],0)
     def test_attach_detach_and_owner_transfer_preserve_world_space(self):
         r=self.humanoid;pose=neutral_pose(r.skeleton);matrix=socket_world(r,pose,'grip.right')
         prop=dict(id='cube',owner=None,socket=None,transform=decompose(matrix))
