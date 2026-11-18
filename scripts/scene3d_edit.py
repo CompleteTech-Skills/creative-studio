@@ -107,7 +107,9 @@ def _apply_commands(graph, library, commands):
         results.append(result)
     for path, payload in library.payloads().items():
         if path not in original_payloads:
-            derived[path] = decode_json(payload)
+            # References bind exact bytes, including valid noncanonical JSON.
+            # Snapshot promotion already supports byte-valued documents.
+            derived[path] = payload
     return dict(results=results, derived_documents=derived)
 
 
@@ -135,7 +137,8 @@ def main(argv=None):
         batch = apply_commands(graph, library, commands)
         output = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
             scene_version=args.scene_version, project_version=args.project_version,
-            derived_documents=batch['derived_documents'])
+            derived_documents=batch['derived_documents'],
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         output['operations'] = len(batch['results'])
     print(json.dumps(output, ensure_ascii=False, allow_nan=False, indent=2))
     return 0

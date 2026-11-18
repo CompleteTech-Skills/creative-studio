@@ -11,7 +11,7 @@ import zlib
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import RigError, require, sha256, slug, timestamp
+from rig_errors import RigError, require, slug, timestamp
 from rig_geometry import analyze_geometry, vertex_normals
 from rig_gltf import GltfDocument, _index, node_matrix, read_gltf, scene_graph
 from rig_math import decompose, transform_points
@@ -171,26 +171,54 @@ def _images(document: GltfDocument) -> list[TextureImage]:
     return images
 
 
-def _import_skeleton(document: GltfDocument, parents, world, order, scale):
-    nodes = document.json['nodes'];skins = document.json.get('skins', [])
-    deform = set()
+def skeleton_nodes(document: GltfDocument, parents, world, order):
+    """Select and admit native bones before constructing their records."""
+    nodes = document.json['nodes']
+    skins = document.json.get('skins', [])
+    needed, deform = set(), set()
+    root_count = 0
+
+    def include(node):
+        nonlocal root_count
+        while node is not None and node not in needed:
+            needed.add(node)
+            node = parents.get(node)
+            if node is None:
+                root_count += 1
+            require(len(needed) + (root_count > 1) <= document.limits['bones'],
+                    'RIG_LIMIT_BONES', 'Bone budget exceeded.')
+
     for skin in skins:
         joints = skin.get('joints', [])
-        require(bool(joints) and len(set(joints)) == len(joints), 'RIG_SKIN_JOINT', 'Imported skin joints must be nonempty and unique.')
+        require(bool(joints), 'RIG_SKIN_JOINT', 'Imported skin joints must be nonempty and unique.')
+        seen = set()
         for joint in joints:
-            _index(joint, len(nodes), 'joint');require(joint in world, 'RIG_SKIN_SCENE', 'Skin joint is outside the selected scene.')
-        deform.update(joints)
-    animated_nodes = {c['target']['node'] for a in document.json.get('animations', []) for c in a.get('channels', [])
-                      if c['target'].get('path') != 'weights' and 'node' in c.get('target', {})}
-    require(animated_nodes <= set(world), 'RIG_ANIMATION_SCENE', 'Animation targets nodes outside the selected scene.')
-    if not skins and not animated_nodes:return None, {}, world
-    # Unskinned parts get a rigid joint at their original scene transform.
-    rigid = {i for i in order if 'mesh' in nodes[i] and 'skin' not in nodes[i]}
-    deform.update(rigid)
-    needed = set(deform) | animated_nodes
-    for i in list(needed):
-        while i in parents:
-            i = parents[i];needed.add(i)
+            _index(joint, len(nodes), 'joint')
+            require(joint not in seen, 'RIG_SKIN_JOINT', 'Imported skin joints must be nonempty and unique.')
+            require(joint in world, 'RIG_SKIN_SCENE', 'Skin joint is outside the selected scene.')
+            seen.add(joint)
+            deform.add(joint)
+            include(joint)
+    for animation in document.json.get('animations', []):
+        for channel in animation.get('channels', []):
+            target = channel['target']
+            if target.get('path') != 'weights' and 'node' in target:
+                node = target['node']
+                require(node in world, 'RIG_ANIMATION_SCENE', 'Animation targets nodes outside the selected scene.')
+                include(node)
+    # Unskinned parts get a rigid joint when the scene needs a skeleton.
+    if needed:
+        for node in order:
+            if 'mesh' in nodes[node] and 'skin' not in nodes[node]:
+                deform.add(node)
+                include(node)
+    return needed, deform, root_count > 1
+
+
+def _import_skeleton(document: GltfDocument, parents, world, order, scale):
+    nodes = document.json['nodes']
+    needed, deform, virtual = skeleton_nodes(document, parents, world, order)
+    if not needed:return None, {}, world
     order = [i for i in order if i in needed]
     ids, used = {}, set()
     for i in order:
@@ -199,7 +227,6 @@ def _import_skeleton(document: GltfDocument, parents, world, order, scale):
         require(isinstance(name, str) and name not in used, 'RIG_DUPLICATE_BONE', 'Imported bone identity is repeated.')
         ids[i] = name;used.add(name)
     roots = [i for i in order if i not in parents]
-    virtual = len(roots) > 1
     normalized = {i: np.diag([scale, scale, scale, 1.]) @ world[i] for i in order}
     bones = []
     if virtual:
@@ -271,14 +298,14 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
                 loop=False, tracks=tracks, events=[], contacts=[], root_motion='embedded', interruptible=True,
                 reduced_motion_pose='neutral', provenance=dict(schema_version=1, tool_version='1.0.0',
                 operation='Imported existing glTF animation', created_at=timestamp(),
-                input_hashes={'source': sha256(document.path)}, ancestry=[]))
+                input_hashes={'source': document.source_sha256}, ancestry=[]))
     return clips
 
 
-def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
-    document = read_gltf(path, limits)
+def _gltf_model(path, *, scale=1., limits=None, source_reader=None, _animation_targets=None) -> ImportedModel:
+    document = read_gltf(path, limits, source_reader=source_reader)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
-    parents, world, order = scene_graph(document)
+    parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
     geometry = Geometry([], deepcopy(document.json.get('materials', [])), _images(document),
                         deepcopy(document.json.get('textures', [])), deepcopy(document.json.get('samplers', [])),
@@ -387,21 +414,27 @@ def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
     report = analyze_geometry(geometry, document.limits)
     report.update(import_format=Path(path).suffix.lower(), scale_conversion=scale,
                   preserved_existing_rig=skeleton is not None, preserved_animation_clips=len(clips),
-                  source_sha256=sha256(path), warnings=document.warnings)
+                  source_sha256=document.source_sha256, warnings=document.warnings)
     extra = document.json.get('asset', {}).get('extras', {})
     report['fixture'] = bool(extra.get('hatchSource', {}).get('fixture', False) or extra.get('hatchRig', {}).get('fixture', False))
+    if _animation_targets is not None:
+        _animation_targets.update(bones=ids, meshes=node_meshes)
     return ImportedModel(geometry, document.dependencies, skeleton, weights, clips, report)
 
 
-def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None) -> ImportedModel:
+def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None,
+                         source_reader=None, _animation_targets=None) -> ImportedModel:
+    """Load a model, optionally exposing the glTF target ID maps to the verifier."""
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Choose a regular model file.')
     suffix = path.suffix.lower()
     if suffix == '.obj':
         from rig_obj import import_obj
-        return import_obj(path, scale=scale, limits=limits)
+        return import_obj(path, scale=scale, limits=limits, source_reader=source_reader)
     if suffix == '.blend':
+        require(source_reader is None, 'RIG_SOURCE_READER', 'Controlled source readers support GLB, glTF and OBJ only.')
         from rig_blender import import_blend
         return import_blend(path, scale=scale, limits=limits, executable=blender)
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
-    return _gltf_model(path, scale=scale, limits=limits)
+    return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader,
+                       _animation_targets=_animation_targets)

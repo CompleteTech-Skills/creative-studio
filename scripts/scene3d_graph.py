@@ -537,6 +537,10 @@ class SceneGraph:
     def derived_documents(self):
         return deepcopy(self._derived_documents)
 
+    def animation_payloads(self):
+        """Return exact immutable animation bytes for downstream owner admission."""
+        return dict(self._animation_payloads)
+
     def _map_clip(self, reference, mapping, context, derived, depth=0, state=None):
         if reference['kind'] != 'scene3d-animation':
             return deepcopy(reference)
@@ -724,6 +728,7 @@ class SceneGraph:
             return result
         for current in chosen:
             result = deepcopy({k: v for k, v in evaluate(current).items() if not k.startswith('_')})
+            result['own_world_bounds'] = deepcopy(result['world_bounds'])
             result['world_bounds'] = deepcopy(aggregate(current))
             if self._isolate is not None:
                 result['editor_visible'] = result['editor_visible'] and current in self._isolate

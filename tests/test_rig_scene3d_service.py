@@ -1,4 +1,5 @@
 """Operational hierarchy/prefab/import acceptance using real native files."""
+from contextlib import nullcontext
 from copy import deepcopy
 import base64
 import hashlib
@@ -8,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -25,6 +27,7 @@ from scene3d_import import (add_import, evaluate_imported_vertices, import_gltf,
                             materialize, source_snapshot, resolve_import, edit_mesh_vertices)
 from scene3d_edit import apply_commands
 from scene3d_prefabs import PrefabLibrary
+import scene3d_snapshot
 from scene3d_snapshot import snapshot_project
 
 
@@ -35,6 +38,24 @@ class SceneServiceTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.bundle = build_example(self.root/'source')
         self.scene = deepcopy(self.bundle['documents']['example-scene.json'])
+
+    @unittest.skipUnless((hasattr(os, 'O_PATH') or hasattr(os, 'O_SEARCH')) and os.geteuid() != 0,
+                         'Requires directory search descriptors and an unprivileged user')
+    def test_load_project_through_search_only_ancestor(self):
+        parent = self.root/'search-only'
+        parent.mkdir(mode=0o700)
+        source = parent/'source'
+        (self.root/'source').rename(source)
+        parent.chmod(0o100)
+        try:
+            self.assertTrue(os.access(parent, os.X_OK))
+            with self.assertRaises(PermissionError):
+                list(parent.iterdir())
+
+            verified = load_project(source)
+            self.assertEqual(verified['inventory'], self.bundle['inventory'])
+        finally:
+            parent.chmod(0o700)
 
     def nested_catalog(self, *, property='translation'):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
@@ -73,6 +94,7 @@ class SceneServiceTests(unittest.TestCase):
             destination = self.root/('invalid-nested-'+str(index))
             with self.assertRaises(RigError):
                 snapshot_project(self.root/'source', destination, malformed, scene_path='example-scene.json',
+                    expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
                     derived_documents={outer['path']:outer_doc, inner['path']:inner_doc})
             self.assertFalse(destination.exists())
 
@@ -94,6 +116,7 @@ class SceneServiceTests(unittest.TestCase):
             validate_prefab_instances(graph.document(), library.resolve, max_nodes=evidence['expanded_nodes']-1)
         destination = self.root/'valid-nested'
         snapshot = snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
             derived_documents={outer['path']:outer_doc, inner['path']:inner_doc})
         reopened = load_project(destination)
         self.assertEqual(reopened['status'], 'hash-and-contract-verified')
@@ -200,7 +223,8 @@ class SceneServiceTests(unittest.TestCase):
         bundle['documents']['example-scene.json'] = scene
         exact = SceneGraph.from_bundle(bundle,'example-scene.json',source_root=self.root/'source')
         exact.duplicate('mesh','portable-copy')
-        snapshot_project(self.root/'source',self.root/'noncanonical-copy',exact,scene_path='example-scene.json')
+        snapshot_project(self.root/'source',self.root/'noncanonical-copy',exact,scene_path='example-scene.json',
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         self.assertEqual((self.root/'noncanonical-copy'/reference['path']).read_bytes(),payload)
         load_project(self.root/'noncanonical-copy')
 
@@ -352,7 +376,8 @@ class SceneServiceTests(unittest.TestCase):
         clip = next(iter(copied['derived_documents'].values()))
         self.assertEqual(clip['tracks'][0]['target'], 'mesh-copy')
         self.assertEqual(original, bundle['documents']['example-animation.json'])
-        snapshot_project(self.root/'source', self.root/'animated-copy', graph, scene_path='example-scene.json')
+        snapshot_project(self.root/'source', self.root/'animated-copy', graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'])
         reopened = load_project(self.root/'animated-copy')
         self.assertTrue(any(d['kind'] == 'scene3d-animation' and d['id'] == clip['id'] for d in reopened['documents'].values()))
         missing = self.graph(scene)
@@ -614,6 +639,92 @@ class SceneServiceTests(unittest.TestCase):
         self.assertTrue(library.upgrade(graph, 'instance', r1, resolutions={'node:prefab-mesh:transform': 'source'})['applied'])
         self.assertEqual(library.resolve(r2)['nodes'][1]['transform']['translation'], [5, 0, 0])
 
+    def test_prefab_from_animated_duplicate_retains_exact_transitive_clip_closure(self):
+        scene = deepcopy(self.scene)
+        reference = self.bundle['project']['animations'][0]
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        raw = canonical_bytes(self.bundle['documents'][reference['path']])
+        graph = SceneGraph(scene, animation_payloads={reference['path']: raw})
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        duplicate = graph.duplicate('mesh', 'animated-copy')
+        exact_payloads = graph.animation_payloads()
+        created = library.create(graph, 'animated-copy', 'copied-prefab', '1.0.0')
+        for path in duplicate['derived_documents']:
+            self.assertEqual(library.payloads()[path], exact_payloads[path])
+        library.instantiate(graph, created['reference'], 'copied-instance')
+        expanded = library.expand(graph.document())
+        self.assertTrue(expanded['derived_documents'])
+        targets = {n['id'] for n in expanded['scene']['nodes']}
+        for clip in expanded['derived_documents'].values():
+            self.assertTrue({track['target'] for track in clip['tracks']} <= targets)
+        self.assertEqual(graph.animation_payloads(), exact_payloads)
+
+    def test_prefab_batch_snapshot_preserves_noncanonical_source_and_mapped_clip_bytes(self):
+        for duplicate in (False, True):
+            with self.subTest(duplicate=duplicate):
+                clip = deepcopy(self.bundle['documents']['example-animation.json'])
+                clip['id'] = 'owned-noncanonical-clip'
+                raw = (json.dumps(clip, indent=3)+'\n').encode()
+                path = 'animations/owned-noncanonical-clip/1.0.0.json'
+                reference = dict(id=clip['id'], version=clip['version'], kind=clip['kind'],
+                    path=path, sha256=hashlib.sha256(raw).hexdigest())
+                scene = deepcopy(self.scene)
+                scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+                    start_frame=0, end_frame=24, speed=1., loop=False)]
+                graph = SceneGraph(scene, animation_payloads={path:raw})
+                graph.replace_document(graph.document(), expected_revision=graph.revision)
+                library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+                commands = []
+                if duplicate:
+                    commands.append(dict(operation='duplicate', parameters=dict(identifier='mesh', new_id='copy')))
+                commands.append(dict(operation='prefab-create', parameters=dict(root_id='copy' if duplicate else 'mesh',
+                    identifier='noncanonical-prefab', version='1.0.0')))
+                batch = apply_commands(graph, library, dict(schema_version=1, commands=commands))
+                self.assertEqual(batch['derived_documents'][path], raw)
+                destination = self.root/('noncanonical-batch-'+str(duplicate))
+                snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+                    expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
+                    derived_documents=batch['derived_documents'])
+                reopened = load_project(destination)
+                self.assertEqual((destination/path).read_bytes(), raw)
+                self.assertEqual(reopened['inventory'][path]['sha256'], reference['sha256'])
+                for derived_path, document in graph.derived_documents().items():
+                    self.assertEqual((destination/derived_path).read_bytes(), canonical_bytes(document))
+                if duplicate:
+                    # Semantic JSON equality cannot replace a pinned byte identity.
+                    altered = dict(batch['derived_documents'])
+                    derived_path = next(iter(graph.derived_documents()))
+                    altered[derived_path] += b'\n'
+                    rejected = self.root/'changed-derived-must-not-publish'
+                    with self.assertRaises(RigError):
+                        snapshot_project(self.root/'source', rejected, graph, scene_path='example-scene.json',
+                            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
+                            derived_documents=altered)
+                    self.assertFalse(rejected.exists())
+
+    def test_prefab_clip_admission_failure_preserves_catalog_and_graph(self):
+        scene = deepcopy(self.scene)
+        reference = self.bundle['project']['animations'][0]
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        graph = SceneGraph(scene, animation_payloads={reference['path']:
+            canonical_bytes(self.bundle['documents'][reference['path']])})
+        graph.duplicate('mesh', 'atomic-copy')
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        before, sources = graph.document(), library.payloads()
+        with patch.object(graph, 'animation_payloads', return_value={}):
+            with self.assertRaises(RigError):
+                library.create(graph, 'atomic-copy', 'atomic-prefab', '1.0.0')
+        self.assertEqual(library.payloads(), sources)
+        with patch('scene3d_prefabs.MAX_FILES', len(sources)+1), self.assertRaises(RigError):
+            library.create(graph, 'atomic-copy', 'atomic-prefab', '1.0.0')
+        self.assertEqual(library.payloads(), sources)
+        self.assertEqual(graph.document(), before)
+        # No failed attempt reserved the immutable identity or its clip bytes.
+        created = library.create(graph, 'atomic-copy', 'atomic-prefab', '1.0.0')
+        library.instantiate(graph, created['reference'], 'atomic-instance')
+
     def test_prefab_animation_expansion_accounts_combined_bytes_and_inflight_files(self):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
         clip = deepcopy(self.bundle['documents']['example-animation.json'])
@@ -724,7 +835,8 @@ class SceneServiceTests(unittest.TestCase):
         t = deepcopy(TRANSFORM)
         t['translation'] = [8, 0, 0]
         graph.set_transform('mesh', t)
-        output = snapshot_project(self.root/'source', self.root/'portable', graph, scene_path='example-scene.json')
+        output = snapshot_project(self.root/'source', self.root/'portable', graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'])
         reopened = load_project(self.root/'portable')
         active = output['active_scene']
         self.assertEqual(reopened['documents'][active['path']]['nodes'][1]['transform']['translation'], [8, 0, 0])
@@ -740,12 +852,15 @@ class SceneServiceTests(unittest.TestCase):
         original = scene3d_snapshot._rename_no_replace
         destination = self.root/'race'
         inode = []
-        def race(stage, target):
-            target.mkdir()
-            inode.append(target.stat().st_ino)
-            return original(stage, target)
-        with patch.object(scene3d_snapshot, '_rename_no_replace', race), self.assertRaises(OSError):
+        def race(stage, target, **publication):
+            selected = destination if publication else target
+            selected.mkdir()
+            inode.append(selected.stat().st_ino)
+            return original(stage, target, **publication)
+        with patch.object(scene3d_snapshot, '_rename_no_replace', race), self.assertRaises(OSError) as caught:
             snapshot_project(self.root/'source', destination)
+        import errno
+        self.assertEqual(caught.exception.errno, errno.EEXIST)
         self.assertEqual(destination.stat().st_ino, inode[0])
         self.assertEqual(list(destination.iterdir()), [])
         old = scene3d_snapshot.read_source_bytes
@@ -789,7 +904,8 @@ class SceneServiceTests(unittest.TestCase):
         self.assertEqual(graph.revision, before['revision']+1)
         self.assertEqual(graph.query(name='Renamed triangle'), ['mesh'])
         self.assertEqual(graph.transform('mesh'), next(n for n in before['nodes'] if n['id'] == 'mesh')['transform'])
-        snapshot = snapshot_project(self.root/'source', self.root/'configured', graph, scene_path='example-scene.json')
+        snapshot = snapshot_project(self.root/'source', self.root/'configured', graph, scene_path='example-scene.json',
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'])
         reopened = load_project(self.root/'configured')['documents'][snapshot['active_scene']['path']]
         self.assertEqual(reopened['world']['exposure'], 1.5)
         self.assertEqual(next(n for n in reopened['nodes'] if n['id'] == 'camera')['camera'], camera)
@@ -826,12 +942,13 @@ class SceneServiceTests(unittest.TestCase):
         graph = SceneGraph.from_bundle(self.bundle, 'example-scene.json')
         library.instantiate(graph, reference, 'foreign-instance')
         output = snapshot_project(self.root/'source', self.root/'foreign-copy', graph, scene_path='example-scene.json',
-                                  derived_documents={path: payload})
+            expected_project_sha256=self.bundle['inventory']['project.json']['sha256'],
+            derived_documents={path: payload})
         self.assertEqual((self.root/'foreign-copy'/path).read_bytes(), payload)
         self.assertEqual(output['inventory'][path]['sha256'], hashlib.sha256(payload).hexdigest())
         load_project(self.root/'foreign-copy')
 
-    def test_hybrid_snapshot_delegates_complete_native_legacy_closure(self):
+    def _verify_hybrid_snapshot_round_trip(self):
         from production_fixture import build_fixture_project
         from production_contracts import load_project as load_legacy_project
         legacy_root = self.root/'source/legacy'
@@ -852,6 +969,51 @@ class SceneServiceTests(unittest.TestCase):
         for path, payload in before.items():
             self.assertEqual((self.root/'hybrid/legacy'/path).read_bytes(), payload)
         self.assertGreater(len(output['inventory']), len(self.bundle['inventory'])+len(legacy['inventory']))
+        return output
+
+    def test_hybrid_snapshot_delegates_complete_native_legacy_closure(self):
+        self._verify_hybrid_snapshot_round_trip()
+
+    @unittest.skipUnless(sys.platform == 'darwin' or sys.platform.startswith('linux'),
+                         'POSIX descriptor-relative snapshot publication')
+    def test_protected_descriptor_hybrid_snapshot_round_trip(self):
+        # Linux exercises the same consumer with its own kernel exclusive rename.
+        # In the macOS workflow the native platform dispatch needs no override.
+        routing = (nullcontext() if sys.platform == 'darwin'
+                   else patch.object(scene3d_snapshot, 'sys', SimpleNamespace(platform='darwin')))
+        with routing, patch.object(scene3d_snapshot, '_publish_snapshot_fd',
+                                   wraps=scene3d_snapshot._publish_snapshot_fd) as publisher:
+            output = self._verify_hybrid_snapshot_round_trip()
+            publisher.assert_called_once()
+        destination = self.root / 'hybrid'
+        observed = {}
+        for path in destination.rglob('*'):
+            if path.is_file():
+                data = path.read_bytes()
+                observed[path.relative_to(destination).as_posix()] = dict(
+                    bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+        self.assertEqual(observed, output['inventory'])
+        self.assertEqual(observed['project.json']['sha256'], output['project_sha256'])
+        stages = list(self.root.glob('.scene3d-snapshot-*'))
+        self.assertEqual(len(stages), 1)
+        self.assertEqual(list(stages[0].iterdir()), [])
+
+    @unittest.skipUnless(os.open in os.supports_dir_fd, 'descriptor-relative project reads')
+    def test_hybrid_legacy_descriptor_validates_canonical_fixture(self):
+        from production_fixture import build_fixture_project
+        from production_contracts import load_project as load_legacy_project, load_project_at
+        legacy_root = (self.root / 'source' / 'legacy').resolve()
+        build_fixture_project(legacy_root)
+        expected = load_legacy_project(legacy_root)
+        fd = os.open(legacy_root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            project_digest = hashlib.sha256((legacy_root / 'project.json').read_bytes()).hexdigest()
+            observed = load_project_at(fd, expected_project_sha256=project_digest)
+            self.assertEqual(os.fstat(fd).st_ino, legacy_root.stat().st_ino)
+        finally:
+            os.close(fd)
+        self.assertIsNone(observed['root'])
+        self.assertEqual(observed, dict(expected, root=None))
 
     def test_locked_promoted_child_and_invalid_contexts_are_structured(self):
         graph = self.graph()
@@ -1138,6 +1300,7 @@ class RealSceneImportTests(unittest.TestCase):
         payloads = {r['path']: self.library.read_file(imported.library_reference, r['path']) for r in manifest['files']
                     if r['path'] != imported.asset_reference['path']}
         result = snapshot_project(self.root/'project', self.root/'portable', graph, scene_path='example-scene.json',
+            expected_project_sha256=b['inventory']['project.json']['sha256'],
             derived_documents={imported.asset_reference['path']: imported.asset}, extra_payloads=payloads)
         reopened = load_project(self.root/'portable')
         self.assertIn(imported.asset_reference['path'], reopened['documents'])

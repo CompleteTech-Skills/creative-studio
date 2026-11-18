@@ -9,13 +9,14 @@ import base64
 from copy import deepcopy
 from dataclasses import dataclass, field
 import json
+import hashlib
 from pathlib import Path
 import struct
 from urllib.parse import unquote, urlsplit
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS, validate_contract
-from rig_errors import RigError, atomic_bytes, decode_json, require, safe_path
+from rig_errors import RigError, atomic_bytes, decode_json, require, safe_path, normalize_root
 from rig_math import compose, qmatrix, quaternion, vector
 
 DTYPES = {5120: np.dtype('i1'), 5121: np.dtype('u1'), 5122: np.dtype('<i2'),
@@ -45,6 +46,8 @@ class GltfDocument:
     limits: dict
     dependencies: list[Path] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    source_reader: object = None
+    source_sha256: str | None = None
 
     def uri(self, uri: str, maximum: int | None = None) -> bytes:
         maximum = maximum or self.limits['source_bytes']
@@ -59,6 +62,10 @@ class GltfDocument:
         require(not parts.scheme and not parts.netloc and not parts.query and not parts.fragment,
                 'RIG_GLTF_URI', 'Only local relative glTF dependencies are supported.')
         target = safe_path(self.path.parent, unquote(parts.path, errors='strict'), exists=True)
+        if self.source_reader is not None:
+            payload = self.source_reader(target, maximum)
+            if target not in self.dependencies:self.dependencies.append(target)
+            return payload
         require(target.stat().st_size <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
         if target not in self.dependencies:self.dependencies.append(target)
         require(sum(p.stat().st_size for p in self.dependencies) <= self.limits['dependency_bytes'],
@@ -119,13 +126,17 @@ class GltfDocument:
         return data
 
 
-def read_gltf(path: str | Path, limits=None) -> GltfDocument:
+def read_gltf(path: str | Path, limits=None, *, source_reader=None) -> GltfDocument:
     limits = dict(limits or DEFAULT_LIMITS)
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Model must be a regular local file.')
-    path = path.resolve()
-    require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
-    raw = path.read_bytes();binary = None
+    path = path.absolute() if source_reader is not None else normalize_root(path.parent)/path.name
+    if source_reader is None:
+        require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
+        raw = path.read_bytes()
+    else:
+        raw = source_reader(path, limits['source_bytes'])
+    binary = None
     if path.suffix.lower() == '.glb':
         require(len(raw) >= 20, 'RIG_GLB_HEADER', 'GLB is truncated.')
         magic, version, length = struct.unpack_from('<4sII', raw)
@@ -148,7 +159,8 @@ def read_gltf(path: str | Path, limits=None) -> GltfDocument:
             'RIG_GLTF_VERSION', 'Only glTF 2.0 is supported.')
     missing = set(document.get('extensionsRequired', []))-MATERIAL_EXTENSIONS
     require(not missing, 'RIG_GLTF_EXTENSION', 'Decode required unsupported extensions before import.', observed=sorted(missing))
-    result = GltfDocument(path, document, [], limits, [path])
+    result = GltfDocument(path, document, [], limits, [path], source_reader=source_reader,
+                          source_sha256=hashlib.sha256(raw).hexdigest())
     buffers = document.get('buffers', [])
     require(len(buffers) <= 1024, 'RIG_GLTF_BUFFER', 'Too many buffers.')
     total = sum(_count(b.get('byteLength'), 'buffer byte length', limits['dependency_bytes']) for b in buffers)
@@ -171,12 +183,52 @@ def node_matrix(node: dict) -> np.ndarray:
         rotation = quaternion(node.get('rotation', [0, 0, 0, 1]), strict=True)
         scale = vector(node.get('scale', [1, 1, 1]));translation = vector(node.get('translation', [0, 0, 0]))
         result = np.eye(4);result[:3, :3] = qmatrix(rotation) @ np.diag(scale);result[:3, 3] = translation
-    require(np.allclose(result[3], [0, 0, 0, 1]) and abs(np.linalg.det(result[:3, :3])) > 1e-12,
+    return _validate_node_transform(result, local=True)
+
+
+def _validate_node_transform(result: np.ndarray, *, local=False) -> np.ndarray:
+    require(np.isfinite(result).all(), 'RIG_GLTF_NUMERIC_RANGE', 'Composed node transform is not finite.')
+    require(np.allclose(result[3], [0, 0, 0, 1]),
             'RIG_SINGULAR_TRANSFORM', 'Node transform must be affine and nonsingular.')
+    # Determinants carry cubic units: a well-conditioned micrometer conversion
+    # has det=1e-18. Extend the old admission using column directions, while
+    # preserving previously accepted static shear and anisotropy.
+    linear = result[:3, :3]
+    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        determinant = np.linalg.det(linear)
+    if local:
+        magnitudes = np.max(np.abs(linear), axis=0)
+        require(np.all(magnitudes > 0), 'RIG_SINGULAR_TRANSFORM', 'Node transform has a zero scale axis.')
+        require(abs(determinant) > 1e-12 or abs(np.linalg.det(linear / magnitudes)) > 1e-12,
+                'RIG_SINGULAR_TRANSFORM', 'Node transform axes are numerically dependent.')
+    # Existing mesh consumers use this determinant's sign for winding and
+    # tangent handedness. Do not admit a scale whose signed volume underflows
+    # to zero or overflows, even if its abstract inverse would exist.
+    require(np.isfinite(determinant) and determinant != 0,
+            'RIG_GLTF_NUMERIC_RANGE', 'Node transform handedness is outside the float64 range.')
+    # A nonzero determinant alone does not guarantee that downstream inverse
+    # transforms (including translation) are representable in float64.
+    try:
+        with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
+            inverse = np.linalg.inv(result)
+            inverse_linear = np.linalg.inv(linear)
+    except np.linalg.LinAlgError as exc:
+        raise RigError('RIG_SINGULAR_TRANSFORM', 'Node transform cannot be inverted.') from exc
+    require(np.isfinite(inverse).all(), 'RIG_GLTF_NUMERIC_RANGE', 'Node transform inverse is not finite.')
+    # A unit normal has components <=1. Each transformed component is bounded
+    # by 3*max(inverse), and its squared length by 27*max(inverse)**2. Leave
+    # headroom below float64's maximum for the existing direction normalization.
+    require(np.isfinite(inverse_linear).all()
+            and np.max(np.abs(inverse_linear)) <= np.sqrt(np.finfo(float).max)/6,
+            'RIG_GLTF_NUMERIC_RANGE', 'Node inverse directions exceed the float64 normalization range.')
     return result
 
 
-def scene_graph(document: GltfDocument) -> tuple[dict, dict, list[int]]:
+def scene_graph(document: GltfDocument, *, import_scale=1.) -> tuple[dict, dict, list[int]]:
+    """Return source worlds, checking their eventual import-unit conversion too."""
+    require(np.isfinite(import_scale) and 0 < import_scale <= 10000,
+            'RIG_SCALE', 'Import scale must be finite and positive.')
+    conversion = np.diag([import_scale, import_scale, import_scale, 1.])
     nodes = document.json.get('nodes', [])
     require(len(nodes) <= 10000, 'RIG_LIMIT_NODES', 'Scene node count exceeds the bound.')
     parents = {}
@@ -191,16 +243,129 @@ def scene_graph(document: GltfDocument) -> tuple[dict, dict, list[int]]:
     roots = selected.get('nodes', [])
     require(len(set(roots)) == len(roots), 'RIG_GLTF_HIERARCHY', 'Scene roots must be unique.')
     world, active, order = {}, set(), []
-    def visit(i, parent_world):
+    def visit(i, parent_world, depth=0):
+        require(depth <= 256, 'RIG_LIMIT_DEPTH', 'glTF hierarchy exceeds the supported depth of 256.')
         _index(i, len(nodes), 'scene node')
         require(i not in active and i not in world, 'RIG_GLTF_HIERARCHY', 'Scene node hierarchy has a cycle or repeated instance.')
-        active.add(i);world[i] = parent_world @ node_matrix(nodes[i]);order.append(i)
-        for child in nodes[i].get('children', []):visit(child, world[i])
+        active.add(i)
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            world[i] = _validate_node_transform(parent_world @ node_matrix(nodes[i]))
+            if import_scale != 1.:_validate_node_transform(conversion @ world[i])
+        order.append(i)
+        for child in nodes[i].get('children', []):visit(child, world[i], depth + 1)
         active.remove(i)
     for root in roots:
         require(root not in parents, 'RIG_GLTF_HIERARCHY', 'A scene root cannot also have a parent.')
         visit(root, np.eye(4))
     return parents, world, order
+
+
+def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -> dict:
+    """Admit aggregate raw glTF work before accessor/mesh materialization.
+
+    Reuses the canonical native load-budget policy and selected scene authority.
+    ``encoded_bytes`` is the caller's measured, exact source-closure size; this
+    helper never reopens paths or bypasses captured/descriptor reader APIs.
+    Counts include every active mesh INSTANCE, not just unique accessors. The
+    estimate covers geometry loading only: decoded image capacity must be
+    admitted separately before image decoding. No process RSS or OS isolation.
+    """
+    from rig_load_limits import LoadBudget, effective_limits, _JSON_FACTOR
+    caps = effective_limits(document.limits, limits)
+    budget = LoadBudget(caps)
+    size = _count(encoded_bytes, 'encoded source closure', caps['dependency_bytes'])
+    require(size > 0, 'RIG_GLTF_COUNT', 'Measured encoded source closure must be nonempty.')
+    budget.input_bytes = size
+    budget.json_bytes = size  # Conservative encoded-closure upper bound.
+    budget.add(size * _JSON_FACTOR, 'captured glTF JSON/buffer metadata estimate')
+    try:
+        body = document.json
+        require(isinstance(body, dict), 'RIG_GLTF_PREFLIGHT', 'glTF root must be an object.')
+        nodes = body.get('nodes', [])
+        accessors = body.get('accessors', [])
+        meshes = body.get('meshes', [])
+        require(isinstance(nodes, list) and isinstance(accessors, list) and isinstance(meshes, list),
+                'RIG_GLTF_PREFLIGHT', 'Node, accessor and mesh inventories must be arrays.')
+        require(len(nodes) <= 10000, 'RIG_LIMIT_NODES', 'Scene node count exceeds the native bound.')
+        # Charge before scene_graph allocates matrices/parentage, and before
+        # native import constructs rest/bone metadata for the selected graph.
+        budget.add(len(nodes) * 2048, 'native hierarchy/rest metadata workspace')
+        counts = []
+        widths = []
+        for accessor in accessors:
+            require(isinstance(accessor, dict), 'RIG_GLTF_ACCESSOR', 'Accessor must be an object.')
+            width = WIDTHS.get(accessor.get('type'))
+            require(width is not None and accessor.get('componentType') in DTYPES,
+                    'RIG_GLTF_ACCESSOR', 'Unsupported accessor type or component type.')
+            count = _count(accessor.get('count'), 'accessor', max(caps['vertices'], caps['keyframes'] * 128))
+            require(count > 0, 'RIG_GLTF_COUNT', 'Accessor count must be positive.')
+            # Reader copy, float conversion, canonical transform and retained
+            # data can coexist. Native LoadBudget owns the cumulative ceiling.
+            amount = count * width * 8 * 4
+            budget.add(amount, 'aggregate glTF accessor working arrays')
+            budget.array_bytes += amount
+            counts.append(count)
+            widths.append(width)
+        parents, world, order = scene_graph(document)
+        vertices = triangles = instances = 0
+        for node_id in order:
+            node = nodes[node_id]
+            if 'mesh' not in node:
+                continue
+            mesh = meshes[_index(node['mesh'], len(meshes), 'mesh')]
+            require(isinstance(mesh, dict) and isinstance(mesh.get('primitives'), list),
+                    'RIG_GLTF_PREFLIGHT', 'Mesh primitives must be an array.')
+            for primitive in mesh['primitives']:
+                require(isinstance(primitive, dict), 'RIG_GLTF_PREFLIGHT', 'Primitive must be an object.')
+                require(primitive.get('mode', 4) == 4, 'RIG_PRIMITIVE_MODE',
+                        'Triangulate non-triangle primitives before native import.')
+                attributes = primitive['attributes']
+                require(isinstance(attributes, dict), 'RIG_GLTF_PREFLIGHT', 'Primitive attributes must be an object.')
+                position = _index(attributes['POSITION'], len(accessors), 'position accessor')
+                require(accessors[position]['type'] == 'VEC3', 'RIG_GLTF_ACCESSOR', 'Position accessor must use VEC3.')
+                count = counts[position]
+                index = primitive.get('indices')
+                if index is not None:
+                    index = _index(index, len(accessors), 'triangle accessor')
+                    require(accessors[index]['type'] == 'SCALAR', 'RIG_GLTF_ACCESSOR', 'Triangle index accessor must be scalar.')
+                    elements = counts[index]
+                else:
+                    elements = count
+                require(elements % 3 == 0, 'RIG_TRIANGLES', 'Triangle index count must be divisible by three.')
+                vertices += count
+                triangles += elements // 3
+                instances += 1
+                require(vertices <= caps['vertices'], 'RIG_LIMIT_VERTICES',
+                        'Aggregate active mesh instances exceed the vertex budget.', expected=caps['vertices'], observed=vertices)
+                require(triangles <= caps['triangles'], 'RIG_LIMIT_TRIANGLES',
+                        'Aggregate active mesh instances exceed the triangle budget.', expected=caps['triangles'], observed=triangles)
+                targets = primitive.get('targets', [])
+                require(isinstance(targets, list) and len(targets) <= caps['morphs'],
+                        'RIG_LIMIT_MORPHS', 'Primitive morph target inventory exceeds the native cap.')
+                sites = list(attributes.values())
+                if index is not None:
+                    sites.append(index)
+                for target in targets:
+                    require(isinstance(target, dict), 'RIG_GLTF_PREFLIGHT', 'Morph target must be an object.')
+                    sites.extend(target.values())
+                amount = 0
+                for site in sites:
+                    site = _index(site, len(accessors), 'instantiated geometry accessor')
+                    amount += counts[site] * widths[site] * 8 * 3
+                budget.add(amount, 'instantiated native mesh/skin/morph arrays')
+                budget.array_bytes += amount
+        return dict(budget.report(), method='native-gltf-load-conservative-v1',
+                    scope='geometry metadata/accessors/instances only; image decoding requires separate admission',
+                    images_admitted=False,
+                    encoded_bytes=size, vertices=vertices, triangles=triangles,
+                    mesh_instances=instances, active_nodes=len(order), accessors=len(accessors),
+                    limits=caps)
+    except RigError:
+        raise
+    except MemoryError as exc:
+        raise RigError('RIG_LIMIT_MEMORY', 'Native glTF preflight allocation failed.') from exc
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError, OverflowError, RecursionError) as exc:
+        raise RigError('RIG_GLTF_PREFLIGHT', 'Malformed native glTF metadata: ' + type(exc).__name__) from exc
 
 
 class GltfBuilder:

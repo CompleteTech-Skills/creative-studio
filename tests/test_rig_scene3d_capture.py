@@ -115,6 +115,8 @@ try:
  with capture_verified_files(sys.argv[1],json.loads(sys.argv[2])): raise AssertionError('FIFO admitted')
 except RigError: pass
 '''
+        scripts=str(Path(__file__).resolve().parents[1]/'scripts')
+        code='import sys; sys.path.insert(0, '+repr(scripts)+')\n'+code
         result=subprocess.run([sys.executable,'-c',code,str(self.root),json.dumps(self.inventory)],
                               capture_output=True,text=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
