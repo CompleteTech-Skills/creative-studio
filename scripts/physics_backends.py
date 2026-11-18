@@ -573,7 +573,7 @@ def _admit_world(value, backend):
     solver, budget = world['solver'], world['budgets']
     require(solver['backend'] == backend and solver['adapter_version'] == ADAPTER_VERSION,
             'PHYSICS_BACKEND', 'World must select this exact backend and adapter version.', category='invalid-input')
-    require(set(solver['required_categories']) == {'rigid-body'} and not world['components'] and not world['joints'] and not world['events'],
+    require(set(solver['required_categories']) == {'rigid-body'} and not world['components'] and not world['events'],
             'PHYSICS_CAPABILITY_UNAVAILABLE', 'Only uncoupled rigid-body worlds are implemented in this adapter.', category='capability-gap')
     require(solver['reproducibility'] in ('not-guaranteed', 'verified-cache-replay'),
             'PHYSICS_REPRODUCIBILITY', 'Recomputation is not promised deterministic; request verified cache replay or not-guaranteed.', category='capability-gap')
@@ -640,6 +640,8 @@ def _admit_world(value, backend):
                     target = expected[i] if i == j else 0.
                     require(abs(observed-target) <= max(expected)*1e-6,
                             'PHYSICS_INERTIA_UNSUPPORTED', 'Requested inertia differs from the native uniform primitive.', category='capability-gap')
+    from physics_joints import admit as admit_joints
+    admit_joints(world, backend)
     _admit_rigid_controls(world, backend)
     return world, math.ceil(steps_per_frame)
 
@@ -1005,7 +1007,7 @@ class BlenderBackend:
             native_reopen=replay, solver_report=report,
             native_consumption_control=control,
             native_continuation='unsupported-clean-restart-only',
-            unsupported=['joints','off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'],
+            unsupported=([] if world['joints'] else ['joints'])+['off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'],
             restart='clean-restart-only', artistic_review='not-performed')))
         files = tuple(_inventory(root))
         measured['output_bytes'] = sum(item['bytes'] for item in files)

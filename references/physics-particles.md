@@ -1,0 +1,21 @@
+# Bounded CPU particles
+
+`physics_particles.ParticleBackend` implements actual numerical point-mass evolution in an isolated package-owned Python subprocess. It is a separate backend named `particles-native` version `1.0.0`; Blender and the rigid-body DIRECT adapter continue to reject this backend. Native Scene3D project/scene/asset closures and the shared OBJ importer supply source geometry and world transforms. The adapter never executes supplied source code.
+
+The implemented slice of #178 supports seeded point, world-space axis-aligned box, bounding-sphere volume, and area-weighted mesh-surface emission; bounded rate/burst counts, spread, initial velocity, mass, gravity, constant force, linear drag and seeded piecewise-constant turbulence; exact rational birth/death/output times; stable component-local particle IDs; and evaluated octahedral OBJ geometry for every output sample. Count means maximum lifetime births, not a recycling population. Rate births start one period after emission start; emission end is excluded. Box and sphere emission are declared bounding-volume distributions rather than exact transformed mesh interiors.
+
+Between event boundaries, the solver analytically integrates constant acceleration and linear drag. Force/wind/turbulence strength is newtons, drag is kilograms/second, and gravity is meters/second². The fixed step divided by substeps is a maximum interval: births, deaths, force boundaries, and output timestamps split the grid further. Turbulence is stable within each fixed-grid cell. Numerical samples use float64; the same Python implementation and inputs reproduce particle state, with no cross-platform bitwise guarantee. Reported elapsed time naturally differs.
+
+Optional collisions use actual PyBullet **3.2.7** DIRECT closest-point queries of finite-radius spheres against explicitly referenced static collision proxies. Overlap projection and normal-velocity restitution implement `bounce`; contact-driven deaths implement `remove`. The exact binary/helper hashes, distribution/API version, pair inventory, query count and contact events are recorded. Native queries are discrete: fast particles can tunnel through thin geometry. There is no swept CCD, friction/spin, particle/particle collision, moving collider, rigid-body dynamics, or two-way momentum transfer. Nondefault masks, sensors, parents, joints and scene interaction events are rejected. Unsupported dependencies fail the job; they never produce successful collision evidence. Non-collision jobs need no PyBullet installation.
+
+Admission is bounded to 1,024 lifetime births across at most 64 emitters, at most 32 static colliders, 2–120 zero-origin output frames, 100,000 particle/frame pairs, 240 output frames/second, and an integration interval between 0.0001 and 0.1 seconds. World memory/cache/temporary/time budgets and additional worker operation/contact limits apply. Worker exit, cancellation, source mutation, failed ownership checks and occupied destinations cannot produce a successful publication. A prepared handle executes once. Completed caches are published exclusively and contain exact inputs, hashed worker job/source, states, events, solver report, usage and evaluated display geometry. Reopening snapshots the entire bounded inventory and checks hashes, original native source closure, worker-job identity, state structure and OBJ/state agreement. These are unsigned consistency checks, not authenticated proof of computation or a reusable solver checkpoint.
+
+Run examples using the optional interpreter when collisions are enabled:
+
+```bash
+python scripts/physics_particle_example.py /tmp/fountain --kind fountain --python /path/to/pybullet-3.2.7-python
+python scripts/physics_particle_example.py /tmp/sparks --kind sparks --collision remove --python /path/to/pybullet-3.2.7-python
+python scripts/physics_particles.py verify /tmp/fountain
+```
+
+`--collision none` executes using the default host Python. Output includes numerical states and renderable OBJ surfaces; it does not include a beauty render, renderer ingestion receipt, production review or human visual approval. The synthetic engineering fixture remains explicitly marked as a fixture. This work does not close parent physics stages, combined laboratory acceptance, particle rendering integration or outstanding #178 acceptance automatically.
