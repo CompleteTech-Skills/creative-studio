@@ -31,7 +31,27 @@ class IKResult:
                     orientation_residual_rad=self.orientation_residual_rad)
 
 
-def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_tolerance):
+def _fold_ray_angles(constant, cosine, sine, bounds):
+    """Finite circle/ray-box boundary intersections and their intervening arcs."""
+    angles = {0.}
+    lower, upper = bounds
+    values = (lower, (lower + upper) / 2, upper)
+    parts = np.array([constant, cosine, sine])
+    for i, j in ((0, 1), (0, 2), (1, 2)):
+        for first, second in product(values, repeat=2):
+            a, b, c = parts[:, i] * second[j] - parts[:, j] * first[i]
+            radius = math.hypot(b, c)
+            if radius and abs(a) <= radius * (1 + 32 * np.finfo(float).eps):
+                center = math.atan2(c, b)
+                offset = math.acos(float(np.clip(-a / radius, -1, 1)))
+                angles.update(((center - offset) % math.tau, (center + offset) % math.tau))
+    ordered = sorted(angles)
+    yield from ordered
+    for first, second in zip(ordered, [*ordered[1:], ordered[0] + math.tau]):
+        yield (first + second) / 2
+
+
+def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_tolerance, bounds):
     """Lift rotations that commute with the parent's stretch to the seed TRS."""
     left, scales, right_t = parent_axes
     # The orthogonal complement of a repeated pair is a distinguished axis.
@@ -50,7 +70,21 @@ def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_toleran
 
     if abs(transverse[0] - transverse[1]) <= 32 * np.finfo(float).eps * scales[0]:
         before, after = frame(source), frame(target)
-        symmetries = [(after * [sign, 1., sign]) @ before.T for sign in (1., -1.)]
+        def axial_symmetries():
+            for sign in (1., -1.):
+                yield (after * [sign, 1., sign]) @ before.T
+                axial = float(axis @ (left.T @ source))
+                radial = math.hypot(*(source - left @ axis * axial))
+                constant = left @ axis * (sign * axial)
+                cosine, sine = (left @ before[:, i] * radial for i in (1, 2))
+                # Coordinate intervals can have very different precision.
+                # Solve their ray boundaries instead of choosing only the
+                # azimuth of the rounded central pole position.
+                for angle in _fold_ray_angles(constant, cosine, sine, bounds):
+                    c, s = math.cos(angle), math.sin(angle)
+                    frame_turn = np.array([[1., 0., 0.], [0., c, -s], [0., s, c]])
+                    yield ((before @ frame_turn) * [sign, 1., sign]) @ before.T
+        symmetries = axial_symmetries()
     else:
         # Distinct singular values permit half turns about each principal axis.
         symmetries = [np.diag(2 * basis - 1) for basis in np.eye(3)]
@@ -87,12 +121,12 @@ def _fold_axis_permutations(root, seed, source):
             yield reoriented, axes @ (permutation @ coordinates)
 
 
-def _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance):
-    yield from _fold_parent_axis_turns(parent_axes, seed, source, direction, direction_tolerance)
+def _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
+    yield from _fold_parent_axis_turns(parent_axes, seed, source, direction, direction_tolerance, bounds)
     for permuted, axis in _fold_axis_permutations(root, seed, source):
         if np.max(np.abs(axis - direction)) <= direction_tolerance:
             yield permuted
-        yield from _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance)
+        yield from _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance, bounds)
 
 
 def _fold_root_transform(parent, root, seed, source, target, target_resolution):
@@ -105,8 +139,12 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     polynomial in that twist. Its half-angle substitution is a quartic, so
     checking the three finite root sets is bounded and needs no pose iteration.
     """
-    swing = qmatrix(qbetween(source, target))
-    source, direction = unit(source), unit(target)
+    # Normalize bounded vectors before the native quaternion helper squares
+    # their components. Pole distance must not change a representable ray.
+    target_scale = float(np.max(np.abs(target)))
+    target, target_resolution = target / target_scale, target_resolution / target_scale
+    source, direction = unit(source / np.max(np.abs(source))), unit(target)
+    swing = qmatrix(qbetween(source, direction))
     target_length = math.hypot(*target)
     identity = np.eye(3)
     # Cancel root column magnitudes before solving for the world turn. Local
@@ -129,6 +167,8 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     # the independently resolved coordinate intervals below, so a large X
     # origin cannot conceal a well-resolved mismatch in Y or Z.
     direction_tolerance = roundoff + 2 * math.hypot(*target_resolution) / target_length
+    extent = target_resolution / target_length + roundoff
+    bounds = (direction - extent, direction + extent)
 
     def pole_matches(axis):
         # A pole specifies a ray, not an elbow distance. Intersect the positive
@@ -182,7 +222,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     # Different sign choices can represent the same pole with different
     # rounding after FK. Prefer a well-resolved fit whenever one is available.
     closest, best_error = None, math.inf
-    for oriented in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance):
+    for oriented in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
         error = pole_error(oriented)
         if error <= 16 * eps:
             return oriented
@@ -343,11 +383,15 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
-    pole_delta = pole-origin
+    with np.errstate(over='ignore', invalid='ignore'):
+        pole_delta = pole-origin
+    require(np.isfinite(pole_delta).all(), 'RIG_NONFINITE', 'IK pole offset exceeds finite representation.')
+    pole_length = math.hypot(*pole_delta)
+    pole_direction = unit(pole_delta / np.max(np.abs(pole_delta))) if pole_length > 1e-9 else None
     matched_fold = (distance <= 1e-9 and np.linalg.norm(points[-1]-origin) <= 1e-9
                     and np.linalg.norm(points[-1]-target) <= tolerance
-                    and np.linalg.norm(pole_delta) > 1e-9
-                    and np.linalg.norm(unit(pole_delta)-unit(points[1]-origin)) <= 8*np.finfo(float).eps)
+                    and pole_length > 1e-9
+                    and np.linalg.norm(pole_direction-unit(points[1]-origin)) <= 8*np.finfo(float).eps)
     if matched_fold:
         # A closed chain has no endpoint axis from which to reconstruct its
         # interior. Keep its authoritative matched seed, then run the same
@@ -355,7 +399,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         result, changes = apply_pass(result)
     elif (distance <= 1e-9 and np.linalg.norm(points[-1]-origin) <= 1e-9
           and np.linalg.norm(points[-1]-target) <= tolerance
-          and np.linalg.norm(pole_delta) > 1e-9):
+          and pole_length > 1e-9):
         # Rotate the closed seed coherently at its root. Reconstructing every
         # joint from translated world points loses small segments at large
         # origins and changes the seed's internal frames and blended geometry.
@@ -387,7 +431,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
           and abs(lengths[0]-lengths[1]) <= 1e-9):
         # The equal-length folded limit applies to either solver. The pole
         # names the elbow direction directly, without an invented world axis.
-        bend = pole_delta if np.linalg.norm(pole_delta) > 1e-9 else points[1]-origin
+        bend = pole_delta if pole_length > 1e-9 else points[1]-origin
         points[1] = origin + unit(bend)*lengths[0]
         points[2] = target
         result = _orient_chain(skeleton, result, names, points)

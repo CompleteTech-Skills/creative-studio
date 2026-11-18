@@ -459,6 +459,12 @@ transforms below the native scale floor are discarded while other rigid
 candidates are checked; the original seed still passes the ordinary native
 transform validation. Three preserved independent regressions exercise both
 solvers at these distance, translation and near-floor scale boundaries.
+For an axial parent, candidate generation also checks the finite intersections
+of its rotation circle with the pole's coordinate intervals and their intervening
+arcs. Pairwise coordinate ratios give linear sine/cosine equations; this keeps
+an attainable azimuth when different world coordinates have different precision.
+Bounded normalization makes the folded steering independent of finite pole
+distance even when squaring the supplied components would overflow.
 
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
