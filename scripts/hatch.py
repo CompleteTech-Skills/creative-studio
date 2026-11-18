@@ -452,6 +452,7 @@ def inputs(root, job, *, _reader=None):
     return hashes
 
 def revise_profile(root, data, path):
+    root = Path(root).resolve()
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running claims before a profile revision')
     before, after = load_profile(root / 'profile.json'), load_profile(path)
@@ -856,6 +857,7 @@ def select_base(root, data, source_origin=None):
 def base_review_current(root, data):
     value = data.get('base_review', {})
     try:
+        root = Path(root).resolve()
         return (value.get('canonical_hash') == input_digest(root / 'references/canonical-base.png') and
                 value.get('settings_hash') == input_digest(root / 'extraction-settings.json'))
     except (OSError, ValueError):
@@ -863,6 +865,7 @@ def base_review_current(root, data):
 
 
 def record_base_review(root, data, note, accept_color_warning=False):
+    root = Path(root).resolve()
     reconcile(root, data)
     if job_for(data, 'base')['status'] != 'generated' or not note.strip():
         raise ValueError('current canonical base and a visual inspection note are required')
@@ -944,6 +947,7 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
     return {'generated': name, 'fixture': fixture, 'settings': read(root / 'extraction-settings.json') if name == 'base' else None}
 
 def fail(root, data, name, token, reason, *, budget_usage=None):
+    root = Path(root).resolve()
     job = job_for(data, name)
     if job['status'] != 'running' or job.get('token') != token:
         raise ValueError('active token required')
@@ -971,6 +975,7 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
     return {'failed': name, 'remaining_attempts': max(0, data.get('limits', {}).get('attempts_per_job', RETRIES) - job['attempts'])}
 
 def repair(root, data, name, reason):
+    root = Path(root).resolve()
     if not reason.strip():
         raise ValueError('specific repair reason required')
     affected = descendants(data, name)
@@ -994,6 +999,7 @@ def repair(root, data, name, reason):
 
 
 def configure(root, data, args):
+    root = Path(root).resolve()
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running handoffs before changing extraction settings')
     settings = read(root / 'extraction-settings.json')
@@ -1060,6 +1066,7 @@ def configure(root, data, args):
 
 
 def derive(root, data, name, reason, approved):
+    root = Path(root).resolve()
     if not approved or not reason.strip():
         raise ValueError('explicit mirror approval and a visual identity/asymmetry decision note are required')
     reconcile(root, data)
@@ -1117,6 +1124,7 @@ def artifact_hashes(root):
 
 @contextmanager
 def operation(root, data, kind):
+    root = Path(root).resolve()
     old = data.get('operation')
     if old and old.get('status') == 'running':
         event(data, 'interrupted-operation', operation=old)
@@ -1137,6 +1145,7 @@ def operation(root, data, kind):
 
 
 def validate(root, data):
+    root = Path(root).resolve()
     reconcile(root, data)
     if any(j['status'] != 'generated' for j in data['jobs']):
         raise ValueError('all generation handoffs must be complete and current')
@@ -1204,6 +1213,7 @@ def style_provenance(root, data):
 
 
 def review_template(root, data):
+    root = Path(root).resolve()
     require_valid(root, data)
     metrics = read(root / 'qa/review.json')
     style_risks = style_warnings(root)
@@ -1216,6 +1226,7 @@ def review_template(root, data):
 
 
 def review(root, data, receipt):
+    root = Path(root).resolve()
     require_valid(root, data)
     value = read(receipt)
     states = {s['id'] for s in load_profile(root / 'profile.json')['states']}
@@ -1274,6 +1285,7 @@ def _destination(root, destination):
 
 
 def export(root, data, destination):
+    root = Path(root).resolve()
     require_valid(root, data)
     from export_assets import export_assets
     destination = _destination(root, destination)
@@ -1312,6 +1324,7 @@ def tree_hashes(root, exclude=()):
 
 
 def package(root, data, destination):
+    root = Path(root).resolve()
     require_review(root, data)
     destination = _destination(root, destination)
     if destination.exists():
@@ -1409,6 +1422,7 @@ def _existing_install(destination):
 
 
 def install(root, data, package_path, destination, allow_fixture=False, fail_after_backup=False, fail_after_promote=False):
+    root = Path(root).resolve()
     require_review(root, data)
     package_path = Path(package_path).resolve()
     record = data['gates'].get('packaged')
@@ -1482,6 +1496,7 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
 
 
 def rollback(root, data):
+    root = Path(root).resolve()
     records = data.get('installations', []) + ([data['gates']['installed']] if data.get('gates', {}).get('installed') else [])
     if not records or not records[-1].get('backup'):
         raise ValueError('no recoverable previous installation recorded')
@@ -1574,6 +1589,7 @@ def _review_ok(root, data):
 
 
 def status(root, data):
+    root = Path(root).resolve()
     reconcile(root, data)
     try:
         require_valid(root, data)
@@ -1620,6 +1636,7 @@ def status(root, data):
 
 
 def resume(root, data):
+    root = Path(root).resolve()
     if data.get('pending_install'):
         destination = Path(data['pending_install']['destination']).resolve()
         with ownership(destination):
@@ -1640,6 +1657,7 @@ def resume(root, data):
 
 
 def configure_limits(root, data, args):
+    root = Path(root).resolve()
     import math
     value = dict(data.get('limits', {}))
     for argument, key, maximum in (('max_attempts', 'attempts_per_job', 100), ('concurrency', 'concurrency', 16), ('max_calls', 'generation_calls', 100000)):
@@ -1663,6 +1681,7 @@ def configure_limits(root, data, args):
 
 
 def annotate(root, data, name, path):
+    root = Path(root).resolve()
     job = job_for(data, name)
     if name == 'base' or job['status'] != 'generated':
         raise ValueError('annotations require a current state source')

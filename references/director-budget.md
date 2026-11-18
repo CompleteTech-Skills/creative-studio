@@ -634,6 +634,12 @@ the resulting failed owner will require. If the combined records cannot fit,
 the retry refuses before its accounting delta or native observation is saved,
 leaving the admitted token's concise measured terminal path available.
 
+Public Hatch mutators normalize their run argument once on entry, before
+reading or validating its inputs. This preserves ordinary system temporary
+directory aliases across platforms. The later journal write still uses the
+admitted canonical name and no-follow parent capability; it does not resolve
+a replacement alias at publication time.
+
 Earlier descriptor formats without `@journal-headroom` remain recovery-only.
 For an original unstarted reservation, retain nonexecution evidence and call
 `hatch.release_budget` under `hatch.ownership`, using the original recovery
