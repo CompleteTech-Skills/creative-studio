@@ -48,12 +48,12 @@ def versioned_repository(root, *, extra_first_instance=False):
         (root / name).write_text(json.dumps(value))
     asset = read('triangle.json')
     asset['version'] = '2.0.0'
-    geometry = (root / 'triangle.obj').read_text().replace('v 1 0 0', 'v 2 0 0')
-    (root / 'triangle2.obj').write_text(geometry)
+    geometry = (root / 'triangle.obj').read_bytes().replace(b'v 1 0 0', b'v 2 0 0')
+    (root / 'triangle2.obj').write_bytes(geometry)
     for field in ('content', 'source'):
-        asset[field] = dict(path='triangle2.obj', sha256=hashlib.sha256(geometry.encode()).hexdigest())
+        asset[field] = dict(path='triangle2.obj', sha256=hashlib.sha256(geometry).hexdigest())
     asset['meshes'] = [dict(asset['content'])]
-    asset['resources']['bytes'] = len(geometry.encode())
+    asset['resources']['bytes'] = len(geometry)
     asset['bounds']['maximum'][0] = 2
     write('triangle2.json', asset)
     reference = dict(id='triangle', version='2.0.0', path='triangle2.json',
