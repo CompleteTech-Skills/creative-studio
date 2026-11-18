@@ -11,7 +11,8 @@ from rig_skeleton import neutral_pose,evaluate_fk,mirror_pose
 from rig_skinning import evaluate_deformation
 from rig_math import decompose,axis_angle
 from rig_errors import RigError
-from rig_states import rig_capabilities
+from rig_states import rig_capabilities,map_states
+from rig_models import validate_geometry
 
 
 class RigSpecializationTests(unittest.TestCase):
@@ -54,6 +55,41 @@ class RigSpecializationTests(unittest.TestCase):
             for morph in mesh.morphs.values():
                 for values in morph.values():values[:]=0.
         self.assertNotIn('expressive-face',rig_capabilities(r))
+    def test_direction_only_morphs_do_not_admit_expressive_face(self):
+        for semantic in ('NORMAL','TANGENT'):
+            for amount,default in ((1.,0.),(0.,1.)):
+                with self.subTest(semantic=semantic,amount=amount,default=default):
+                    r=deepcopy(self.humanoid)
+                    r.manifest['facial']['expressions']={'blink':dict(
+                        schema_version=1,morphs={'blink':amount},bones={},incompatible=[])}
+                    affected=[mesh for mesh in r.geometry.meshes if 'blink' in mesh.morphs]
+                    self.assertTrue(affected)
+                    for mesh in affected:
+                        mesh.morphs['blink']={
+                            'POSITION':np.zeros_like(mesh.positions),
+                            semantic:np.full_like(mesh.positions,.25)}
+                        mesh.morph_defaults['blink']=default
+                        self.assertTrue(np.any(mesh.morphs['blink'][semantic]))
+                    # Both direction semantics are valid native morph payloads,
+                    # but the native deformation consumer does not apply them.
+                    validate_geometry(r.geometry)
+                    neutral=neutral_pose(r.skeleton)
+                    before=evaluate_deformation(r,neutral,normals=True)
+                    pose=apply_expressions(r,neutral,{'blink':1.})
+                    for mesh in affected:
+                        self.assertEqual(pose['morphs'][mesh.id]['blink'],amount)
+                    after=evaluate_deformation(r,pose,normals=True)
+                    for name,value in before.items():
+                        np.testing.assert_array_equal(after[name]['positions'],value['positions'])
+                        np.testing.assert_array_equal(after[name]['normals'],value['normals'])
+                    self.assertNotIn('expressive-face',rig_capabilities(r))
+                    # brief-frown specifically requires expressive-face in the
+                    # unchanged catalog; this tests capability admission only.
+                    mapped=map_states(r,selected=['brief-frown'])
+                    self.assertEqual(mapped['mapping']['brief-frown']['status'],
+                                     'requires-rig-capability')
+                    self.assertIn('expressive-face',mapped['mapping']['brief-frown']['reason'])
+                    self.assertNotIn('brief-frown',mapped['recipes'])
     def test_expression_on_unweighted_parent_moves_weighted_descendants(self):
         r=deepcopy(self.humanoid);root=r.skeleton['root']
         used={skin.joints[int(j)] for skin in r.weights.values() for j in set(skin.indices[skin.weights>0].tolist())}
