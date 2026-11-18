@@ -1,0 +1,56 @@
+{
+  "issue": 117,
+  "source_head": "de3308ee5f468ad8508035d7431aafe143c8cd82",
+  "dependency": "d523feeba157b3947c19a984475656584270a9fd",
+  "runtime_validation": {
+    "tests": 70,
+    "seconds": 94.47,
+    "result": "PASS",
+    "source_head": "43b674cf",
+    "scope": [
+      "existing continuity contracts",
+      "existing temporal replay",
+      "12 rich worldstate tests"
+    ],
+    "schema_checks": [
+      "standalone continuity --check",
+      "central schemas --check"
+    ]
+  },
+  "trace": {
+    "result": "PASS",
+    "sqlite_close_reopen": true,
+    "persisted": [
+      "costume",
+      "accessory",
+      "door",
+      "light",
+      "character-knowledge"
+    ],
+    "fixture": true,
+    "visual_approval": false,
+    "head_sha256": "d53896851d50928c223f3ee526f811a1efc1b9179c80ef93805c0d0e88758f36"
+  },
+  "source_sha256": {
+    "scripts/continuity_contracts.py": "c91b8b00f0e043feca60c80b8f05b2de30171b21ffff0ed09f64787220b04ee7",
+    "scripts/continuity_temporal.py": "a8ca33950bf427490ca43cb2fc3c8d902948b90cdef6694ebdfe8726b52010a9",
+    "scripts/continuity_worldstate.py": "49546507aa5b0b01c3af124a25ac9cd9c17f3fec26f1d787d918d6ed2abab99c",
+    "tests/test_rig_continuity_worldstate.py": "b81e5ceeaa450b015b07aed2ca9d928185c49d65000c5c20e568afd90310e600",
+    "tests/continuity_worldstate_probe.py": "f10ae85d2172ed0a00d803ba0afada7849056834cfc30f30bc798f642e327cc1"
+  },
+  "limitations": [
+    "Structural state persistence and canonical exact asset bindings only; no clothing deformation, door animation, light rendering, solver, screenshot or aesthetic acceptance.",
+    "Prop exclusive ownership and physics174 commit provider belong to issue118.",
+    "Evaluated diff/last-known/entity-history are separate issue116 followup using same replay authority.",
+    "Hosted CI and independent whole-candidate review remain separate gates."
+  ],
+  "failure_history": [
+    {
+      "log": "worldstate-initial.log",
+      "tests": 12,
+      "passed": 11,
+      "failed": 1,
+      "description": "Negative replaced file identity alias and encountered earlier global exact-reference rejection. Corrected test changes immutable revision identity to exercise intended later guard. No product rejection weakened."
+    }
+  ]
+}

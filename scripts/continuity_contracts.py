@@ -253,7 +253,8 @@ def definitions():
         head_sha256=SHA, dependencies_sha256=SHA, evaluator_sha256=SHA,
         entities=arr(ref('temporal-entity')), facts=arr(ref('fact')),
         applied_events=arr(ID, unique=True), unavailable_fields=arr(ID, unique=True)))
-    return d
+    from continuity_worldstate import extend_definitions
+    return extend_definitions(d)
 
 
 def schemas(kinds=KINDS):
@@ -327,10 +328,14 @@ def _typed_objects(value, schema, name=None):
             return
         yield from _typed_objects(value, schema['anyOf'][0], name)
     elif 'oneOf' in schema:
-        # Temporal operations have a strict, explicit event_type discriminator.
+        # Temporal roots dispatch explicitly by version; operations dispatch by
+        # event type. Traversal follows the same selected closed schema as JSON
+        # validation, preserving reference checks and integer normalization.
         for alternative in schema['oneOf']:
-            tag = alternative.get('properties', {}).get('event_type', {}).get('const')
-            if isinstance(value, dict) and value.get('event_type') == tag:
+            properties = alternative.get('properties', {})
+            discriminator = 'schema_version' if 'schema_version' in properties else 'event_type'
+            tag = properties.get(discriminator, {}).get('const')
+            if isinstance(value, dict) and tag is not None and value.get(discriminator) == tag:
                 yield from _typed_objects(value, alternative, name)
                 break
     elif isinstance(value, dict):
