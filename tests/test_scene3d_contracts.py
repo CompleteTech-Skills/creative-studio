@@ -19,9 +19,9 @@ from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
-from rig_errors import RigError, decode_json
+from rig_errors import RigError, decode_json, open_payload_at
 from scene3d_contracts import (canonical_bytes, definitions, document_hash, frame_time,
-    load_project, portable_path, read_document, schemas, validate_document)
+    load_project, load_project_at, portable_path, read_document, schemas, validate_document)
 from scene3d_example import build_example, node
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +33,49 @@ def fixture(name):
 
 
 class SceneContractTests(unittest.TestCase):
+    @unittest.skipUnless(os.open in os.supports_dir_fd, 'descriptor-relative project reads')
+    def test_descriptor_project_verifies_deep_dependency_under_low_descriptor_limit(self):
+        import resource
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'example'
+            build_example(root)
+            project = load_project(root)['project']
+            original = project['animations'][0]['path']
+            nested = 'animations/' + 'd/' * 160 + 'original.json'
+            (root / nested).parent.mkdir(parents=True)
+            (root / original).rename(root / nested)
+            for reference in project['animations'] + project['dependency_lock']:
+                if reference['path'] == original:
+                    reference['path'] = nested
+            (root / 'project.json').write_bytes(canonical_bytes(project))
+            with ExitStack() as stack:
+                fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+                stack.callback(os.close, fd)
+                soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+                stack.callback(resource.setrlimit, resource.RLIMIT_NOFILE, (soft, hard))
+                resource.setrlimit(resource.RLIMIT_NOFILE, (64 if soft < 0 else min(soft, 64), hard))
+                bundle = load_project_at(fd)
+                self.assertEqual(os.fstat(fd).st_ino, root.stat().st_ino)
+            data = (root / nested).read_bytes()
+            self.assertEqual(bundle['inventory'][nested], {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            self.assertEqual(bundle['project'], project)
+
+    @unittest.skipUnless(os.open in os.supports_dir_fd, 'descriptor-relative project reads')
+    def test_descriptor_apis_report_invalid_handles_consistently(self):
+        from production_contracts import load_project_at as load_legacy_at
+
+        def open_project(fd):
+            with open_payload_at(fd, 'project.json'):
+                self.fail('invalid descriptor accepted')
+
+        with tempfile.TemporaryFile() as regular:
+            for reader in (load_project_at, load_legacy_at, open_project):
+                for fd in (False, -1, 1 << 128, regular.fileno()):
+                    with self.subTest(reader=reader.__name__, fd=fd), self.assertRaises(RigError) as error:
+                        reader(fd)
+                    self.assertEqual(error.exception.report['code'], 'RIG_DIRECTORY_FD')
+
     def test_hash_bound_example_files_disable_checkout_newline_conversion(self):
         result = subprocess.run(['git', 'check-attr', 'text', '--',
                                  'examples/scene3d-contracts/project.json',

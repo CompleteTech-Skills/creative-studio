@@ -6,7 +6,7 @@ edited versions receive new identities before any project is published.
 """
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import contextmanager, ExitStack
 from copy import deepcopy
 import errno
 import hashlib
@@ -18,9 +18,10 @@ import tempfile
 import zipfile
 
 from asset_library import read_source_bytes
-from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
-from rig_errors import RigError, timestamp, decode_json, directory_capability, open_payload
-from scene3d_contracts import (all_refs, canonical_bytes, load_project,
+from atomic_publish import (_rename_no_replace, pinned_directory, pinned_directory_fd, private_stage,
+                            private_stage_fd, private_stage_fd_supported, private_stage_supported)
+from rig_errors import RigError, timestamp, decode_json, directory_capability, open_payload, open_payload_at
+from scene3d_contracts import (all_refs, canonical_bytes, load_project, load_project_at,
                                portable_path, validate_document)
 from scene3d_graph import require
 
@@ -55,6 +56,136 @@ def _new_destination(destination):
     return _admit_destination(destination)[0]
 
 
+@contextmanager
+def _stage_directory(root, parts, *, create=False):
+    """Borrow the root or open an ordinary descendant of the held stage."""
+    directory = root
+    try:
+        for part in parts:
+            if create:
+                try:
+                    os.mkdir(part, dir_fd=directory)
+                except FileExistsError:
+                    pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            previous, directory = directory, child
+            if previous != root:
+                os.close(previous)
+        yield directory
+    finally:
+        if directory != root:
+            os.close(directory)
+
+
+def _snapshot_readback_fd(stage, expected):
+    expected_dirs = {parent.as_posix() for path in expected for parent in Path(path).parents if str(parent) != '.'}
+    observed_files, observed_dirs = set(), set()
+    pending = [()]
+    while pending:
+        parts = pending.pop()
+        # A fresh directory stream has an independent listing offset.
+        with _stage_directory(stage, parts or ('.',)) as directory:
+            for name in os.listdir(directory):
+                relative = '/'.join((*parts, name))
+                info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode):
+                    require(relative in expected_dirs, 'Snapshot directory inventory changed after validation.',
+                            'SCENE3D_SOURCE_CHANGED')
+                    observed_dirs.add(relative)
+                    pending.append((*parts, name))
+                    continue
+                require(stat.S_ISREG(info.st_mode) and relative in expected,
+                        'Snapshot file inventory changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+                record = expected[relative]
+                with open_payload_at(directory, name, profile='scene3d') as (stream, opened):
+                    require(opened.st_size == record['bytes'], 'Snapshot bytes changed after validation.',
+                            'SCENE3D_SOURCE_CHANGED')
+                    observed = hashlib.sha256()
+                    remaining = record['bytes']
+                    while remaining:
+                        chunk = stream.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            break
+                        observed.update(chunk)
+                        remaining -= len(chunk)
+                    require(not remaining and not stream.read(1) and observed.hexdigest() == record['sha256'],
+                            'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+                observed_files.add(relative)
+    require(observed_files == set(expected) and observed_dirs == expected_dirs,
+            'Snapshot inventory changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+
+
+def _verify_snapshot_contracts_fd(stage, expected, legacy_prefix):
+    def check_inventory(inventory, prefix=''):
+        for path, record in inventory.items():
+            require(expected.get(prefix + path) == dict(bytes=record['bytes'], sha256=record['sha256']),
+                    'Snapshot verification differs from the staged file inventory.', 'SCENE3D_SOURCE_CHANGED')
+
+    bundle = load_project_at(stage)
+    check_inventory(bundle['inventory'])
+    if legacy_prefix is not None:
+        from production_contracts import load_project_at as load_legacy_project_at
+        try:
+            with _stage_directory(stage, legacy_prefix.split('/')) as legacy:
+                digest = bundle['project']['linked_2d_project']['sha256']
+                linked = load_legacy_project_at(legacy, expected_project_sha256=digest)
+        except (OSError, ValueError) as exc:
+            raise RigError('SCENE3D_LEGACY_SOURCE', 'Restored native legacy closure is invalid: ' + str(exc)) from exc
+        check_inventory(linked['inventory'], legacy_prefix + '/')
+
+
+def _publish_snapshot_fd(destination, parent_identity, files, expected, legacy_prefix):
+    with ExitStack() as stack:
+        try:
+            parent = stack.enter_context(pinned_directory_fd(destination.parent))
+        except OSError as exc:
+            if exc.errno == errno.ENOTSUP:
+                raise RigError('SCENE3D_STAGING_UNAVAILABLE', 'Snapshot publication requires protected staging.',
+                               stage='scene3d-snapshot') from exc
+            raise RigError('SCENE3D_DESTINATION', 'Cannot pin the admitted snapshot destination parent.',
+                           stage='scene3d-snapshot') from exc
+        held = os.fstat(parent)
+        require((held.st_dev, held.st_ino) == parent_identity,
+                'Snapshot destination parent changed after admission.', 'SCENE3D_DESTINATION')
+        private = stack.enter_context(private_stage_fd(
+            parent, prefix='.scene3d-snapshot-', cleanup_on_error=False))
+        os.mkdir('project', mode=0o700, dir_fd=private)
+        stage = stack.enter_context(_stage_directory(private, ('project',)))
+        identity = os.fstat(stage)
+        for path, payload in sorted(files.items()):
+            *parts, name = portable_path(path).split('/')
+            with _stage_directory(stage, parts, create=True) as directory:
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+                fd = os.open(name, flags, 0o666, dir_fd=directory)
+                try:
+                    with os.fdopen(fd, 'wb', closefd=False) as stream:
+                        stream.write(payload)
+                        stream.flush()
+                        os.fsync(fd)
+                finally:
+                    os.close(fd)
+        _verify_snapshot_contracts_fd(stage, expected, legacy_prefix)
+        _snapshot_readback_fd(stage, expected)
+        try:
+            current = os.stat('project', dir_fd=private, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared after validation.',
+                           stage='scene3d-snapshot') from exc
+        require(stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino),
+                'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+        try:
+            parent_now = destination.parent.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise RigError('SCENE3D_DESTINATION', 'Snapshot destination parent disappeared during validation.') from exc
+        require((parent_now.st_dev, parent_now.st_ino) == parent_identity,
+                'Snapshot destination parent changed during validation.', 'SCENE3D_DESTINATION')
+        try:
+            _rename_no_replace('project', destination.name, source_dir_fd=private, destination_dir_fd=parent)
+        except FileNotFoundError as exc:
+            raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared during publication.',
+                           stage='scene3d-snapshot') from exc
+
+
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
                      extra_payloads=None, max_bytes=1024**3, expected_project_sha256=None):
@@ -73,7 +204,10 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             'Graph publication requires the expected exact source project SHA256.', 'SCENE3D_SOURCE_CHANGED')
     destination, parent_identity = _admit_destination(destination)
     pinned = sys.platform.startswith('linux')
+    macos = sys.platform == 'darwin'
     require(not pinned or private_stage_supported(), 'Linux snapshot publication requires protected staging.',
+            'SCENE3D_STAGING_UNAVAILABLE')
+    require(not macos or private_stage_fd_supported(), 'macOS snapshot publication requires protected staging.',
             'SCENE3D_STAGING_UNAVAILABLE')
     bundle = load_project(source_root)
     require(expected_project_sha256 is None or bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
@@ -228,6 +362,18 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     total = sum(map(len, files.values()))
     require(total <= min(max_bytes, project['budgets']['max_bytes']) and len(files) <= project['budgets']['max_files'],
             'Snapshot exceeds project file/byte budgets.', 'SCENE3D_SNAPSHOT_LIMIT')
+    def snapshot_receipt():
+        return dict(destination=str(destination), project_sha256=hashlib.sha256(files['project.json']).hexdigest(),
+                    project_version=project['version'], active_scene=active_scene,
+                    inventory={path: dict(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+                               for path, payload in sorted(files.items())},
+                    status='complete-byte-and-contract-verified', production_approved=False)
+
+    if macos:
+        receipt = snapshot_receipt()
+        _publish_snapshot_fd(destination, parent_identity, files, receipt['inventory'], legacy_prefix)
+        return receipt
+
     # Linux pins both staging and publication directories before any writes.
     # The portable adapter retains exclusive publication, but cannot yet promise
     # descriptor-owned staging on platforms unsupported by the shared authority.
@@ -343,8 +489,4 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                                stage='scene3d-snapshot') from exc
         else:
             _rename_no_replace(stage, destination)
-    return dict(destination=str(destination), project_sha256=hashlib.sha256(files['project.json']).hexdigest(),
-                project_version=project['version'], active_scene=active_scene,
-                inventory={path: dict(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
-                           for path, payload in sorted(files.items())},
-                status='complete-byte-and-contract-verified', production_approved=False)
+    return snapshot_receipt()
