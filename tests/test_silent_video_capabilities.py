@@ -17,9 +17,24 @@ import silent_video as video
 
 # Independent CLI-shaped transcripts, never captured native execution evidence.
 MOCK_LISTS = {
-    '-encoders': ' V..... libx264 Mock H.264 encoder\n V..... libvpx-vp9 Mock VP9 encoder\n',
-    '-muxers': '  E mp4 Mock MP4 muxer\n  E webm Mock WebM muxer\n',
-    '-pix_fmts': 'IO... yuv420p 3 12 8-8-8\n',
+    '-encoders': ('Encoders:\n V..... = Video\n A..... = Audio\n'
+                  ' .F.... = Frame-level multithreading\n'
+                  ' ..S... = Slice-level multithreading\n'
+                  ' ...X.. = Codec is experimental\n'
+                  ' ....B. = Supports draw_horiz_band\n'
+                  ' .....D = Supports direct rendering method 1\n ------\n'
+                  ' V....D libx264 Mock H.264 encoder\n'
+                  ' V..... libvpx-vp9 Mock VP9 encoder\n'),
+    '-muxers': ('File formats:\n D. = Demuxing supported\n'
+                ' .E = Muxing supported\n --\n'
+                '  E mp4 Mock MP4 muxer\n  E webm Mock WebM muxer\n'),
+    '-pix_fmts': ('Pixel formats:\n I.... = Supported Input format for conversion\n'
+                  ' .O... = Supported Output format for conversion\n'
+                  ' ..H.. = Hardware accelerated format\n'
+                  ' ...P. = Paletted format\n'
+                  ' ....B = Bitstream format\n'
+                  'FLAGS NAME NB_COMPONENTS BITS_PER_PIXEL BIT_DEPTHS\n-----\n'
+                  'IO... yuv420p 3 12 8-8-8\n'),
 }
 EXPECTED = {'h264-mp4': ('libx264', 'mp4', '.mp4'),
             'vp9-webm': ('libvpx-vp9', 'webm', '.webm')}
@@ -145,6 +160,41 @@ class SilentCapabilityContracts(unittest.TestCase):
                     for name in unsupported:
                         self.assert_refused_before_encoding(
                             video.make_request(self.request['source'], profile=name))
+
+    def test_wrong_media_type_or_capability_direction_is_unsupported(self):
+        rows = [
+            ('-encoders', ' A..... libx264 Mock audio encoder\n'
+             ' V..... libvpx-vp9 Mock video encoder\n', ('h264-mp4',)),
+            ('-muxers', ' D  mp4 Mock demuxer only\n'
+             '  E webm Mock muxer\n', ('h264-mp4',)),
+            ('-pix_fmts', 'I.... yuv420p 3 12 8-8-8\n', tuple(EXPECTED)),
+        ]
+        for flag, transcript, unsupported in rows:
+            with self.subTest(flag=flag), self.mock_probes(
+                    lists={**MOCK_LISTS, flag: transcript}):
+                report = video.capabilities()
+                self.assertEqual(report['status'], 'available')
+                for name in EXPECTED:
+                    self.assertEqual(report['profiles'][name]['status'],
+                                     'unsupported' if name in unsupported else 'supported')
+                for name in unsupported:
+                    self.assert_refused_before_encoding(
+                        video.make_request(self.request['source'], profile=name))
+
+    def test_output_only_pixel_format_and_comma_muxer_aliases_are_supported(self):
+        lists = {**MOCK_LISTS,
+                 '-muxers': ('File formats:\n D. = Demuxing supported\n'
+                             ' .E = Muxing supported\n --\n'
+                             '  E mov,mp4,m4a,3gp,3g2,mj2 Mock MOV/MP4 aliases\n'
+                             '  E matroska,webm Mock WebM aliases\n'),
+                 '-pix_fmts': MOCK_LISTS['-pix_fmts'].replace('IO... yuv420p',
+                                                           '.O... yuv420p')}
+        with self.mock_probes(lists=lists):
+            report = video.capabilities()
+        self.assertEqual(report['status'], 'available')
+        for name in EXPECTED:
+            with self.subTest(profile=name):
+                self.assertEqual(report['profiles'][name]['status'], 'supported')
 
     def test_ffmpeg_and_ffprobe_are_independently_required(self):
         for missing in (('ffmpeg',), ('ffprobe',), ('ffmpeg', 'ffprobe')):
