@@ -87,12 +87,24 @@ def matrix_quaternion(matrix: np.ndarray) -> np.ndarray:
 def qbetween(source: Sequence[float], target: Sequence[float]) -> np.ndarray:
     a, b = unit(source), unit(target)
     dot = float(np.clip(np.dot(a, b), -1, 1))
-    if dot > 1 - EPS:
-        return np.array(IDENTITY_Q)
-    if dot < -1 + EPS:
+    cross = np.cross(a, b)
+    if dot >= 0:
+        # Retain small but measurable rotations rather than snapping their
+        # cosine to identity. This form is stable throughout this hemisphere.
+        return quaternion(np.r_[cross, 1 + dot])
+    # Near the opposite direction, multiply by the small sum rather than
+    # subtracting two nearly equal products to construct the rotation axis.
+    cross = np.cross(a, a + b)
+    sine = math.hypot(*cross)
+    if sine <= 4 * np.finfo(float).eps:
+        # Independently normalized antiparallel vectors can leave a cross
+        # product at roundoff scale whose direction is numerical noise.
         basis = np.eye(3)[int(np.argmin(np.abs(a)))]
         return axis_angle(np.cross(a, basis), math.pi)
-    return quaternion(np.r_[np.cross(a, b), 1 + dot])
+    # Near the opposite direction, 1+dot loses the small angular difference.
+    # atan2 retains it, including when the rounded dot is exactly -1.
+    half = math.atan2(sine, dot) / 2
+    return np.r_[cross / sine * math.sin(half), math.cos(half)]
 
 
 def slerp(a: Sequence[float], b: Sequence[float], weight: float) -> np.ndarray:

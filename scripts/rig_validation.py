@@ -7,7 +7,7 @@ import numpy as np
 from rig_animation import contact_is_active, evaluate_animation, validate_animation
 from rig_constraints import apply_constraints
 from rig_contracts import validate_contract
-from rig_errors import RigError, object_hash, timestamp
+from rig_errors import RigError, object_hash, require, timestamp
 from rig_geometry import deformation_metrics
 from rig_ik import validate_controllers
 from rig_math import axis_angle, decompose, qangle
@@ -28,6 +28,17 @@ def _check(report, name, ok, message, value=None, *, unavailable=False, warning=
     status = 'unavailable' if unavailable else 'warning' if warning else 'passed' if ok else 'failed'
     report['checks'].append(dict(name=name, status=status, message=message, value=value))
     if status == 'failed':report['ok'] = False
+
+
+def _max_distance(points, reference, *, asset=None):
+    # Match native IK/final-contact distances without overflowing intermediate
+    # squared norms. A finite endpoint pair can still have an unrepresentable
+    # distance; reject that result before it enters a report or its aggregates.
+    references = np.broadcast_to(reference, points.shape)
+    maximum = max(math.dist(a, b) for a, b in zip(points, references))
+    require(math.isfinite(maximum), 'RIG_NONFINITE',
+            'Validation distance exceeds finite representation.', asset=asset)
+    return maximum
 
 
 def contact_metrics(rig, clip) -> dict:
@@ -82,8 +93,8 @@ def contact_metrics(rig, clip) -> dict:
     by_contact = []
     for index, contact in enumerate(contacts):
         points = np.array(positions[index])
-        local_error = float(np.max(np.linalg.norm(points - np.asarray(contact['target']), axis=1)))
-        local_drift = float(np.max(np.linalg.norm(points - points[0], axis=1)))
+        local_error = _max_distance(points, contact['target'], asset=contact['id'])
+        local_drift = _max_distance(points, points[0], asset=contact['id'])
         maximum = max(maximum, local_error)
         drift = max(drift, local_drift)
         count += len(points)
@@ -127,7 +138,10 @@ def validate_rig(rig, *, require_animation=False) -> dict:
         pose = neutral_pose(rig.skeleton)
         pose['morphs'] = {m.id: {name: 0. for name in m.morphs} for m in rig.geometry.meshes}
         deformed = evaluate_deformation(rig, pose)
-        bind_error = max(float(np.abs(deformed[m.id]['positions']-m.positions).max()) for m in rig.geometry.meshes)
+        with np.errstate(over='ignore', invalid='ignore'):
+            bind_error = max(float(np.abs(deformed[m.id]['positions']-m.positions).max()) for m in rig.geometry.meshes)
+        require(math.isfinite(bind_error), 'RIG_NONFINITE',
+                'Bind-pose reconstruction error exceeds finite representation.')
         _check(report, 'skin', True, 'Every vertex has normalized real bone weights.', weight_error)
         _check(report, 'bind-pose', bind_error <= 1e-5, 'Canonical bind-pose vertex reconstruction (meters).', bind_error)
     except (RigError, ValueError, KeyError) as exc:
@@ -150,8 +164,12 @@ def validate_rig(rig, *, require_animation=False) -> dict:
                 signature = []
                 for mesh in rig.geometry.meshes:
                     positions = values[mesh.id]['positions']
-                    maximum = max(maximum, float(np.linalg.norm(positions-mesh.positions, axis=1).max()))
-                    signature.append(np.round(positions[::max(1, len(positions)//64)], 5).tolist())
+                    maximum = max(maximum, _max_distance(positions, mesh.positions, asset=mesh.id))
+                    # NumPy rounding scales by 10**5 first, which can overflow
+                    # valid large coordinates. Scalar round keeps the same
+                    # decimal precision without that intermediate overflow.
+                    sampled = positions[::max(1, len(positions)//64)]
+                    signature.append([[round(float(value), 5) for value in point] for point in sampled])
                 distinct.add(object_hash(signature))
             contacts = contact_metrics(rig, clip)
             contact_max = max(contact_max, contacts['max_contact_error_m']);drift_max = max(drift_max, contacts['max_planted_drift_m'])

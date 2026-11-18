@@ -90,7 +90,7 @@ class RigStateRuntime:
             scheduled = math.inf
         return max(scheduled, math.nextafter(self.entered, math.inf))
 
-    def _collapsed_elapsed(self, elapsed, clips, starts):
+    def _relative_loop_elapsed(self, now, clips, starts):
         # Whole-recipe unrolling must not change the native remainder clock.
         # Use the shortest repeating clip sequence as its represented period.
         count = len(clips)
@@ -99,7 +99,10 @@ class RigStateRuntime:
                 count = size
                 break
         period = starts[count]
-        cycles, phase = divmod(elapsed, Fraction(float(period)))
+        # Native channels consume the public binary64 elapsed time, including
+        # when multiple absolute starts round to the same timestamp.
+        elapsed = now-self.entered
+        cycles, phase = divmod(Fraction(elapsed), Fraction(float(period)))
         phase = float(phase)
         prefixes = [float(start) for start in starts[:count]]
         index = bisect_right(prefixes, phase)-1
@@ -107,15 +110,16 @@ class RigStateRuntime:
         local = min(phase-prefixes[index], math.nextafter(duration, -math.inf))
         return cycles*period + starts[index] + Fraction(local)
 
-    def _loop_elapsed(self, now, elapsed, clips, starts):
+    def _loop_elapsed(self, now, exact_elapsed, clips, starts):
         # At most one exact interval boundary can own this rounded timestamp.
         # If several boundaries collapse here, use the relative native clock.
         # Looking one boundary beyond each side of the containing interval is
         # sufficient: rounded edges of an increasing schedule are monotonic.
         period = starts[-1]
         count = len(starts)-1
-        cycles, phase = divmod(elapsed, period)
-        interval = cycles*count + bisect_right(starts, phase)-1
+        cycles, phase = divmod(exact_elapsed, period)
+        selected = bisect_right(starts, phase)-1
+        interval = cycles*count + selected
         matched = None
         for edge in range(max(0, interval-1), interval+3):
             cycle, index = divmod(edge, count)
@@ -123,9 +127,19 @@ class RigStateRuntime:
             boundary = self._boundary(offset) if edge else self.entered
             if boundary == now:
                 if matched is not None:
-                    return self._collapsed_elapsed(elapsed, clips, starts)
+                    return self._relative_loop_elapsed(now, clips, starts)
                 matched = offset
-        return elapsed if matched is None else matched
+        if matched is not None:
+            return matched
+
+        # The schedule owns the interval and its accumulated root placement.
+        # Inside it, sample the same binary64 elapsed remainder as native
+        # playback. Rounding near an edge can put that clock in a neighbor.
+        native = self._relative_loop_elapsed(now, clips, starts)
+        start = cycles*period + starts[selected]
+        duration = float(starts[selected+1]-starts[selected])
+        last = start + Fraction(math.nextafter(duration, -math.inf))
+        return min(max(native, start), last)
 
     def _root(self, pose):
         name = self.rig.skeleton['root']
@@ -183,11 +197,11 @@ class RigStateRuntime:
         blend_elapsed = elapsed
         if now >= self._boundary(self.blend_seconds) and not (holding and duration < self.blend_seconds):
             blend_elapsed = max(blend_elapsed, self.blend_seconds)
-        exact_elapsed = Fraction(now)-Fraction(self.entered)
         if looping:
+            exact_elapsed = Fraction(now)-Fraction(self.entered)
             cycles, cycle_phase = divmod(self._loop_elapsed(now, exact_elapsed, clips, starts), period)
         else:
-            cycles, cycle_phase = 0, exact_elapsed
+            cycles = 0
         for index, name in enumerate(clips):
             clip = self.rig.clips[name]
             if looping:
@@ -199,6 +213,8 @@ class RigStateRuntime:
                     local = clip['duration']
                 elif not looping and index and now == self._boundary(starts[index]):
                     local = 0.
+                elif not looping:
+                    local = max(0., elapsed-float(starts[index]))
                 else:
                     local = max(0., float(cycle_phase-starts[index]))
                 # Every interval is half-open except a known completed final

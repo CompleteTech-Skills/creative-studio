@@ -370,6 +370,62 @@ and its requested orientation is within `1e-5` radians. A reachable position can
 therefore have `reachable: true` and `converged: false` when a joint limit prevents
 the orientation. Contact and grasp reports retain this angular residual.
 
+FK-to-IK matching accepts fully folded chains whose endpoint coincides with
+their root, using the already evaluated first joint position as its matching pole.
+A matching pole preserves an already closed authoritative seed and its evaluated
+joint transforms and bound geometry. Ordinary matches retain their original
+reach-based pole distance. Closure is tested within `1e-9` meters, the matched
+endpoint must also meet the chain's residual tolerance, and normalized pole/first
+segment directions must differ by at most eight machine epsilons in unit-vector
+distance. Comparing the vector difference avoids a dot product rounding a
+measurable small pole change to an apparent exact match. A finite pole
+direction must exceed `1e-9` meters. An explicitly changed pole reorients a closed
+seed's existing shape, including backfolded multisegment chains with degenerate
+neighbor axes. At the equal-length two-segment fold, either solver can also
+construct the elbow along that pole from an open seed.
+Runtime segment-length checks, joint limits, endpoint orientation, actual
+residuals and bounded convergence reporting remain authoritative.
+
+Twelve independent boundary tests exercise ordinary near-folded matching,
+small segments at large world translations, both explicit backfolded pole
+directions, actual blended skinning, length limits and the native orientation/
+constraint pass. They produced four failing methods on the previous candidate
+and passed all twelve after the correction on Linux/Python 3.12.14 (1.845s,
+exit 0, zero skips). The original thirteen #348 test methods remain unchanged.
+This is local numerical evidence; independent review and exact published-head
+checks are required before integration.
+
+The shared quaternion-between-directions helper preserves measurable small
+angles instead of snapping near-parallel directions to identity. Near opposite
+directions it uses the cross-product magnitude and `atan2`, avoiding cancellation
+in `1 + dot`; exactly opposite directions retain a stable perpendicular axis.
+Both the folded rotation and its ordinary chain-orientation pass use this same
+native helper. Four additional independently authored methods cover small pole
+changes, near-opposite changes, exact matches and controls at unit and 1,000 m
+segment scales, including translated roots. Six subtests failed on published
+`f19906ea` despite its 81-test gate passing. The corrected helper passed these
+four methods together with the twelve folded boundaries and fourteen native
+math tests: 30 tests in 1.165 seconds, exit 0, zero skips. This is synthetic
+numerical evidence, not an artistic or production acceptance claim.
+
+Independent re-review of that correction identified cancellation in oblique
+near-opposite cross products, including a valid scaled-pole control that had
+worked on the earlier source. The negative-dot hemisphere now computes its axis
+as `cross(a, a + b)` to avoid subtracting nearly equal products, with a stable
+perpendicular fallback only at machine-roundoff scale. Two further independent
+methods retain the exact oblique-opposite case and genuine angular differences
+of `1e-8` and `1e-12` radians, with a `1e-5` control. All six pole-precision
+methods, twelve folded boundaries and fourteen native math tests passed after
+this correction: 32 tests in 1.211 seconds, exit 0, zero skips. Earlier failed
+cases remain in the gate and in source history.
+
+Ten further independent methods cover explicit positive and negative pole changes
+of 1e-6 and 1e-7 radians through both declared and override inputs at 1 m and
+1000 m segment lengths. Cartesian joint and actual blended-skin oracles detect
+changes hidden by a normalized dot product. Four methods failed on 5e8d6df2
+(16 failing subcases); all ten pass with the direct unit-vector comparison,
+including exact-match, orientation, joint-limit and runtime-length controls.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
@@ -434,3 +490,16 @@ The optional Python `rig_state_runtime.RigStateRuntime` executes selected valida
 Runtime root placement is applied before native constraints and contact IK, retaining authored world-space poles and constraint points. Internal multi-clip intervals are half-open; the final non-looping endpoint remains clamped. Numerical regressions compare every joint transform and complete skinned positions.
 
 Event dispatch, explicit catalog recovery, reduced-motion execution and detailed dependency discovery remain deferred. See [bounded runtime preservation](rig-state-runtime-preservation.md) for exact source boundaries, retained tests and remaining verification gates.
+
+### Native report and interior-clock follow-up
+
+The public elapsed clock still selects native interior channel samples while
+exact schedules retain ownership of rounded clip boundaries. Two independent
+regressions preserve the native phase at an ordinary translated origin and
+reject actual skin overflow atomically. Seven independent validation regressions
+use real FK and skinning to cover very large finite distances, distinct large
+poses, and structured failures when a derived distance is unrepresentable.
+Distance aggregation uses overflow-safe Euclidean measurement; scalar rounding
+keeps large finite pose signatures valid. All nine new methods passed in the
+181-test combined gate before integration of the later folded-matching merge.
+That is synthetic native numerical evidence; no visual approval is implied.
