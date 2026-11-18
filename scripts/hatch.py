@@ -18,7 +18,7 @@ import zipfile
 
 from PIL import Image
 from profile_spec import load_profile
-from asset_contracts import versions, resolve_ref, check_image, hash_object, REVIEW_DIMENSIONS, generation_projection, extraction_projection
+from asset_contracts import versions, resolve_ref, check_image, hash_object, REVIEW_DIMENSIONS, generation_projection, extraction_projection, MAX_SOURCE_BYTES
 
 SCRIPTS = Path(__file__).resolve().parent
 SCHEMA = 3
@@ -31,6 +31,105 @@ def read(path):
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def input_bytes(path):
+    """Bound untrusted generation input reads using the existing source owner."""
+    # Lazy imports preserve ordinary Hatch import/dependency isolation.
+    from asset_library import read_source_bytes
+    from rig_errors import RigError
+    try:
+        return read_source_bytes(path, MAX_SOURCE_BYTES)
+    except RigError as exc:
+        raise ValueError('cannot safely read bounded native input: ' + exc.report['code']) from exc
+
+
+
+def input_digest(path):
+    return hashlib.sha256(input_bytes(path)).hexdigest()
+
+
+
+def input_json(path):
+    return json.loads(input_bytes(path))
+
+
+
+
+class _RecoveryManifest(dict):
+    """Native journal authority for accounting/reconciliation, never new work."""
+
+
+def _recovery_manifest(result):
+    """Validate retained ownership without consulting mutable generation inputs."""
+    import re
+    if (type(result.get('fixture_mode')) is not bool or
+        not isinstance(result.get('run_id'), str) or not result['run_id']):
+        raise ValueError('malformed native recovery identity or fixture label')
+    jobs = result['jobs']
+    if not 2 <= len(jobs) <= 257 or any(not isinstance(job, dict) for job in jobs):
+        raise ValueError('native recovery requires the bounded original job inventory')
+    names = [job.get('id') for job in jobs]
+    if (any(not isinstance(name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name)
+            for name in names) or len(set(names)) != len(names) or 'base' not in names):
+        raise ValueError('native recovery job identities must be unique safe slugs')
+    def hashes(value):
+        return (isinstance(value, dict) and 'pet_request.json' in value and
+                '@generation-profile' in value and
+                all(isinstance(key, str) and isinstance(digest, str) and
+                    re.fullmatch(r'[0-9a-f]{64}', digest)
+                    for key, digest in value.items()))
+    for job in jobs:
+        name = job['id']
+        if job.get('status') not in ('pending', 'running', 'failed', 'generated'):
+            raise ValueError('unsupported native recovery state')
+        prompt = 'prompts/base-pet.md' if name == 'base' else f'prompts/rows/{name}.md'
+        if (job.get('prompt_file') != prompt or job.get('output_path') != f'decoded/{name}.png' or
+            job.get('depends_on') != ([] if name == 'base' else ['base'])):
+            raise ValueError('native recovery job paths or dependencies changed')
+        images = job.get('input_images')
+        if not isinstance(images, list) or any(not isinstance(image, dict) or
+                not isinstance(image.get('path'), str) for image in images):
+            raise ValueError('malformed native recovery input references')
+        history = job.get('history')
+        if not isinstance(history, list) or any(not isinstance(entry, dict) for entry in history):
+            raise ValueError('malformed native recovery history')
+        claims = [entry for entry in history if entry.get('event') == 'claim']
+        tokens = []
+        for claim in claims:
+            token = claim.get('token')
+            if not isinstance(token, str) or not token or not hashes(claim.get('input_hashes')):
+                raise ValueError('malformed retained native claim identity')
+            tokens.append(token)
+        if len(tokens) != len(set(tokens)):
+            raise ValueError('duplicate retained native claim identity')
+        if job['status'] == 'running':
+            if (not claims or job.get('token') != tokens[-1] or
+                job.get('input_hashes') != claims[-1]['input_hashes']):
+                raise ValueError('active native ownership differs from its latest claim')
+        elif 'token' in job:
+            raise ValueError('terminal native job retains an unexpected active token')
+        if claims and job.get('input_hashes') != claims[-1]['input_hashes']:
+            # Existing imported/derived outputs do not grant token-bound recovery.
+            if not (job.get('import_receipt') or job.get('derivation_receipt')):
+                raise ValueError('retained native input identity differs from its latest claim')
+        if job['status'] == 'generated':
+            origins = [key for key in ('generation_receipt', 'derivation_receipt', 'import_receipt')
+                       if key in job]
+            if len(origins) != 1 or not hashes(job.get('input_hashes')) or not job.get('output_hash'):
+                raise ValueError('generated recovery job lacks exact provenance and hashes')
+            origin = source_origin(job)
+            if 'source_origin' in job and job['source_origin'] != origin:
+                raise ValueError('retained native source origin changed')
+            receipt_fixture = (origin == 'fixture') if origin in ('fixture', 'imagegen') else job.get('import_receipt', {}).get('fixture')
+            if origin != 'derived' and (type(receipt_fixture) is not bool or receipt_fixture != result['fixture_mode']):
+                raise ValueError('retained source fixture classification changed')
+    return _RecoveryManifest(result)
+
+
+def _require_current_authority(data):
+    if isinstance(data, _RecoveryManifest):
+        raise ValueError('recovery journal cannot authorize a new reservation or generation claim')
 
 
 def object_hash(value):
@@ -101,14 +200,19 @@ def execute(name, *args):
     return result.stdout
 
 
-def manifest(root):
-    result = read(root / 'imagegen-jobs.json')
-    if result.get('schema_version') != SCHEMA or not isinstance(result.get('jobs'), list):
+def manifest(root, *, recovery=False):
+    root = Path(root).resolve()
+    if type(recovery) is not bool:
+        raise ValueError('recovery mode must be explicit')
+    result = input_json(root / 'imagegen-jobs.json')
+    if not isinstance(result, dict) or result.get('schema_version') != SCHEMA or not isinstance(result.get('jobs'), list):
         raise ValueError('unsupported run schema; use hatch.py migrate --run-dir PATH for schema 2, or recover into a separate run')
-    profile = load_profile(root / 'profile.json')
-    request = read(root / 'pet_request.json')
+    if recovery:
+        return _recovery_manifest(result)
+    profile = load_profile(input_json(root / 'profile.json'))
+    request = input_json(root / 'pet_request.json')
     from state_selection import prepared_selection
-    prepared_selection(root)
+    prepared_selection(root, reader=input_bytes)
     if 'style_sha256' in result and request.get('resolved_style') is None:
         raise ValueError('manifest style hash requires the saved resolved style snapshot; restore the intact pet_request.json')
     if request.get('resolved_style') is not None:
@@ -168,7 +272,6 @@ def manifest(root):
                     raise ValueError('active derivation is no longer permitted by the profile: ' + name)
     return result
 
-
 def source_origin(job):
     """Describe the origin receipt; an editable display label is not evidence."""
     origins = [key for key in ('generation_receipt', 'derivation_receipt', 'import_receipt') if key in job]
@@ -203,10 +306,11 @@ def job_for(data, name):
 
 
 def inputs(root, job):
+    root = Path(root).resolve()
     paths = ['pet_request.json']
     if not job.get('import_receipt'):
         paths.append(job['prompt_file'])
-    discovery = read(root / 'pet_request.json').get('brand_discovery_path')
+    discovery = input_json(root / 'pet_request.json').get('brand_discovery_path')
     if discovery:
         paths.append(discovery)
     if job.get('retry_prompt_file') and not job.get('import_receipt'):
@@ -214,10 +318,13 @@ def inputs(root, job):
     paths += [x['path'] for x in job['input_images']]
     if job.get('derived_from'):
         paths.append(f"decoded/{job['derived_from']}.png")
-    hashes = {p: digest(inside(root, p)) for p in paths}
-    hashes['@generation-profile'] = object_hash(generation_projection(load_profile(root / 'profile.json'), job['id']))
+    hashes = {}
+    for path in paths:
+        inside(root, path)  # Preserve the native containment policy.
+        hashes[path] = input_digest(root / path)
+    hashes['@generation-profile'] = object_hash(generation_projection(
+        load_profile(input_json(root / 'profile.json')), job['id']))
     return hashes
-
 
 def revise_profile(root, data, path):
     if any(j['status'] == 'running' for j in data['jobs']):
@@ -269,7 +376,11 @@ def descendants(data, name):
         found |= more
 
 
-def _native_budget(root, data):
+def _native_budget(root, data, *, recovery=False):
+    if type(recovery) is not bool:
+        raise ValueError('recovery mode must be explicit')
+    if not recovery:
+        _require_current_authority(data)
     if 'director_budget' not in data:
         if any('budget_operation' in job for job in data['jobs']):
             raise ValueError('native accounting policy is missing; preserve its operation history')
@@ -282,29 +393,26 @@ def _native_budget(root, data):
             reject_legacy_budget_rollback(root, data)
         return None
     from director_budget import NativeBudget
-    return NativeBudget.for_run(root, data)
-
+    return NativeBudget.for_run(root, data, recovery=recovery)
 
 def record_budget_usage(root, data, name, token, observation):
     """Record actual usage independently of source validity under native ownership."""
-    budget = _native_budget(root, data)
+    budget = _native_budget(root, data, recovery=True)
     if budget is None:
         raise ValueError('this run has not opted into a Director budget')
     return budget.record(job_for(data, name), token, observation)
 
-
 def release_budget(root, data, name, *, idempotency_key, outcome, evidence):
     """Release an evidenced nonrunning remainder under existing native ownership."""
-    budget = _native_budget(root, data)
+    budget = _native_budget(root, data, recovery=True)
     if budget is None:
         raise ValueError('this run has not opted into a Director budget')
     return budget.release(job_for(data, name), idempotency_key=idempotency_key,
                           outcome=outcome, evidence=evidence)
 
-
 def reconcile(root, data):
     """Invalidate stale work without ever launching or duplicating generation."""
-    budget = _native_budget(root, data)
+    budget = _native_budget(root, data, recovery=True)
     if budget is not None:
         budget.reconcile()
     stale = set()
@@ -314,10 +422,10 @@ def reconcile(root, data):
         try:
             valid = inputs(root, job) == job['input_hashes']
             if job['status'] == 'generated':
-                valid = valid and digest(inside(root, job['output_path'])) == job['output_hash']
+                valid = valid and input_digest(inside(root, job['output_path'])) == job['output_hash']
                 if job['id'] == 'base':
-                    valid = valid and digest(root / 'references/canonical-base.png') == job['canonical_hash']
-                    valid = valid and read(root / 'extraction-settings.json')['canonical_hash'] == job['canonical_hash']
+                    valid = valid and input_digest(root / 'references/canonical-base.png') == job['canonical_hash']
+                    valid = valid and input_json(root / 'extraction-settings.json')['canonical_hash'] == job['canonical_hash']
         except (OSError, KeyError, ValueError):
             valid = False
         if not valid:
@@ -354,7 +462,6 @@ def reconcile(root, data):
         invalidate(data, 'changed generation inputs or outputs')
         save(root, data)
     return changed
-
 
 def _relocate(value, stage, root):
     if isinstance(value, dict):
@@ -453,6 +560,7 @@ def recover_prepare(root):
 
 
 def claim(root, data, name):
+    _require_current_authority(data)
     reconcile(root, data)
     job = job_for(data, name)
     if job['status'] == 'running':
@@ -509,13 +617,13 @@ def claim(root, data, name):
             'attachment_rules': 'View local inputs before editing. Attach every input using referenced_image_paths when all are local; otherwise num_last_images_to_include (max 5). Never use both. A brand-new text-only base omits both.',
             'output_rules': 'Follow installed imagegen skill, including image output; return selected source and QA note. Do not mutate manifests.'}
 
-
 def select_base(root, data, source_origin=None):
     """Calibrate from the actual selected image, never a text-only fallback guess."""
     from prepare_pet_run import CHROMA_KEY_CANDIDATES, parse_hex_color, regenerate_prompts
     from extract_strip_frames import mask_background, pixels
     path = root / 'references/canonical-base.png'
-    request = read(root / 'pet_request.json')
+    request = input_json(root / 'pet_request.json')
+    profile = load_profile(input_json(root / 'profile.json'))
     with Image.open(path) as opened:
         image = opened.convert('RGBA')
     key = tuple(request['chroma_key']['rgb'])
@@ -554,19 +662,18 @@ def select_base(root, data, source_origin=None):
     if source_origin is not None and request.get('resolved_style') is not None:
         settings['canonical_source_origin'] = source_origin
     from style_registry import compatibility_warnings
-    settings['style_warnings'] = compatibility_warnings(request.get('resolved_style'), load_profile(root / 'profile.json'),
+    settings['style_warnings'] = compatibility_warnings(request.get('resolved_style'), profile,
                                                        settings['background'], settings.get('resampling'))
     atomic(root / 'extraction-settings.json', settings)
     if data.get('base_review'):
         event(data, 'preserved-base-review', previous=data['base_review'])
     data.pop('base_review', None)
-    regenerate_prompts(root, request, load_profile(root / 'profile.json'), settings)
+    regenerate_prompts(root, request, profile, settings)
     for job in data['jobs']:
         if job['id'] != 'base':
             job['prompt_settings_hash'] = digest(root / 'extraction-settings.json')
     invalidate(data, 'canonical base selected and extraction settings calibrated')
     return settings
-
 
 def base_review_current(root, data):
     value = data.get('base_review', {})
@@ -598,11 +705,9 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
     job = job_for(data, name)
     if job['status'] != 'running' or token != job.get('token'):
         raise ValueError('generation token is not active')
-    if job.get('stale') or inputs(root, job) != job['input_hashes']:
-        raise ValueError('generation inputs changed; record failure before retrying')
     if fixture != bool(data.get('fixture_mode')):
         raise ValueError('fixture artifacts require an explicitly fixture-only run; production must use imagegen')
-    receipt = read(used_inputs)
+    receipt = input_json(used_inputs)
     receipt = receipt.get('receipt_template', receipt)
     if receipt.get('generation_skill') != ('$fixture' if fixture else '$imagegen'):
         raise ValueError('generation receipt must identify installed imagegen (or fixture-only source)')
@@ -610,12 +715,21 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
         raise ValueError('receipt must attest the active job/token and every current prompt and grounding input hash')
     if not note.strip():
         raise ValueError('QA note required')
-    budget = _native_budget(root, data)
+    budget = _native_budget(root, data, recovery=True)
     if budget is not None:
         observation = receipt.get('budget_usage')
         budget.record(job, token, observation)
         if observation['outcome'] != 'complete':
             raise ValueError('native ingestion requires complete known budget usage')
+    # Authentic usage is durable before current generation inputs are read.
+    # Recovery records alone never authorize artifact promotion.
+    if budget is not None or isinstance(data, _RecoveryManifest):
+        current = manifest(root)
+        if current != data:
+            raise ValueError('native journal changed before current-input validation')
+    if job.get('stale') or inputs(root, job) != job['input_hashes']:
+        raise ValueError('generation inputs changed; record failure before retrying')
+    if budget is not None:
         budget.authorize_finalization(job, token, observation)
     source = Path(source).resolve()
     managed = [root / folder for folder in ('decoded', 'frames', 'final', 'qa')]
@@ -651,14 +765,13 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
     save(root, data)
     return {'generated': name, 'fixture': fixture, 'settings': read(root / 'extraction-settings.json') if name == 'base' else None}
 
-
 def fail(root, data, name, token, reason, *, budget_usage=None):
     job = job_for(data, name)
     if job['status'] != 'running' or job.get('token') != token:
         raise ValueError('active token required')
     if not reason.strip():
         raise ValueError('failure reason required')
-    budget = _native_budget(root, data)
+    budget = _native_budget(root, data, recovery=True)
     if budget is not None:
         budget.record(job, token, budget_usage)
         if budget_usage['outcome'] == 'uncertain':
@@ -676,7 +789,6 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
     job.pop('stale', None)
     save(root, data)
     return {'failed': name, 'remaining_attempts': max(0, data.get('limits', {}).get('attempts_per_job', RETRIES) - job['attempts'])}
-
 
 def repair(root, data, name, reason):
     if not reason.strip():

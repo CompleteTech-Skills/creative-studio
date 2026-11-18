@@ -194,3 +194,47 @@ preserved. It is not an off-host or global rollback detector for replacement of 
 entire owner and all its accounting records. The broader canonical project/account
 policy and AcquisitionGateway integration remain open under #34. Original owner
 records and expenditure history must be retained for any future migration.
+
+
+### Explicit recovery without current generation inputs
+
+Authentic observed usage must survive a missing, changed or unsafe current
+request, profile or prompt. `hatch.manifest(root, recovery=True)` reads the
+retained native journal through the existing bounded source reader, validates
+its original job/claim/provenance structure, and returns recovery authority.
+It does not read current generation inputs or advertise them as valid. The
+ordinary manifest path still validates the current profile, request, state
+selection and native job inventory.
+
+`NativeBudget.for_run(root, data, recovery=True)` authenticates the recorded
+request digest against the existing external owner enrollment, canonical run
+location, exact policy, retained operations and original ledger admission.
+Recovery may replay an existing reservation receipt and retain usage. It cannot
+reserve new capacity, allocate an attempt or issue a native token; native claim
+and normal budget admission reject a recovery-only journal. Default admission
+continues to require bounded current inputs and the original request identity.
+Missing original ledger admission is never manufactured during recovery.
+
+Native ingestion authenticates the original job, token, fixture classification
+and complete receipt before recording usage. Only after that durable accounting
+does it validate the current manifest and generation-input hashes. Damaged
+inputs therefore prevent promotion while the authentic observation survives.
+Invalid receipt/token/enrollment identity cannot charge another operation.
+Failure and reconciliation retain their original native state and uncertainty
+rules. A complete accounting observation alone is not asset acceptance.
+
+Current input reads reuse the existing source owner's regular-file, no-follow,
+encoded-size and changed-file checks, with the existing 64 MiB source bound.
+The state-selection owner accepts this reader without duplicating its evidence
+validation. Native input failures remain structured native errors; FIFO and
+oversized input paths cannot become an unbounded read while ownership is held.
+These changes do not globally redefine hashing of unrelated legacy outputs.
+
+The 12 independent recovery regression methods exercise real local native
+journals and ledgers with synthetic observations. They include missing/changed
+request/profile/prompt admission, durable accounting order, uncertain outcomes,
+invalid identities, recovery authority restrictions, existing-receipt replay,
+and bounded special-file input checks. Their author did not inspect the fix.
+Original native tests remain unchanged. These new methods have not yet executed
+at preparation time; hosted results must identify the exact integrated revision.
+No provider, paid service, production host or live API is invoked.
