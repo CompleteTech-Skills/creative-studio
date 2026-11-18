@@ -1,0 +1,151 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+      "byte_size": 4696,
+      "dependencies": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "dependencies": [],
+          "fixture": true,
+          "kind": "capability-probe-evidence",
+          "media_type": "text/plain",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "provenance_ref": null,
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+        }
+      ],
+      "fixture": true,
+      "kind": "capability-probe-evidence",
+      "media_type": "application/json",
+      "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689"
+    }
+  ],
+  "diagnostics": [],
+  "input_digest": "4cfef21662aafa47f9168fdbb20d0bce073c4c549a4ebcd68282c8a71a935df6",
+  "kind": "director-result",
+  "method": "CapabilityRegistry.probe",
+  "operation_id": "CapabilityRegistry-probe-fixture",
+  "provenance_receipts": [
+    {
+      "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+      "byte_size": 4696,
+      "dependencies": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "dependencies": [],
+          "fixture": true,
+          "kind": "capability-probe-evidence",
+          "media_type": "text/plain",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "provenance_ref": null,
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+        }
+      ],
+      "fixture": true,
+      "kind": "capability-probe-evidence",
+      "media_type": "application/json",
+      "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689"
+    }
+  ],
+  "schema_version": 1,
+  "status": "succeeded",
+  "usage": {
+    "amount": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    },
+    "classification": "unavailable",
+    "cpu_seconds": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    },
+    "currency": null,
+    "gpu_seconds": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    },
+    "input_tokens": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    },
+    "measurement_source": "director-local-probe-v1",
+    "output_tokens": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    },
+    "provider_calls": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    },
+    "storage_bytes": {
+      "explanation": "Not measured by capability discovery.",
+      "value": null
+    }
+  },
+  "value": {
+    "capabilities": [
+      {
+        "execution_verified": true,
+        "limits": {
+          "currency": null,
+          "max_amount": null,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_memory_bytes": 1610612736,
+          "max_provider_calls": 0,
+          "max_storage_bytes": 1073741824,
+          "policy_ref": null
+        },
+        "operation": "importer.obj",
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+            "byte_size": 4696,
+            "dependencies": [
+              {
+                "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+                "byte_size": 32,
+                "dependencies": [],
+                "fixture": true,
+                "kind": "capability-probe-evidence",
+                "media_type": "text/plain",
+                "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+                "provenance_ref": null,
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+              }
+            ],
+            "fixture": true,
+            "kind": "capability-probe-evidence",
+            "media_type": "application/json",
+            "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+            "provenance_ref": null,
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689"
+          }
+        ],
+        "status": "available",
+        "version": "native-rig-v1"
+      }
+    ],
+    "digest": "784a0b2417fc625de5417ea77f0425f9c6e44affeae412b1a48d5fb7e8edba93",
+    "expires_at": "2026-11-13T03:55:08.045388+00:00"
+  }
+}

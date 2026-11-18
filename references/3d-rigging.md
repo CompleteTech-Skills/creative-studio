@@ -43,7 +43,7 @@ Immutable example fixtures and retained validation evidence preserve their autho
 
 Shared JSON ingestion bounds document size in encoded bytes and nesting, rejects duplicate keys and nonfinite numbers, and reports decoder failures as structured `RIG_JSON` errors. This includes the interpreter's decimal-integer conversion limit; it does not disable or raise that resource limit. String payloads count UTF-8 bytes in bounded chunks before parsing, matching byte-payload admission without allocating a full encoded copy. Invalid raw Unicode encoding produces `RIG_JSON`; JSON escape spelling retains its prior parsing semantics. Existing specific duplicate-key, nonfinite, nesting and size diagnostic codes remain distinct. Invalid input is rejected before a CLI configuration/correction operation persists state.
 
-Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. An imported procedural fixture stays a fixture when exported and reimported.
+Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. Its complete version-1 shape and field types are validated independently of its hash. New records store the import scale as a number greater than zero and at most 10,000. Historical records with JSON `true` for unit scale remain readable under their original byte hashes. An imported procedural fixture stays a fixture when exported and reimported.
 
 The canonical definitions live in `scripts/rig_contracts.py`. Generated Draft 2020-12 schemas under `profiles/rig*.schema.json` cover rigs, templates, clips, poses, retarget profiles, corrections, reviews, jobs and export receipts. Nested definitions cover skeletons, bones, skin bindings and controllers. JSON Schema checks structure and field types; the runtime also checks reference graphs, unit quaternions, bind reconstruction, source hashes and safe local resource paths. See the [contract acceptance audit](rig-contracts-acceptance.md) for the current compatibility baseline and requirement-to-test mapping.
 
@@ -67,7 +67,7 @@ OBJ import handles groups, materials, per-corner attributes, negative indices an
 
 Blender input uses a trusted fixed worker with `--background --factory-startup --disable-autoexec`. Make linked libraries local and pack external images before portable import. The original `.blend` remains the source; decoded geometry is derived data. A manifest never supplies executable Python.
 
-Templates are versioned JSON under `rig-templates/`: humanoid, quadruped, winged-creature, robotic and custom. The winged fixture has six legs, a tail and two articulated wings. Templates compose through validated inheritance; duplicate IDs/roles and inheritance cycles fail. The custom template provides a root for explicitly authored anatomy, not a guessed complete animal.
+Templates are versioned JSON under `rig-templates/`: humanoid, quadruped, winged-creature, robotic and custom. The winged fixture has six legs, a tail and two articulated wings. Templates compose through validated inheritance; duplicate IDs/roles and inheritance cycles fail. Inheritance is bounded to 32 levels and 256 document visits, and the combined result must satisfy the same array limits as a standalone template (including 256 bones). Dictionary inputs to `generate_skeleton` receive the same strict contract validation as template files; preserving an existing skeleton validates it before returning it. The custom template provides a root for explicitly authored anatomy, not a guessed complete animal.
 
 Automatic fitting prioritizes an existing rig, approved source-bound 3D landmarks, labelled mesh region centerlines, then measured bounds. Geometry analysis reports connectivity, bounds, surface area, PCA axes, symmetry evidence and uncertainty. Bounds/PCA do not establish species or anatomical correctness. Uncertain placement remains `needs-correction` until resolved.
 
@@ -224,7 +224,9 @@ Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one mill
 
 `configure --file limits.json` uses strict bounded overrides. `status` shows active/pending/failed/stale work. `resume` retries failed/interrupted operations within the attempt budget. An OS file lock gives one writer ownership; claims survive in the journal and lock ownership releases after a process crash. Cache identity covers the core rig, parameters, implementation files and retained artifact hashes. Changing a covered input makes prior results stale. Failed exports never count as independent acceptance.
 
-Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate.
+Archive creation requires a new destination and holds the run writer lock. It streams bounded files, rejects files that change during capture, restores and loads the completed temporary ZIP to verify its actual closure, then publishes exclusively. A pre-existing or racing destination is preserved; only this attempt’s temporary files are removed.
+
+Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate. Repeated demo verification writes new archives beneath a fresh `packages/verification-*` directory and records those exact relative paths, preserving previously retained packages.
 
 Restoration requires a new destination and rejects destination symlinks, including those with missing targets. If another writer creates that destination before publication, even as an empty directory or symlink, restoration fails, preserves the competing destination, and removes only its own temporary extraction directory.
 
@@ -258,6 +260,17 @@ python scripts/generate_rig_templates.py --check
 Generation requires a new destination. Verification can be rerun without `--generate` on an existing set. The retained fixtures, source GLBs, real animation channels, pose sheets, transparent frame sequences, browser screenshots, editable Blender files, independent reports and archive receipts are indexed by `examples/rig-3d/acceptance.json`. Consult [acceptance and limitations](3d-rigging-acceptance.md) before treating any engineering fixture or gate as a production-art approval.
 
 The public production delivery command remains scoped to all existing 2D tests by default (`--tests --test-scope 2d`), so its pinned environment does not need NumPy, pygltflib or Blender. It filters only the new `test_rig_*.py` modules before import and retains strict skip accounting. Use the focused 3D command above and the nine named CI jobs for 3D acceptance. The delivery runner also accepts `--test-scope all` when the complete 3D environment and test flags are enabled; unexpected integration skips still fail that gate.
+
+Weight-edit input validation preserves the original skin on failure. Direct
+`edit_weights` calls use the smaller of four and the stored width when the
+influence limit is omitted. Explicit limits require an integer from one through
+the stored width; larger requests and null fail instead of silently discarding
+authored influences. Correction assignments and mirrors cap the profile limit
+to that stored width. `copy_weights` requires integer vertex references without
+coercing correction sources (booleans are not
+vertices). `smooth_weights` requires integer iterations from zero through 64 and
+a finite numeric strength from zero through one. These bounded API repairs do
+not establish completion of the broader #53 skinning acceptance.
 
 ### Authored landmark admission
 
@@ -365,3 +378,5 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+Contact targets repeat at their authored world locations for in-place clips. Embedded root-motion loops translate each repeated contact target by the same complete-cycle root displacement as the pose; non-looping evaluation never adds a cycle offset. This keeps planted IK contacts consistent with the selected root-motion mode.

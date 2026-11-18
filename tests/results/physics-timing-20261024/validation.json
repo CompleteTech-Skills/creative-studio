@@ -1,0 +1,28 @@
+{
+  "source_runtime_sha": "c3e2dac",
+  "tested_head": "c3e2dac",
+  "dependency_sha": "2e1190c1a6eefd55dc5d7c81a0e63c33b59d82b3",
+  "github": "no writes; local stack; PR208 pending",
+  "source_files": {
+    "scripts/physics_backends.py": "f733ddea516ec435ea1767b94eff94566006a0a460d4328bd22de2102e029149",
+    "scripts/physics_timing.py": "0ff6b649c8f203cf108ee355c5c60ad9f6cb7e1669309f085114d836e8180b1f",
+    "scripts/physics_contracts.py": "6c691435e5cb9d9afb9f978ea1410b5b17d892928a048974dba6357f91cbb824",
+    "scripts/physics_backend_evidence.py": "dbe73ffd63979a9d94b451f03099a58b754730638cf987405483c0bdae35259b",
+    "scripts/physics_pybullet_worker.py": "4733ae5bee19a5a816c7c88d60451e04d5d957afe169ea0fe43fbb41e96f25e0",
+    "scripts/physics_blender_worker.py": "4f2746f379cc9eedee4e798799c7de7804acf221623182f4ae1604d63a72cf0f",
+    "tests/test_physics_timing.py": "b1a9f3957863987a19e7007f4834e436b69d6013f4653fce07975be5014027e3"
+  },
+  "checks": {
+    "native48": "PASS45.149s zero skips",
+    "numeric9": "PASS41.103s zero skips",
+    "contracts22": "PASS1.543s (unchanged contract/schema)",
+    "scene67": "PASS12.009s (unchanged Scene3D)",
+    "generated_schema": "PASS (unchanged schema)"
+  },
+  "limitations": [
+    "Blender requires integral substeps per animation frame",
+    "Unsupported animation bodies and non-rigid categories inherited from168",
+    "No cross-platform bitwise or arbitrary-rerun guarantee",
+    "No human visual/artistic approval"
+  ]
+}

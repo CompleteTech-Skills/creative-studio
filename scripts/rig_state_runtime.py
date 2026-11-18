@@ -5,12 +5,14 @@ never generates missing clips or turns numerical playback into visual approval.
 """
 from copy import deepcopy
 from contextlib import contextmanager
+from fractions import Fraction
 import math
+from sys import float_info
 import numpy as np
 from rig_animation import evaluate_animation, blend_poses
 from rig_contracts import validate_contract
 from rig_skinning import evaluate_deformation
-from rig_errors import require, object_hash
+from rig_errors import RigError, require, object_hash
 from rig_states import map_states
 
 
@@ -26,10 +28,10 @@ class RigStateRuntime:
     def __init__(self, rig, initial, *, recipes=None, selected=None,
                  blend_seconds=0.2, now=0.0, transition_budget=32,
                  reduced_motion=False, reduced_motion_poses=None):
-        require(isinstance(now, (int, float)) and not isinstance(now, bool) and math.isfinite(now) and now >= 0,
+        require(isinstance(now, (int, float)) and not isinstance(now, bool) and 0 <= now <= float_info.max,
                 'RIG_STATE_TIME', 'Runtime time must be finite and nonnegative.')
         require(isinstance(blend_seconds, (int, float)) and not isinstance(blend_seconds, bool)
-                and math.isfinite(blend_seconds) and 0 <= blend_seconds <= 10,
+                and 0 <= blend_seconds <= 10,
                 'RIG_STATE_BLEND', 'Blend duration must be within zero to ten seconds.')
         require(type(transition_budget) is int and 1 <= transition_budget <= 1024,
                 'RIG_STATE_BUDGET', 'Transition budget must be within 1..1024.')
@@ -69,7 +71,7 @@ class RigStateRuntime:
 
     def _check(self, now):
         require(isinstance(now, (int, float)) and not isinstance(now, bool)
-                and math.isfinite(now) and now >= self.time,
+                and self.time <= now <= float_info.max,
                 'RIG_STATE_TIME', 'Runtime time must be finite and monotonic.')
         require(self._signature == self._current_signature(), 'RIG_STATE_STALE',
                 'Rig or animation changed; create a fresh runtime mapping.')
@@ -94,7 +96,7 @@ class RigStateRuntime:
         clips = recipe['clips']
         duration = self._duration()
         looping = recipe['completion'] is None and self.rig.clips[clips[-1]]['loop']
-        cycles = int(elapsed//duration) if looping else 0
+        cycles = elapsed//duration if looping else 0.
         local = elapsed % duration if looping else min(elapsed, duration)
         cycle_delta = np.zeros(3)
         first_root = self._root(evaluate_animation(self.rig, self.rig.clips[clips[0]], 0)['pose'])
@@ -112,10 +114,20 @@ class RigStateRuntime:
         total_delta = sum((self._root(evaluate_animation(self.rig, self.rig.clips[c], self.rig.clips[c]['duration'])['pose'])
                            - self._root(evaluate_animation(self.rig, self.rig.clips[c], 0)['pose']) for c in clips if self.rig.clips[c]['root_motion'] == 'embedded'), np.zeros(3))
         root = self.rig.skeleton['root']
+        motion_error = 'Requested runtime time exceeds finite root-motion representation.'
         with np.errstate(over='ignore', invalid='ignore'):
-            translation = first_root+self._root(pose)-self._root(start)+self.root_offset+prior_delta+cycles*total_delta
-        require(np.isfinite(translation).all(), 'RIG_STATE_TIME',
-                'Requested runtime time exceeds finite root-motion representation.')
+            if math.isfinite(cycles):
+                repeated_delta = cycles*total_delta
+            else:
+                # The cycle count can overflow even when its displacement fits.
+                require(np.isfinite(total_delta).all(), 'RIG_STATE_TIME', motion_error)
+                exact_cycles = Fraction(elapsed)//Fraction(duration)
+                try:
+                    repeated_delta = np.array([float(exact_cycles*Fraction(float(delta))) for delta in total_delta])
+                except OverflowError as exc:
+                    raise RigError('RIG_STATE_TIME', motion_error) from exc
+            translation = first_root+self._root(pose)-self._root(start)+self.root_offset+prior_delta+repeated_delta
+        require(np.isfinite(translation).all(), 'RIG_STATE_TIME', motion_error)
         pose['bones'].setdefault(root, {})['translation'] = translation.tolist()
         if self.source_pose is not None and self.blend_seconds and elapsed < self.blend_seconds:
             # Complete both poses: sparse target channels must fade old channels
@@ -162,12 +174,15 @@ class RigStateRuntime:
         """Evaluate geometry-driving pose and perform available completion edges."""
         self._check(now)
         status = 'playing'
-        while not self.reduced_motion and self.recipes[self.state]['completion'] is not None and now >= self.entered+self._duration():
+        while not self.reduced_motion and self.recipes[self.state]['completion'] is not None:
+            # A short clip at a large timestamp can round back to its start.
+            boundary = max(self.entered+self._duration(), math.nextafter(self.entered, math.inf))
+            if now < boundary:
+                break
             target = self.recipes[self.state]['completion']
             if target not in self.recipes:
                 status = 'completion-unavailable'
                 break
-            boundary = self.entered+self._duration()
             self._enter(target, boundary, self._pose(boundary))
         pose = self._pose(now)
         self.time = float(now)

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-response",
+  "request_id": "request",
+  "status": "unavailable",
+  "project_revision": 0,
+  "project_sha256": "62ca33b39a103db474de2a1e5f285a7bdc95d4d6d90550a2c716ca2826a57562",
+  "outputs": [],
+  "diagnostics": [
+    {
+      "code": "EDITOR3D_UNAVAILABLE",
+      "path": "/operation",
+      "message": "Scene owner not integrated.",
+      "correction": "Integrate the authoritative scene service before authoring.",
+      "retryable": false
+    }
+  ],
+  "executed": false,
+  "review_status": "unreviewed"
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "kind": "animation_layer_3d",
+  "value": {
+    "id": "body",
+    "name": "Body",
+    "priority": 0,
+    "blend_mode": "override",
+    "weight": 1,
+    "muted": false,
+    "solo": false,
+    "placements": []
+  }
+}
