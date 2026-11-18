@@ -17,21 +17,29 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
     limits = limits or DEFAULT_LIMITS
     path = Path(path)
     path = path.absolute() if source_reader is not None else normalize_root(path.parent)/path.name
+    source_limit = limits['source_bytes']
+    require(type(source_limit) in (int, float) and 0 < source_limit < 2**63
+            and int(source_limit) == source_limit,
+            'RIG_LIMIT_SOURCE', 'OBJ source byte budget must be a positive whole number.')
+    source_limit = int(source_limit)
     payload_sizes = {}
     def read_source(source, maximum, *, code='RIG_LIMIT_SOURCE',
                     message='OBJ source exceeds its byte budget.', allow_empty=False):
         if source_reader is None:
-            require(source.stat().st_size <= maximum, code, message)
+            size = source.stat().st_size
+            require(size <= maximum, code, message)
             with source.open('rb') as stream:
-                data = stream.read(maximum + 1)
+                data = stream.read(size + 1)
+            require(len(data) <= maximum, code, message)
+            require(len(data) == size, 'RIG_SOURCE_CHANGED', 'OBJ source size changed during reading.')
         else:
             data = source_reader(source, maximum, code=code, message=message, allow_empty=allow_empty)
-        require(len(data) <= maximum, code, message)
+            require(len(data) <= maximum, code, message)
         payload_sizes[source] = len(data)
         require(sum(payload_sizes.values()) <= limits['dependency_bytes'],
                 'RIG_LIMIT_DEPENDENCIES', 'OBJ dependencies exceed their byte budget.')
         return data
-    entry_bytes = read_source(path, limits['source_bytes'])
+    entry_bytes = read_source(path, source_limit)
     require(math.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'OBJ scale must be positive.')
     vertices, uv, normals, groups, dependencies = [], [], [], {}, [path]
     materials = [dict(name='Default material')];material_ids = {'default': 0};images = [];textures = []
@@ -47,7 +55,7 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
         nonlocal total_texture_pixels
         p = safe_path(path.parent, name, exists=True);dependencies.append(p)
         material = None
-        data = read_source(p, min(1024**2, limits['source_bytes']), code='RIG_LIMIT_MTL',
+        data = read_source(p, min(1024**2, source_limit), code='RIG_LIMIT_MTL',
                            message='MTL exceeds its encoded-byte budget.', allow_empty=True)
         for line in data.decode('utf-8').splitlines():
             fields = shlex.split(line, comments=True)
@@ -67,7 +75,7 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
             elif material is not None and key == 'map_Kd':
                 require(values and not values[0].startswith('-'), 'RIG_MTL', 'Bake MTL texture options before import.')
                 texture = safe_path(p.parent, ' '.join(values), exists=True)
-                data = read_source(texture, limits['source_bytes'], code='RIG_LIMIT_TEXTURE',
+                data = read_source(texture, source_limit, code='RIG_LIMIT_TEXTURE',
                                    message='MTL texture exceeds its encoded-byte budget.')
                 mime, pixels = _decode_texture(data, limits, total_texture_pixels)
                 total_texture_pixels += pixels

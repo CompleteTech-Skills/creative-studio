@@ -109,6 +109,15 @@ class MeshImportTests(unittest.TestCase):
             np.testing.assert_allclose(result.model.report['dimensions_m'],[.02,.02,0])
         self.assertEqual(p.read_bytes(),before)
 
+    def test_obj_direct_source_cap_accepts_integral_float(self):
+        obj = self.root/'mesh.obj'
+        obj.write_bytes(b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        model = load_character_model(obj, limits={**DEFAULT_LIMITS, 'source_bytes': 96.0})
+        self.assertEqual(model.geometry.triangle_count, 1)
+        with self.assertRaises(RigError) as caught:
+            load_character_model(obj, limits={**DEFAULT_LIMITS, 'source_bytes': 96.5})
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_SOURCE')
+
     def test_obj_dependency_budget_diagnostics_in_direct_and_managed_import(self):
         obj = self.root/'mesh.obj'
         obj.write_bytes(b'mtllib library\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
