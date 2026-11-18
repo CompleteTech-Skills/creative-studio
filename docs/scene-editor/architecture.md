@@ -89,6 +89,11 @@ this fixture's nonexistent native file. The separate unavailable-owner check
 uses the unmerged Animation3D adapter. This is not a scene, model generation,
 interactive browser demonstration, or accepted production asset.
 
+The separate [native closure verifier](native-closure.md) validates complete
+source-project dependencies and native binding identities on a bounded temporary
+snapshot. It keeps decoded-geometry evidence distinct from file/contract
+verification and does not grant rendering or visual approval.
+
 ## Runtime admission and invariants
 
 `validate_contract` rejects unknown root kinds/versions/fields, duplicate source
@@ -201,7 +206,7 @@ results for this patch.
 | #99 requirement | Implementation | Remaining boundary |
 | --- | --- | --- |
 | Audit current frontend/backend/assets/review/history and baseline | This audit, inherited owners, independent baseline logs | No claim of complete existing full-suite rerun unless the receipt says so |
-| Shared project/scene/node/asset/animation/command/revision types and equivalence | Single schema authority, generated TS, strict admission, hash closure | Merged native manifest semantics are checked; transitive payload closure and broad editor state required by parent §5 remain runtime work |
+| Shared project/scene/node/asset/animation/command/revision types and equivalence | Single schema authority, generated TS, strict admission, hash closure | Native manifest and source-project closure are checked by the native closure verifier; persistent editing and broad runtime state remain later work |
 | Persistent/session/derived separation, stable IDs, coordinate/time adapters | Closed roots, context checks, existing math and exact fractions | Scene evaluation, world-preserving reparenting, UI persistence remain separate |
 | Local API safety/revision/integration specification | Request/response types, preflight, operation matrix, native validators | No HTTP server, filesystem mutation, render job or editor control is represented as delivered |
 
