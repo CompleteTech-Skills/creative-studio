@@ -76,12 +76,12 @@ def import_obj(path: Path, *, scale=1., limits=None, geometry_only=False):
     for line in path.read_text('utf-8').splitlines():
         if geometry_only:
             check_deadline()
-        fields = shlex.split(line, comments=True)
+            fields = line.partition('#')[0].split()
+        else:
+            fields = shlex.split(line, comments=True)
         if not fields:continue
         key, values = fields[0], fields[1:]
         if geometry_only:
-            require(line.split(maxsplit=1)[0] == key, 'RIG_OBJ_RECORD',
-                    'Use an unquoted OBJ record name.')
             require(key not in ('mtllib', 'usemtl'), 'RIG_OBJ_MATERIAL',
                     'Geometry-only OBJ import does not accept material declarations.')
             require(key in ('v', 'vt', 'vn', 'g', 'o', 's', 'f'), 'RIG_OBJ_RECORD',
