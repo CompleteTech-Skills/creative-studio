@@ -239,7 +239,8 @@ def source_from_blender_manifest(root, manifest):
     """
     expected = {'schema_version', 'kind', 'engine', 'fps', 'frames'}
     if (not isinstance(manifest, dict) or set(manifest) != expected or
-            manifest['schema_version'] != 1 or manifest['kind'] != 'blender-frame-manifest' or
+            type(manifest['schema_version']) is not int or manifest['schema_version'] != 1 or
+            manifest['kind'] != 'blender-frame-manifest' or
             manifest['engine'] not in ('CYCLES', 'BLENDER_EEVEE_NEXT') or
             not isinstance(manifest['frames'], list)):
         raise ValueError('unsupported Blender frame manifest')

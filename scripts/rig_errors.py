@@ -404,6 +404,91 @@ def open_payload(root: str | Path, name: str, *, root_identity=None, profile: st
         for descriptor in reversed(descriptors):
             os.close(descriptor)
 
+@contextmanager
+def owned_directory_fd(root_fd: int):
+    """Duplicate and validate a caller-held directory descriptor for this scope."""
+    require(type(root_fd) is int and root_fd >= 0, 'RIG_DIRECTORY_FD', 'Expected an open directory descriptor.')
+    try:
+        descriptor = os.dup(root_fd)
+    except (OSError, OverflowError) as exc:
+        raise RigError('RIG_DIRECTORY_FD', 'Cannot duplicate the held directory descriptor.') from exc
+    try:
+        try:
+            directory = os.fstat(descriptor)
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_FD', 'Cannot inspect the held directory descriptor.') from exc
+        require(stat.S_ISDIR(directory.st_mode), 'RIG_DIRECTORY_FD', 'Descriptor must identify a directory.')
+        yield descriptor
+    except BaseException as primary:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            if hasattr(primary, 'add_note'):
+                primary.add_note('Held directory descriptor close also failed: ' + str(exc))
+        raise
+    else:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_FD', 'Cannot close the held directory descriptor.') from exc
+
+
+@contextmanager
+def _payload_parent_fd(root, parts):
+    directory = root
+    try:
+        for part in parts:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            previous, directory = directory, child
+            if previous != root:
+                os.close(previous)
+        yield directory
+    finally:
+        if directory != root:
+            os.close(directory)
+
+
+@contextmanager
+def open_payload_at(root_fd: int, name: str, *, profile: str = 'default'):
+    """Open a regular payload beneath a borrowed directory descriptor."""
+    parts = PurePosixPath(portable_name(name, profile=profile)).parts
+    require(os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
+            and os.stat in os.supports_follow_symlinks
+            and all(hasattr(os, flag) for flag in ('O_DIRECTORY', 'O_NOFOLLOW', 'O_NONBLOCK')),
+            'RIG_DIRECTORY_UNAVAILABLE', 'Descriptor-relative payload reads are unavailable.')
+    parents, leaf = parts[:-1], parts[-1]
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+
+    def fingerprint(info):
+        return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+    try:
+        with owned_directory_fd(root_fd) as root, _payload_parent_fd(root, parents) as parent:
+            selected_parent = os.fstat(parent)
+            fd = os.open(leaf, flags, dir_fd=parent)
+            try:
+                before = os.fstat(fd)
+                require(stat.S_ISREG(before.st_mode), 'RIG_PAYLOAD_TYPE',
+                        'Payload must be a regular file.', asset=name)
+                current = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+                require(fingerprint(before) == fingerprint(current),
+                        'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
+                with os.fdopen(fd, 'rb', closefd=False) as stream:
+                    yield stream, before
+                after = os.fstat(fd)
+                with _payload_parent_fd(root, parents) as reopened:
+                    named_parent = os.fstat(reopened)
+                    require((named_parent.st_dev, named_parent.st_ino) == (selected_parent.st_dev, selected_parent.st_ino),
+                            'RIG_PAYLOAD_CHANGED', 'Payload parent changed during reading.', asset=name)
+                    current = os.stat(leaf, dir_fd=reopened, follow_symlinks=False)
+                    require(fingerprint(before) == fingerprint(after) == fingerprint(current),
+                            'RIG_PAYLOAD_CHANGED', 'Payload changed during reading.', asset=name)
+            finally:
+                os.close(fd)
+    except OSError as exc:
+        raise RigError('RIG_PAYLOAD_IO', 'Cannot safely read the payload: ' + str(exc), asset=name) from exc
+
+
 def slug(text: str) -> str:
     value = re.sub('[^a-z0-9._-]+', '-', str(text).lower()).strip('-._')[:100]
     return value or 'character'
@@ -424,8 +509,7 @@ def job_lock(root: str | Path) -> Iterator[None]:
         stream.seek(0)
         if os.name == 'nt':
             import msvcrt
-            if lock.stat().st_size == 0:
-                stream.write(b'0'); stream.flush(); stream.seek(0)
+            # Windows can lock a byte past EOF, so a new sidecar can stay empty.
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
