@@ -384,6 +384,42 @@ class EnvironmentTests(unittest.TestCase):
             self.assertIn('test-mesh',result['conflicts'])
             self.assertNotIn('test-mesh',[n['id'] for n in scene['nodes']])
 
+    def test_deleting_a_preserved_obsolete_edit_leaves_a_tombstone(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);first=root/'first'
+            original=recipe('primitive',kind='box',dimensions={})
+            create_environment(first,original)
+            bundle=load_project(first);path=bundle['project']['scenes'][-1]['path']
+            graph=SceneGraph.from_bundle(bundle,path,source_root=first)
+            generated=next(n for n in graph.document()['nodes'] if n['id']=='test-mesh')
+            transform=deepcopy(generated['transform']);transform['translation']=[1,2,3]
+            graph.set_transform('test-mesh',transform)
+            edited=root/'edited'
+            snapshot_project(first,edited,graph,scene_path=path)
+            path=load_project(edited)['project']['scenes'][-1]['path']
+
+            switched=root/'switched'
+            result=apply_recipe(edited,switched,path,recipe(rooms=1))
+            self.assertEqual(result['conflicts'],['test-mesh'])
+            bundle=load_project(switched);path=bundle['project']['scenes'][-1]['path']
+            graph=SceneGraph.from_bundle(bundle,path,source_root=switched)
+            obsolete=next(n for n in graph.document()['nodes'] if n['id']=='test-mesh')
+            self.assertEqual(obsolete['transform'],transform)
+            self.assertEqual(obsolete['metadata']['generated_fingerprint'],
+                             generated['metadata']['generated_fingerprint'])
+            graph.delete('test-mesh')
+            deleted=root/'deleted'
+            snapshot_project(switched,deleted,graph,scene_path=path)
+            path=load_project(deleted)['project']['scenes'][-1]['path']
+
+            restored=root/'restored'
+            result=apply_recipe(deleted,restored,path,original)
+            self.assertEqual(result['conflicts'],['test-mesh'])
+            bundle=load_project(restored)
+            scene=bundle['documents'][bundle['project']['scenes'][-1]['path']]
+            self.assertNotIn('test-mesh',[n['id'] for n in scene['nodes']])
+            self.assertEqual(json.loads(scene['metadata']['generator_deleted_test']),['test-mesh'])
+
     def test_preprocessing_collections_are_bounded(self):
         with self.assertRaises(RigError):plan(recipe('terrain',paths=[{}]*9))
         with self.assertRaises(RigError):scatter(Heightfield(),1,exclusions=[[0,0,1,1]]*129)

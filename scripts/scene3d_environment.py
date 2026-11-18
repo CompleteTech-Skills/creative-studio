@@ -240,8 +240,12 @@ def _prepare_recipe(source,bundle,scene,recipe,*,policy='preserve',offset=_OMITT
     scene['metadata']['generator_recipe_'+rid]=recipe_path
     scene['metadata']['generator_deleted_'+rid]=json.dumps(sorted(deleted),separators=(',',':'))
     require(len(scene['metadata']['generator_deleted_'+rid])<=4096,'Generator deletion history exceeds metadata budget.')
-    scene['metadata']['generator_nodes_'+rid]=json.dumps([o['id'] for o in objects],separators=(',',':'))
-    require(len(scene['metadata']['generator_nodes_'+rid])<=4096,'Generator history exceeds metadata budget.')
+    planned=[o['id'] for o in objects]
+    # A preserved edit remains generator-owned even if the new recipe omits it.
+    tracked=planned+sorted(modified-set(planned))
+    scene['metadata']['generator_nodes_'+rid]=json.dumps(tracked,separators=(',',':'))
+    require(len(tracked)<=1000 and len(scene['metadata']['generator_nodes_'+rid])<=4096,
+            'Generator history exceeds metadata budget.')
     existing={(r['id'],r['version']):r for r in scene['dependencies']}
     for ref in refs:existing[(ref['id'],ref['version'])]=ref
     scene['dependencies']=list(existing.values());_inventories(scene)
