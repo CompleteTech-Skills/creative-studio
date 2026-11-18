@@ -492,6 +492,35 @@ class RigRuntimeCompletionBoundaryTests(unittest.TestCase):
                         self.assertEqual(result['pose']['morphs'][mesh.id]['blink'], amount)
                         json.dumps(result, allow_nan=False)
 
+    def test_rounding_blend_end_does_not_advance_embedded_loop_clock(self):
+        start_pose = neutral_pose(self.rig.skeleton)
+        end_pose = neutral_pose(self.rig.skeleton)
+        end_pose['bones']['b0'] = {'translation': [1., 0., 0.]}
+        clip = clip_from_poses(self.rig, 'short-travel', [0., 1. / 64.],
+                               [start_pose, end_pose], loop=True, root_motion='embedded')
+        self.rig.clips[clip['id']] = clip
+        recipes = {'static-neutral': 'neutral', 'static-positive': clip['id']}
+        entry = float(2 ** 50)
+        now = entry + .3
+        self.assertEqual(now - entry, .25)
+        expected = evaluate_animation(self.rig, clip, now - entry, loop=True)['pose']
+        self.assertEqual(evaluate_fk(self.rig.skeleton, expected)['b0'][0, 3], 16.)
+        for initial in ('static-positive', 'static-neutral'):
+            for blend in (0., .3):
+                with self.subTest(initial=initial, blend=blend):
+                    runtime = RigStateRuntime(self.rig, initial, recipes=recipes,
+                                              selected=list(recipes), now=entry,
+                                              blend_seconds=blend)
+                    if initial == 'static-neutral':
+                        runtime.request('static-positive', entry)
+                        self.assertIsNotNone(runtime.source_pose)
+                    else:
+                        self.assertIsNone(runtime.source_pose)
+                    result = runtime.evaluate(now)
+                    self.assertEqual(result['state'], 'static-positive')
+                    self.assertEqual(result['elapsed'], .25)
+                    self.assert_geometry(result['pose'], expected)
+
     def test_native_unit_and_between_keep_large_finite_directions(self):
         for direction in ([-3., 4., 0.], [-3e155, 4e155, 0.],
                           [-1e308, 1e308, 0.]):

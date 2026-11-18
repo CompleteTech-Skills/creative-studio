@@ -282,6 +282,90 @@ class RigAnimationSampleValidationTests(unittest.TestCase):
             self.assert_atomic_rejection(runtime, lambda: runtime.evaluate(.5),
                                          'RIG_NONFINITE_DEFORMATION')
 
+    def test_runtime_refuses_unusable_precontrol_pose_even_if_joint_lock_repairs_skin(self):
+        from rig_animation import clip_from_poses
+        from rig_math import axis_angle
+        from rig_models import SkinWeights, validate_geometry
+        from rig_skinning import validate_skin
+
+        self.rig.manifest['skeleton'] = chain_skeleton(36)
+        self.mesh.positions[:, 1] *= 1e6
+        rest = evaluate_fk(self.rig.skeleton)
+        count = len(self.mesh.positions)
+        skin = SkinWeights(self.mesh.id, ['b35'], np.zeros((count, 4), dtype=np.uint16),
+                           np.tile([1., 0., 0., 0.], (count, 1)),
+                           np.array([np.linalg.inv(rest['b35'])]))
+        self.rig.weights = {self.mesh.id: skin}
+        validate_geometry(self.rig.geometry)
+        validate_skin(skin, self.mesh, self.rig.skeleton)
+        self.rig.manifest['controllers']['constraints'] = [
+            dict(schema_version=1, id='lock-end', bone='b35', type='locked', axes=[0, 1, 2])]
+        neutral = neutral_pose(self.rig.skeleton)
+        turned = deepcopy(neutral)
+        for bone in self.rig.skeleton['bones'][:-1]:
+            turned['bones'][bone['id']] = {'scale': [4.4e8, 1., 1.]}
+        turned['bones']['b35'] = {'rotation': axis_angle([0., 0., 1.], np.pi / 2).tolist()}
+        clip = clip_from_poses(self.rig, 'locked-strip', [0., .5, 1.], [neutral, turned, neutral])
+        self.rig.clips[clip['id']] = clip
+        self.assert_usable(self.raw_pose(clip, .125))
+        raw = self.raw_pose(clip, .5)
+        validate_contract(raw, 'Pose')
+        self.assertTrue(all(np.isfinite(matrix).all()
+                            for matrix in evaluate_fk(self.rig.skeleton, raw).values()))
+        with np.errstate(over='ignore', invalid='ignore'):
+            self.assert_rig_error('RIG_NONFINITE_DEFORMATION',
+                                  lambda: evaluate_deformation(self.rig, raw))
+            self.assert_usable(evaluate_animation(self.rig, clip, .5)['pose'])
+
+        recipes = {'static-neutral': 'neutral', 'static-positive': clip['id']}
+        for action in ('evaluate', 'cancel'):
+            with self.subTest(action=action):
+                runtime = RigStateRuntime(self.rig, 'static-neutral', recipes=recipes,
+                                          selected=list(recipes), blend_seconds=.1)
+                runtime.request('static-positive', 0.)
+                self.assert_usable(runtime.evaluate(.125)['pose'])
+                self.assert_usable(runtime._input_pose)
+                self.assertIsNotNone(runtime._source_input_pose)
+                with np.errstate(over='ignore', invalid='ignore'):
+                    self.assert_atomic_rejection(runtime, lambda: getattr(runtime, action)(.5),
+                                                 'RIG_NONFINITE_DEFORMATION')
+
+    def test_future_fk_overflow_refuses_only_its_actual_step_endpoint(self):
+        self.rig.manifest['skeleton'] = chain_skeleton(40)
+        self.rig.weights = generate_skin_weights(self.rig.geometry, self.rig.skeleton)
+        scales = [self.track('scale', target=bone['id'], interpolation='STEP')
+                  for bone in self.rig.skeleton['bones']]
+        for track in scales:
+            track['values'][1] = [4e8] * 3
+        root = self.track('translation', target='b0', interpolation='LINEAR')
+        root['values'] = [[0., 0., 0.], [.5, 0., 0.]]
+        for explicit_root in (False, True):
+            with self.subTest(explicit_root=explicit_root):
+                tracks = scales + ([root] if explicit_root else [])
+                clip = self.clip('bad-terminal-fk', tracks)
+                clip['loop'] = False
+                runtime = RigStateRuntime(self.rig, 'static-positive',
+                                          recipes={'static-positive': clip['id']},
+                                          selected=['static-positive'], blend_seconds=0.)
+                with np.errstate(over='ignore', invalid='ignore'):
+                    self.assert_rig_error('RIG_NONFINITE',
+                                          lambda: evaluate_animation(self.rig, clip, 1.))
+                    for time in (0., .5):
+                        expected = evaluate_animation(self.rig, clip, time)['pose']
+                        self.assert_usable(expected)
+                        try:
+                            actual = runtime.evaluate(time)['pose']
+                        except RigError as exc:
+                            self.fail(f'Finite sample at {time}s refused: {exc.report["code"]}')
+                        actual_fk = evaluate_fk(self.rig.skeleton, actual)
+                        actual_skin = evaluate_deformation(self.rig, actual)
+                        for name, matrix in evaluate_fk(self.rig.skeleton, expected).items():
+                            np.testing.assert_array_equal(actual_fk[name], matrix, err_msg=name)
+                        for name, mesh in evaluate_deformation(self.rig, expected).items():
+                            np.testing.assert_array_equal(actual_skin[name]['positions'], mesh['positions'],
+                                                          err_msg=name)
+                    self.assert_atomic_rejection(runtime, lambda: runtime.evaluate(1.), 'RIG_NONFINITE')
+
 
 if __name__ == '__main__':
     unittest.main()

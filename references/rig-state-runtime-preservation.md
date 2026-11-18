@@ -132,10 +132,12 @@ A second source review identified that the first correction still sampled
 trajectory roots after native constraints. A root translation clamp could then
 reduce the recipe's accumulated contact displacement even though the native
 evaluator derives complete-cycle displacement from authored channels before
-controls. All trajectory and origin samples now use native evaluation with
-`contacts=False, constraints=False`: the first clip origin, each clip's start
-and end, the selected local sample, complete-cycle sums and the target origin
-used at state entry. Runtime blend inputs also disable controls during sampling;
+controls. All trajectory and origin samples use the canonical native
+`evaluate_track` for the root translation, with its authored rest fallback:
+the first clip origin, each clip's start and end, the selected local sample,
+complete-cycle sums and the target origin used at state entry. Unrelated future
+channels are not evaluated solely to extract this translation. Runtime blend
+inputs disable controls during full pose sampling;
 `apply_animation_controls` then applies the same native stage used by direct
 `evaluate_animation`. The explicit contact-release interpolation above is the
 only final-pose exception to that projection order.
@@ -232,8 +234,10 @@ actual native deformation after controls and contact-release projection, before
 returning a pose or committing transition state. Finite transforms alone do not
 establish finite skinned vertices. Rejected samples restore all nine runtime
 transaction fields, including the captured source/input poses and contact
-placement. This adds one native deformation evaluation to each runtime sample;
-it does not perform rendering or external application validation.
+placement. Both the captured pre-control input and the returned controlled pose
+undergo actual native deformation admission, adding two deformation evaluations
+per runtime sample. A constraint cannot conceal an unusable captured input.
+This does not perform rendering or external application validation.
 
 Within one bone, positional copy precedes hard translation limits. World-space
 rotation controls then use that final position, and hard angular limits follow.
@@ -289,3 +293,16 @@ single-rounding prefix and final-endpoint correction, all 14 completion and
 numerical-boundary methods passed in 13.178 seconds, exit 0, zero skips. The
 earlier full-gate pass does not establish the corrected tree's full-gate result;
 that tree still needs full execution, independent review and protected CI.
+
+Source `62f5ba94` / published tree `94263057` subsequently passed the full
+146-test animation/IK gate in 88.278 seconds, exit 0, zero skips. Independent
+review then reproduced three additional boundaries: blend completion altering
+playback time at a large clock origin, an unusable pre-control skin snapshot
+hidden by a valid locked output, and valid earlier playback rejected because
+root-trajectory extraction evaluated unrelated invalid future channels. Three
+additive independent methods failed on that source. Playback elapsed and blend
+progress are now separate, captured input receives actual skin admission, and
+root trajectory extraction samples only the root translation. The corrected
+completion and sample-admission modules passed all 27 methods in 43.733 seconds,
+exit 0, zero skips. These focused executions do not substitute for the corrected
+tree's full gate, independent re-review or protected hosted checks.

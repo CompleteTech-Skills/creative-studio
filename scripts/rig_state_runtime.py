@@ -9,7 +9,7 @@ from fractions import Fraction
 import math
 from sys import float_info
 import numpy as np
-from rig_animation import (evaluate_animation, blend_poses, contact_is_active,
+from rig_animation import (evaluate_animation, evaluate_track, blend_poses, contact_is_active,
                            apply_animation_controls)
 from rig_constraints import apply_joint_limits
 from rig_errors import RigError, require, object_hash
@@ -91,9 +91,14 @@ class RigStateRuntime:
     def _authored_root(self, clip, time):
         # Trajectory uses authored channels, just as native loop accumulation
         # does. Constraints/IK belong to the final placed pose, not its offset.
-        pose = evaluate_animation(self.rig, clip, time,
-                                  contacts=False, constraints=False)['pose']
-        return self._root(pose)
+        # Future non-root tracks need not produce an executable full pose just
+        # to describe this translation; actual sampled poses are admitted below.
+        name = self.rig.skeleton['root']
+        track = next((track for track in clip['tracks']
+                      if track['target'] == name and track['path'] == 'translation'), None)
+        if track is not None:
+            return evaluate_track(track, time)
+        return np.asarray(next(b['rest']['translation'] for b in self.rig.skeleton['bones'] if b['id'] == name))
 
     def _sample(self, now):
         recipe = self.recipes[self.state]
@@ -107,8 +112,9 @@ class RigStateRuntime:
             # A scheduled endpoint is authoritative: subtraction can round it
             # back into the interior. Holding also freezes an unfinished fade.
             elapsed = duration if completed else min(elapsed, duration)
+        blend_elapsed = elapsed
         if now >= self._boundary(self.blend_seconds) and not (holding and duration < self.blend_seconds):
-            elapsed = max(elapsed, self.blend_seconds)
+            blend_elapsed = max(blend_elapsed, self.blend_seconds)
         cycles = elapsed//duration if looping else 0.
         local = elapsed % duration if looping else min(elapsed, duration)
         absolute_intervals = not looping
@@ -179,7 +185,7 @@ class RigStateRuntime:
         goals = {contact['chain']: contact for contact in clip['contacts']
                  if contact_is_active(contact, sampled['time'], clip['duration'])}
         blending = (self._source_input_pose is not None and self.blend_seconds > 0
-                    and elapsed < self.blend_seconds)
+                    and blend_elapsed < self.blend_seconds)
         releasing = blending and self._source_contact_correction and not goals
         control_input = input_pose
         if blending:
@@ -192,7 +198,7 @@ class RigStateRuntime:
             for mesh in self.rig.geometry.meshes:
                 for morph in mesh.morphs:
                     target['morphs'].setdefault(mesh.id, {}).setdefault(morph, mesh.morph_defaults.get(morph, 0.))
-            input_pose = blend_poses(self.rig, source, target, elapsed/self.blend_seconds)
+            input_pose = blend_poses(self.rig, source, target, blend_elapsed/self.blend_seconds)
             control_input = target if releasing else input_pose
         # Blend before native controls: replaying a fractional aim/copy on
         # already controlled poses changes its influence and snaps at blend end.
@@ -208,7 +214,7 @@ class RigStateRuntime:
             # target. Reprojecting this blend would replay fractional controls.
             # Interruptions retain this release provenance until the fade ends.
             controlled['pose'] = blend_poses(self.rig, self.source_pose, controlled['pose'],
-                                              elapsed/self.blend_seconds)
+                                              blend_elapsed/self.blend_seconds)
             controlled['pose'], controlled['constraints_applied'] = apply_joint_limits(
                 self.rig.skeleton, controlled['pose'],
                 self.rig.manifest['controllers']['constraints'])
@@ -216,6 +222,7 @@ class RigStateRuntime:
         # Finite FK can still overflow when applied to valid vertices or inverse
         # binds. Admit every returned/captured runtime sample through the actual
         # bounded native skinning owner before any playback state is committed.
+        evaluate_deformation(self.rig, input_pose)
         evaluate_deformation(self.rig, controlled['pose'])
         # Keep the native evaluator's per-solve reports separate; runtime
         # contacts always describe the final geometry after every chain.
