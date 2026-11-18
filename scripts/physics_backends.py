@@ -144,6 +144,15 @@ def _world(value):
     value['solver']['fixed_step'] = {key: int(item) for key, item in value['solver']['fixed_step'].items()}
     for key in ('substeps', 'iterations', 'seed'):
         value['solver'][key] = int(value['solver'][key])
+    for body in value['bodies']:
+        for collider in body['colliders']:
+            collider['group']=int(collider['group']);collider['mask']=int(collider['mask'])
+            shapes=[collider['shape']]
+            while shapes:
+                shape=shapes.pop()
+                if shape['type']=='compound':shapes.extend(child['shape'] for child in shape['children'])
+                elif shape['type'] in ('convex-hull','triangle-mesh'):
+                    shape['triangles']=[[int(index) for index in face] for face in shape['triangles']]
     from physics_contracts import definitions
     for key, schema in definitions()['PhysicsBudgets']['properties'].items():
         if schema.get('type') == 'integer':
@@ -293,13 +302,80 @@ class _Reader:
         except OSError as exc:
             raise BackendError('PHYSICS_CACHE_CORRUPT', 'Cannot open cache directory: ' + str(exc), category='cache-corruption') from exc
 
+    @classmethod
+    def from_descriptor(cls, descriptor):
+        """Own a validated duplicate of an explicit internal directory FD.
+
+        No path or metadata can manufacture this authority. The caller retains
+        its descriptor, and closing it cannot invalidate this owned duplicate.
+        """
+        require(type(descriptor) is int and descriptor>=0,'PHYSICS_PATH','Expected a live directory descriptor.')
+        require(os.name=='posix' and os.open in os.supports_dir_fd and hasattr(os,'O_NOFOLLOW'),
+                'PHYSICS_PLATFORM_UNSUPPORTED','Directory descriptor I/O requires supported POSIX operations.')
+        owned=None
+        try:
+            before=os.fstat(descriptor)
+            require(stat.S_ISDIR(before.st_mode),'PHYSICS_PATH','Descriptor must identify a directory.')
+            owned=os.dup(descriptor)
+            after=os.fstat(owned)
+            require(stat.S_ISDIR(after.st_mode) and (before.st_dev,before.st_ino)==(after.st_dev,after.st_ino),
+                    'PHYSICS_PATH','Directory descriptor changed during acquisition.')
+            reader=object.__new__(cls)
+            reader.fd=owned
+            reader._descriptor_identity=(after.st_dev,after.st_ino)
+            reader._descriptor_closed=False
+            owned=None
+            return reader
+        except OSError as exc:
+            raise BackendError('PHYSICS_PATH','Expected a live directory descriptor.') from exc
+        finally:
+            if owned is not None:os.close(owned)
+
+    def _check_descriptor(self):
+        identity=getattr(self,'_descriptor_identity',None)
+        if identity is None:return
+        require(not self._descriptor_closed,'PHYSICS_PATH','Owned directory context is closed.')
+        try:
+            current=os.fstat(self.fd)
+            require(stat.S_ISDIR(current.st_mode) and (current.st_dev,current.st_ino)==identity,
+                    'PHYSICS_PATH','Owned directory descriptor was closed or reused.')
+        except OSError as exc:
+            raise BackendError('PHYSICS_PATH','Owned directory descriptor is closed.') from exc
+
+    def stat(self,name):
+        """Read bounded relative regular-file metadata without following links."""
+        self._check_descriptor()
+        path_name(name)
+        descriptor=os.dup(self.fd)
+        try:
+            parts=name.split('/')
+            for part in parts[:-1]:
+                child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
+                os.close(descriptor);descriptor=child
+            info=os.stat(parts[-1],dir_fd=descriptor,follow_symlinks=False)
+            require(stat.S_ISREG(info.st_mode),'PHYSICS_CACHE_CORRUPT','Relative payload is not a regular file.')
+            return info
+        except OSError as exc:
+            raise BackendError('PHYSICS_CACHE_CORRUPT','Missing or unsafe relative payload: '+name) from exc
+        finally:os.close(descriptor)
+
     def __enter__(self):
         return self
 
     def __exit__(self, *_):
-        os.close(self.fd)
+        identity=getattr(self,'_descriptor_identity',None)
+        if identity is None:
+            os.close(self.fd)
+            return
+        if self._descriptor_closed:return
+        self._descriptor_closed=True
+        try:
+            info=os.fstat(self.fd)
+            if (info.st_dev,info.st_ino)==identity:os.close(self.fd)
+        except OSError:pass
 
     def read(self, name, limit=MAX_CACHE_BYTES):
+        self._check_descriptor()
         path_name(name)
         require(type(limit) is int and 0<=limit<=MAX_CACHE_BYTES,'PHYSICS_CACHE_CORRUPT',
                 'Cache read requires a bounded canonical integer byte count.',category='cache-corruption')
@@ -327,9 +403,12 @@ class _Reader:
             os.close(fd)
 
     def names(self):
+        self._check_descriptor()
         files = set()
         count = 0
-        pending = [(os.dup(self.fd),'')]
+        initial=(os.open('.',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=self.fd)
+            if hasattr(self,'_descriptor_identity') else os.dup(self.fd))
+        pending = [(initial,'')]
         try:
             while pending:
                 descriptor,prefix=pending.pop()
@@ -357,11 +436,91 @@ class _Reader:
                 os.close(descriptor)
 
 
+def _write_relative(directory_fd,name,payload):
+    """Write one new bounded immutable payload beneath a pinned directory."""
+    path_name(name)
+    require(type(payload) is bytes and len(payload)<=MAX_CACHE_BYTES,'PHYSICS_RESOURCE_LIMIT',
+            'Relative output requires bounded immutable bytes.')
+    with _Reader.from_descriptor(directory_fd) as reader:
+        descriptor=os.dup(reader.fd)
+        try:
+            parts=name.split('/')
+            for part in parts[:-1]:
+                try:os.mkdir(part,mode=0o700,dir_fd=descriptor)
+                except FileExistsError:pass
+                child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
+                os.close(descriptor);descriptor=child
+            output=os.open(parts[-1],os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,
+                           0o600,dir_fd=descriptor)
+            with os.fdopen(output,'wb') as stream:stream.write(payload)
+        except FileExistsError as exc:
+            raise BackendError('PHYSICS_DESTINATION_EXISTS','Relative output already exists; original preserved.') from exc
+        except OSError as exc:
+            raise BackendError('PHYSICS_PATH','Unsafe or unavailable relative output: '+name) from exc
+        finally:os.close(descriptor)
+
+
+def _inventory_relative(directory_fd):
+    """Hash a bounded complete artifact inventory through an owned root FD."""
+    with _Reader.from_descriptor(directory_fd) as reader:
+        names=sorted(reader.names())
+        _paths(names)
+        require(len(names)<=MAX_FILES,'PHYSICS_RESOURCE_LIMIT','Too many generated cache files.')
+        total=0;files=[]
+        for name in names:
+            info=reader.stat(name)
+            require(info.st_size<=MAX_CACHE_BYTES-total,'PHYSICS_RESOURCE_LIMIT','Generated cache bytes exceed admission.')
+            payload=reader.read(name,MAX_CACHE_BYTES-total)
+            total+=len(payload)
+            files.append(dict(path=name,sha256=digest(payload),bytes=len(payload)))
+        require(reader.names()==set(names),'PHYSICS_WORKER_OUTPUT','Artifact inventory changed during capture.')
+        return files
+
+
+def _tree_size_relative(directory_fd):
+    """Measure pinned regular files without loading their contents.
+
+    A worker may atomically replace temporary save files between polls. Missing
+    entries are ignored as in the existing path monitor; links fail closed.
+    """
+    with _Reader.from_descriptor(directory_fd) as reader:
+        pending=[os.open('.',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=reader.fd)]
+        total=0;count=0
+        try:
+            while pending:
+                descriptor=pending.pop()
+                try:
+                    for name in os.listdir(descriptor):
+                        count+=1
+                        require(count<=MAX_FILES+32,'PHYSICS_RESOURCE_LIMIT','Worker entry count exceeds admission.')
+                        path_name(name)
+                        try:
+                            info=os.stat(name,dir_fd=descriptor,follow_symlinks=False)
+                            if stat.S_ISDIR(info.st_mode):
+                                pending.append(os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor))
+                            else:
+                                require(stat.S_ISREG(info.st_mode),'PHYSICS_WORKER_OUTPUT','Worker produced a link or special file.')
+                                total+=info.st_size
+                        except FileNotFoundError:continue
+                finally:os.close(descriptor)
+        except OSError as exc:
+            raise BackendError('PHYSICS_WORKER_OUTPUT','Worker directory changed unsafely during measurement.') from exc
+        finally:
+            for descriptor in pending:os.close(descriptor)
+        return total
+
+
 def _worker_bytes(backend):
     filename = {'blender': 'physics_blender_worker.py', 'pybullet': 'physics_pybullet_worker.py'}[backend]
     source = Path(__file__).with_name(filename)
     require(source.is_file() and not source.is_symlink(), 'PHYSICS_WORKER_TRUST', 'Package worker must be a regular source file.')
     payload = source.read_bytes()
+    if backend == 'pybullet':
+        helper = Path(__file__).with_name('physics_collision_native.py')
+        require(helper.is_file() and not helper.is_symlink(), 'PHYSICS_WORKER_TRUST', 'Missing package-owned collision helper.')
+        prefix = helper.read_bytes()
+        require(0 < len(prefix) <= 256*1024, 'PHYSICS_WORKER_TRUST', 'Collision helper exceeds source bound.')
+        payload = prefix + b'\n' + payload
     require(0 < len(payload) <= 1024 * 1024, 'PHYSICS_WORKER_TRUST', 'Package worker size is invalid.')
     return payload
 
@@ -449,8 +608,12 @@ def _stop(process):
 @contextmanager
 def _slot():
     # One private global slot across processes. Native OS locks release on crash.
-    parent = Path(tempfile.gettempdir()).resolve()
-    name = 'hatch-physics-workers-' + str(os.getuid() if hasattr(os, 'getuid') else os.getpid())
+    require(os.name == 'posix' and hasattr(os,'getuid'), 'PHYSICS_PLATFORM_UNSUPPORTED',
+            'Cross-process physics ownership currently requires the supported POSIX platform.')
+    # TMPDIR is a per-job resource choice, so it cannot locate a process-global
+    # lock. The OS temporary namespace and UID remain stable across those jobs.
+    parent = Path('/tmp').resolve()
+    name = 'hatch-physics-workers-' + str(os.getuid())
     root = parent / name
     try:
         root.mkdir(mode=0o700)
@@ -471,16 +634,81 @@ def _slot():
         manager.__exit__(None,None,None)
 
 
+class _ProcessDirectory:
+    """Internal worker I/O adapter; one runner owns both path and FD jobs."""
+    def __init__(self, root, descriptor):
+        self.root = root
+        self.reader = None if descriptor is None else _Reader.from_descriptor(descriptor)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self.reader is not None:self.reader.__exit__(*exc)
+
+    def open_log(self, name):
+        if self.reader is None:return (self.root/name).open('wb')
+        require('/' not in path_name(name), 'PHYSICS_PATH', 'Worker log name must be a basename.')
+        fd = os.open(name, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600, dir_fd=self.reader.fd)
+        return os.fdopen(fd, 'wb')
+
+    def launch(self, command, out, err):
+        if self.reader is None:
+            return subprocess.Popen(command, cwd=self.root, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                env=_environment(self.root), shell=False, start_new_session=os.name == 'posix')
+        from physics_directory_transport import launch_at
+        return launch_at(self.reader.fd, command, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+            env=_environment(Path('.')), start_new_session=True)
+
+    def size(self):
+        return _tree_size(self.root) if self.reader is None else _tree_size_relative(self.reader.fd)
+
+    def log_size(self, name):
+        return (self.root/name).stat().st_size if self.reader is None else self.reader.stat(name).st_size
+
+    def failure(self):
+        if self.reader is None:
+            path=self.root/'worker-report.json'
+            return parse(path.read_bytes()) if path.is_file() and path.stat().st_size <= 32768 else None
+        try:info=os.stat('worker-report.json', dir_fd=self.reader.fd, follow_symlinks=False)
+        except FileNotFoundError:return None
+        if stat.S_ISREG(info.st_mode) and info.st_size <= 32768:return parse(self.reader.read('worker-report.json',32768))
+        return None
+
+    def tail(self, name):
+        if self.reader is None:return _tail(self.root/name)
+        try:
+            fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=self.reader.fd)
+            with os.fdopen(fd,'rb') as stream:
+                info=os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode):return ''
+                stream.seek(max(0,info.st_size-8192))
+                return stream.read(8192).decode('utf-8',errors='replace')
+        except OSError:return ''
+
+
 def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_token=None, progress=None, label='simulation'):
-    stdout = root / (label + '-stdout.log')
-    stderr = root / (label + '-stderr.log')
+    with _ProcessDirectory(root, None) as directory:
+        return _run_process_owned(command, directory, timeout=timeout, memory_bytes=memory_bytes,
+            output_bytes=output_bytes, cancel_token=cancel_token, progress=progress, label=label)
+
+
+def _run_process_at(command, directory_fd, *, timeout, memory_bytes, output_bytes, cancel_token=None, progress=None, label='simulation'):
+    with _ProcessDirectory(None, directory_fd) as directory:
+        return _run_process_owned(command, directory, timeout=timeout, memory_bytes=memory_bytes,
+            output_bytes=output_bytes, cancel_token=cancel_token, progress=progress, label=label)
+
+
+def _run_process_owned(command, directory, *, timeout, memory_bytes, output_bytes, cancel_token=None, progress=None, label='simulation'):
+    require('/' not in path_name(label), 'PHYSICS_PATH', 'Worker log labels must be portable basenames.', category='invalid-input')
+    stdout = label + '-stdout.log'
+    stderr = label + '-stderr.log'
     start = time.monotonic()
     peak = 0
     process = None
     try:
-        with _slot(), stdout.open('wb') as out, stderr.open('wb') as err:
-            process = subprocess.Popen(command, cwd=root, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
-                                       env=_environment(root), shell=False, start_new_session=os.name == 'posix')
+        with _slot(), directory.open_log(stdout) as out, directory.open_log(stderr) as err:
+            process = directory.launch(command, out, err)
             while process.poll() is None:
                 if cancel_token is not None and cancel_token.is_set():
                     raise BackendError('PHYSICS_CANCELLED', 'The user cancelled this owned worker.', category='timeout')
@@ -488,7 +716,7 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
                     raise BackendError('PHYSICS_TIMEOUT', 'Physics worker exceeded its wall-clock deadline.', category='timeout')
                 peak = max(peak, _rss(process.pid))
                 require(peak <= memory_bytes, 'PHYSICS_RESOURCE_LIMIT', 'Worker RSS exceeded the configured memory cap.', category='resource-exhaustion')
-                require(_tree_size(root) <= output_bytes and stdout.stat().st_size <= MAX_LOG_BYTES and stderr.stat().st_size <= MAX_LOG_BYTES,
+                require(directory.size() <= output_bytes and directory.log_size(stdout) <= MAX_LOG_BYTES and directory.log_size(stderr) <= MAX_LOG_BYTES,
                         'PHYSICS_RESOURCE_LIMIT', 'Worker files/logs exceeded the configured output cap.', category='resource-exhaustion')
                 if progress is not None:
                     progress(dict(status='running', elapsed_seconds=time.monotonic()-start,
@@ -498,10 +726,10 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
             # than its budget. Stop any owned descendants before checking the
             # settled inventory and before trusting or reading worker reports.
             _stop(process)
-            require(_tree_size(root) <= output_bytes and stdout.stat().st_size <= MAX_LOG_BYTES and stderr.stat().st_size <= MAX_LOG_BYTES,
+            require(directory.size() <= output_bytes and directory.log_size(stdout) <= MAX_LOG_BYTES and directory.log_size(stderr) <= MAX_LOG_BYTES,
                     'PHYSICS_RESOURCE_LIMIT', 'Worker files/logs exceeded the configured output cap.', category='resource-exhaustion')
-            if process.returncode != 0 and (root/'worker-report.json').is_file() and (root/'worker-report.json').stat().st_size <= 32768:
-                failure=parse((root/'worker-report.json').read_bytes())
+            if process.returncode != 0:
+                failure=directory.failure()
                 if isinstance(failure,dict) and failure.get('ok') is False and isinstance(failure.get('error'),dict):
                     detail=failure['error']
                     if detail.get('code')=='PHYSICS_NUMERICAL_INSTABILITY':
@@ -513,12 +741,12 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
     except BackendError as exc:
         if process is not None:
             _stop(process)
-        exc.report.update(preserved_workspace=str(root), process_exit_code=process.returncode if process else None,
-                          stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+        exc.report.update(preserved_workspace=str(directory.root) if directory.reader is None else 'owned-directory-descriptor', process_exit_code=process.returncode if process else None,
+                          stdout_tail=directory.tail(stdout), stderr_tail=directory.tail(stderr))
         raise
     except OSError as exc:
         error = BackendError('PHYSICS_BACKEND_CRASH', 'Cannot execute configured backend: ' + str(exc), category='backend-crash')
-        error.report.update(preserved_workspace=str(root), stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+        error.report.update(preserved_workspace=str(directory.root) if directory.reader is None else 'owned-directory-descriptor', stdout_tail=directory.tail(stdout), stderr_tail=directory.tail(stderr))
         raise error from exc
     finally:
         if process is not None:
@@ -573,7 +801,7 @@ def _admit_world(value, backend):
     solver, budget = world['solver'], world['budgets']
     require(solver['backend'] == backend and solver['adapter_version'] == ADAPTER_VERSION,
             'PHYSICS_BACKEND', 'World must select this exact backend and adapter version.', category='invalid-input')
-    require(set(solver['required_categories']) == {'rigid-body'} and not world['components'] and not world['joints'] and not world['events'],
+    require(set(solver['required_categories']) == {'rigid-body'} and not world['components'] and not world['events'],
             'PHYSICS_CAPABILITY_UNAVAILABLE', 'Only uncoupled rigid-body worlds are implemented in this adapter.', category='capability-gap')
     require(solver['reproducibility'] in ('not-guaranteed', 'verified-cache-replay'),
             'PHYSICS_REPRODUCIBILITY', 'Recomputation is not promised deterministic; request verified cache replay or not-guaranteed.', category='capability-gap')
@@ -603,6 +831,7 @@ def _admit_world(value, backend):
                 'PHYSICS_MATERIAL_UNSUPPORTED', 'Blender/PyBullet expose one friction coefficient; unequal static/dynamic requests are unsupported.', category='capability-gap')
         require(material['collision_margin'] == 0, 'PHYSICS_MARGIN_UNSUPPORTED',
                 'Nonzero additional contact skin has not been verified; native margin property storage is not physical separation support.',category='capability-gap')
+    proxy_totals=[0,0,0]
     for body in world['bodies']:
         require(len(body['id'].encode()) <= 63 and body['category'] == 'rigid-body' and body['mode'] in ('dynamic', 'static', 'kinematic') and body['parent'] is None,
                 'PHYSICS_BODY_UNSUPPORTED', 'Only unparented static/dynamic/kinematic rigid bodies with native names <=63 bytes are implemented.', category='capability-gap')
@@ -617,14 +846,28 @@ def _admit_world(value, backend):
                     'PHYSICS_SLEEP_UNSUPPORTED', 'PyBullet API exposes activation states but not configurable native sleep thresholds.', category='capability-gap')
         require(max(map(abs, body['transform']['translation'])) <= 10000 and body['mass']['kilograms'] <= 1e6,
                 'PHYSICS_SETTINGS', 'Position/mass exceeds documented native bounds.', category='invalid-input')
-        require(len(body['colliders']) == 1, 'PHYSICS_SHAPE_UNSUPPORTED', 'Exactly one box/sphere collider per body is supported.', category='capability-gap')
-        collider = body['colliders'][0]
-        require(collider['shape']['type'] in ('box', 'sphere') and not collider['sensor'] and collider['group'] == 1 and collider['mask'] == 2**32-1,
-                'PHYSICS_SHAPE_UNSUPPORTED', 'Only nonsensor box/sphere colliders with the unfiltered default group/mask are supported.', category='capability-gap')
-        require(collider['transform'] == dict(translation=[0, 0, 0], rotation=[0, 0, 0, 1]),
-                'PHYSICS_SHAPE_UNSUPPORTED', 'Offset/rotated local colliders require a later adapter.', category='capability-gap')
-        dimensions = collider['shape'].get('size', [collider['shape'].get('radius', 0)])
-        require(all(.001 <= x <= 1000 for x in dimensions), 'PHYSICS_SETTINGS', 'Primitive dimensions must be .001..1000 meters.', category='invalid-input')
+        explicit_proxies = world.get('collision_profile') == 'explicit-proxies-v1'
+        if explicit_proxies:
+            require(backend == 'pybullet', 'PHYSICS_SHAPE_UNSUPPORTED',
+                    'The explicit proxy profile currently requires the verified DIRECT adapter.', category='capability-gap')
+            from physics_collisions import validate_colliders, CollisionError
+            try:
+                proxy_vertices, proxy_triangles, proxy_leaves = validate_colliders(body,
+                    source_ids={item['id'] for item in world['assets'] if item['kind'] == 'geometry'})
+            except CollisionError as exc:
+                raise BackendError('PHYSICS_GEOMETRY', str(exc), category='invalid-input') from exc
+            proxy_totals=[total+count for total,count in zip(proxy_totals,(proxy_vertices,proxy_triangles,proxy_leaves))]
+            require(proxy_totals[0] <= budget['vertices'] and proxy_totals[1] <= budget['triangles'] and proxy_totals[2]<=128,
+                    'PHYSICS_RESOURCE_LIMIT', 'Collision proxy exceeds declared mesh budget.', category='resource-exhaustion')
+        else:
+            require(len(body['colliders']) == 1, 'PHYSICS_SHAPE_UNSUPPORTED', 'Exactly one box/sphere collider per body is supported.', category='capability-gap')
+            collider = body['colliders'][0]
+            require(collider['shape']['type'] in ('box', 'sphere') and not collider['sensor'] and collider['group'] == 1 and collider['mask'] == 2**32-1,
+                    'PHYSICS_SHAPE_UNSUPPORTED', 'Only nonsensor box/sphere colliders with the unfiltered default group/mask are supported.', category='capability-gap')
+            require(collider['transform'] == dict(translation=[0, 0, 0], rotation=[0, 0, 0, 1]),
+                    'PHYSICS_SHAPE_UNSUPPORTED', 'Offset/rotated local colliders require a later adapter.', category='capability-gap')
+            dimensions = collider['shape'].get('size', [collider['shape'].get('radius', 0)])
+            require(all(.001 <= x <= 1000 for x in dimensions), 'PHYSICS_SETTINGS', 'Primitive dimensions must be .001..1000 meters.', category='invalid-input')
         if body['mode'] == 'dynamic':
             require(body['mass']['kilograms'] >= .001, 'PHYSICS_MASS_UNSUPPORTED',
                     'Blender rigid-body mass has a 0.001kg lower bound.', category='capability-gap')
@@ -633,13 +876,17 @@ def _admit_world(value, backend):
             determinant=a*d*f+2*b*c*e-a*e*e-d*c*c-f*b*b
             require(scale*determinant/(a+d+f)**2 >= 1e-12 and determinant/(a+d+f)**2 >= 1e-10, 'PHYSICS_INERTIA_UNSUPPORTED',
                     'Native tensor needs minimum principal inertia at least 1e-12 kg m² and a conservative bounded condition ratio.',category='capability-gap')
-            expected = _primitive_inertia(body)
+            expected = _primitive_inertia(body) if backend == 'blender' else None
             for i in range(3) if backend == 'blender' else []:
                 for j in range(3):
                     observed = body['mass']['inertia'][i][j]
                     target = expected[i] if i == j else 0.
                     require(abs(observed-target) <= max(expected)*1e-6,
                             'PHYSICS_INERTIA_UNSUPPORTED', 'Requested inertia differs from the native uniform primitive.', category='capability-gap')
+    from physics_joints import admit as admit_joints
+    admit_joints(world, backend)
+    require(not world.get('collision_exclusions') or world.get('collision_profile') == 'explicit-proxies-v1',
+            'PHYSICS_SHAPE_UNSUPPORTED', 'Pair exclusions require the explicit proxy profile.', category='capability-gap')
     _admit_rigid_controls(world, backend)
     return world, math.ceil(steps_per_frame)
 
@@ -729,33 +976,41 @@ def _source_admission(root, world, project_manifest):
                     'PHYSICS_GEOMETRY_UNSUPPORTED', 'A body requires one independently decoded mesh and no external resources.', category='capability-gap')
             mesh = imported.geometry.meshes[0]
             points = np.asarray(mesh.positions)
-            from rig_geometry import mesh_edges, connected_components
-            _, edge_counts = mesh_edges(mesh.triangles)
-            require(np.all(edge_counts == 2) and len(connected_components(mesh)) == 1,
-                    'PHYSICS_GEOMETRY', 'Primitive source must be one closed manifold surface.', category='invalid-input')
-            faces = points[mesh.triangles]
-            normals = np.cross(faces[:,1]-faces[:,0], faces[:,2]-faces[:,0])
-            scale = max(float(np.abs(points).max()), 1e-10)
-            require(np.all(np.sum(normals*faces.mean(axis=1),axis=1) > scale**3*1e-12),
-                    'PHYSICS_GEOMETRY', 'Primitive faces must be nondegenerate and consistently outward.', category='invalid-input')
-            for group in np.array_split(np.arange(len(faces)), max(1, math.ceil(len(faces)/128))):
-                offsets = np.sum(normals[group]*faces[group,0],axis=1)
-                require(np.all(points @ normals[group].T <= offsets + scale**3*1e-7),
-                        'PHYSICS_GEOMETRY', 'Primitive source must describe a convex physical surface.', category='invalid-input')
-            shape = body['colliders'][0]['shape']
-            if shape['type'] == 'sphere':
-                require(np.allclose(np.linalg.norm(points, axis=1), shape['radius'], rtol=1e-5, atol=1e-7),
-                        'PHYSICS_GEOMETRY', 'Sphere source vertices disagree with its analytic collision proxy.', category='invalid-input')
-                expected_bounds = np.array([-np.ones(3)*shape['radius'], np.ones(3)*shape['radius']])
-            else:
-                half = np.asarray(shape['size'])/2
-                require(np.allclose(np.abs(points), half, rtol=1e-5, atol=1e-7) and len(np.unique(points, axis=0)) == 8,
-                        'PHYSICS_GEOMETRY', 'Box source must contain all eight actual box corners.', category='invalid-input')
-                expected_bounds = np.array([-half, half])
             actual_bounds = np.array([points.min(axis=0), points.max(axis=0)])
-            require(np.allclose(actual_bounds, expected_bounds, atol=1e-6, rtol=1e-5) and asset['bounds'] is not None and
-                    np.allclose([asset['bounds']['minimum'], asset['bounds']['maximum']], actual_bounds, atol=1e-6, rtol=1e-5),
-                    'PHYSICS_GEOMETRY', 'Actual mesh bounds differ from proxy/native manifest bounds.', category='invalid-input')
+            if world.get('collision_profile') == 'explicit-proxies-v1':
+                # Visual geometry remains owned by its native asset; independently
+                # admitted collision proxies deliberately need not match it.
+                require(asset['bounds'] is not None and
+                        np.allclose([asset['bounds']['minimum'],asset['bounds']['maximum']],actual_bounds,atol=1e-6,rtol=1e-5),
+                        'PHYSICS_GEOMETRY', 'Declared visual mesh bounds differ from actual geometry.', category='invalid-input')
+            else:
+                from rig_geometry import mesh_edges, connected_components
+                _, edge_counts = mesh_edges(mesh.triangles)
+                require(np.all(edge_counts == 2) and len(connected_components(mesh)) == 1,
+                        'PHYSICS_GEOMETRY', 'Primitive source must be one closed manifold surface.', category='invalid-input')
+                faces = points[mesh.triangles]
+                normals = np.cross(faces[:,1]-faces[:,0], faces[:,2]-faces[:,0])
+                scale = max(float(np.abs(points).max()), 1e-10)
+                require(np.all(np.sum(normals*faces.mean(axis=1),axis=1) > scale**3*1e-12),
+                        'PHYSICS_GEOMETRY', 'Primitive faces must be nondegenerate and consistently outward.', category='invalid-input')
+                for group in np.array_split(np.arange(len(faces)), max(1, math.ceil(len(faces)/128))):
+                    offsets = np.sum(normals[group]*faces[group,0],axis=1)
+                    require(np.all(points @ normals[group].T <= offsets + scale**3*1e-7),
+                            'PHYSICS_GEOMETRY', 'Primitive source must describe a convex physical surface.', category='invalid-input')
+                shape = body['colliders'][0]['shape']
+                if shape['type'] == 'sphere':
+                    require(np.allclose(np.linalg.norm(points, axis=1), shape['radius'], rtol=1e-5, atol=1e-7),
+                            'PHYSICS_GEOMETRY', 'Sphere source vertices disagree with its analytic collision proxy.', category='invalid-input')
+                    expected_bounds = np.array([-np.ones(3)*shape['radius'], np.ones(3)*shape['radius']])
+                else:
+                    half = np.asarray(shape['size'])/2
+                    require(np.allclose(np.abs(points), half, rtol=1e-5, atol=1e-7) and len(np.unique(points, axis=0)) == 8,
+                            'PHYSICS_GEOMETRY', 'Box source must contain all eight actual box corners.', category='invalid-input')
+                    expected_bounds = np.array([-half, half])
+                actual_bounds = np.array([points.min(axis=0), points.max(axis=0)])
+                require(np.allclose(actual_bounds, expected_bounds, atol=1e-6, rtol=1e-5) and asset['bounds'] is not None and
+                        np.allclose([asset['bounds']['minimum'], asset['bounds']['maximum']], actual_bounds, atol=1e-6, rtol=1e-5),
+                        'PHYSICS_GEOMETRY', 'Actual mesh bounds differ from proxy/native manifest bounds.', category='invalid-input')
             require(asset['resources']['vertices'] == len(points) and asset['resources']['triangles'] == len(mesh.triangles),
                     'PHYSICS_GEOMETRY', 'Declared native mesh counts differ from actual decoded geometry.', category='invalid-input')
             require(bool(asset['provenance']['fixture']) == bool(scene['provenance']['fixture']),
@@ -1005,7 +1260,7 @@ class BlenderBackend:
             native_reopen=replay, solver_report=report,
             native_consumption_control=control,
             native_continuation='unsupported-clean-restart-only',
-            unsupported=['joints','off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'],
+            unsupported=([] if world['joints'] else ['joints'])+['off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'],
             restart='clean-restart-only', artistic_review='not-performed')))
         files = tuple(_inventory(root))
         measured['output_bytes'] = sum(item['bytes'] for item in files)
@@ -1052,39 +1307,73 @@ class BlenderBackend:
                         'PHYSICS_BAKE_FAILED', 'Native mass/material settings differ from the admitted request.', category='backend-crash')
 
     def bake(self, result, destination):
-        owner = self._owner(result)
-        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP', 'Only this attempt\'s unmodified actual simulation result may be published.')
+        self._owner(result)
+        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
+                'Only this attempt\'s unmodified actual simulation result may be published.')
         destination = _new_destination(destination)
-        stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '.physics-', dir=destination.parent))
-        try:
-            with _Reader(result.root) as reader:
-                for file in result.files:
-                    payload = reader.read(file['path'])
-                    require(digest(payload) == file['sha256'] and len(payload) == file['bytes'], 'PHYSICS_CACHE_CORRUPT', 'Simulation artifacts changed before publication.', category='cache-corruption')
-                    _write(stage/file['path'], payload)
-            world = owner['world']
-            cache = dict(schema_version=1, kind='hatch-3d-physics-cache', id='cache-' + result.token,
-                world_sha256=result.world_sha256, physics_input_sha256=result.world_sha256, backend=result.backend,
-                frame_range=world['frame_range'], fps=world['fps'], fixed_step=world['solver']['fixed_step'],
-                substeps=world['solver']['substeps'], sample_count=world['frame_range']['end'], files=list(result.files),
-                upstream_hashes=sorted({item['sha256'] for item in owner['inventory'].values()}),
-                seed=world['solver']['seed'], reproducibility='verified-cache-replay', numerical_tolerance=1e-5,
-                usage=result.usage, fixture=result.fixture, review_status='unreviewed')
-            validator, error_type = _contracts()
+        with _Reader(destination.parent) as parent:
+            report = self._bake_at(result, destination.name, parent.fd)
+        return {**report, 'destination': str(destination)}
+
+    def _stage_result_at(self, result, payload_fd):
+        """Fill a fresh caller-owned private cache directory; do not publish it."""
+        owner = self._owner(result)
+        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
+                'Only this attempt\'s unmodified actual simulation result may be staged.')
+        with _Reader.from_descriptor(payload_fd) as target:
+            fresh = os.open('.', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=target.fd)
             try:
-                validator(cache, 'PhysicsCache')
-            except error_type as exc:
-                raise BackendError('PHYSICS_SCHEMA', str(exc), category='invalid-input') from exc
-            _write(stage/'cache.json', canonical(cache))
-            verify_cache(stage, expected_world_sha256=result.world_sha256)
-            # Reuse the reviewed common exclusive publication primitive (#198).
-            _publish(stage, destination)
-            return dict(status='baked-and-verified', destination=str(destination), cache_sha256=digest((destination/'cache.json').read_bytes()),
-                        world_sha256=result.world_sha256, sample_count=cache['sample_count'], fixture=result.fixture,
-                        review_status='unreviewed')
-        finally:
-            if stage.exists():
-                shutil.rmtree(stage)
+                with os.scandir(fresh) as entries:
+                    require(next(entries,None) is None,'PHYSICS_DESTINATION_EXISTS','Native cache staging requires a fresh empty directory.',category='invalid-input')
+            finally:os.close(fresh)
+        with _Reader(result.root) as reader:
+            for file in result.files:
+                payload = reader.read(file['path'])
+                require(digest(payload) == file['sha256'] and len(payload) == file['bytes'],
+                        'PHYSICS_CACHE_CORRUPT', 'Simulation artifacts changed before publication.', category='cache-corruption')
+                _write_relative(payload_fd, file['path'], payload)
+        world = owner['world']
+        cache = dict(schema_version=1, kind='hatch-3d-physics-cache', id='cache-' + result.token,
+            world_sha256=result.world_sha256, physics_input_sha256=result.world_sha256, backend=result.backend,
+            frame_range=world['frame_range'], fps=world['fps'], fixed_step=world['solver']['fixed_step'],
+            substeps=world['solver']['substeps'], sample_count=world['frame_range']['end'], files=list(result.files),
+            upstream_hashes=sorted({item['sha256'] for item in owner['inventory'].values()}),
+            seed=world['solver']['seed'], reproducibility='verified-cache-replay', numerical_tolerance=1e-5,
+            usage=result.usage, fixture=result.fixture, review_status='unreviewed')
+        validator, error_type = _contracts()
+        try:
+            validator(cache, 'PhysicsCache')
+        except error_type as exc:
+            raise BackendError('PHYSICS_SCHEMA', str(exc), category='invalid-input') from exc
+        cache_bytes = canonical(cache)
+        _write_relative(payload_fd, 'cache.json', cache_bytes)
+        _verify_cache_at(payload_fd, expected_world_sha256=result.world_sha256)
+        return dict(status='baked-and-verified', cache_sha256=digest(cache_bytes),
+            world_sha256=result.world_sha256, sample_count=cache['sample_count'], fixture=result.fixture,
+            review_status='unreviewed')
+
+    def _bake_at(self, result, destination_name, parent_fd):
+        """Publish an owned completed result beneath a caller-pinned parent."""
+        from atomic_publish import private_stage_fd, rename_no_replace_at
+        self._owner(result)
+        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
+                'Only this attempt\'s unmodified actual simulation result may be published.')
+        require(type(destination_name) is str and path_name(destination_name) == destination_name and '/' not in destination_name,
+                'PHYSICS_PATH', 'Publication requires a single portable destination name.')
+        with private_stage_fd(parent_fd, prefix='.physics-') as stage_fd:
+            os.mkdir('payload', mode=0o700, dir_fd=stage_fd)
+            payload_fd = os.open('payload', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=stage_fd)
+            try:
+                report = self._stage_result_at(result, payload_fd)
+                try:
+                    rename_no_replace_at(stage_fd, 'payload', parent_fd, destination_name)
+                except FileExistsError as exc:
+                    raise BackendError('PHYSICS_DESTINATION_EXISTS', 'A destination created during staging was preserved.',
+                        category='invalid-input') from exc
+                except OSError as exc:
+                    raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE', 'Exclusive output publication failed safely: '+str(exc)) from exc
+                return report
+            finally:os.close(payload_fd)
 
     def inspect(self, cache, frame):
         return inspect_cache(cache, frame)
@@ -1298,9 +1587,11 @@ class PyBulletBackend(BlenderBackend):
         categories={name:FeatureCapability('unsupported',False,'No adapter implementation for this category.') for name in ALL_CATEGORIES}
         limitations=('Optional PyBullet3.2.7; not installed or imported by normal2D workflows.',
                      'DIRECT CPU only; distinct numerical behavior from Blender.',
-                     'Only box/sphere rigid bodies, fixed stepping and actual contacts are implemented.',
+                     'The default profile and basic readiness smoke cover box/sphere rigid bodies, fixed stepping and actual contacts.',
+                     'Opt-in explicit-proxies-v1 additionally supports capsule/cylinder/convex/compound/static-mesh proxies; the basic smoke does not establish readiness for those shapes.',
+                     'The explicit proxy profile provides cache-bound native ray queries; cylinder/hull-inclusive rays, shape sweeps and CCD guarantees remain unsupported.',
                      'Bounded native force/torque/one-step integrated impulses, initial velocities and inertial frames are implemented; basic readiness smoke does not exercise these controls.',
-                     'Queries, joints and solver checkpoint continuation remain unsupported; explicit sleep thresholds are unavailable.',
+                     'Joints and solver checkpoint continuation remain unsupported; explicit sleep thresholds are unavailable.',
                      'Cache export contains exact sampled transforms/contacts, not native solver checkpoint state.')
         try:
             identity=self._discover()
@@ -1375,7 +1666,12 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
         controls=report.get('rigid_controls',{}).get('bodies',[None]*len(world['bodies']))[world['bodies'].index(body)]
         wrapped=controls is not None and (any(controls['inertial_position']) or abs(abs(controls['inertial_rotation'][3])-1)>1e-10)
         expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
-        expected_semantics=('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin'
+        explicit_proxies=world.get('collision_profile')=='explicit-proxies-v1'
+        if explicit_proxies:
+            child=controls['collision_children'][0]
+            wrapped=any(abs(x)>1e-10 for x in child['translation']) or abs(abs(child['rotation'][3])-1)>1e-10
+            expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
+        expected_semantics=('inherent sphere radius' if shape['type']=='sphere' and not wrapped else 'explicit proxy margin') if explicit_proxies else (('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin')
         require(actual['margin_semantics']==expected_semantics,'PHYSICS_BAKE_FAILED','Native margin semantics differ from the admitted child representation.',category='backend-crash')
         require(type(actual.get('center_of_mass')) is list and len(actual['center_of_mass'])==3 and all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=1e-6 for a,b in zip(actual['center_of_mass'],body['mass']['center_of_mass'])),
                 'PHYSICS_BAKE_FAILED','DIRECT observed center of mass differs.',category='backend-crash')
@@ -1388,12 +1684,18 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
             from rig_math import qmatrix, qmul
             controls=report['rigid_controls']['bodies'][world['bodies'].index(body)]
             rotation=qmatrix(controls['inertial_rotation'])
-            collision=controls['collision'];native_shape=body['colliders'][0]['shape']
-            expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
-            require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
-                    np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
-                    np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
-                    'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
+            if explicit_proxies:
+                from physics_collisions import verify_native_children, CollisionError
+                try: verify_native_children(body,controls)
+                except (CollisionError,KeyError,TypeError,ValueError) as exc:
+                    raise BackendError('PHYSICS_BAKE_FAILED',str(exc),category='backend-crash') from exc
+            else:
+                collision=controls['collision'];native_shape=body['colliders'][0]['shape']
+                expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
+                require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
+                        np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
+                        np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
+                        'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
             tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
             requested=np.asarray(body['mass']['inertia'])
             if body['mode']=='dynamic':
@@ -1434,7 +1736,8 @@ def _additional_shape_smoke(backend):
 
 
 def _validate_contacts(value,world,world_hash,*,legacy=False):
-    ids={body['id'] for body in world['bodies']}
+    body_map={body['id']:body for body in world['bodies']}
+    ids=set(body_map)
     require(isinstance(value,dict) and set(value)=={'schema_version','kind','world_sha256','samples'} and
             value['schema_version']==1 and value['kind']=='hatch-pybullet-contacts' and value['world_sha256']==world_hash and
             type(value['samples']) is list and len(value['samples'])==world['frame_range']['end'],
@@ -1449,11 +1752,26 @@ def _validate_contacts(value,world,world_hash,*,legacy=False):
             require(type(frame['solver_step']) is int and frame['solver_step']==native_index and frame['solver_time']==rational(native_index*step),
                     'PHYSICS_CACHE_CORRUPT','Contact observation clock differs from actual solver bracket.',category='cache-corruption')
         for contact in frame['contacts']:
-            require(isinstance(contact,dict) and set(contact)=={'body_a','body_b','position_a','position_b','normal_b','distance','normal_force'} and
+            expected_fields={'body_a','body_b','position_a','position_b','normal_b','distance','normal_force'}
+            if world.get('collision_profile')=='explicit-proxies-v1':
+                expected_fields.update(('normal_impulse','lateral_force_1','lateral_direction_1','lateral_force_2','lateral_direction_2'))
+            require(isinstance(contact,dict) and set(contact)==expected_fields and
                     type(contact['body_a']) is str and type(contact['body_b']) is str and
                     contact['body_a'] in ids and contact['body_b'] in ids and contact['body_a']!=contact['body_b'],
                     'PHYSICS_CACHE_CORRUPT','DIRECT contact endpoints are invalid.',category='cache-corruption')
-            for name in ('position_a','position_b','normal_b'):
+            if world.get('collision_profile')=='explicit-proxies-v1':
+                scalar_keys=('normal_impulse','lateral_force_1','lateral_force_2')
+                require(all(type(contact[k]) in (int,float) and math.isfinite(contact[k]) and abs(contact[k])<=1e12 for k in scalar_keys),
+                        'PHYSICS_CACHE_CORRUPT','Invalid native contact impulse or tangent force.',category='cache-corruption')
+                require(abs(contact['normal_impulse']-contact['normal_force']*float(step))<=1e-8*max(1,contact['normal_impulse']),
+                        'PHYSICS_CACHE_CORRUPT','Native contact impulse differs from the observed step force.',category='cache-corruption')
+                left=body_map[contact['body_a']]['colliders'][0];right=body_map[contact['body_b']]['colliders'][0]
+                require(bool(left['group'] & right['mask']) and bool(right['group'] & left['mask']),
+                        'PHYSICS_CACHE_CORRUPT','Filtered collision pair produced contact.',category='cache-corruption')
+                excluded={frozenset(pair) for pair in world.get('collision_exclusions',[])}
+                require(frozenset((contact['body_a'],contact['body_b'])) not in excluded,
+                        'PHYSICS_CACHE_CORRUPT','Excluded collision pair produced contact.',category='cache-corruption')
+            for name in (('position_a','position_b','normal_b','lateral_direction_1','lateral_direction_2') if world.get('collision_profile')=='explicit-proxies-v1' else ('position_a','position_b','normal_b')):
                 require(type(contact[name]) is list and len(contact[name])==3 and
                         all(type(x) in (int,float) and abs(x)<=1e12 and math.isfinite(x) for x in contact[name]),
                         'PHYSICS_CACHE_CORRUPT','DIRECT contact vector is invalid.',category='cache-corruption')
@@ -1527,18 +1845,18 @@ def _validate_samples(value, world, world_hash, fixture):
                     'PHYSICS_NUMERICAL_INSTABILITY', 'Sample quaternion/position exceeds numerical limits.', category='numerical-instability')
 
 
-def _read_cache(root, *, expected_world_sha256=None):
+def _read_cache(root, *, expected_world_sha256=None, directory_fd=None):
     try:
-        return _read_cache_impl(root,expected_world_sha256=expected_world_sha256)
+        return _read_cache_impl(root,expected_world_sha256=expected_world_sha256,directory_fd=directory_fd)
     except BackendError:
         raise
     except (RigError,OSError,ValueError,TypeError,KeyError,AttributeError,OverflowError,RecursionError) as exc:
         raise BackendError('PHYSICS_CACHE_CORRUPT','Malformed or inconsistent cache input: '+str(exc),category='cache-corruption') from exc
 
 
-def _read_cache_impl(root, *, expected_world_sha256=None):
+def _read_cache_impl(root, *, expected_world_sha256=None, directory_fd=None):
     validator, error_type = _contracts()
-    with _Reader(root) as reader:
+    with (_Reader(root) if directory_fd is None else _Reader.from_descriptor(directory_fd)) as reader:
         manifest_payload=reader.read('cache.json', MAX_DOCUMENT_BYTES)
         manifest = parse(manifest_payload)
         try:
@@ -1659,7 +1977,9 @@ def _read_cache_impl(root, *, expected_world_sha256=None):
                     'PHYSICS_CACHE_CORRUPT', 'Cache lacks independent full native replay evidence.', category='cache-corruption')
         else:
             _check_pybullet_report(receipt.get('solver_report'),world,receipt.get('backend_module',{}),legacy=digest(payloads['worker.py'])==LEGACY_WORKERS['pybullet'])
-            _validate_contacts(parse(payloads['contacts.json']),world,world_hash,legacy=digest(payloads['worker.py'])==LEGACY_WORKERS['pybullet'])
+            contact_states=parse(payloads['contacts.json'])
+            _validate_contacts(contact_states,world,world_hash,legacy=digest(payloads['worker.py'])==LEGACY_WORKERS['pybullet'])
+            receipt['_contacts']=contact_states
             if 'solver-states.json' in payloads:
                 _validate_solver_samples(parse(payloads['solver-states.json']),world,world_hash,manifest['fixture'],states)
             else:
@@ -1670,11 +1990,11 @@ def _read_cache_impl(root, *, expected_world_sha256=None):
                     'PHYSICS_CACHE_CORRUPT','DIRECT sampled-cache verification receipt differs.',category='cache-corruption')
         if manifest['backend']['id']=='pybullet' and 'solver-states.json' in payloads:
             receipt['_solver_states']=parse(payloads['solver-states.json'])
+        receipt['_cache_manifest_sha256']=digest(manifest_payload)
         return manifest, world, states, receipt
 
 
-def verify_cache(root, *, expected_world_sha256=None):
-    manifest, world, states, receipt = _read_cache(root, expected_world_sha256=expected_world_sha256)
+def _cache_verification_report(manifest, world, states, receipt):
     return dict(status='hash-and-contract-verified', world_sha256=manifest['world_sha256'],
                 cache_files=len(manifest['files']), output_bytes=manifest['usage']['output_bytes'],
                 sample_count=len(states['samples']), backend=manifest['backend'],
@@ -1683,6 +2003,15 @@ def verify_cache(root, *, expected_world_sha256=None):
                 evidence_authentication='unsigned retained execution receipts, not a cryptographic identity attestation',
                 native_continuation='unsupported; clean restart only',
                 numerical_recompute_guarantee='not-established')
+
+
+
+def _verify_cache_at(directory_fd, *, expected_world_sha256=None):
+    return _cache_verification_report(*_read_cache(None, expected_world_sha256=expected_world_sha256, directory_fd=directory_fd))
+
+
+def verify_cache(root, *, expected_world_sha256=None):
+    return _cache_verification_report(*_read_cache(root, expected_world_sha256=expected_world_sha256))
 
 
 def inspect_time(root, timestamp):
@@ -1721,67 +2050,104 @@ def inspect_cache(root, frame):
     return value
 
 
-def export_animation(root, destination, *, format='native-transform-json'):
+def _stage_export_at(root, payload_fd, *, format='native-transform-json', source_fd=None):
     require(format == 'native-transform-json', 'PHYSICS_EXPORT_UNSUPPORTED',
             'Only exact sampled native-transform-json export is implemented.', category='capability-gap')
-    manifest, world, states, _ = _read_cache(root)
-    destination = _new_destination(destination)
-    stage = Path(tempfile.mkdtemp(prefix='.'+destination.name+'.physics-', dir=destination.parent))
-    try:
-        payload = dict(schema_version=1, kind='hatch-physics-transform-animation',
-            source_world_sha256=manifest['world_sha256'], source='hash-bound-cache-samples',
-            execution_evidence='retained unsigned solver receipt; not a cryptographic identity attestation',
-            coordinate_system=world['coordinate_system'], fps=world['fps'], frame_range=world['frame_range'],
-            interpolation='none-exact-samples-only', samples=states['samples'], fixture=manifest['fixture'],
-            review_status='unreviewed')
-        data = canonical(payload)
-        _write(stage/'transforms.json', data)
-        _write(stage/'export.json', canonical(dict(format=format, path='transforms.json', sha256=digest(data), bytes=len(data),
-                                                 world_sha256=manifest['world_sha256'], fixture=manifest['fixture'], review_status='unreviewed')))
-        _publish(stage, destination)
-        return dict(status='exported', destination=str(destination), sha256=digest(data), format=format,
-                    sample_count=len(states['samples']), fixture=manifest['fixture'], review_status='unreviewed')
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
+    manifest,world,states,_=_read_cache(root,directory_fd=source_fd)
+    with _Reader.from_descriptor(payload_fd) as target:
+        require(not target.names(),'PHYSICS_DESTINATION_EXISTS','Animation staging requires a fresh empty directory.',category='invalid-input')
+    payload=dict(schema_version=1,kind='hatch-physics-transform-animation',
+        source_world_sha256=manifest['world_sha256'],source='hash-bound-cache-samples',
+        execution_evidence='retained unsigned solver receipt; not a cryptographic identity attestation',
+        coordinate_system=world['coordinate_system'],fps=world['fps'],frame_range=world['frame_range'],
+        interpolation='none-exact-samples-only',samples=states['samples'],fixture=manifest['fixture'],review_status='unreviewed')
+    data=canonical(payload)
+    descriptor=canonical(dict(format=format,path='transforms.json',sha256=digest(data),bytes=len(data),
+        world_sha256=manifest['world_sha256'],fixture=manifest['fixture'],review_status='unreviewed'))
+    require(len(data)+len(descriptor)<=min(MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
+        max(len(data),len(descriptor))<=world['budgets']['bake_file_bytes'],
+        'PHYSICS_RESOURCE_LIMIT','Native transform export exceeds retained world storage limits.')
+    _write_relative(payload_fd,'transforms.json',data);_write_relative(payload_fd,'export.json',descriptor)
+    with _Reader.from_descriptor(payload_fd) as reader:
+        require(reader.read('transforms.json')==data and reader.read('export.json')==descriptor and
+            reader.names()=={'transforms.json','export.json'},'PHYSICS_CACHE_CORRUPT','Native export bytes changed before publication.')
+    return dict(status='exported',sha256=digest(data),format=format,sample_count=len(states['samples']),
+        fixture=manifest['fixture'],review_status='unreviewed')
+
+
+def export_animation(root, destination, *, format='native-transform-json'):
+    from atomic_publish import private_stage_fd,rename_no_replace_at
+    require(format == 'native-transform-json','PHYSICS_EXPORT_UNSUPPORTED',
+        'Only exact sampled native-transform-json export is implemented.',category='capability-gap')
+    destination=_new_destination(destination)
+    with _Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.physics-') as stage_fd:
+        os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
+        payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
+        try:
+            report=_stage_export_at(root,payload_fd,format=format)
+            try:rename_no_replace_at(stage_fd,'payload',parent.fd,destination.name)
+            except FileExistsError as exc:
+                raise BackendError('PHYSICS_DESTINATION_EXISTS','A destination created during staging was preserved.',category='invalid-input') from exc
+            except OSError as exc:
+                raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE','Exclusive output publication failed safely: '+str(exc)) from exc
+            return {**report,'destination':str(destination)}
+        finally:os.close(payload_fd)
 
 
 def demonstrate(destination,backend):
+    from atomic_publish import private_stage_fd,rename_no_replace_at
     from physics_backend_example import build_inputs
     world,payloads=build_inputs(backend=backend.backend_id)
-    destination=_new_destination(destination)
-    stage=Path(tempfile.mkdtemp(prefix='.'+destination.name+'.physics-',dir=destination.parent))
-    prepared=None
-    try:
-        for path,payload in payloads.items():_write(stage/'sources'/path,payload)
-        _write(stage/'physics-world.json',canonical(world))
-        prepared=backend.prepare(world,payloads)
-        result=backend.simulate(prepared,verify_consumption=backend.backend_id=='blender')
-        cache_report=backend.bake(result,stage/'cache')
-        export_report=backend.export_animation(stage/'cache',stage/'animation')
-        source=parse((prepared.root/'states.json').read_bytes())
-        heights=[next(body for body in source['samples'][frame]['bodies'] if body['id']=='ball')['translation'][1] for frame in (0,12,48)]
-        freefall_error=abs(heights[1]-(3-.5*9.81*.5**2))
-        resting_error=abs(heights[2]-.5)
-        require(heights[0]>heights[1] and freefall_error<=.02 and resting_error<=.03,
+    destination=_new_destination(destination);prepared=None
+    with _Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.physics-') as stage_fd:
+        os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
+        payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
+        cache_fd=None;animation_fd=None
+        try:
+            for path,payload in payloads.items():_write_relative(payload_fd,'sources/'+path,payload)
+            _write_relative(payload_fd,'physics-world.json',canonical(world))
+            prepared=backend.prepare(world,payloads)
+            result=backend.simulate(prepared,verify_consumption=backend.backend_id=='blender')
+            os.mkdir('cache',mode=0o700,dir_fd=payload_fd)
+            cache_fd=os.open('cache',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=payload_fd)
+            cache_report=backend._stage_result_at(result,cache_fd)
+            os.mkdir('animation',mode=0o700,dir_fd=payload_fd)
+            animation_fd=os.open('animation',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=payload_fd)
+            export_report=_stage_export_at(None,animation_fd,source_fd=cache_fd)
+            captured=_read_cache(None,directory_fd=cache_fd)
+            source=captured[2]
+            heights=[next(body for body in source['samples'][frame]['bodies'] if body['id']=='ball')['translation'][1] for frame in (0,12,48)]
+            freefall_error=abs(heights[1]-(3-.5*9.81*.5**2));resting_error=abs(heights[2]-.5)
+            require(heights[0]>heights[1] and freefall_error<=.02 and resting_error<=.03,
                 'PHYSICS_DEMO_NUMERICS','Actual demonstration failed its independent gravity/resting-height tolerances.',category='numerical-instability')
-        report=dict(status='executed-and-verified',fixture=True,review_status='unreviewed',backend=result.backend,
-            source_files=len(payloads),world_sha256=result.world_sha256,
-            native_source='Scene3D contract/hash closure plus genuine decoded OBJ meshes',
-            simulation_usage=result.usage,cache=verify_cache(stage/'cache'),cache_manifest_sha256=cache_report['cache_sha256'],
-            animation={**export_report,'destination':'animation'},
-            numerical=dict(frames=[0,12,48],actual_heights_m=heights,continuous_freefall_error_m=freefall_error,
-                           freefall_tolerance_m=.02,resting_height_error_m=resting_error,resting_tolerance_m=.03),
-            native_restart='unsupported; clean restart only',visual_review='not-performed')
-        if (prepared.root/'native-consumption.json').is_file():
-            report['native_consumption_control']=parse((prepared.root/'native-consumption.json').read_bytes())
-        _write(stage/'acceptance.json',canonical(report))
-        _publish(stage,destination)
-        return dict(status='executed-and-verified',destination=str(destination),world_sha256=result.world_sha256,
-                    fixture=True,review_status='unreviewed',sample_count=world['frame_range']['end'])
-    finally:
-        if prepared is not None:backend.cleanup(prepared)
-        if stage.exists():shutil.rmtree(stage)
+            report=dict(status='executed-and-verified',fixture=True,review_status='unreviewed',backend=result.backend,
+                source_files=len(payloads),world_sha256=result.world_sha256,
+                native_source='Scene3D contract/hash closure plus genuine decoded OBJ meshes',
+                simulation_usage=result.usage,cache=_cache_verification_report(*captured),cache_manifest_sha256=cache_report['cache_sha256'],
+                animation={**export_report,'destination':'animation'},
+                numerical=dict(frames=[0,12,48],actual_heights_m=heights,continuous_freefall_error_m=freefall_error,
+                    freefall_tolerance_m=.02,resting_height_error_m=resting_error,resting_tolerance_m=.03),
+                native_restart='unsupported; clean restart only',visual_review='not-performed')
+            if captured[3].get('native_consumption_control') is not None:
+                report['native_consumption_control']=captured[3]['native_consumption_control']
+            _write_relative(payload_fd,'acceptance.json',canonical(report))
+            inventory=_inventory_relative(payload_fd)
+            require(sum(x['bytes'] for x in inventory)<=min(MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
+                all(x['bytes']<=world['budgets']['bake_file_bytes'] for x in inventory),
+                'PHYSICS_RESOURCE_LIMIT','Demo artifacts exceed retained world storage limits.')
+            _verify_cache_at(cache_fd,expected_world_sha256=result.world_sha256)
+            try:rename_no_replace_at(stage_fd,'payload',parent.fd,destination.name)
+            except FileExistsError as exc:
+                raise BackendError('PHYSICS_DESTINATION_EXISTS','A destination created during staging was preserved.',category='invalid-input') from exc
+            except OSError as exc:
+                raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE','Exclusive output publication failed safely: '+str(exc)) from exc
+            return dict(status='executed-and-verified',destination=str(destination),world_sha256=result.world_sha256,
+                fixture=True,review_status='unreviewed',sample_count=world['frame_range']['end'])
+        finally:
+            if animation_fd is not None:os.close(animation_fd)
+            if cache_fd is not None:os.close(cache_fd)
+            os.close(payload_fd)
+            if prepared is not None:backend.cleanup(prepared)
 
 
 def main():

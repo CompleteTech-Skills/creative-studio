@@ -56,6 +56,7 @@ jobs:
         run: |
           mkdir physics-evidence
           python -B -m unittest discover -s tests -p test_rig_physics_backends.py -v 2>&1 | tee physics-evidence/tests.log
+          python -B -m unittest discover -s tests -p test_rig_physics_directory_runner.py -v 2>&1 | tee physics-evidence/directory-runner-tests.log
       - name: Actual exact-clock numerical and stability acceptance
         env:
           HATCH_TIMING_EVIDENCE: ${{ github.workspace }}/physics-evidence/timing/numerical.json
@@ -71,16 +72,42 @@ jobs:
           mkdir physics-evidence/rigid-bodies physics-evidence/rigid-replay
           python -B -m unittest discover -s tests -p test_rig_physics_rigid.py -v 2>&1 | tee physics-evidence/rigid-body-tests.log
           python -B -m unittest discover -s tests -p test_rig_physics_rigid_replay.py -v 2>&1 | tee physics-evidence/rigid-replay-tests.log
+      - name: Actual numerical particles and native collision acceptance
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_particles.py -v 2>&1 | tee physics-evidence/particle-tests.log
+          python -B scripts/physics_particle_example.py physics-evidence/fountain --kind fountain --python "$HATCH_PYBULLET_PYTHON"
+          python -B scripts/physics_particle_example.py physics-evidence/sparks --kind sparks --collision remove --python "$HATCH_PYBULLET_PYTHON"
+      - name: Actual mechanical joint mappings and restoring response
+        env:
+          HATCH_JOINT_EVIDENCE: ${{ github.workspace }}/physics-evidence/joints
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_joints.py -v 2>&1 | tee physics-evidence/joints-tests.log
+      - name: Actual liquid bake, cache decoding and reopened geometry
+        env:
+          HATCH_LIQUID_EVIDENCE: physics-evidence/liquid
+        run: |
+          python -B -m unittest discover -s tests -p 'test_rig_physics_liquid*.py' -v 2>&1 | tee physics-evidence/liquid-tests.log
+      - name: Real collision proxies, filters and native queries
+        env:
+          HATCH_COLLISION_EVIDENCE: physics-evidence/collisions
+        run: |
+          python -B -m unittest discover -s tests -p 'test_rig_physics_collision*.py' -v 2>&1 | tee physics-evidence/collision-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
           python -B scripts/physics_backends.py probe --backend pybullet --python "$HATCH_PYBULLET_PYTHON" --smoke > physics-evidence/pybullet-probe.json
       - name: Retain genuine native sources, real caches and transform exports
+        env:
+          HATCH_PHYSICS_DEMO_EVIDENCE: physics-evidence
         run: |
-          python -B scripts/physics_backends.py demo physics-evidence/blender-demo > physics-evidence/blender-demo.json
-          python -B scripts/physics_backends.py demo --backend pybullet --python "$HATCH_PYBULLET_PYTHON" physics-evidence/pybullet-demo > physics-evidence/pybullet-demo.json
+          python -B -m unittest discover -s tests -p test_rig_physics_demonstration.py -v 2>&1 | tee physics-evidence/demo-publication-tests.log
           python -B scripts/physics_backends.py verify physics-evidence/blender-demo/cache
           python -B scripts/physics_backends.py verify physics-evidence/pybullet-demo/cache
+      - name: Verify owned publication against genuine native artifacts
+        env:
+          HATCH_PHYSICS_PUBLICATION_SOURCE: physics-evidence/blender-demo/cache
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_publication.py -v 2>&1 | tee physics-evidence/publication-tests.log
       - name: Retain actual physics evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
