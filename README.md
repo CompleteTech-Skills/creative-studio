@@ -62,6 +62,14 @@ Use the existing optional rig dependencies below. The [executable example](examp
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
 
+The additive [mesh foundation](references/model3d/mesh-foundation.md) creates real
+editable primitives, captures local model sources before decoding, converts
+explicit units/bases/pivots, measures topology, and verifies GLB/glTF/OBJ exports.
+Run `python scripts/model3d.py mesh capabilities` for supported boundaries or
+`python scripts/demonstrate_model3d_mesh.py --destination output/new-mesh-demo`
+for eighteen real format roundtrips. Original import bytes remain in exported
+source inventories; fixture checks do not grant production-art approval.
+
 The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
 
 ## Explicit silent video exports
