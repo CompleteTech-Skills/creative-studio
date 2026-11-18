@@ -125,6 +125,28 @@ def _validate_state(state):
     return state
 
 
+@_exact
+def _reservation_payload(*, operation_id, provider, estimate, retry_allowance,
+                         unknown_price=False, unknown_price_cap=None, evidence=None):
+    _id(operation_id); _id(provider)
+    _need(type(retry_allowance) is int and 0 <= retry_allowance <= 16, 'INPUT', 'Retries must be bounded from zero to sixteen.')
+    _need(type(unknown_price) is bool, 'INPUT', 'Unknown-price policy must be explicit.')
+    amounts = _quantities(estimate, unknown=True)
+    missing_price = amounts['amount'] is None
+    if missing_price:
+        _need(unknown_price and unknown_price_cap is not None, 'PRICE', 'Unknown-priced work requires explicit policy and monetary cap.')
+        cap = _number(unknown_price_cap, 'amount')
+        _need(cap > 0, 'PRICE', 'Unknown-priced work requires a positive monetary cap.')
+        amounts['amount'] = str(cap)
+    _need(all(value is not None for value in amounts.values()), 'ESTIMATE', 'Unknown nonmonetary estimates cannot be reserved.')
+    bound = {key: str(Decimal(value) * (retry_allowance + 1)) for key,value in amounts.items()}
+    proof = _evidence(evidence)
+    _need(not (unknown_price or missing_price or Decimal(amounts['amount']) > 0) or proof, 'EVIDENCE', 'Monetary estimates require retained rate or unknown-price policy evidence.')
+    payload = dict(operation_id=operation_id, provider=provider, estimate=amounts, retry_allowance=retry_allowance,
+                   unknown_price=unknown_price, evidence=proof)
+    return payload, bound
+
+
 class BudgetLedger:
     """Immutable snapshots under one ownership lock; expected SHA is the CAS token."""
 
@@ -237,22 +259,9 @@ class BudgetLedger:
     @_exact
     def reserve(self, *, operation_id, provider, estimate, retry_allowance, expected_revision, idempotency_key,
                 unknown_price=False, unknown_price_cap=None, evidence=None):
-        _id(operation_id); _id(provider)
-        _need(type(retry_allowance) is int and 0 <= retry_allowance <= 16, 'INPUT', 'Retries must be bounded from zero to sixteen.')
-        _need(type(unknown_price) is bool, 'INPUT', 'Unknown-price policy must be explicit.')
-        amounts = _quantities(estimate, unknown=True)
-        missing_price = amounts['amount'] is None
-        if missing_price:
-            _need(unknown_price and unknown_price_cap is not None, 'PRICE', 'Unknown-priced work requires explicit policy and monetary cap.')
-            cap = _number(unknown_price_cap, 'amount')
-            _need(cap > 0, 'PRICE', 'Unknown-priced work requires a positive monetary cap.')
-            amounts['amount'] = str(cap)
-        _need(all(value is not None for value in amounts.values()), 'ESTIMATE', 'Unknown nonmonetary estimates cannot be reserved.')
-        bound = {key: str(Decimal(value) * (retry_allowance + 1)) for key,value in amounts.items()}
-        proof = _evidence(evidence)
-        _need(not (unknown_price or missing_price or Decimal(amounts['amount']) > 0) or proof, 'EVIDENCE', 'Monetary estimates require retained rate or unknown-price policy evidence.')
-        payload = dict(operation_id=operation_id, provider=provider, estimate=amounts, retry_allowance=retry_allowance,
-                       unknown_price=unknown_price, evidence=proof)
+        payload, bound = _reservation_payload(operation_id=operation_id, provider=provider,
+            estimate=estimate, retry_allowance=retry_allowance, unknown_price=unknown_price,
+            unknown_price_cap=unknown_price_cap, evidence=evidence)
         def mutate(state):
             _need(provider in state['provider_limits'], 'PROVIDER', 'Provider has no explicit budget policy.')
             _need(len(state['reservations']) < MAX_RESERVATIONS, 'LIMIT', 'Too many reservations.')
@@ -693,11 +702,56 @@ class NativeBudget:
                 self._apply(operation, event)
 
     @_exact
-    def before_claim(self, job, input_hashes):
-        """Persist an intent and reserve before Hatch exposes its existing token."""
-        import uuid
+    def verify_reservation(self, job, reservation_id, *, input_hashes=None):
+        """Authenticate existing accounting without recovering or creating it."""
+        _need(any(item is job for item in self.data['jobs']), 'BINDING',
+              'Reservation verification requires this native owner job.')
+        _id(reservation_id)
+        operation = job.get('budget_operation')
+        _need(isinstance(operation, dict) and operation.get('reservation_id') == reservation_id,
+              'BINDING', 'No matching native reservation association.')
+        expected = 'native-' + object_hash({
+            'run_id': self.data['run_id'], 'job': job['id'], 'inputs': operation['input_hashes'],
+            'fixture': self.data['fixture_mode'], 'policy': self.config})
+        request = operation['reservation_request']
+        _need(operation['operation_id'] == expected and request['operation_id'] == expected and
+              request['idempotency_key'] == expected + ':reserve' and
+              all(request[key] == self.config[key] for key in
+                  ('provider', 'estimate', 'retry_allowance', 'unknown_price', 'unknown_price_cap')) and
+              request['evidence'][:-1] == self.config['evidence'] and
+              len(request['evidence']) == len(self.config['evidence']) + 1,
+              'BINDING', 'Native reservation policy or operation changed.')
+        _need(input_hashes is None or operation['input_hashes'] == input_hashes,
+              'BINDING', 'Native reservation inputs changed.')
+        payload, bound = _reservation_payload(**{key: request[key] for key in
+            ('operation_id', 'provider', 'estimate', 'retry_allowance',
+             'unknown_price', 'unknown_price_cap', 'evidence')})
+        snapshot = self.ledger.snapshot()
+        row = snapshot['state']['reservations'].get(reservation_id)
+        events = [event for event in snapshot['state']['events']
+                  if event['idempotency_key'] == request['idempotency_key']]
+        _need(isinstance(row, dict) and row['id'] == reservation_id and
+              row['operation_id'] == expected and row['provider'] == self.config['provider'] and
+              row['reserved'] == bound and row['unknown_price'] == payload['unknown_price'] and
+              len(events) == 1 and events[0]['action'] == 'reserve' and
+              events[0]['payload'] == payload and
+              events[0]['receipt'].get('reservation_id') == reservation_id and
+              events[0]['receipt'].get('reserved') == bound and
+              events[0]['receipt'].get('state') == 'reserved',
+              'BINDING', 'Native reservation does not match its original ledger admission.')
+        return dict(reservation_id=reservation_id, operation_id=expected,
+                    ledger_revision=snapshot['sha256'], state=row['state'],
+                    reserved=deepcopy(row['reserved']))
+
+    @_exact
+    def reserve_only(self, job, input_hashes):
+        """Persist and reserve native work without allocating an attempt or token."""
+        _need(any(item is job for item in self.data['jobs']), 'BINDING',
+              'Reservation requires this native owner job.')
         self.reconcile()
         operation = job.get('budget_operation')
+        _need(operation is None or operation['input_hashes'] == input_hashes, 'BINDING',
+              'Budgeted inputs changed; reconcile this operation before preparing new work.')
         if operation is None:
             identifier = 'native-' + object_hash({
                 'run_id': self.data['run_id'], 'job': job['id'], 'inputs': input_hashes,
@@ -719,8 +773,17 @@ class NativeBudget:
             _need('reservation_id' not in operation, 'BINDING', 'Native reservation identity changed.')
             operation['reservation_id'] = receipt['reservation_id']
             self._save()
-        _need(operation['input_hashes'] == input_hashes, 'BINDING',
-              'Budgeted inputs changed; reconcile this operation before preparing new work.')
+        descriptor = self.verify_reservation(job, operation['reservation_id'], input_hashes=input_hashes)
+        _need(descriptor['state'] == 'reserved', 'UNCERTAIN',
+              'Only reserved known work may receive fresh native admission.')
+        return descriptor
+
+    @_exact
+    def before_claim(self, job, input_hashes):
+        """Reserve the existing operation before allocating its native attempt."""
+        import uuid
+        self.reserve_only(job, input_hashes)
+        operation = job['budget_operation']
         row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
         _need(row['state'] == 'reserved', 'UNCERTAIN', 'Only reserved known work may issue a native attempt.')
         attempts = operation['attempts']

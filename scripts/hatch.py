@@ -452,8 +452,7 @@ def recover_prepare(root):
         save(root, data)
 
 
-def claim(root, data, name):
-    reconcile(root, data)
+def _claim_eligible_job(root, data, name):
     job = job_for(data, name)
     if job['status'] == 'running':
         raise ValueError('generation is already running; reconcile its existing token with ingest or fail')
@@ -476,6 +475,22 @@ def claim(root, data, name):
         raise ValueError('inspect canonical base/calibration and record base-review before generating rows')
     if name != 'base' and job.get('prompt_settings_hash') != digest(root / 'extraction-settings.json'):
         raise ValueError('calibration changed outside configure; regenerate prompts with configure before claiming rows')
+    return job
+
+
+def reserve_budget(root, data, name):
+    """Reserve under existing ownership without publishing a generation claim."""
+    reconcile(root, data)
+    job = _claim_eligible_job(root, data, name)
+    budget = _native_budget(root, data)
+    if budget is None:
+        raise ValueError('this run has not opted into a Director budget')
+    return budget.reserve_only(job, inputs(root, job))
+
+
+def claim(root, data, name):
+    reconcile(root, data)
+    job = _claim_eligible_job(root, data, name)
     for key in ('derived_from', 'derivation_receipt', 'import_receipt'):
         job.pop(key, None)
     hashes = inputs(root, job)
