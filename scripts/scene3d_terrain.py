@@ -48,7 +48,7 @@ class Heightfield:
         second=np.hypot((h[1:,1:]-h[1:,:-1])/dx,(h[1:,1:]-h[:-1,1:])/dz)
         return float(max(first.max(),second.max()))
 
-    def mesh(self):
+    def mesh(self, *, planar_uv=False):
         if self.max_slope is not None:
             require(self._steepest() <= math.tan(math.radians(self.max_slope))+1e-12,
                     'Terrain edits exceed the configured triangle slope limit.')
@@ -59,7 +59,11 @@ class Heightfield:
             for x in range(n-1):
                 a=z*n+x;b=a+1;c=a+n;d=c+1
                 triangles.extend([[a,c,b],[b,c,d]])
-        return Mesh(vertices,triangles).validate()
+        texcoords=None
+        if planar_uv:
+            # OBJ uses bottom-left UVs. Native import flips V for glTF.
+            texcoords=[[x/(n-1), (n-1-z)/(n-1)] for z in range(n) for x in range(n)]
+        return Mesh(vertices,triangles,texcoords).validate()
 
     def sample(self,x,z):
         """Exact triangle height and upward normal, matching the emitted diagonal."""
@@ -108,14 +112,14 @@ class Heightfield:
             raise
         return self
 
-    def lod_mesh(self,stride=2):
+    def lod_mesh(self,stride=2,*,planar_uv=False):
         """Sample exact existing vertices at a divisor stride; no invented cave geometry."""
         count(stride,'LOD stride',2,256)
         require((self.resolution-1)%stride==0,'LOD stride must divide the grid interval count.')
         heights=self.heights[::stride,::stride]
         coarse=Heightfield(width=self.width,depth=self.depth,resolution=len(heights),
                            heights=heights,elevation=self.elevation_limit)
-        return coarse.mesh()
+        return coarse.mesh(planar_uv=planar_uv)
 
     def smooth(self, iterations=1):
         count(iterations,'iterations',1,100)

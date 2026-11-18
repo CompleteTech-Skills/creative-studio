@@ -140,7 +140,10 @@ def apply_rig_corrections(rig, correction, *, persist=True):
             from rig_templates import generate_skeleton
             require(isinstance(value,dict) and set(value) <= {'template','landmarks'} and 'template' in value,'RIG_TEMPLATE_EDIT','Specify a template and optional landmarks.')
             fitted=generate_skeleton(result.geometry,value['template'],landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
-            for key in ('skeleton','controllers','attachments','uncertainties'):result.manifest[key]=fitted[key]
+            unrelated=[issue for issue in result.manifest['uncertainties']
+                       if issue['code']!='RIG_ANATOMY_UNCERTAIN']
+            for key in ('skeleton','controllers','attachments'):result.manifest[key]=fitted[key]
+            result.manifest['uncertainties']=[*unrelated,*fitted['uncertainties']]
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True
             baseline={bone['id']:bone.copy() for bone in specs}
@@ -150,13 +153,16 @@ def apply_rig_corrections(rig, correction, *, persist=True):
         for bone in skeleton['bones']:
             target=bone['id']
             original=baseline.get(target)
-            if original is None or any(bone[field]!=value for field,value in original.items() if field!='id'):
+            # Labels, symmetry pairing and skin-binding flags do not establish
+            # a landmark position, rest orientation or hierarchy correction.
+            if original is None or any(bone[field]!=original[field] for field in ('head','tail','parent','roll')):
                 bone['evidence']=dict(source='human-landmark',reference='Correction by '+correction['author']+': '+correction['reason'],confidence=1.)
                 corrected.add(target)
             else:
                 bone['evidence']=evidence[target]
         for issue in result.manifest['uncertainties']:
-            if issue['element'] in corrected:issue['resolution']='corrected'
+            if issue['code']=='RIG_ANATOMY_UNCERTAIN' and issue['element'] in corrected:
+                issue['resolution']='corrected'
         result.manifest['skeleton']=skeleton
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
     validate_skeleton(result.skeleton,result.manifest['limits'])

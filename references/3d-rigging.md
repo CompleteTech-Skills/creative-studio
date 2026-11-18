@@ -117,6 +117,15 @@ The primary weight method diffuses segment-distance seeds over actual mesh adjac
 
 The correction envelope is strict and contains `rig_id`, `rig_version`, `expected_sha256`, author, reason, timestamp and ordered edits. Supported edits cover bone add/remove/update/rename/reparent, limits and IK chains, sockets, facial controllers/expressions, weights and template replacement. Bone changes invalidate active skins, animations, state mappings and reviews while preserving their old files. Weight changes retain compatible channels but invalidate deformation evidence and review.
 
+An anatomical correction changes a bone's head, tail, parent or rest roll, or
+adds a new bone. Renaming, role labels, mirror pairing and deform flags alone
+do not establish a landmark correction or promote its confidence. Anatomical
+edits resolve only that bone's `RIG_ANATOMY_UNCERTAIN` records; unrelated
+uncertainty codes retain their prior resolutions. Template replacement refreshes
+fit-owned anatomy records while preserving other uncertainty records. Edits
+that return anatomy to its original state in one correction retain its original
+evidence, including when metadata changes remain.
+
 ```bash
 python scripts/rig.py review-ui --run-dir output/character --destination output/review
 python -m http.server 8765 --bind 127.0.0.1 --directory output/review
