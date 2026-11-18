@@ -238,8 +238,10 @@ class NativeImportTests(unittest.TestCase):
         'Requires pinned Blender 4.5.3 on Linux with prlimit',
     )
     def test_blender_fixture_retains_original_and_two_verified_derivatives(self):
-        reference = self.pipeline.import_blender_fixture(
-            identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        with patch('asset_import_blender.os.killpg', wraps=os.killpg) as signal_group:
+            reference = self.pipeline.import_blender_fixture(
+                identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        signal_group.assert_not_called()
         reopened = AssetLibrary(self.library_path)
         manifest = reopened.resolve(reference)
         provenance = manifest['provenance']
@@ -309,4 +311,26 @@ class NativeImportTests(unittest.TestCase):
                     identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
         self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_MEMORY')
         self.assertEqual(error.exception.report['observed'], budget + 1024)
+        self.assertEqual(self.library.list_references(), [])
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit and wait4',
+    )
+    def test_blender_already_reaped_child_is_never_signaled(self):
+        system_wait4 = os.wait4
+
+        def child_reaped_elsewhere(pid, flags):
+            result = system_wait4(pid, flags)
+            if result[0] == pid:
+                raise ChildProcessError('Child already reaped')
+            return result
+
+        with (patch('asset_import_blender.os.wait4', side_effect=child_reaped_elsewhere),
+              patch('asset_import_blender.os.killpg', wraps=os.killpg) as signal_group):
+            with self.assertRaises(RigError) as error:
+                self.pipeline.import_blender_fixture(
+                    identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        self.assertEqual(error.exception.report['code'], 'ASSET_BLENDER_RSS')
+        signal_group.assert_not_called()
         self.assertEqual(self.library.list_references(), [])
