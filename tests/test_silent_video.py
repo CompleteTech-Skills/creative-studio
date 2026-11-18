@@ -212,6 +212,34 @@ class SilentContracts(unittest.TestCase):
             self.assertIn('<media-path-truncated>', record['stderr'])
             self.assertLessEqual(len(record['stderr'].encode()), 1024)
 
+    def test_printed_forms_of_command_paths_are_aliased(self):
+        marker = 'SYNTHETIC_PRINTED_PATH_MARKER'
+        control = str(self.root / (marker + '_\x01ctl') / 'artifact.mp4')
+        printed = {control: control.replace('\x01', '?')}
+        if os.name != 'nt':
+            undecodable = os.fsdecode(os.fsencode(str(self.root / marker)) + b'_\xff/artifact.mp4')
+            printed[undecodable] = os.fsencode(undecodable).decode('utf-8', 'replace')
+        for path, shown in printed.items():
+            raw = dict(command=[sys.executable, path], exit_status=1, stdout='',
+                       stderr=shown + ': Invalid data found when processing input\n')
+            with self.subTest(shown=shown):
+                evidence, _ = video._failure_diagnostics({'probe': raw}, 'failed', 4096)
+                self.assertNotIn(marker, json.dumps(evidence))
+                self.assertIn('<media-workdir>/artifact.mp4', evidence['probe']['stderr'])
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX byte paths are required')
+    def test_undecodable_command_path_bytes_are_aliased_from_real_capture(self):
+        marker = 'SYNTHETIC_UNDECODABLE_PATH_MARKER'
+        directory = os.fsencode(str(self.root / marker)) + b'_\xff'
+        os.mkdir(directory)
+        path = os.fsdecode(directory + b'/artifact.mp4')
+        script = 'import os, sys; os.write(2, os.fsencode(sys.argv[1]) + b": broken\\n"); sys.exit(7)'
+        with self.assertRaises(ValueError) as failed:
+            video._run([sys.executable, '-c', script, path], video.DEFAULT_LIMITS)
+        self.assertNotIn(marker, json.dumps(failed.exception.evidence) + str(failed.exception))
+        self.assertIn('<media-workdir>/artifact.mp4: broken',
+                      failed.exception.evidence['command_failure']['stderr'])
+
     def test_probe_and_timeline_nesting_errors_keep_python_and_cli_evidence(self):
         import contextlib, io
         artifact = self.root / 'nested-probe.mp4'

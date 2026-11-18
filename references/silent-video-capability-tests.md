@@ -72,8 +72,9 @@ replace command-owned absolute directory paths with stable aliases. Byte limits
 are reapplied after replacement. A separate contract fixture proves that a
 truncated strict-decode transcript cannot succeed merely because the retained
 prefix contains only whitespace; that fixture is not a native artifact bypass.
-The 43 portable cases combine the core, capabilities and production-adapter
-modules; the core module alone contains 28 cases. A real long temporary path
+The 45 portable cases combine the core, capabilities and production-adapter
+modules; the core module alone contains 30 cases, including undecodable and
+control-byte printed path forms. A real long temporary path
 that is cut inside ffprobe's stderr is also redacted in Python and CLI evidence.
 Stale source errors identify the frame index without copying relative source
 names. Portable deeply nested JSON fixtures exercise the installed JSON parser's

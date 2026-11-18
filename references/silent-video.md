@@ -293,6 +293,8 @@ Failed exported records replace absolute executable and temporary-directory
 paths with stable tool/work-directory aliases in commands, transcripts and the
 error message. Per-stream byte limits apply after this replacement. Capture
 also suppresses a partial known path cut at the retained byte boundary.
+Aliasing also covers the printed forms of those paths: undecodable path bytes
+captured as U+FFFD and control bytes that FFmpeg's logger prints as `?`.
 Stale source diagnostics identify the frame index rather than its caller-chosen
 directory or filename. Error summaries do not copy unsanitized transcript tails.
 Strict decode requires complete diagnostics and rejects a truncated stderr transcript,

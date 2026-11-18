@@ -296,6 +296,20 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
+_FFMPEG_LOG_CONTROL = re.compile('[\\x00-\\x07\\x0e-\\x1f]')
+
+
+def _printed_path_forms(path):
+    """Return the forms in which a native tool transcript can print a path."""
+    forms = {path}
+    try:
+        forms.add(os.fsencode(path).decode('utf-8', 'replace'))
+    except (UnicodeError, ValueError):
+        pass
+    forms |= {_FFMPEG_LOG_CONTROL.sub('?', form) for form in forms}
+    return forms
+
+
 def _failure_diagnostics(evidence, message, limit):
     """Export bounded diagnostics with stable aliases for command-owned paths."""
     result = copy.deepcopy(evidence)
@@ -311,9 +325,13 @@ def _failure_diagnostics(evidence, message, limit):
             if path.parent != path.parent.parent:
                 substitutions.setdefault(str(path.parent), '<media-tool-dir>' if index == 0 else '<media-workdir>')
     # Native diagnostics can use slash-normalized or JSON-escaped Windows paths.
+    # Captured transcripts decode undecodable bytes as U+FFFD, and FFmpeg's
+    # logger prints control bytes as '?', so alias those printed forms too.
     for path, alias in list(substitutions.items()):
-        substitutions.setdefault(path.replace('\\', '/'), alias)
-        substitutions.setdefault(json.dumps(path)[1:-1], alias)
+        for printed in _printed_path_forms(path):
+            substitutions.setdefault(printed, alias)
+            substitutions.setdefault(printed.replace('\\', '/'), alias)
+            substitutions.setdefault(json.dumps(printed)[1:-1], alias)
     ordered = sorted(substitutions, key=len, reverse=True)
     def redact(value, truncated=False):
         if truncated:
