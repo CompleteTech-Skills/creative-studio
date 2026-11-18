@@ -43,6 +43,12 @@ class RigStateRuntimeTests(unittest.TestCase):
         self.assertAlmostEqual(result['elapsed'], .25)
         self.assertEqual(result['transition_count'], 1)
 
+    def test_completion_waits_for_time_to_advance_at_large_timestamps(self):
+        start = 1e16
+        runtime = self.runtime('notification-safe', now=start, blend_seconds=0)
+        self.assertEqual(runtime.evaluate(start)['state'], 'notification-safe')
+        self.assertEqual(runtime.evaluate(start + 2.)['state'], 'idle')
+
     def test_unavailable_completion_reports_and_holds(self):
         runtime = RigStateRuntime(self.rig, 'notification-safe', recipes={'notification-safe':'bend'}, selected=['notification-safe'])
         result = runtime.evaluate(2)
@@ -70,6 +76,21 @@ class RigStateRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.state, 'static-positive')
         for amount in [-1, float('nan'), 11, True, '1']:
             with self.assertRaises(RigError):self.runtime(blend_seconds=amount)
+
+    def test_out_of_range_integer_inputs_use_rig_errors(self):
+        too_large = 10**1000
+        with self.assertRaises(RigError) as failure:
+            self.runtime(now=too_large)
+        self.assertEqual(failure.exception.report['code'], 'RIG_STATE_TIME')
+        with self.assertRaises(RigError) as failure:
+            self.runtime(blend_seconds=too_large)
+        self.assertEqual(failure.exception.report['code'], 'RIG_STATE_BLEND')
+        runtime = self.runtime()
+        for action in (runtime.evaluate, runtime.cancel, lambda now: runtime.request('static-positive', now)):
+            with self.assertRaises(RigError) as failure:
+                action(too_large)
+            self.assertEqual(failure.exception.report['code'], 'RIG_STATE_TIME')
+        self.assertEqual(runtime.evaluate(0.)['transition_count'], 0)
 
     def test_modified_clip_invalidates_runtime(self):
         runtime = self.runtime()
@@ -125,6 +146,29 @@ class RigStateRuntimeTests(unittest.TestCase):
                                 selected=['static-positive'], blend_seconds=0)
         self.assertAlmostEqual(mixed.evaluate(1.25)['pose']['bones'][root]['translation'][0], .25)
         self.assertAlmostEqual(mixed.evaluate(2.25)['pose']['bones'][root]['translation'][0], 1.25)
+
+    def test_large_loop_count_checks_displacement_instead_of_cycle_count(self):
+        from rig_animation import clip_from_poses
+        from rig_skeleton import neutral_pose
+        root = self.rig.skeleton['root']
+        for name, end, motion in [('inplace', 1., 'in-place'), ('small-step', .125, 'embedded'),
+                                  ('large-step', 1., 'embedded')]:
+            poses = [neutral_pose(self.rig.skeleton), neutral_pose(self.rig.skeleton)]
+            poses[1]['bones'][root] = {'translation': [end, 0., 0.]}
+            self.rig.clips[name] = clip_from_poses(self.rig, name, [0., .25], poses,
+                                                  loop=True, root_motion=motion)
+
+        for name, expected in [('inplace', 0.), ('small-step', 5e307)]:
+            self.recipes['static-positive'] = name
+            position = self.runtime('static-positive').evaluate(1e308)['pose']['bones'][root]['translation']
+            np.testing.assert_allclose(position, [expected, 0., 0.])
+
+        self.recipes['static-positive'] = 'large-step'
+        runtime = self.runtime('static-positive')
+        with self.assertRaises(RigError) as failure:
+            runtime.evaluate(1e308)
+        self.assertEqual(failure.exception.report['code'], 'RIG_STATE_TIME')
+        self.assertEqual(runtime.time, 0.)
 
     def test_sparse_target_fades_old_morphs_to_authored_default(self):
         from rig_animation import clip_from_poses
