@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import unittest
@@ -266,24 +267,51 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
         self.assertEqual(handoff['receipt_template']['input_hashes'][original.relative_to(self.root).as_posix()], expected)
         self.assertEqual({path: path.read_bytes() for path in sources}, sources)
 
-    @unittest.skipIf(os.name == 'nt', 'POSIX temporary symlink exchange')
     def test_transient_in_run_alias_cannot_export_another_attachment(self):
         original, alternate = self.attach_fixture()
         backup = original.with_suffix('.held')
         original_bytes, alternate_bytes = original.read_bytes(), alternate.read_bytes()
+        self.assertNotEqual(original_bytes, alternate_bytes)
+        if os.name == 'nt':
+            # A junction needs no file-symlink privilege. Exchange the parent
+            # at its original spelling so resolving the attachment redirects
+            # to genuinely different bytes, just like the POSIX leaf symlink.
+            backup = original.parent.with_name(original.parent.name + '.held')
+            redirected_parent = self.root / 'redirected-attachments'
+            redirected_parent.mkdir()
+            redirected = redirected_parent / original.name
+            redirected.write_bytes(alternate_bytes)
+        else:
+            redirected = alternate
         before, sources = self.authority(), self.source_bytes()
         real_warnings, real_admission = hatch.style_warnings, NativeBudget.before_claim
         reached = []
 
         def restore():
             if backup.exists():
-                original.unlink()
-                backup.rename(original)
+                if os.name == 'nt':
+                    if original.parent.exists():
+                        original.parent.rmdir()  # Remove the junction, not its target.
+                    backup.rename(original.parent)
+                else:
+                    original.unlink()
+                    backup.rename(original)
 
         def exchange_after_capture(*args, **kwargs):
             result = real_warnings(*args, **kwargs)
-            original.rename(backup)
-            original.symlink_to(alternate)
+            if os.name == 'nt':
+                original.parent.rename(backup)
+                created = subprocess.run(['cmd', '/c', 'mklink', '/J',
+                    str(original.parent), str(redirected_parent)], capture_output=True,
+                    text=True, timeout=5)
+                self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+                self.assertTrue(original.parent.lstat().st_file_attributes &
+                                stat.FILE_ATTRIBUTE_REPARSE_POINT)
+            else:
+                original.rename(backup)
+                original.symlink_to(alternate)
+            self.assertEqual(original.resolve(), redirected.resolve())
+            self.assertEqual(original.read_bytes(), alternate_bytes)
             reached.append('alias-visible-at-handoff-resolution')
             return result
 
@@ -305,6 +333,7 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
         self.assertIn('alias-visible-at-handoff-resolution', reached)
         self.assertEqual(original.read_bytes(), original_bytes)
         self.assertEqual(alternate.read_bytes(), alternate_bytes)
+        self.assertEqual(redirected.read_bytes(), alternate_bytes)
         self.assertEqual(self.source_bytes(), sources)
         if handoff is None:
             self.assertEqual(self.authority(), before,
@@ -321,14 +350,21 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
                              'Claim exported another file after the original input hashes passed')
             self.assertEqual(Path(attached['path']).read_bytes(), original_bytes)
 
-    @unittest.skipIf(os.name == 'nt', 'POSIX FIFO input boundary')
     def test_special_attachment_is_refused_without_blocking_or_mutating_authority(self):
         original, alternate = self.attach_fixture()
         original_bytes, alternate_bytes = original.read_bytes(), alternate.read_bytes()
         before, sources = self.authority(), self.source_bytes()
         backup = original.with_suffix('.held')
         original.rename(backup)
-        os.mkfifo(original)
+        if os.name == 'nt':
+            # Windows has no POSIX FIFO at an attachment-relative file path.
+            # A real directory proves nonregular rejection there; the POSIX
+            # case separately retains the blocking-FIFO regression coverage.
+            original.mkdir()
+            self.assertTrue(original.is_dir())
+        else:
+            os.mkfifo(original)
+            self.assertTrue(stat.S_ISFIFO(original.lstat().st_mode))
         try:
             result = subprocess.run([sys.executable, str(Path(__file__).resolve()),
                 '--special-attachment-probe', str(self.root)], capture_output=True,
@@ -339,7 +375,10 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
             self.assertEqual(self.source_bytes(), sources)
             self.assertEqual(alternate.read_bytes(), alternate_bytes)
         finally:
-            original.unlink()
+            if os.name == 'nt':
+                original.rmdir()
+            else:
+                original.unlink()
             backup.rename(original)
         self.assertEqual(original.read_bytes(), original_bytes)
 

@@ -616,6 +616,12 @@ that a native owner has stopped. A direct terminal measurement still records
 its exact delta but retains the remainder; the original owner must provide
 terminal evidence or the existing explicit historical cancellation attestation.
 
+Historical admissions predate native claim publications. Missing publication
+events cannot establish that their original owner has finished. A generic
+terminal meter therefore records its expenditure while retaining the historical
+owner's hold. The original owner can still report its measured usage and use
+the existing measured recovery or explicit cancellation attestation boundary.
+
 For a measured retry, Hatch first saves the original failed owner and only then
 retains a `native-finalize` ledger event. That event binds the token, exact
 observation, retained evidence and ordered original claim/failure history. A
