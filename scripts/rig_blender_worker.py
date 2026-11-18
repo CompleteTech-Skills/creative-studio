@@ -44,6 +44,17 @@ def activate_clip(name):
     return matched
 
 
+def native_mesh_objects(meshes):
+    """Resolve glTF mesh IDs, which Blender retains even when object names collide."""
+    result = {}
+    for obj in meshes:
+        mesh_id = obj.data.get('hatchMeshId')
+        if not isinstance(mesh_id, str) or not mesh_id or mesh_id in result:
+            raise ValueError('Blender mesh has a missing or duplicate native mesh ID: ' + obj.name)
+        result[mesh_id] = obj
+    return result
+
+
 def inspect_scene(job):
     armatures=[o for o in bpy.data.objects if o.type=='ARMATURE']
     meshes=[o for o in bpy.data.objects if o.type=='MESH']
@@ -59,17 +70,18 @@ def inspect_scene(job):
         nla={o.name:[t.name for t in o.animation_data.nla_tracks] for o in bpy.data.objects if o.animation_data},
         controls=[o.name for o in bpy.data.objects if o.get('hatch_control')],
         constraints=sum(len(b.constraints) for a in armatures for b in a.pose.bones),samples=[])
-    for request in job.get('samples',[]):
+    requests = job.get('samples', [])
+    mesh_objects = native_mesh_objects(meshes) if requests else {}
+    for request in requests:
         matched=activate_clip(None if request.get('rest') else request['clip'])
         frame=request['time']*bpy.context.scene.render.fps
         bpy.context.scene.frame_set(math.floor(frame),subframe=frame%1)
         bpy.context.view_layer.update();depsgraph=bpy.context.evaluated_depsgraph_get()
         sample=dict(clip=request['clip'],time=request['time'],matched=matched,meshes={},bones={},sockets={})
-        for obj in meshes:
+        for mesh_id, obj in mesh_objects.items():
             evaluated=obj.evaluated_get(depsgraph);mesh=evaluated.to_mesh()
-            indices=request.get('vertices',{}).get(obj.name)
-            if indices is not None:
-                sample['meshes'][obj.name]=[canonical(evaluated.matrix_world@mesh.vertices[i].co) for i in indices]
+            indices=request.get('vertices',{}).get(mesh_id, [])
+            sample['meshes'][mesh_id]=[canonical(evaluated.matrix_world@mesh.vertices[i].co) for i in indices]
             evaluated.to_mesh_clear()
         for arm in armatures:
             for name in request.get('bones',[]):
