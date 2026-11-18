@@ -220,3 +220,79 @@ operations/compatibility gates. All 21 preexisting acquisition, 17 resolver and
 19 acquisition-budget test methods were retained; no assertions were removed.
 This bounded hardening does not establish live provider, 3D acquisition, visual
 or production acceptance, or close issues #33/#34.
+
+## Integrated local validation — 2026-11-18
+
+The native immutable-byte extension and corrected budget/admission foundation
+were integrated at local commit `461c1b9067e2c0db91b4a79d07d979ac8fe2edce`,
+tree `b307c813dda2a8330f5679d1c9e339a389f65e51`. The following observations
+supersede the intermediate integration blocker above while retaining its failure
+history. The working tree remained unchanged throughout these runs.
+
+| Command | Environment | Observed result |
+| --- | --- | --- |
+| `PYTHONPATH=scripts:tests python -m unittest test_director_acquisition test_rig_director_resolver test_director_acquisition_budget test_director_acquisition_recovery -v` | Linux, Python 3.12.14, inherited runtime dependencies | 82 tests, 87.325 seconds, OK; no skips |
+| `python scripts/test_rig_gate.py operations-archive` | Same inherited runtime, missing `pygltflib` | 224 tests, 140.132 seconds; one loader error for `test_rig_director_assets`, all other tests passed; no skips |
+| `<rig-gates-venv>/bin/python scripts/test_rig_gate.py operations-archive` | Linux, Python 3.12.14, sibling user-owned system-site-packages venv with `requirements-rig-test.txt` installed | 245 tests, 131.322 seconds, OK; no skips |
+
+The gate venv resolves the repository's declared versions: NumPy 2.3.5,
+jsonschema 4.25.1, simplejpeg 1.9.0, Pillow 13.0.0, Playwright 1.55.0 and
+pygltflib 1.16.5. Installation used the configured public package registry and
+did not modify the primary runtime. System-site-packages reuse means this was
+not a wholly isolated dependency reconstruction.
+
+All fourteen new recovery cases executed successfully, including accounting
+before unsafe current-input reads, terminal claim authentication, independent
+source inode preservation and candidate substitution at the native handoff.
+All 28 resolver cases executed successfully, including cooperative deadline
+expiry around native geometry work. The complete operations gate also exercised
+the enrolled native budget, recovery, admission and production receipt-path
+suites. No tests were removed, weakened or bypassed. These local fixture results
+do not substitute for current-head CI, cross-platform execution, the separate
+compatibility gate, live provider execution, visual review or production
+acceptance.
+
+## Cooperative acquisition deadline boundaries
+
+Canonical operations parse the deadline once and recheck it after exact
+specification and receipt reads, current generation-input validation, native
+budget/reservation verification and each paid-policy artifact read. Validation
+does not write a new specification binding. New claims first authenticate the
+request and reconcile native state, then recheck the deadline before binding
+and again immediately before calling the native claim owner. Expiry during
+these validation or reconciliation steps cannot allocate a token or attempt,
+or introduce a new specification binding.
+
+Ingestion retains authenticated native usage before checking the deadline at
+the next boundary, then checks again after current-input validation, after the
+candidate read and immediately before native ingestion. Expiry after accounting
+preserves the measured spend and original active claim; the same observation
+can be replayed with a valid deadline without charging it again. The adapter
+also checks after native operations and around final result validation, so an
+operation that crosses the deadline cannot return a successful result.
+
+These are cooperative checks, not interruption or rollback of native work.
+An indivisible native operation may finish after the deadline. A specification
+binding, native token, usage observation or completed native transition already
+committed before the next check remains authoritative; a deadline error never
+means that no mutation occurred. Callers must recover through the original
+native state/token instead of starting another attempt. The recovery suite
+adds ten controlled-clock regression methods for these boundaries, retaining
+all fourteen earlier recovery methods and every prior acquisition test.
+
+Deadline correction validation ran on Linux/Python 3.12.14 at
+`c3f0081acc64a60c07daa1f20f1355c3e39a2267`, tree
+`9bcdb5662dfeb49adeebfd571658b6869bbb5186`, with the same pinned sibling venv
+described above. Source files remained unchanged throughout both runs:
+
+| Command | Exit | Observed result |
+| --- | --- | --- |
+| `PYTHONPATH=scripts:tests <rig-gates-venv>/bin/python -m unittest test_director_acquisition test_rig_director_resolver test_director_acquisition_budget test_director_acquisition_recovery -v` | 0 | 92 tests, 64.686 seconds, OK; no skips |
+| `<rig-gates-venv>/bin/python scripts/test_rig_gate.py operations-archive` | 0 | 255 tests, 135.926 seconds, OK; no skips |
+
+The controlled-clock cases call the real native validators, accounting and
+claim owners before advancing time at the injected boundary. They demonstrate
+local deadline handling and recoverable retained state; they do not execute a
+provider or establish production acceptance. All 82 prior focused test methods
+remain, with ten additive deadline cases. The separate compatibility gate and
+fresh independent/current-head platform CI remain required release evidence.

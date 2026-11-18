@@ -1,5 +1,7 @@
 """Offline native recovery regressions; no provider execution or paid calls."""
 from copy import deepcopy
+from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -13,7 +15,7 @@ from PIL import Image
 
 import hatch
 from director_acquisition import AcquisitionGateway, NativeAcquisitionGateway
-from director_budget import BudgetLedger, METRICS, bind_native_budget
+from director_budget import BudgetLedger, METRICS, NativeBudget, bind_native_budget
 from rig_errors import RigError
 import test_director_acquisition as acquisition_fixtures
 
@@ -26,7 +28,7 @@ class DirectorAcquisitionRecoveryTests(unittest.TestCase):
     ref = acquisition_fixtures.DirectorAcquisitionEnvelopeTests.ref
     request = acquisition_fixtures.DirectorAcquisitionEnvelopeTests.request
 
-    def enroll(self):
+    def reserve(self):
         limits = {metric: 100 for metric in METRICS}
         self.ledger = BudgetLedger.create(self.parent/'budget', limits,
             provider_limits={'imagegen': limits}, currency='USD')
@@ -39,6 +41,9 @@ class DirectorAcquisitionRecoveryTests(unittest.TestCase):
             provider='imagegen', estimate=self.estimate, retry_allowance=0,
             evidence=[self.proof])
         self.reservation = self.gateway.reserve_budget('base')['reservation_id']
+
+    def enroll(self):
+        self.reserve()
         request = self.request('claim')
         request['context']['budget_reservation_id'] = self.reservation
         self.token = self.adapter.claim(request)['value']['claim_id']
@@ -316,6 +321,183 @@ else:
         self.assertEqual(job['source_hash'], hashlib.sha256(original).hexdigest())
         with Image.open(self.root/'decoded/base.png') as decoded:
             self.assertEqual(decoded.getpixel((0, 0)), (30, 70, 160, 255))
+
+    @contextmanager
+    def deadline_clock(self, request):
+        request['context']['deadline'] = '2030-01-01T00:00:00Z'
+        current = [datetime(2029, 1, 1, tzinfo=timezone.utc)]
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current[0]
+        def expire_after(operation):
+            def execute(*args, **kwargs):
+                result = operation(*args, **kwargs)
+                current[0] = datetime(2031, 1, 1, tzinfo=timezone.utc)
+                return result
+            return execute
+        with patch('datetime.datetime', Clock):
+            yield expire_after
+
+    def assert_unclaimed_unbound(self):
+        job = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual(job['attempts'], 0)
+        self.assertEqual(job['status'], 'pending')
+        self.assertNotIn('token', job)
+        self.assertNotIn('director_spec_binding', job)
+
+    @secure_artifact_test
+    def test_deadline_after_generation_validation_cannot_bind_or_claim(self):
+        for method in ('prepare', 'claim'):
+            request = self.request(method)
+            before = (self.root/'imagegen-jobs.json').read_bytes()
+            with self.subTest(method=method), self.deadline_clock(request) as expire_after:
+                with patch.object(hatch, 'generation_inputs', side_effect=expire_after(hatch.generation_inputs)), \
+                     patch.object(hatch, 'claim', wraps=hatch.claim) as claimed:
+                    with self.assertRaisesRegex(RigError, 'deadline'):
+                        getattr(self.adapter, method)(request)
+                    claimed.assert_not_called()
+            self.assert_unclaimed_unbound()
+            self.assertEqual((self.root/'imagegen-jobs.json').read_bytes(), before)
+
+    @secure_artifact_test
+    def test_deadline_after_reservation_validation_cannot_bind_or_claim(self):
+        self.reserve()
+        request = self.request('claim')
+        request['context']['budget_reservation_id'] = self.reservation
+        before = self.ledger.snapshot()
+        with self.deadline_clock(request) as expire_after:
+            with patch.object(NativeBudget, 'verify_reservation', autospec=True,
+                              side_effect=expire_after(NativeBudget.verify_reservation)) as verified:
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.claim(request)
+                self.assertEqual(verified.call_count, 1)
+        self.assert_unclaimed_unbound()
+        self.assertEqual(self.ledger.snapshot(), before)
+
+    @secure_artifact_test
+    def test_deadline_after_policy_read_cannot_bind_or_claim(self):
+        import director_contracts
+        self.reserve()
+        policy_ref = self.ref('policy.json', b'{}', 'policy', 'policy')
+        spec = json.loads((self.root/'spec.json').read_text())
+        policy = dict(spec['source_policy'], network='allow-configured',
+                      providers=['imagegen'], paid='bounded', policy_ref=policy_ref)
+        spec['source_policy'] = policy
+        self.spec = self.ref('spec.json', json.dumps(spec).encode(), spec['id'], 'director-asset-spec')
+        request = self.request('claim')
+        request['context'].update(policy=policy, budget_reservation_id=self.reservation)
+        original = director_contracts._read_artifact
+        before = self.ledger.snapshot()
+        with self.deadline_clock(request) as expire_after:
+            def read(root, ref):
+                return (expire_after(original) if ref == policy_ref else original)(root, ref)
+            with patch.object(director_contracts, '_read_artifact', side_effect=read):
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.claim(request)
+        self.assert_unclaimed_unbound()
+        self.assertEqual(self.ledger.snapshot(), before)
+
+    @secure_artifact_test
+    def test_deadline_after_native_reconcile_cannot_bind_or_claim(self):
+        request = self.request('claim')
+        with self.deadline_clock(request) as expire_after:
+            with patch.object(hatch, 'reconcile', side_effect=expire_after(hatch.reconcile)), \
+                 patch.object(hatch, 'claim', wraps=hatch.claim) as claimed:
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.claim(request)
+                claimed.assert_not_called()
+        self.assert_unclaimed_unbound()
+
+    @secure_artifact_test
+    def test_deadline_after_binding_commit_still_prevents_native_claim(self):
+        request = self.request('claim')
+        original = hatch.save
+        with self.deadline_clock(request) as expire_after:
+            def save(root, data):
+                operation = expire_after(original) if hatch.job_for(data, 'base').get('director_spec_binding') else original
+                return operation(root, data)
+            with patch.object(hatch, 'save', side_effect=save), \
+                 patch.object(hatch, 'claim', wraps=hatch.claim) as claimed:
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.claim(request)
+                claimed.assert_not_called()
+        job = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual(job['attempts'], 0)
+        self.assertNotIn('token', job)
+        # The completed specification write is evidence, not a paid attempt.
+        self.assertEqual(job['director_spec_binding'], self.spec)
+
+    @secure_artifact_test
+    def test_deadline_after_usage_accounting_retains_original_recoverable_claim(self):
+        self.enroll()
+        with self.deadline_clock(self.ingestion) as expire_after:
+            with patch.object(hatch, 'record_budget_usage', side_effect=expire_after(hatch.record_budget_usage)), \
+                 patch.object(hatch, 'inputs', wraps=hatch.inputs) as inputs:
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.ingest(self.ingestion)
+                inputs.assert_not_called()
+        self.assert_accounted_without_promotion()
+        result = self.adapter.ingest(self.ingestion)
+        self.assertEqual(result['value']['native_state'], 'generated')
+        self.assertEqual(self.row()['spent']['provider_calls'], '1')
+        self.assertEqual(len(self.row()['attempts']), 1)
+
+    @secure_artifact_test
+    def test_deadline_after_current_input_validation_keeps_usage_without_promotion(self):
+        self.enroll()
+        with self.deadline_clock(self.ingestion) as expire_after:
+            with patch.object(hatch, 'inputs', side_effect=expire_after(hatch.inputs)), \
+                 patch.object(hatch, 'ingest', wraps=hatch.ingest) as ingested:
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.ingest(self.ingestion)
+                ingested.assert_not_called()
+        self.assert_accounted_without_promotion()
+
+    @secure_artifact_test
+    def test_deadline_after_candidate_read_keeps_usage_without_promotion(self):
+        import director_contracts
+        self.enroll()
+        original = director_contracts._read_artifact
+        candidate = self.ingestion['input']['candidates'][0]
+        with self.deadline_clock(self.ingestion) as expire_after:
+            def read(root, ref):
+                return (expire_after(original) if ref == candidate else original)(root, ref)
+            with patch.object(director_contracts, '_read_artifact', side_effect=read), \
+                 patch.object(hatch, 'ingest', wraps=hatch.ingest) as ingested:
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.ingest(self.ingestion)
+                ingested.assert_not_called()
+        self.assert_accounted_without_promotion()
+
+    @secure_artifact_test
+    def test_deadline_after_native_claim_preserves_committed_token_for_replay(self):
+        request = self.request('claim')
+        with self.deadline_clock(request) as expire_after:
+            with patch.object(hatch, 'claim', side_effect=expire_after(hatch.claim)):
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.claim(request)
+        job = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual(job['attempts'], 1)
+        self.assertEqual(job['status'], 'running')
+        token = job['token']
+        result = self.adapter.claim(request)
+        self.assertEqual(result['value']['claim_id'], token)
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root), 'base')['attempts'], 1)
+
+    @secure_artifact_test
+    def test_deadline_during_final_result_validation_cannot_return_success(self):
+        import director_contracts
+        request = self.request('claim')
+        with self.deadline_clock(request) as expire_after:
+            with patch.object(director_contracts, 'validate_method_result',
+                              side_effect=expire_after(director_contracts.validate_method_result)):
+                with self.assertRaisesRegex(RigError, 'deadline'):
+                    self.adapter.claim(request)
+        job = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual(job['attempts'], 1)
+        self.assertEqual(job['status'], 'running')
+        self.assertIn('token', job)
 
 
 if __name__ == '__main__':

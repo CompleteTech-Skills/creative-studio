@@ -118,10 +118,11 @@ class NativeAcquisitionGateway:
                     stale=bool(job and job.get('stale')),history=deepcopy(job['history']) if job else [],
                     **extra)
 
-    def prepare(self, job=None, *, _check=None):
+    def prepare(self, job=None, *, _check=None, _admit=None):
         """Bind an existing native run; repeated preparation has no side effects."""
         with self._locked() as data:
             if _check is not None: _check(data)
+            if _admit is not None: _admit(data)
             return self._result(data,job)
 
     def reserve_budget(self, job):
@@ -129,14 +130,17 @@ class NativeAcquisitionGateway:
         with self._locked() as data:
             return hatch.reserve_budget(self.root,data,job)
 
-    def claim(self, job, *, _check=None):
+    def claim(self, job, *, _check=None, _admit=None, _checkpoint=None):
         """Return the existing active token, or delegate one native claim."""
         with self._locked() as data:
             if _check is not None: _check(data)
             hatch.reconcile(self.root,data)
+            if _checkpoint is not None: _checkpoint()
             selected=hatch.job_for(data,job)
             if selected['status']=='running':
                 return self._result(data,job,reused_active_claim=True,handoff=None)
+            if _admit is not None: _admit(data)
+            if _checkpoint is not None: _checkpoint()
             handoff=hatch.claim(self.root,data,job)
             return self._result(data,job,reused_active_claim=False,handoff=handoff)
 
@@ -147,7 +151,8 @@ class NativeAcquisitionGateway:
             hatch.reconcile(self.root,data)
             return self._result(data,job)
 
-    def fail(self, job, token, reason, *, outcome='known', budget_usage=None, _check=None):
+    def fail(self, job, token, reason, *, outcome='known', budget_usage=None, _check=None,
+             _checkpoint=None):
         """Only a known failure releases the native token; unknown work stays owned."""
         if outcome not in ('known','uncertain'):
             raise RigError('DIRECTOR_ACQUISITION_OUTCOME','Outcome must be known or uncertain.',stage='director')
@@ -159,6 +164,7 @@ class NativeAcquisitionGateway:
             if not isinstance(reason,str) or not reason.strip():
                 raise RigError('DIRECTOR_ACQUISITION_REASON','A preserved failure reason is required.',stage='director')
             budget=hatch._native_budget(self.root,data,recovery=True)
+            if _checkpoint is not None: _checkpoint()
             if budget is not None:
                 if (not isinstance(budget_usage,dict) or
                     (budget_usage.get('outcome')=='uncertain') != (outcome=='uncertain')):
@@ -179,7 +185,7 @@ class NativeAcquisitionGateway:
             return self._result(data,job)
 
     def ingest(self, job, token, source, *, source_sha256, receipt, note,
-               _check=None, _read_source=None):
+               _check=None, _read_source=None, _checkpoint=None):
         """Account an authenticated receipt, then verify and ingest source bytes."""
         if not isinstance(receipt,dict):
             raise RigError('DIRECTOR_ACQUISITION_RECEIPT','An exact native handoff receipt is required.',stage='director')
@@ -207,21 +213,27 @@ class NativeAcquisitionGateway:
                                    'Ingestion requires complete known native usage.',stage='director')
             elif 'budget_usage' in value:
                 raise RigError('DIRECTOR_ACQUISITION_POLICY','Usage requires an enrolled native budget.',stage='director')
+            # A deadline never rolls back an authentic observation already
+            # retained by the native owner; the original claim remains recoverable.
+            if _checkpoint is not None: _checkpoint()
             try:
                 fresh=not selected.get('stale') and hatch.inputs(self.root,selected)==selected['input_hashes']
             except (OSError,ValueError):
                 fresh=False
+            if _checkpoint is not None: _checkpoint()
             if not fresh:
                 raise RigError('DIRECTOR_ACQUISITION_TOKEN','Active unchanged native claim required.',stage='director')
             if not isinstance(source_sha256,str) or len(source_sha256)!=64:
                 raise RigError('DIRECTOR_ACQUISITION_HASH','An exact source SHA-256 is required.',stage='director')
             payload=_read_source() if _read_source is not None else read_source_bytes(source)
+            if _checkpoint is not None: _checkpoint()
             if hashlib.sha256(payload).hexdigest()!=source_sha256:
                 raise RigError('DIRECTOR_ACQUISITION_HASH','Source bytes differ from the declared candidate.',stage='director')
             # Native ingestion owns preservation and decodes the same immutable
             # bytes. No mutable source pathname is reopened at this boundary.
             with tempfile.TemporaryDirectory(prefix='director-native-receipt-') as temporary:
                 receipt_path=Path(temporary)/'receipt.json';hatch.atomic(receipt_path,value)
+                if _checkpoint is not None: _checkpoint()
                 hatch.ingest(self.root,data,job,source,token,note,receipt_path,
                              fixture=data['fixture_mode'],source_bytes=payload)
             target=Path(selected['source_path'])
@@ -265,12 +277,15 @@ class AcquisitionGateway:
         from rig_errors import decode_json, object_hash, require
         validate_method_request(method,request)
         from datetime import datetime, timezone
-        require(parse_rfc3339(request['context']['deadline'],code='ACQUISITION_DEADLINE') >
-                datetime.now(timezone.utc),'DIRECTOR_ACQUISITION_DEADLINE','Acquisition request deadline expired.')
+        deadline=parse_rfc3339(request['context']['deadline'],code='ACQUISITION_DEADLINE')
+        def checkpoint(message='Acquisition request deadline expired at a cooperative work boundary.'):
+            require(deadline > datetime.now(timezone.utc),'DIRECTOR_ACQUISITION_DEADLINE',message)
+        checkpoint()
         started=time.process_time()
         params=request['input']
         spec_ref=params['spec']
         spec=validate_document(decode_json(_read_artifact(self.root,spec_ref)))
+        checkpoint()
         require(spec['kind']=='director-asset-spec' and spec['logical_id']==self.job and
                 spec['asset_type']=='raster' and spec_ref['artifact_id']==spec['id'] and
                 spec_ref['schema_version']==spec['schema_version'] and
@@ -300,6 +315,7 @@ class AcquisitionGateway:
                 return _read_artifact(self.root,source_ref)
             source=self.root/source_ref['path']
             receipt=decode_json(_read_artifact(self.root,receipt_ref))
+            checkpoint()
         elif method=='AcquisitionGateway.fail':
             require(not candidates and len(params['diagnostics'])==1,
                     'DIRECTOR_ACQUISITION_INPUT','Failure requires exactly one native outcome diagnostic.')
@@ -313,14 +329,13 @@ class AcquisitionGateway:
                 require(evidence[0]['fixture']==self.native.binding['fixture'],
                         'DIRECTOR_ACQUISITION_PROVENANCE','Observation must preserve the native fixture classification.')
                 budget_usage=decode_json(_read_artifact(self.root,evidence[0]))
+                checkpoint()
         else:
             require(not candidates and not params['diagnostics'],'DIRECTOR_ACQUISITION_INPUT',
                     'This native operation takes no candidates or diagnostics.')
 
         def check(data):
-            require(parse_rfc3339(request['context']['deadline'],code='ACQUISITION_DEADLINE') >
-                    datetime.now(timezone.utc),'DIRECTOR_ACQUISITION_DEADLINE',
-                    'Acquisition request deadline expired while waiting for native ownership.')
+            checkpoint('Acquisition request deadline expired while waiting for native ownership.')
             selected=hatch.job_for(data,self.job)
             pinned=selected.get('director_spec_binding')
             require(pinned is None or pinned==spec_ref,'DIRECTOR_ACQUISITION_SPEC',
@@ -348,6 +363,7 @@ class AcquisitionGateway:
                 except (OSError,ValueError) as exc:
                     raise RigError('DIRECTOR_ACQUISITION_INPUT',
                                    'Native inputs are unavailable.',stage='director') from exc
+                checkpoint()
             accepted=recorded if recovery or selected['status']=='running' else current
             require(params['binding_id'] in (None,data['run_id']) and
                     (params['expected_state']==selected['status'] or duplicate_claim) and
@@ -368,6 +384,7 @@ class AcquisitionGateway:
                 require(params['claim_id'] is None or params['claim_id']==selected.get('token'),
                         'DIRECTOR_ACQUISITION_TOKEN','Request changed the original native claim.')
             budget=hatch._native_budget(self.root,data,recovery=recovery)
+            checkpoint()
             policies=(request['context']['policy'],spec['source_policy'])
             paid_claim=(method=='AcquisitionGateway.claim' and
                         (not data['fixture_mode'] or any(policy['paid']!='deny' or
@@ -381,6 +398,7 @@ class AcquisitionGateway:
                 bound_inputs=recorded if recovery or selected['status']=='running' else (
                     current if method in ('AcquisitionGateway.prepare','AcquisitionGateway.claim') else None)
                 budget.verify_reservation(selected,reservation,input_hashes=bound_inputs)
+                checkpoint()
                 if paid_claim and selected['status']!='running':
                     require(budget.config['provider']=='imagegen','DIRECTOR_ACQUISITION_PROVIDER',
                             'Native raster acquisition requires the configured imagegen provider.')
@@ -392,6 +410,7 @@ class AcquisitionGateway:
                         require(policy['policy_ref'] is not None,'DIRECTOR_ACQUISITION_POLICY',
                                 'New native handoff requires exact policy evidence.')
                         _read_artifact(self.root,policy['policy_ref'])
+                        checkpoint()
                         require(not (budget.config['unknown_price'] or budget.config['estimate']['amount'] is None) or
                                 policy['paid']=='allow-unknown-price','DIRECTOR_ACQUISITION_POLICY',
                                 'Unknown native prices require explicit unknown-price permission.')
@@ -407,27 +426,37 @@ class AcquisitionGateway:
                             failure['evidence'][0]['kind']=='acquisition-budget-observation' and
                             isinstance(budget_usage,dict),'DIRECTOR_ACQUISITION_INPUT',
                             'Budgeted failure requires one exact native usage observation.')
-            if pinned is None:
+            checkpoint()
+
+        def admit(data):
+            # Validation does not bind a new specification. A new claim first
+            # reconciles native state, then reaches this deadline-guarded boundary.
+            checkpoint()
+            selected=hatch.job_for(data,self.job)
+            if selected.get('director_spec_binding') is None:
                 selected['director_spec_binding']=deepcopy(spec_ref)
                 selected['history'].append(dict(event='director-spec-bound',time=time.time(),spec=deepcopy(spec_ref)))
                 hatch.save(self.root,data)
 
         if method=='AcquisitionGateway.prepare':
-            result=self.native.prepare(self.job,_check=check)
+            result=self.native.prepare(self.job,_check=check,_admit=admit)
         elif method=='AcquisitionGateway.claim':
-            result=self.native.claim(self.job,_check=check)
+            result=self.native.claim(self.job,_check=check,_admit=admit,_checkpoint=checkpoint)
         elif method=='AcquisitionGateway.reconcile':
             result=self.native.reconcile(self.job,_check=check)
         elif method=='AcquisitionGateway.fail':
             result=self.native.fail(self.job,params['claim_id'],failure['recommended_action'],
-                                    outcome=failure['observed'],budget_usage=budget_usage,_check=check)
+                                    outcome=failure['observed'],budget_usage=budget_usage,_check=check,
+                                    _checkpoint=checkpoint)
         else:
             result=self.native.ingest(self.job,params['claim_id'],source,source_sha256=source_hash,
                                       receipt=receipt,note='Exact Director candidate bytes verified; visual review not performed.',
-                                      _check=check,_read_source=source_reader)
+                                      _check=check,_read_source=source_reader,_checkpoint=checkpoint)
+        checkpoint()
         # The native manifest is mutable. Preserve an immutable evidence snapshot
         # so later operations cannot invalidate the result's exact ArtifactRef.
         with self.native._locked(recovery_job=self.job) as data:
+            checkpoint()
             import json
             payload=(json.dumps(result['native_manifest'],sort_keys=True,indent=2,allow_nan=False)+'\n').encode('utf-8')
             digest=hashlib.sha256(payload).hexdigest()
@@ -466,7 +495,10 @@ class AcquisitionGateway:
         response=dict(schema_version=1,kind='director-result',method=method,status='succeeded',
                       operation_id=request['context']['request_id'],input_digest=object_hash(request),value=value,
                       artifacts=[binding],diagnostics=diagnostics,usage=usage,provenance_receipts=[binding])
-        return validate_method_result(method,response,request)
+        checkpoint()
+        response=validate_method_result(method,response,request)
+        checkpoint()
+        return response
 
     def prepare(self,request): return self._execute('AcquisitionGateway.prepare',request)
     def claim(self,request): return self._execute('AcquisitionGateway.claim',request)
