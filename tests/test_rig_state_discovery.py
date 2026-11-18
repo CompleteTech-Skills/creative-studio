@@ -2,12 +2,14 @@
 from copy import deepcopy
 import tempfile
 import unittest
+import numpy as np
 from rig_test_helpers import fixture
-from rig_animation import clip_from_poses
+from rig_animation import clip_from_poses, evaluate_animation
 from rig_errors import RigError, object_hash
 from rig_skeleton import neutral_pose, rotate_bone
 from rig_math import axis_angle
 from rig_states import map_states
+from rig_skinning import evaluate_deformation
 from state_catalog import load_library
 
 
@@ -38,6 +40,65 @@ class StateDiscoveryTests(unittest.TestCase):
         self.assertEqual(evidence['clips']['inspect']['provenance'],clip['provenance'])
         self.assertEqual(result['work_estimate']['unique_clips'],1)
         self.assertFalse(result['all_416_animated'])
+
+    def test_bone_only_recipe_reports_authored_default_morphs_used_by_deformation(self):
+        rig=self.rig;mesh=rig.geometry.by_id()['strip']
+        self.assertTrue(all(track['path']!='weights' for track in rig.clips['bend']['tracks']))
+        before=deepcopy(rig.clips['bend'])
+        pose=evaluate_animation(rig,'bend',0.)['pose']
+        plain=evaluate_deformation(rig,pose)['strip']['positions']
+        mesh.morph_defaults['blink']=.5
+        actual=evaluate_deformation(rig,pose)['strip']['positions']
+        np.testing.assert_allclose(actual-plain,mesh.morphs['blink']['POSITION']*.5,rtol=0,atol=1e-12)
+        self.assertGreater(np.max(np.abs(actual-plain)),.05)
+        result=map_states(rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+        recipe=result['discovery']['static-neutral']['recipe']
+        self.assertEqual(recipe['required_morph_targets'],['strip::blink'])
+        self.assertEqual(recipe['morph_channels'],[])
+        self.assertEqual(rig.clips['bend'],before)
+        # Zero defaults still read their native delta arrays, while an authored
+        # target with no default and no channel contributes no dependency.
+        mesh.morph_defaults['blink']=0.
+        mesh.morphs['unused']=deepcopy(mesh.morphs['blink'])
+        result=map_states(rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+        self.assertEqual(result['discovery']['static-neutral']['recipe']['required_morph_targets'],['strip::blink'])
+        del mesh.morph_defaults['blink']
+        result=map_states(rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+        self.assertEqual(result['discovery']['static-neutral']['recipe']['required_morph_targets'],[])
+
+    def test_default_and_animated_morph_dependencies_union_exact_mesh_identities(self):
+        rig=self.rig;mesh=rig.geometry.by_id()['strip']
+        mesh.morphs['smile']=deepcopy(mesh.morphs['blink'])
+        other=deepcopy(mesh);other.id='other'
+        other.morphs={'blink':deepcopy(mesh.morphs['blink']),'unused':deepcopy(mesh.morphs['blink'])}
+        other.morph_defaults={'blink':.25}
+        rig.geometry.meshes.append(other)
+        skin=deepcopy(rig.weights['strip']);skin.mesh='other';rig.weights['other']=skin
+        mesh.morph_defaults={'blink':.5}
+        clip=deepcopy(rig.clips['bend']);clip['id']='morph-union'
+        clip['tracks'].append(dict(schema_version=1,target='strip',path='weights',
+            interpolation='LINEAR',times=[0.,1.],values=[[.5,0.],[1.,.75]]))
+        rig.clips['morph-union']=clip
+        result=map_states(rig,selected=['static-neutral'],
+                          recipes={'static-neutral':['bend','morph-union','morph-union']})
+        recipe=result['discovery']['static-neutral']['recipe']
+        self.assertEqual(recipe['required_morph_targets'],['other::blink','strip::blink','strip::smile'])
+        self.assertEqual(recipe['morph_channels'],[dict(mesh='strip',morphs=['blink','smile'])])
+        pose=evaluate_animation(rig,'morph-union',0.)['pose']
+        positions=evaluate_deformation(rig,pose)
+        np.testing.assert_allclose(positions['other']['positions']-other.positions,
+                                   other.morphs['blink']['POSITION']*.25,rtol=0,atol=1e-12)
+        np.testing.assert_allclose(positions['strip']['positions']-mesh.positions,
+                                   mesh.morphs['blink']['POSITION']*.5,rtol=0,atol=1e-12)
+
+    def test_missing_default_morph_rejects_instead_of_inventing_a_dependency(self):
+        rig=self.rig;rig.geometry.by_id()['strip'].morph_defaults['absent']=.5
+        with self.assertRaises(RigError) as native:
+            evaluate_deformation(rig,neutral_pose(rig.skeleton))
+        with self.assertRaises(RigError) as discovery:
+            map_states(rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+        self.assertEqual(native.exception.report['code'],'RIG_MORPH_REFERENCE')
+        self.assertEqual(discovery.exception.report['code'],'RIG_MORPH_REFERENCE')
 
     def test_incomplete_recipe_reports_present_and_missing_without_fabricated_requirements(self):
         result=map_states(self.rig,selected=['static-neutral'],recipes={'static-neutral':['bend','missing']})

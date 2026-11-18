@@ -72,6 +72,13 @@ def _state_discovery(rig, state, requested, executable, capabilities, archetype,
                 if track['path']=='weights':morph_channels[track['target']]=list(meshes[track['target']].morphs)
                 else:bone_channels.add((track['target'],track['path']))
             contact_ids.update(contact['chain'] for contact in clip['contacts'])
+        # Native deformation reads defaults even without a weights channel,
+        # including zero defaults. Keep these dependencies separate from tracks.
+        required_morphs={mesh+'::'+morph for mesh,names in morph_channels.items() for morph in names}
+        for mesh in meshes.values():
+            require(set(mesh.morph_defaults) <= set(mesh.morphs), 'RIG_MORPH_REFERENCE',
+                    'Default morph target is unavailable.', asset=mesh.id)
+            required_morphs.update(mesh.id+'::'+morph for morph in mesh.morph_defaults)
         skinned={joint for skin in rig.weights.values() for joint in skin.joints}
         required=skinned|{bone for bone,path in bone_channels}
         required.update(bone for name in contact_ids for bone in chains[name]['bones'])
@@ -85,7 +92,7 @@ def _state_discovery(rig, state, requested, executable, capabilities, archetype,
             while parent is not None and parent not in required:
                 required.add(parent);parent=parents[parent]
         inventory.update(required_bones=sorted(required),
-            required_morph_targets=sorted(mesh+'::'+morph for mesh,names in morph_channels.items() for morph in names),
+            required_morph_targets=sorted(required_morphs),
             bone_channels=[dict(bone=bone,path=path) for bone,path in sorted(bone_channels)],
             morph_channels=[dict(mesh=mesh,morphs=names) for mesh,names in sorted(morph_channels.items())],
             contact_chains=[dict(id=name,bones=list(chains[name]['bones'])) for name in sorted(contact_ids)],
