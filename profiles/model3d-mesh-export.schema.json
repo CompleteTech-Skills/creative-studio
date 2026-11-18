@@ -1,0 +1,166 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "const": "hatch-model3d-mesh-export"
+    },
+    "format": {
+      "enum": [
+        "glb",
+        "gltf",
+        "obj"
+      ]
+    },
+    "vertices": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 1000000
+    },
+    "triangles": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2000000
+    },
+    "files": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 268435456
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+          }
+        },
+        "required": [
+          "bytes",
+          "sha256"
+        ],
+        "additionalProperties": false
+      },
+      "minProperties": 1,
+      "maxProperties": 4096
+    },
+    "mesh_identity": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[^\\x00-\\x1f\\x7f\\ud800-\\udfff]+(?![\\s\\S])"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 4096,
+            "pattern": "^[^\\ud800-\\udfff]*(?![\\s\\S])"
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 4096,
+            "pattern": "^[^\\ud800-\\udfff]*(?![\\s\\S])"
+          },
+          "source_node": {
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 2000000
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "region",
+          "source_node"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 4096
+    },
+    "material_names": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 4096,
+            "pattern": "^[^\\ud800-\\udfff]*(?![\\s\\S])"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 65536
+    },
+    "exported_material_slots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\x00-\\x1f\\x7f\\ud800-\\udfff]+(?![\\s\\S])"
+          }
+        },
+        "required": [
+          "slot",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 4096
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "minItems": 1,
+      "maxItems": 128
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "format",
+    "vertices",
+    "triangles",
+    "files",
+    "mesh_identity",
+    "material_names",
+    "exported_material_slots",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch Model3D model3d-mesh-export v1",
+  "description": "Structural validation only; runtime checks references and counts. No filesystem integrity or approval claim."
+}
