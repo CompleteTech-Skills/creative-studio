@@ -8,7 +8,7 @@ test_forged_zip_directory_count_is_rejected_before_zipinfo_allocation (test_rig_
 test_invalid_and_unknown_caller_caps_are_structured_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_invalid_and_unknown_caller_caps_are_structured_before_arrays) ... ok
 test_loading_uses_the_same_immutable_snapshot_as_header_admission (test_rig_load_limits.NativeLoadLimitTests.test_loading_uses_the_same_immutable_snapshot_as_header_admission) ... ok
 test_noncanonical_zip_offsets_rejected_before_directory_construction (test_rig_load_limits.NativeLoadLimitTests.test_noncanonical_zip_offsets_rejected_before_directory_construction) ... ok
-test_pickle_traversal_duplicate_and_bomb_members_fail_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_pickle_traversal_duplicate_and_bomb_members_fail_before_arrays) ... /home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/zipfile/__init__.py:1650: UserWarning: Duplicate name: 'metadata.json'
+test_pickle_traversal_duplicate_and_bomb_members_fail_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_pickle_traversal_duplicate_and_bomb_members_fail_before_arrays) ... <local-work-dir>/.local/share/mise/installs/python/3.12.15/lib/python3.12/zipfile/__init__.py:1650: UserWarning: Duplicate name: 'metadata.json'
   return self._open_to_write(zinfo, force_zip64=force_zip64)
 ok
 test_real_robot_with_caller_cap_preserves_manifest_signature_and_source (test_rig_load_limits.NativeLoadLimitTests.test_real_robot_with_caller_cap_preserves_manifest_signature_and_source) ... ok

@@ -22,13 +22,13 @@ No implementation edits, network/GitHub writes, subprocess/backend children, or 
 
 ```text
 cwd: /tmp/hatch-continuity115
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
 41 tests in 14.084 seconds: OK, zero failures/errors/skips.
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python /home/complete/.cache/hatch-fleet/review115/adversarial853d.py
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python <local-work-dir>/.cache/hatch-fleet/review115/adversarial853d.py
 Exit 0: reproduction completed; both findings observed.
 ```
 
-Environment: Python 3.12.15, NumPy 2.3.5, Pillow 12.3.0, jsonschema metadata 4.25.1. Complete logs and reproduction script/output are under `/home/complete/.cache/hatch-fleet/review115/`. `evidence853d.json` retains source and evidence SHA-256 values.
+Environment: Python 3.12.15, NumPy 2.3.5, Pillow 12.3.0, jsonschema metadata 4.25.1. Complete logs and reproduction script/output are under `<local-work-dir>/.cache/hatch-fleet/review115/`. `evidence853d.json` retains source and evidence SHA-256 values.
 
 - admission source: `c63a20a9c11cd19a8a339db3835b2a1d4da99be867170659886e762addc0523a`
 - native owner source: `de856c591bb97f33774767d3ce7c6089db1be5c16c2839f1eef7fb0f98d43433`
