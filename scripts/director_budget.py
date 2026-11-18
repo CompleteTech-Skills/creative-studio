@@ -125,6 +125,7 @@ def _validate_state(state):
     return state
 
 
+@_exact
 def _reservation_payload(*, operation_id, provider, estimate, retry_allowance,
                          unknown_price=False, unknown_price_cap=None, evidence=None):
     _id(operation_id); _id(provider)
@@ -668,6 +669,43 @@ class NativeBudget:
                   request['evidence'][:-1] == config['evidence'] and
                   len(request['evidence']) == len(config['evidence']) + 1,
                   'BINDING', 'Native operation or accounting policy was rebound.')
+        for job in data['jobs']:
+            self._check_claim_bindings(job)
+
+    def _check_claim_bindings(self, job):
+        """Authenticate retained claim identities before any accounting replay."""
+        _need(any(item is job for item in self.data['jobs']), 'BINDING',
+              'Native accounting requires this owner job.')
+        claims = [entry for entry in job['history'] if entry.get('event') == 'claim']
+        operation = job.get('budget_operation')
+        if operation is None:
+            _need(not claims, 'BINDING', 'A budgeted native claim lost its original operation.')
+            return None
+        attempts = operation['attempts']
+        _need(isinstance(attempts, list) and len(attempts) <= 128 and
+              all(isinstance(token, str) and token for token in attempts) and
+              len(set(attempts)) == len(attempts), 'BINDING',
+              'Native attempt identities must be unique and bounded.')
+        claimed = {}
+        for claim in claims:
+            token = claim.get('token')
+            _need(isinstance(token, str) and token in attempts and token not in claimed and
+                  claim.get('input_hashes') == operation['input_hashes'],
+                  'BINDING', 'Native claim differs from its original admitted input identity.')
+            claimed[token] = claim
+        for event in operation['events']:
+            token = event['payload']['token']
+            if token is None:
+                _need(event['payload']['outcome'] in ('unstarted', 'canceled-known'),
+                      'BINDING', 'Only explicit nonexecution releases omit a native token.')
+            else:
+                _need(isinstance(token, str) and token in claimed, 'BINDING',
+                      'Native usage lacks its original published claim.')
+        if job['status'] == 'running':
+            _need(job.get('token') in claimed and
+                  job.get('input_hashes') == operation['input_hashes'],
+                  'BINDING', 'Active native job differs from its original admitted claim.')
+        return operation
 
     def _save(self):
         import hatch
@@ -720,6 +758,10 @@ class NativeBudget:
 
     def reconcile(self):
         """Replay durable accounting only. Never infer that a provider did not run."""
+        # Validate the complete journal before replaying even an earlier valid
+        # operation. An invalid identity cannot trigger incidental accounting.
+        for job in self.data['jobs']:
+            self._check_claim_bindings(job)
         for job in self.data['jobs']:
             operation = job.get('budget_operation')
             if operation is None:
@@ -809,8 +851,14 @@ class NativeBudget:
         Evidence must already be retained in this ledger. Known reconciliation
         explicitly names every earlier uncertain observation for the same token.
         """
+        operation = self._check_claim_bindings(job)
+        _need(operation is not None and isinstance(token, str) and
+              token in operation['attempts'] and
+              any(entry.get('event') == 'claim' and entry.get('token') == token
+                  for entry in job['history']), 'BINDING',
+              'Usage must belong to this job and its original published native claim.')
         # Earlier durable usage and the reservation association are authoritative
-        # even when their native acknowledgement was interrupted.
+        # only after every retained claim has been authenticated.
         self.reconcile()
         _need(isinstance(observation, dict) and set(observation) == {
             'id', 'outcome', 'usage', 'evidence', 'measurement_source', 'resolves'},
@@ -825,9 +873,6 @@ class NativeBudget:
               all(isinstance(value, str) for value in observation['resolves']) and
               len(set(observation['resolves'])) == len(observation['resolves']),
               'INPUT', 'Uncertain observation identities must be explicit and unique.')
-        operation = job.get('budget_operation')
-        _need(operation is not None and token in operation['attempts'], 'BINDING',
-              'Usage must belong to this job and its original native token.')
         amounts = _quantities(observation['usage'], unknown=True)
         proof = _evidence(observation['evidence'])
         _need(0 < len(proof) < 128, 'EVIDENCE', 'Actual usage requires one to 127 retained evidence references.')
