@@ -95,6 +95,63 @@ class TopologyTests(unittest.TestCase):
         reversed_mesh = tetra(); reversed_mesh.triangles = reversed_mesh.triangles[:,::-1]
         self.assertGreater(volume(orient_mesh(reversed_mesh,outward=True)),0)
 
+    def test_outward_preserves_volume_sign_below_binary64_range(self):
+        import model3d_topology as topology
+
+        mesh = tetra()
+        mesh.positions[2, 1] = mesh.positions[3, 2] = 1e-170
+        outward = mesh.triangles.copy()
+        mesh.triangles = outward[:, [0, 2, 1]]
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
+        np.testing.assert_array_equal(orient_mesh(mesh, outward=True).triangles, outward)
+        scaling = topology._scaled_positions
+        with mock.patch.object(topology, '_scaled_positions',
+                               side_effect=lambda p: scaling(p).astype(np.float64)):
+            np.testing.assert_array_equal(orient_mesh(mesh, outward=True).triangles, outward)
+        np.testing.assert_array_equal(mesh.triangles, outward[:, [0, 2, 1]])
+
+    def test_outward_rejects_closed_nondegenerate_zero_volume(self):
+        mesh = tetra()
+        mesh.positions[3] = [0.25, 0.25, 0]
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
+        self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
+
+    def test_outward_rejects_coplanar_shell_at_subtraction_overflow(self):
+        mesh = tetra()
+        limit = np.finfo(np.longdouble).max * np.longdouble('0.8')
+        spacing = np.spacing(limit)
+        base = np.array([limit, limit, limit, -limit])
+        x = base + spacing * np.array([14, 5, 0, -10])
+        y = base + spacing * np.array([-8, -19, -17, -20])
+        mesh.positions = np.stack((x, y, x - y), axis=-1)
+        self.assertTrue(np.isfinite(mesh.positions).all())
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
+        self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
+
+    def test_outward_rejects_large_coplanar_shell_with_rounding_residual(self):
+        mesh = tetra()
+        mesh.positions[:] = [[0, 0, 0], [2, 0, 6], [0, 3, -6], [1, 1, 1]]
+        mesh = subdivide_mesh(mesh, levels=2)
+        report = topology_report(mesh)
+        self.assertEqual(len(mesh.triangles), 64)
+        self.assertEqual(report['degenerate_faces'], [])
+        self.assertEqual(report['boundary_edges'], [])
+        self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
+
+    def test_outward_accepts_large_anisotropic_shell_with_clear_sign(self):
+        import model3d_topology as topology
+
+        mesh = tetra()
+        mesh.positions[2, 1] = mesh.positions[3, 2] = 1e-100
+        mesh = subdivide_mesh(mesh, levels=2)
+        outward = mesh.triangles.copy()
+        mesh.triangles = outward[:, [0, 2, 1]]
+        self.assertEqual(len(mesh.triangles), 64)
+        scaling = topology._scaled_positions
+        with mock.patch.object(topology, '_scaled_positions',
+                               side_effect=lambda p: scaling(p).astype(np.float64)):
+            np.testing.assert_array_equal(orient_mesh(mesh, outward=True).triangles, outward)
+
     def test_open_or_nonmanifold_orientation_rejected(self):
         mesh=tetra();mesh.triangles=mesh.triangles[:3]
         self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh,outward=True))
@@ -251,6 +308,98 @@ class TopologyTests(unittest.TestCase):
         self.assertTrue(all(len(call.args[0])==4 for call in scaling.call_args_list))
         for faces in face_components(result):
             self.assertGreater(volume(Mesh('part',result.positions,result.triangles[faces])),0)
+
+    def test_large_integer_offsets_preserve_subdivision_and_normals(self):
+        for dtype, offset in ((np.int64, 2**60), (np.uint64, 2**63)):
+            mesh = Mesh('offset', np.array([[offset + 1, 0, 0], [offset + 3, 0, 0],
+                                            [offset + 1, 2, 0]], dtype=dtype),
+                        np.array([[0, 1, 2]], dtype=dtype))
+            np.testing.assert_array_equal(shade_mesh(mesh).attributes['NORMAL'], [[0, 0, 1]] * 3)
+            subdivided = subdivide_mesh(mesh)
+            self.assertEqual([int(x) for x in subdivided.positions[:, 0]],
+                             [offset + 1, offset + 3, offset + 1, offset + 2, offset + 1, offset + 2])
+            self.assertEqual(topology_report(subdivided)['degenerate_faces'], [])
+
+    def test_integer_subdivision_preserves_representable_half_coordinates(self):
+        offset = 2**60
+        mesh = Mesh('offset', np.array([[offset, 0, 0], [offset + 1, 0, 0],
+                                        [offset, 1, 0]], dtype=np.int64),
+                    np.array([[0, 1, 2]], dtype=np.int64))
+        if np.finfo(np.longdouble).nmant >= 61:
+            subdivided = subdivide_mesh(mesh)
+            np.testing.assert_array_equal(subdivided.positions[:, 0] - np.longdouble(offset),
+                                          [0, 1, 0, .5, 0, .5])
+            self.assertEqual(topology_report(subdivided)['degenerate_faces'], [])
+        else:
+            self.assertCode('MODEL3D_TOPOLOGY_PRECISION', lambda: subdivide_mesh(mesh))
+        mesh.positions = np.array([[2**64 - 2, 0, 0], [2**64 - 1, 0, 0],
+                                   [2**64 - 2, 1, 0]], dtype=np.uint64)
+        if np.finfo(np.longdouble).nmant >= 64:
+            subdivided = subdivide_mesh(mesh)
+            self.assertEqual(topology_report(subdivided)['degenerate_faces'], [])
+        else:
+            self.assertCode('MODEL3D_TOPOLOGY_PRECISION', lambda: subdivide_mesh(mesh))
+
+    def test_adjacent_float_midpoints_do_not_collapse_valid_children(self):
+        for dtype in (np.float32, np.float64, np.longdouble):
+            next_x = np.nextafter(dtype(1), dtype(2))
+            mesh = Mesh('adjacent', np.array([[1, 0, 0], [next_x, 0, 0], [1, 1, 0]], dtype=dtype),
+                        np.array([[0, 1, 2]]))
+            if np.finfo(dtype).nmant < max(np.finfo(np.float64).nmant, np.finfo(np.longdouble).nmant):
+                subdivided = subdivide_mesh(mesh)
+                self.assertEqual(topology_report(subdivided)['degenerate_faces'], [])
+                midpoint = subdivided.positions[3, 0]
+                self.assertGreater(midpoint, 1)
+                self.assertLess(midpoint, next_x)
+            else:
+                self.assertCode('MODEL3D_TOPOLOGY_PRECISION', lambda: subdivide_mesh(mesh))
+        mesh.positions = mesh.positions.astype(np.float32)
+        mesh.positions[1, 0] = np.nextafter(np.float32(1), np.float32(2))
+        self.assertCode('MODEL3D_TOPOLOGY_LIMIT', lambda: subdivide_mesh(mesh, limits={'memory_bytes': 9900}))
+
+    def test_cleanup_checks_widened_index_budget_before_selection(self):
+        import model3d_topology as topology
+        mesh = tetra()
+        mesh.triangles = mesh.triangles.astype(np.uint8)
+        with mock.patch.object(topology, '_select') as select:
+            self.assertCode('MODEL3D_TOPOLOGY_LIMIT',
+                            lambda: clean_mesh(mesh, limits={'memory_bytes': 9350}))
+            select.assert_not_called()
+        cleaned = clean_mesh(mesh, limits={'memory_bytes': 9408})
+        self.assertEqual(cleaned.triangles.dtype, np.dtype(np.int64))
+
+    def test_unsigned_hole_indices_remain_integer(self):
+        mesh = tetra()
+        mesh.triangles = mesh.triangles[:3].astype(np.uint64)
+        capped = fill_planar_hole(mesh, [1, 2, 3])
+        np.testing.assert_array_equal(capped.triangles, tetra().triangles)
+        self.assertEqual(capped.triangles.dtype.kind, 'i')
+
+    def test_degenerate_face_does_not_mask_smaller_incident_normals(self):
+        mesh = Mesh('scales', np.array([[0, 0, 0], [1e200, 0, 0], [2e200, 0, 0],
+                                        [0, 1e-200, 0], [1e-200, 0, 0], [0, 1e200, 0]]),
+                    np.array([[0, 1, 2], [0, 4, 3], [1, 2, 5]]))
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [0])
+        np.testing.assert_array_equal(shade_mesh(mesh).attributes['NORMAL'], [[0, 0, 1]] * 6)
+
+    def test_output_budget_checks_generated_and_expanded_arrays_before_allocation(self):
+        import model3d_topology as topology
+        mesh = tetra()
+        with mock.patch.object(topology, '_normals') as normals:
+            self.assertCode('MODEL3D_TOPOLOGY_LIMIT',
+                            lambda: shade_mesh(mesh, limits={'memory_bytes': 9800}))
+            normals.assert_not_called()
+        mesh.morphs = {'shape': {'POSITION': np.zeros_like(mesh.positions)}}
+        with mock.patch.object(topology, '_select') as select:
+            self.assertCode('MODEL3D_TOPOLOGY_LIMIT',
+                            lambda: shade_mesh(mesh, mode='flat', limits={'memory_bytes': 15000}))
+            select.assert_not_called()
+        mesh.morphs.clear()
+        mesh.attributes['TEXCOORD_0'] = np.zeros((4, 2), dtype=np.int8)
+        with mock.patch.object(topology, '_subdivided_values') as subdivided:
+            self.assertCode('MODEL3D_TOPOLOGY_LIMIT',
+                            lambda: subdivide_mesh(mesh, limits={'memory_bytes': 36500}))
+            subdivided.assert_not_called()
 
     def test_invalid_native_arrays_fail_structured(self):
         for value in (np.array([[0,1,7]]),np.array([[0,-1,2]]),np.array([[0.,1.,2.]])):
