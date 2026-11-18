@@ -368,6 +368,14 @@ and its requested orientation is within `1e-5` radians. A reachable position can
 therefore have `reachable: true` and `converged: false` when a joint limit prevents
 the orientation. Contact and grasp reports retain this angular residual.
 
+FK-to-IK matching accepts fully folded chains whose endpoint coincides with
+their root, using the existing first segment to derive a finite matching pole.
+A matching pole preserves an already closed authoritative seed and its evaluated
+joint transforms and bound geometry. At the equal-length two-segment fold,
+either solver uses an explicitly changed pole to select the elbow direction.
+Runtime segment-length checks, joint limits, endpoint orientation, actual
+residuals and bounded convergence reporting remain authoritative.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
