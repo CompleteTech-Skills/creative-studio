@@ -1,0 +1,41 @@
+{
+  "decoder": "OpenEXR 3.3.4 independent writer",
+  "records": [
+    {
+      "file": "float16-NO_COMPRESSION.exr",
+      "sha256": "2afa16707c1987b17bfb276dc90e7c28bfe3f8646bdaf6a10e06a25cb1ddf34f",
+      "bytes": 3237,
+      "max_error": 0.0
+    },
+    {
+      "file": "float16-ZIPS_COMPRESSION.exr",
+      "sha256": "b0a6e451ed44bc0425511298be92e933613d2875d7898a130acb65458d3ed123",
+      "bytes": 1506,
+      "max_error": 0.0
+    },
+    {
+      "file": "float16-ZIP_COMPRESSION.exr",
+      "sha256": "7119fe1dd04831c3bc59d3af9cce3905675d66d93dbe3f29352611ac6b031e0c",
+      "bytes": 966,
+      "max_error": 0.0
+    },
+    {
+      "file": "float32-NO_COMPRESSION.exr",
+      "sha256": "b1e4225a41e91289b420218b9aeda564d364d1c86a5312dc060406a3de1f2f44",
+      "bytes": 5821,
+      "max_error": 0.0
+    },
+    {
+      "file": "float32-ZIPS_COMPRESSION.exr",
+      "sha256": "9a117c330291b4e65ccf9f462e6da47510e2602f3607924856e12a989f58fdf5",
+      "bytes": 4989,
+      "max_error": 0.0
+    },
+    {
+      "file": "float32-ZIP_COMPRESSION.exr",
+      "sha256": "b083bdb64d4773abd08c3fc1e9c12bd680a3388809bf00ee5b6f36bd3e6e4c51",
+      "bytes": 3955,
+      "max_error": 0.0
+    }
+  ]
+}

@@ -19,7 +19,8 @@ import zipfile
 
 from asset_library import read_source_bytes
 from atomic_publish import (_rename_no_replace, pinned_directory, pinned_directory_fd, private_stage,
-                            private_stage_fd, private_stage_fd_supported, private_stage_supported)
+                            private_stage_fd, private_stage_fd_supported, private_stage_supported,
+                            windows_private_stage, windows_private_stage_supported)
 from rig_errors import RigError, timestamp, decode_json, directory_capability, open_payload, open_payload_at
 from scene3d_contracts import (all_refs, canonical_bytes, load_project, load_project_at,
                                portable_path, validate_document)
@@ -54,6 +55,22 @@ def _admit_destination(destination):
 
 def _new_destination(destination):
     return _admit_destination(destination)[0]
+
+
+def _admit_windows_destination(destination):
+    from atomic_windows import pinned_directory as windows_pinned_directory, validate_destination
+
+    destination = Path(destination).absolute()
+    try:
+        destination = validate_destination(destination.parent.resolve(strict=True) / destination.name)
+        with windows_pinned_directory(destination.parent) as parent:
+            identity = parent.identity()
+            available = not destination.is_symlink() and not destination.exists()
+    except (OSError, ValueError) as exc:
+        raise RigError('SCENE3D_DESTINATION', 'Snapshot needs a valid name and an existing trusted parent.',
+                       stage='scene3d-snapshot') from exc
+    require(available, 'Choose a new snapshot destination.', 'SCENE3D_DESTINATION')
+    return destination, identity
 
 
 @contextmanager
@@ -202,9 +219,13 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             'Expected source project SHA256 must be an exact lowercase digest.')
     require(graph is None or expected_project_sha256 is not None,
             'Graph publication requires the expected exact source project SHA256.', 'SCENE3D_SOURCE_CHANGED')
-    destination, parent_identity = _admit_destination(destination)
     pinned = sys.platform.startswith('linux')
     macos = sys.platform == 'darwin'
+    windows = os.name == 'nt'
+    require(not windows or windows_private_stage_supported(),
+            'Windows snapshot publication requires protected staging.', 'SCENE3D_STAGING_UNAVAILABLE')
+    admit_destination = _admit_windows_destination if windows else _admit_destination
+    destination, parent_identity = admit_destination(destination)
     require(not pinned or private_stage_supported(), 'Linux snapshot publication requires protected staging.',
             'SCENE3D_STAGING_UNAVAILABLE')
     require(not macos or private_stage_fd_supported(), 'macOS snapshot publication requires protected staging.',
@@ -374,11 +395,27 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         _publish_snapshot_fd(destination, parent_identity, files, receipt['inventory'], legacy_prefix)
         return receipt
 
-    # Linux pins both staging and publication directories before any writes.
-    # The portable adapter retains exclusive publication, but cannot yet promise
-    # descriptor-owned staging on platforms unsupported by the shared authority.
+    expected_dirs = {parent.as_posix() for path in files for parent in Path(path).parents if str(parent) != '.'}
     with ExitStack() as stack:
-        if pinned:
+        if windows:
+            from atomic_windows import pinned_directory as windows_pinned_directory
+
+            try:
+                parent = stack.enter_context(windows_pinned_directory(destination.parent))
+                parent_held = parent.identity()
+            except (OSError, ValueError) as exc:
+                raise RigError('SCENE3D_DESTINATION', 'Cannot pin the admitted snapshot destination parent.',
+                               stage='scene3d-snapshot') from exc
+            require(parent_held == parent_identity,
+                    'Snapshot destination parent changed after admission.', 'SCENE3D_DESTINATION')
+            # The private ACL and held directory handles protect the ordinary
+            # Path while the shared snapshot writer and validator use it.
+            windows_stage = stack.enter_context(windows_private_stage(
+                parent.path, prefix='.scene3d-snapshot-',
+                cleanup_max_depth=max((len(Path(path).parts) for path in expected_dirs), default=0),
+                cleanup_max_entries=len(files) + len(expected_dirs)))
+            stage = windows_stage.path
+        elif pinned:
             try:
                 parent_fd = stack.enter_context(pinned_directory(destination.parent))
                 parent_held = os.fstat(parent_fd)
@@ -435,7 +472,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         require(set(verified['inventory']) <= set(files), 'Verification opened an uninventoried payload.')
         # Validation callbacks have finished. Independently bind every published
         # byte to the attempted snapshot before the final kernel publication.
-        expected_dirs = {parent.as_posix() for path in files for parent in Path(path).parents if str(parent) != '.'}
         observed_files = set()
         for folder, directories, names in os.walk(stage, followlinks=False):
             relative = Path(folder).relative_to(stage)
@@ -463,15 +499,18 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                     digest.update(chunk)
                 require(observed == len(payload) and digest.digest() == hashlib.sha256(payload).digest(),
                         'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
-        try:
-            current = (os.stat('project', dir_fd=private_fd, follow_symlinks=False) if pinned else stage.stat())
-        except FileNotFoundError as exc:
-            if not pinned:
-                raise
-            raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared after validation.',
-                           stage='scene3d-snapshot') from exc
-        require(stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == identity,
-                'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+        if windows:
+            windows_stage.publish_to(parent.path / destination.name)
+        else:
+            try:
+                current = (os.stat('project', dir_fd=private_fd, follow_symlinks=False) if pinned else stage.stat())
+            except FileNotFoundError as exc:
+                if not pinned:
+                    raise
+                raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared after validation.',
+                               stage='scene3d-snapshot') from exc
+            require(stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == identity,
+                    'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
         if pinned:
             # A held destination descriptor protects writes, but the returned
             # pathname must still identify that selected directory as well.
@@ -487,6 +526,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             except FileNotFoundError as exc:
                 raise RigError('SCENE3D_SOURCE_CHANGED', 'Snapshot publication entry disappeared during publication.',
                                stage='scene3d-snapshot') from exc
-        else:
+        elif not windows:
             _rename_no_replace(stage, destination)
     return snapshot_receipt()
