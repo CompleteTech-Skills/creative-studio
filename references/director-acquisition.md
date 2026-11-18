@@ -19,9 +19,9 @@ Ingestion requires the original token, unchanged inputs, exact source SHA-256,
 native handoff receipt and a nonempty inspection note. For enrolled runs, the
 adapter authenticates the receipt and records its actual usage before reading or
 validating candidate source bytes. Missing, changed, invalid or stale inputs do
-not erase authenticated spend; they still prevent ingestion and preserve the token. The adapter preserves
-source bytes inside the run before native image validation and ingestion. It
-keeps fixture provenance. Import/procedural receipts cannot masquerade as the
+not erase authenticated spend; they still prevent ingestion and preserve the token. The native ingestion owner validates immutable candidate bytes, exclusively
+publishes an independent original inside the run, and decodes those same bytes.
+It keeps fixture provenance. Import/procedural receipts cannot masquerade as the
 native imagegen handoff. The native controller does not expose provider request
 IDs or provider idempotency guarantees: retry safety is **unavailable**, and
 only the existing active native token can be replayed safely. No automatic
@@ -49,8 +49,8 @@ as follows:
 - `binding_id` is null or the pinned run ID. `expected_state` is the native job
   state (`pending`, `running`, `failed` or `generated`). An identical active
   claim may replay its pre-claim pending/failed state and receives the same token.
-- `claim_id` is the original token for ingestion/failure; other operations may
-  omit it. `provider_request_id` must be null because native handoff does not
+- `claim_id` is the original token for ingestion, failure and reconciliation;
+  prepare/claim may omit it. `provider_request_id` must be null because native handoff does not
   expose it. A terminal result retains the submitted claim as historical identity;
   its `native_state` records whether the native token is still active.
 - Ingest `candidates` contains exactly an `acquisition-source` image ArtifactRef
@@ -122,7 +122,7 @@ protections remain authoritative. Provider-call usage in the Director response
 still measures only this adapter operation; native snapshots retain externally
 observed accounting separately. No production provider acceptance is inferred.
 
-Run `PYTHONPATH=scripts:tests python -m unittest test_director_acquisition -v`.
+Run `PYTHONPATH=scripts:tests python -m unittest test_director_acquisition test_director_acquisition_recovery -v`.
 The tests execute native prepare/claim/ingest/fail/reconcile with an actual PNG,
 concurrent duplicate claims and reopened history. Additional cases check exact
 bytes/receipts, stale inputs, unavailable 3D acquisition, denied production
@@ -167,3 +167,56 @@ No runtime was available for this integration. Required fresh-head commands are
 `python scripts/test_rig_gate.py compatibility`. Run them in a supported
 environment with the optional rig dependencies. Historical PR-body results
 remain evidence only for their stated historical revision.
+
+## Recovery and original-byte boundary hardening
+
+Canonical recovery authenticates the stored native input hashes, exact pinned
+Director spec, original token and native reservation before any current generation
+input reads. Running operations require the current active token. Once native
+ingestion or known failure removes that active token, reconcile authenticates
+the latest native claim-history entry and its exact input hashes. An older
+attempt's token cannot reconcile a later attempt, even if the inputs match.
+Native reservation authentication still verifies the authoritative owner,
+operation, ledger row and original reserve receipt.
+
+An enrolled ingestion records authenticated actual usage before checking current
+prompt, request, profile, grounding or candidate bytes. These generation input
+reads use the existing source byte bound, regular-file checks, nonblocking reads
+and no-follow path handling. Missing, oversized or nonregular files reject
+promotion after accounting; repeating the same observation does not charge twice.
+Current request-file changes do not erase the identity retained by the original
+native claim. A saved binding can reopen that history for recovery; it grants
+no permission for new spending or generation.
+
+The adapter passes immutable verified bytes to native ingestion. The native owner
+performs raster validation, preserves a fresh independent original using pinned
+exclusive publication, and decodes the same byte object. It does not adopt a
+preexisting content-addressed path or reopen a mutable candidate path for
+decoding. The native source path and hash remain the source provenance record.
+Publication uses the existing filesystem capability checks and fails closed on
+unsupported platforms; it does not claim isolation from a hostile process with
+the same operating-system identity.
+
+The additive recovery module contains 14 test methods covering actual local
+native claims, PNG ingestion and the native ledger. Adversarial fixtures cover
+missing/directory/FIFO/oversized inputs, durable accounting order, wrong receipt,
+claim, reservation and input identity, terminal reconciliation, old-attempt
+rejection, hardlink independence and candidate substitution at native handoff.
+FIFO checks execute in a bounded subprocess; boundary injection tests still call
+the real native ingestion owner. No provider runs. All prior acquisition tests,
+resolver tests and historical evidence remain unchanged.
+
+The initial prepared correction was source-inspected without a Python executor.
+Local resume validation at `7f10d1c851c93b6db3935eeee628d4f4380d09ca` executed
+`PYTHONPATH=scripts:tests python -m unittest test_director_acquisition test_rig_director_resolver test_director_acquisition_budget test_director_acquisition_recovery -v`
+on Linux/Python 3.12: 82 tests ran in 117.986 seconds, with 73 passing and nine
+errors. Every error was the missing `source_bytes` keyword in the native
+`hatch.ingest` owner at this intermediate revision. All 28 resolver methods and
+the bounded FIFO, oversized/missing/directory input accounting and failed-terminal
+reconciliation cases passed. This is partial integration evidence, not a passing
+acquisition gate. The native immutable-byte owner extension and propagated budget
+foundation must be integrated before rerunning the complete command and the
+operations/compatibility gates. All 21 preexisting acquisition, 17 resolver and
+19 acquisition-budget test methods were retained; no assertions were removed.
+This bounded hardening does not establish live provider, 3D acquisition, visual
+or production acceptance, or close issues #33/#34.

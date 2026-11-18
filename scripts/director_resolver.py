@@ -5,6 +5,7 @@ change review state, select latest versions, or invoke a provider.
 """
 from __future__ import annotations
 from copy import deepcopy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -12,7 +13,7 @@ import time
 
 from asset_library import AssetLibrary
 from asset_library_contracts import MAX_MANIFEST_BYTES, load_manifest
-from director_contracts import (_read_artifact, validate_document,
+from director_contracts import (_read_artifact, parse_rfc3339, validate_document,
                                 validate_method_request, validate_method_result)
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, decode_json, object_hash, require
@@ -22,6 +23,11 @@ from rig_gltf import read_gltf
 import numpy as np
 
 MAX_CANDIDATES = 64
+
+
+def _check_deadline(deadline):
+    require(deadline > datetime.now(timezone.utc),'DIRECTOR_RESOLVER_DEADLINE',
+            'Asset resolution request deadline expired.')
 
 
 def _same_geometry(left, right):
@@ -62,20 +68,24 @@ class AssetResolver:
         self.library=library
         self.root=Path(project_root)
 
-    def _candidate(self, spec, ref, licenses, fixtures):
+    def _candidate(self, spec, ref, licenses, fixtures, deadline):
         """Return truthful disposition, deterministic rank and reasons."""
         try:
+            _check_deadline(deadline)
             _validate_ref(ref)
             require(ref.get('kind')=='asset-library-version' and ref.get('byte_size',MAX_MANIFEST_BYTES+1)<=MAX_MANIFEST_BYTES,
                     'DIRECTOR_RESOLVER_REFERENCE','Expected a bounded asset-library manifest reference.')
             manifest=load_manifest(_read(self.root,ref))
+            _check_deadline(deadline)
             require(ref['artifact_id']==manifest['identity']['id'] and ref['semantic_version']==manifest['version'] and
                     ref['schema_version']==manifest['schema_version'],'DIRECTOR_RESOLVER_REFERENCE',
                     'ArtifactRef identity/version differs from the actual manifest.')
             require(ref['fixture']==manifest['provenance']['fixture'],
                     'DIRECTOR_RESOLVER_REFERENCE','ArtifactRef must preserve native fixture classification.')
             exact=dict(id=manifest['identity']['id'],version=manifest['version'],sha256=manifest['manifest_sha256'])
+            _check_deadline(deadline)
             current=self.library.resolve(exact)
+            _check_deadline(deadline)
             require(current==manifest,'DIRECTOR_RESOLVER_STALE','Library differs from the pinned manifest.')
             reasons=[];score=0
             if manifest['identity']['id']!=spec['logical_id']:
@@ -94,31 +104,42 @@ class AssetResolver:
             if not payloads:
                 return 'unavailable',score,['No independently decodable self-contained GLB geometry payload is registered.'],[]
             payload=payloads[0]
+            _check_deadline(deadline)
             raw=self.library.read_file(exact,payload['path'])
+            _check_deadline(deadline)
             if spec['memory_budget']<=0 or len(raw)>spec['memory_budget']:
                 return 'incompatible',score,['Source exceeds the explicit memory budget.'],[]
             with tempfile.TemporaryDirectory(prefix='director-resolve-') as directory:
                 path=Path(directory)/'source.glb';path.write_bytes(raw)
                 limits={**DEFAULT_LIMITS,'triangles':min(DEFAULT_LIMITS['triangles'],spec['polygon_budget']),
                         'memory_bytes':min(DEFAULT_LIMITS['memory_bytes'],spec['memory_budget'])}
+                _check_deadline(deadline)
                 imported=load_character_model(path,limits=limits)
+                _check_deadline(deadline)
             actual={'mesh'}
             # A native exported rig is a distinct registered payload. Decode it;
             # declaration in compatibility metadata never establishes a skeleton.
             rigfiles=[f for f in manifest['files'] if f['role']=='rig' and f['format']=='glb']
             if rigfiles:
+                _check_deadline(deadline)
                 with tempfile.TemporaryDirectory(prefix='director-rig-resolve-') as directory:
                     path=Path(directory)/'rig.glb';path.write_bytes(self.library.read_file(exact,rigfiles[0]['path']))
+                    _check_deadline(deadline)
                     asset=read_gltf(path,limits=limits).json.get('asset')
+                    _check_deadline(deadline)
                     extras=asset.get('extras') if isinstance(asset,dict) else None
                     binding=extras.get('hatchRig') if isinstance(extras,dict) else None
                     require(isinstance(binding,dict),'DIRECTOR_RESOLVER_RIG_BINDING',
                             'Native rig export requires an object source binding.')
+                    _check_deadline(deadline)
                     rig=load_character_model(path,limits=limits)
+                    _check_deadline(deadline)
+                _check_deadline(deadline)
                 require(binding.get('id')==manifest['identity']['id'] and
                         binding.get('source_sha256')==payload['sha256'] and
                         _same_geometry(rig.geometry,imported.geometry),
                         'DIRECTOR_RESOLVER_RIG_BINDING','Rig must bind the exact registered source geometry and identity.')
+                _check_deadline(deadline)
                 if rig.skeleton and rig.weights:actual.update(('rig','skin'))
                 if rig.clips:actual.add('animation')
             required=set(spec['capabilities'])
@@ -151,10 +172,14 @@ class AssetResolver:
             return 'reusable',score,reasons,[]
         except (RigError,OSError,ValueError,KeyError,TypeError,AttributeError) as exc:
             code=exc.report['code'] if isinstance(exc,RigError) else type(exc).__name__
+            if code=='DIRECTOR_RESOLVER_DEADLINE':raise
+            _check_deadline(deadline)
             return 'unavailable',0,['Candidate cannot be independently verified: '+code+'.'],[]
 
     def resolve(self, request):
         validate_method_request('AssetResolver.resolve',request)
+        deadline=parse_rfc3339(request['context']['deadline'],code='RESOLVER_DEADLINE')
+        _check_deadline(deadline)
         started=time.process_time()
         data=request['input']
         require(data['reuse_policy'] in ('require-reviewed','engineering-fixtures'),
@@ -162,28 +187,35 @@ class AssetResolver:
         licenses=data['license_policy'].split(',')
         require(0<len(licenses)<=16 and all(x and x.strip()==x and len(x)<=128 for x in licenses),
                 'DIRECTOR_RESOLVER_POLICY','License policy must list exact comma-separated license IDs.')
+        _check_deadline(deadline)
         snapshot=decode_json(_read(self.root,data['registry_snapshot']))
+        _check_deadline(deadline)
         require(isinstance(snapshot,dict) and set(snapshot)=={'schema_version','kind','candidates'} and
                 snapshot['schema_version']==1 and snapshot['kind']=='director-registry-snapshot' and
                 isinstance(snapshot['candidates'],list) and len(snapshot['candidates'])<=MAX_CANDIDATES,
                 'DIRECTOR_RESOLVER_REGISTRY','Expected a bounded exact registry snapshot.')
         registry=snapshot['candidates']
         for ref in registry:
+            _check_deadline(deadline)
             require(isinstance(ref,dict),'DIRECTOR_RESOLVER_REGISTRY','Candidate must be an ArtifactRef.')
             _validate_ref(ref)
         require(len({object_hash(ref) for ref in registry})==len(registry),
                 'DIRECTOR_RESOLVER_REGISTRY','Registry contains duplicate candidate references.')
         requirements=[]
         for spec_ref in data['specs']:
+            _check_deadline(deadline)
             spec=validate_document(decode_json(_read(self.root,spec_ref)))
             require(spec['kind']=='director-asset-spec' and spec_ref['artifact_id']==spec['id'] and
                     spec_ref['semantic_version']==spec['semantic_version'] and spec_ref['schema_version']==spec['schema_version'],
                     'DIRECTOR_RESOLVER_SPEC','Expected an exact Director asset specification reference.')
+            _check_deadline(deadline)
             wanted=spec['candidates'] or registry
             require(all(ref in registry for ref in wanted),'DIRECTOR_RESOLVER_REGISTRY','Candidate is outside the pinned registry snapshot.')
             ranked=[]
             for ref in wanted:
-                disposition,score,reasons,conversions=self._candidate(spec,ref,licenses,data['reuse_policy']=='engineering-fixtures')
+                _check_deadline(deadline)
+                disposition,score,reasons,conversions=self._candidate(spec,ref,licenses,data['reuse_policy']=='engineering-fixtures',deadline)
+                _check_deadline(deadline)
                 ranked.append((disposition,score,reasons,conversions,ref))
             priority={'reusable':0,'adaptable':1,'unreviewed':2,'incompatible':3,'unavailable':4}
             ranked.sort(key=lambda x:(x[4]['artifact_id']!=spec['logical_id'],
@@ -194,6 +226,7 @@ class AssetResolver:
             else: state,reasons,conversions,refs='missing',['No exact candidate is present in the pinned registry.'],[],[]
             requirements.append(dict(spec=deepcopy(spec_ref),disposition=state,candidates=refs,
                 reasons=reasons,conversions=conversions,capabilities=deepcopy(spec['capabilities']),budget=_budget(spec)))
+        _check_deadline(deadline)
         unknown=lambda:dict(value=None,explanation='Not measured by this read-only resolver.')
         usage=dict(classification='actual',provider_calls=dict(value=0,explanation=None),
             input_tokens=unknown(),output_tokens=unknown(),cpu_seconds=dict(value=time.process_time()-started,explanation=None),
@@ -202,4 +235,7 @@ class AssetResolver:
         result=dict(schema_version=1,kind='director-result',method='AssetResolver.resolve',status='succeeded',
             operation_id=request['context']['request_id'],input_digest=object_hash(request),value=dict(requirements=requirements),
             artifacts=[],diagnostics=[],usage=usage,provenance_receipts=[])
-        return validate_method_result('AssetResolver.resolve',result,request)
+        _check_deadline(deadline)
+        result=validate_method_result('AssetResolver.resolve',result,request)
+        _check_deadline(deadline)
+        return result

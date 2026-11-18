@@ -1,5 +1,7 @@
 """Actual native-library reuse without generation or fictitious approval."""
+from contextlib import ExitStack
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -8,6 +10,9 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import director_resolver
 
 from asset_library import AssetLibrary
 from director_assets import build_assets
@@ -40,6 +45,14 @@ class ResolverTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):cls.temp.cleanup()
 
+    def setUp(self):
+        self.now=datetime(2026,1,1,tzinfo=timezone.utc)
+        self.deadline=self.now+timedelta(minutes=1)
+        clock=patch('director_resolver.datetime')
+        self.clock=clock.start()
+        self.addCleanup(clock.stop)
+        self.clock.now.side_effect=lambda zone:self.now
+
     def request(self,name='aster',*,policy='engineering-fixtures',licenses='CC0-1.0',changes=None,refs=None):
         spec=deepcopy(self.spec_template)
         spec.update(id='spec-'+name,logical_id=name,asset_type='character' if name in ('aster','moss') else 'environment' if name=='laboratory' else 'prop',
@@ -49,6 +62,7 @@ class ResolverTests(unittest.TestCase):
         path=self.root/'request-spec.json';atomic_json(path,spec)
         snapshot=self.root/'registry-snapshot.json';atomic_json(snapshot,dict(schema_version=1,kind='director-registry-snapshot',candidates=refs if refs is not None else self.refs))
         request=deepcopy(type(self).request_template)
+        request['context']['deadline']=self.deadline.isoformat()
         request['input'].update(specs=[artifact(path,self.root,'director-asset-spec',spec['id'])],
             registry_snapshot=artifact(snapshot,self.root,'director-registry-snapshot'),reuse_policy=policy,license_policy=licenses)
         return request
@@ -199,3 +213,136 @@ class ResolverTests(unittest.TestCase):
             result=AssetResolver(library,self.root).resolve(self.request(refs=[ref]))['value']['requirements'][0]
             self.assertEqual(result['disposition'],'unavailable')
             self.assertTrue(any('RIG_BINDING' in reason for reason in result['reasons']))
+
+    def expire_after(self, operation):
+        def execute(*args, **kwargs):
+            result=operation(*args, **kwargs)
+            self.now=self.deadline
+            return result
+        return execute
+
+    def test_expired_or_equal_deadline_performs_no_artifact_or_native_work(self):
+        request=self.request()
+        for deadline in ('2000-01-01T00:00:00Z',self.now.isoformat()):
+            request['context']['deadline']=deadline
+            with self.subTest(deadline=deadline), ExitStack() as stack:
+                operations=[stack.enter_context(patch.object(owner,name,wraps=getattr(owner,name)))
+                            for owner,name in ((director_resolver,'_read'),(self.library,'resolve'),
+                                (self.library,'read_file'),(director_resolver,'load_character_model'),
+                                (director_resolver,'read_gltf'),(director_resolver,'_same_geometry'),
+                                (director_resolver.tempfile,'TemporaryDirectory'))]
+                with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+                self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+                for operation in operations:operation.assert_not_called()
+
+    def test_live_lowercase_and_offset_deadlines_preserve_native_reuse(self):
+        for deadline in (self.deadline.isoformat().replace('T','t').replace('+00:00','z'),
+                         self.deadline.astimezone(timezone(timedelta(hours=5,minutes=30))).isoformat()):
+            request=self.request(refs=[self.refs[0]])
+            request['context']['deadline']=deadline
+            with self.subTest(deadline=deadline):
+                result=self.resolver.resolve(request)
+                self.assertEqual(result['status'],'succeeded')
+                self.assertEqual(result['value']['requirements'][0]['disposition'],'reusable')
+                self.assertTrue(all(call.args==(timezone.utc,) for call in self.clock.now.call_args_list))
+
+    def test_expiry_after_snapshot_stops_before_spec_and_native_reads(self):
+        request=self.request()
+        with patch('director_resolver._read',side_effect=self.expire_after(director_resolver._read)) as read, \
+             patch.object(self.library,'resolve',wraps=self.library.resolve) as native, \
+             patch.object(self.resolver,'_candidate',wraps=self.resolver._candidate) as candidate:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(read.call_count,1)
+        self.assertEqual(read.call_args.args[1],request['input']['registry_snapshot'])
+        native.assert_not_called()
+        candidate.assert_not_called()
+
+    def test_expiry_after_spec_stops_before_candidates(self):
+        request=self.request()
+        original=director_resolver._read
+        def read(root,ref):
+            result=original(root,ref)
+            if ref['kind']=='director-asset-spec':self.now=self.deadline
+            return result
+        with patch('director_resolver._read',side_effect=read) as artifact_read, \
+             patch.object(self.resolver,'_candidate',wraps=self.resolver._candidate) as candidate:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(artifact_read.call_count,2)
+        candidate.assert_not_called()
+
+    def test_expiry_between_candidates_stops_later_candidates(self):
+        request=self.request(refs=self.refs)
+        with patch.object(self.resolver,'_candidate',side_effect=self.expire_after(self.resolver._candidate)) as candidate, \
+             patch('director_resolver.load_character_model',wraps=director_resolver.load_character_model) as imported:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(candidate.call_count,1)
+        self.assertEqual(candidate.call_args.args[1],self.refs[0])
+        self.assertGreater(imported.call_count,0)
+
+    def test_expiry_between_specs_stops_later_spec_reads(self):
+        request=self.request(refs=[self.refs[0]])
+        original_ref=request['input']['specs'][0]
+        path=self.root/'second-spec.json'
+        spec=json.loads((self.root/original_ref['path']).read_text())
+        spec['id']='second-spec'
+        atomic_json(path,spec)
+        second=artifact(path,self.root,'director-asset-spec',spec['id'])
+        request['input']['specs'].append(second)
+        with patch('director_resolver._budget',side_effect=self.expire_after(director_resolver._budget)) as budget, \
+             patch('director_resolver._read',wraps=director_resolver._read) as read:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(budget.call_count,1)
+        self.assertNotIn(second,[call.args[1] for call in read.call_args_list])
+
+    def test_expiry_after_geometry_import_is_not_an_unavailable_candidate(self):
+        request=self.request(refs=self.refs)
+        with patch('director_resolver.load_character_model',side_effect=self.expire_after(director_resolver.load_character_model)) as imported, \
+             patch('director_resolver.read_gltf',wraps=director_resolver.read_gltf) as rig_read, \
+             patch.object(self.resolver,'_candidate',wraps=self.resolver._candidate) as candidate:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(imported.call_count,1)
+        self.assertEqual(candidate.call_count,1)
+        rig_read.assert_not_called()
+
+    def test_expiry_after_rig_decode_stops_before_rig_import(self):
+        request=self.request(refs=self.refs)
+        with patch('director_resolver.read_gltf',side_effect=self.expire_after(director_resolver.read_gltf)) as rig_read, \
+             patch('director_resolver.load_character_model',wraps=director_resolver.load_character_model) as imported:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(rig_read.call_count,1)
+        self.assertEqual(imported.call_count,1)
+
+    def test_expiry_after_geometry_comparison_never_returns_success(self):
+        request=self.request(refs=self.refs)
+        with patch('director_resolver._same_geometry',side_effect=self.expire_after(director_resolver._same_geometry)) as compared, \
+             patch('director_resolver.validate_method_result',wraps=director_resolver.validate_method_result) as validated:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(compared.call_count,1)
+        validated.assert_not_called()
+
+    def test_expiry_during_candidate_failure_is_not_swallowed(self):
+        request=self.request(refs=self.refs)
+        def failed_import(*args,**kwargs):
+            self.now=self.deadline
+            raise ValueError('Synthetic importer failure at the deadline.')
+        with patch('director_resolver.load_character_model',side_effect=failed_import) as imported, \
+             patch.object(self.resolver,'_candidate',wraps=self.resolver._candidate) as candidate:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(imported.call_count,1)
+        self.assertEqual(candidate.call_count,1)
+
+    def test_expiry_during_final_validation_never_returns_success(self):
+        request=self.request(refs=[self.refs[0]])
+        with patch('director_resolver.validate_method_result',
+                   side_effect=self.expire_after(director_resolver.validate_method_result)) as validated:
+            with self.assertRaises(RigError) as error:self.resolver.resolve(request)
+        self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_DEADLINE')
+        self.assertEqual(validated.call_count,1)

@@ -16,7 +16,7 @@ import tempfile
 import time
 
 import hatch
-from asset_library import detect_format, read_source_bytes
+from asset_library import read_source_bytes
 from atomic_publish import _rename_no_replace
 from rig_errors import RigError
 
@@ -59,22 +59,45 @@ class NativeAcquisitionGateway:
         if not self.root.is_dir():
             raise RigError('DIRECTOR_ACQUISITION_PATH','An existing native run is required.',stage='director')
         with _ownership(self.root):
-            data=hatch.manifest(self.root)
+            data=hatch.manifest(self.root,recovery=binding is not None)
+            retained={entry.get('input_hashes',{}).get('pet_request.json')
+                      for job in data['jobs'] for entry in job['history']
+                      if entry.get('event')=='claim'}
+            historical=(isinstance(binding,dict) and
+                        binding.get('request_sha256') in retained)
+            if binding is not None and not historical:
+                data=hatch.manifest(self.root)
+            request_hash=(binding['request_sha256'] if historical else
+                          hatch.input_digest(self.root/'pet_request.json'))
             prepared=dict(schema_version=1,kind='director-native-raster-binding',
                           binding_id=data['run_id'],run_id=data['run_id'],
-                          request_sha256=hatch.digest(self.root/'pet_request.json'),
+                          request_sha256=request_hash,
                           fixture=data['fixture_mode'],asset_kind='raster')
             if binding is not None and binding != prepared:
                 raise RigError('DIRECTOR_ACQUISITION_BINDING','Native run identity or original request changed.',stage='director')
             self.binding=prepared
 
     @contextmanager
-    def _locked(self):
+    def _locked(self, *, recovery_job=None):
         with _ownership(self.root):
-            data=hatch.manifest(self.root)
+            data=hatch.manifest(self.root,recovery=recovery_job is not None)
+            # Recovery authenticates the request captured by the native claim.
+            # Current input files are untrusted and must not precede accounting.
+            recorded=None
+            if recovery_job is not None:
+                selected=hatch.job_for(data,recovery_job)
+                claims=[entry for entry in selected['history'] if entry.get('event')=='claim']
+                if claims and selected.get('input_hashes')==claims[-1].get('input_hashes'):
+                    recorded=selected['input_hashes']
+                else:
+                    # A pending/unclaimed job receives only ordinary current
+                    # validation. Reading recovery history cannot admit work.
+                    data=hatch.manifest(self.root)
+            request_hash=(recorded.get('pet_request.json') if recorded is not None
+                          else hatch.input_digest(self.root/'pet_request.json'))
             if (data['run_id'] != self.binding['run_id'] or
                 data['fixture_mode'] != self.binding['fixture'] or
-                hatch.digest(self.root/'pet_request.json') != self.binding['request_sha256']):
+                request_hash != self.binding['request_sha256']):
                 raise RigError('DIRECTOR_ACQUISITION_BINDING','Bound native identity/request changed.',stage='director')
             yield data
 
@@ -119,7 +142,7 @@ class NativeAcquisitionGateway:
 
     def reconcile(self, job, *, _check=None):
         """Reconcile input/output freshness without releasing an uncertain token."""
-        with self._locked() as data:
+        with self._locked(recovery_job=job) as data:
             if _check is not None: _check(data)
             hatch.reconcile(self.root,data)
             return self._result(data,job)
@@ -128,14 +151,14 @@ class NativeAcquisitionGateway:
         """Only a known failure releases the native token; unknown work stays owned."""
         if outcome not in ('known','uncertain'):
             raise RigError('DIRECTOR_ACQUISITION_OUTCOME','Outcome must be known or uncertain.',stage='director')
-        with self._locked() as data:
+        with self._locked(recovery_job=job) as data:
             if _check is not None: _check(data)
             selected=hatch.job_for(data,job)
             if selected['status']!='running' or selected.get('token')!=token:
                 raise RigError('DIRECTOR_ACQUISITION_TOKEN','The original active native token is required.',stage='director')
             if not isinstance(reason,str) or not reason.strip():
                 raise RigError('DIRECTOR_ACQUISITION_REASON','A preserved failure reason is required.',stage='director')
-            budget=hatch._native_budget(self.root,data)
+            budget=hatch._native_budget(self.root,data,recovery=True)
             if budget is not None:
                 if (not isinstance(budget_usage,dict) or
                     (budget_usage.get('outcome')=='uncertain') != (outcome=='uncertain')):
@@ -160,7 +183,7 @@ class NativeAcquisitionGateway:
         """Account an authenticated receipt, then verify and ingest source bytes."""
         if not isinstance(receipt,dict):
             raise RigError('DIRECTOR_ACQUISITION_RECEIPT','An exact native handoff receipt is required.',stage='director')
-        with self._locked() as data:
+        with self._locked(recovery_job=job) as data:
             if _check is not None: _check(data)
             selected=hatch.job_for(data,job)
             if selected['status']!='running' or selected.get('token')!=token:
@@ -173,7 +196,7 @@ class NativeAcquisitionGateway:
                 raise RigError('DIRECTOR_ACQUISITION_RECEIPT','Receipt does not match the native claim/provenance.',stage='director')
             if not isinstance(note,str) or not note.strip():
                 raise RigError('DIRECTOR_ACQUISITION_REASON','A native inspection note is required.',stage='director')
-            budget=hatch._native_budget(self.root,data)
+            budget=hatch._native_budget(self.root,data,recovery=True)
             if budget is not None:
                 # Accounting authenticates the original claim, independently of
                 # missing/stale inputs or rejected candidate bytes. Native ingest
@@ -195,32 +218,13 @@ class NativeAcquisitionGateway:
             payload=_read_source() if _read_source is not None else read_source_bytes(source)
             if hashlib.sha256(payload).hexdigest()!=source_sha256:
                 raise RigError('DIRECTOR_ACQUISITION_HASH','Source bytes differ from the declared candidate.',stage='director')
-            # Preserve exact candidate bytes inside the owned run, independently
-            # of subsequent changes to an external source path. Existing native
-            # ingestion validates actual image content before accepting it.
-            folder=self.root/'director-inputs'
-            if folder.exists() and (folder.is_symlink() or not folder.is_dir()):
-                raise RigError('DIRECTOR_ACQUISITION_PATH','Unsafe owned source folder.',stage='director')
-            folder.mkdir(exist_ok=True)
-            format_name,_=detect_format(payload)
-            if format_name not in ('png','webp','jpeg'):
-                raise RigError('DIRECTOR_ACQUISITION_FORMAT','Native raster ingestion requires PNG, WebP or JPEG.',stage='director')
-            suffix={'png':'.png','webp':'.webp','jpeg':'.jpg'}[format_name]
-            target=folder/(source_sha256+suffix)
-            if target.exists() or target.is_symlink():
-                if read_source_bytes(target)!=payload:
-                    raise RigError('DIRECTOR_ACQUISITION_HASH','Existing immutable candidate was changed.',stage='director')
-            else:
-                fd,name=tempfile.mkstemp(prefix='.candidate-',dir=folder)
-                try:
-                    with os.fdopen(fd,'wb') as stream:
-                        stream.write(payload);stream.flush();os.fsync(stream.fileno())
-                    _rename_no_replace(name,target)
-                finally:
-                    Path(name).unlink(missing_ok=True)
+            # Native ingestion owns preservation and decodes the same immutable
+            # bytes. No mutable source pathname is reopened at this boundary.
             with tempfile.TemporaryDirectory(prefix='director-native-receipt-') as temporary:
                 receipt_path=Path(temporary)/'receipt.json';hatch.atomic(receipt_path,value)
-                hatch.ingest(self.root,data,job,target,token,note,receipt_path,fixture=data['fixture_mode'])
+                hatch.ingest(self.root,data,job,source,token,note,receipt_path,
+                             fixture=data['fixture_mode'],source_bytes=payload)
+            target=Path(selected['source_path'])
             return self._result(data,job,source_sha256=source_sha256,
                                 preserved_source=target.relative_to(self.root).as_posix())
 
@@ -243,7 +247,7 @@ class AcquisitionGateway:
 
     def input_sha256(self):
         from rig_errors import object_hash
-        with self.native._locked() as data:
+        with self.native._locked(recovery_job=self.job) as data:
             selected=hatch.job_for(data,self.job)
             if selected['status']=='running' and selected.get('input_hashes'):
                 return object_hash(selected['input_hashes'])
@@ -313,7 +317,6 @@ class AcquisitionGateway:
             require(not candidates and not params['diagnostics'],'DIRECTOR_ACQUISITION_INPUT',
                     'This native operation takes no candidates or diagnostics.')
 
-        recovery_stale=[False]
         def check(data):
             require(parse_rfc3339(request['context']['deadline'],code='ACQUISITION_DEADLINE') >
                     datetime.now(timezone.utc),'DIRECTOR_ACQUISITION_DEADLINE',
@@ -332,32 +335,39 @@ class AcquisitionGateway:
             recovery=method in ('AcquisitionGateway.reconcile','AcquisitionGateway.fail','AcquisitionGateway.ingest') or (
                 method=='AcquisitionGateway.claim' and selected['status']=='running')
             recorded=selected.get('input_hashes')
-            try:
-                reader=hatch.generation_inputs if selected['status'] in ('pending','failed') else hatch.inputs
-                current=reader(self.root,selected)
-            except (OSError,ValueError) as exc:
-                require(recovery and recorded is not None,'DIRECTOR_ACQUISITION_INPUT',
-                        'Native inputs are unavailable; only token-bound recovery is permitted.')
-                current=None
-            recovery_stale[0]=recorded is not None and current!=recorded
-            accepted_hashes={object_hash(current)} if current is not None else set()
-            if selected['status']=='running' and recorded is not None:
-                accepted_hashes={object_hash(recorded)}
-            elif recovery and recorded is not None:
-                accepted_hashes.add(object_hash(recorded))
+            if recovery:
+                # Authenticate original ownership before touching any current
+                # generation inputs or retaining a usage observation.
+                require(recorded is not None,'DIRECTOR_ACQUISITION_INPUT',
+                        'Recovery requires the recorded native claim inputs.')
+                current=recorded
+            else:
+                try:
+                    reader=hatch.generation_inputs if selected['status'] in ('pending','failed') else hatch.inputs
+                    current=reader(self.root,selected)
+                except (OSError,ValueError) as exc:
+                    raise RigError('DIRECTOR_ACQUISITION_INPUT',
+                                   'Native inputs are unavailable.',stage='director') from exc
+            accepted=recorded if recovery or selected['status']=='running' else current
             require(params['binding_id'] in (None,data['run_id']) and
                     (params['expected_state']==selected['status'] or duplicate_claim) and
-                    params['input_sha256'] in accepted_hashes,
+                    params['input_sha256']==object_hash(accepted),
                     'DIRECTOR_ACQUISITION_STALE','Native identity, input hashes or expected state changed.')
-            if (method in ('AcquisitionGateway.ingest','AcquisitionGateway.fail') or
-                    (recovery and recovery_stale[0] and selected['status']=='running' and
-                     method!='AcquisitionGateway.claim')):
-                require(params['claim_id'] is not None and params['claim_id']==selected.get('token'),
+            if method=='AcquisitionGateway.reconcile' and selected['status']!='running':
+                claims=[entry for entry in selected['history'] if entry.get('event')=='claim']
+                latest=claims[-1] if claims else None
+                require(latest is not None and params['claim_id']==latest.get('token') and
+                        recorded==latest.get('input_hashes'),
+                        'DIRECTOR_ACQUISITION_TOKEN',
+                        'Terminal reconciliation requires the latest original native claim.')
+            elif method in ('AcquisitionGateway.ingest','AcquisitionGateway.fail','AcquisitionGateway.reconcile'):
+                require(selected['status']=='running' and params['claim_id'] is not None and
+                        params['claim_id']==selected.get('token'),
                         'DIRECTOR_ACQUISITION_TOKEN','The original active native claim is required.')
             else:
                 require(params['claim_id'] is None or params['claim_id']==selected.get('token'),
                         'DIRECTOR_ACQUISITION_TOKEN','Request changed the original native claim.')
-            budget=hatch._native_budget(self.root,data)
+            budget=hatch._native_budget(self.root,data,recovery=recovery)
             policies=(request['context']['policy'],spec['source_policy'])
             paid_claim=(method=='AcquisitionGateway.claim' and
                         (not data['fixture_mode'] or any(policy['paid']!='deny' or
@@ -368,7 +378,7 @@ class AcquisitionGateway:
                 reservation=request['context']['budget_reservation_id']
                 require(reservation is not None,'DIRECTOR_ACQUISITION_POLICY',
                         'Every enrolled canonical operation requires its native reservation.')
-                bound_inputs=recorded if selected['status']=='running' else (
+                bound_inputs=recorded if recovery or selected['status']=='running' else (
                     current if method in ('AcquisitionGateway.prepare','AcquisitionGateway.claim') else None)
                 budget.verify_reservation(selected,reservation,input_hashes=bound_inputs)
                 if paid_claim and selected['status']!='running':
@@ -417,7 +427,7 @@ class AcquisitionGateway:
                                       _check=check,_read_source=source_reader)
         # The native manifest is mutable. Preserve an immutable evidence snapshot
         # so later operations cannot invalidate the result's exact ArtifactRef.
-        with self.native._locked() as data:
+        with self.native._locked(recovery_job=self.job) as data:
             import json
             payload=(json.dumps(result['native_manifest'],sort_keys=True,indent=2,allow_nan=False)+'\n').encode('utf-8')
             digest=hashlib.sha256(payload).hexdigest()
@@ -446,7 +456,8 @@ class AcquisitionGateway:
                    native_state=result['native_state'],provider_request_id=None,
                    outcome=result['outcome'],receipt=binding if method=='AcquisitionGateway.ingest' else None)
         diagnostics=[]
-        if recovery_stale[0] or result['stale']:
+        if result['stale'] or (method=='AcquisitionGateway.reconcile' and
+                               result['native_state']!=params['expected_state']):
             diagnostics.append(dict(code='NATIVE_INPUTS_STALE',severity='warning',stage='acquisition',
                 entity_id=self.job,field_path='input.input_sha256',expected='Original native claim inputs',
                 observed='Native input bytes changed or are unavailable.',retryable=False,

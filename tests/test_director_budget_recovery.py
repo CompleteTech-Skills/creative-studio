@@ -247,14 +247,44 @@ class BudgetRecoveryTests(unittest.TestCase):
         self.assertEqual(self.job()['budget_operation']['attempts'], [])
         self.assertNotIn('token', self.job())
 
-    @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'mkfifo'), 'requires POSIX FIFO')
     def test_bounded_input_helpers_reject_fifo_and_symlink_without_hanging(self):
-        path = self.owner / 'input.fifo'
-        os.mkfifo(path)
+        """Exercise a real POSIX FIFO or Windows named pipe, plus a real symlink."""
+        if os.name == 'posix':
+            path = self.owner / 'input.fifo'
+            os.mkfifo(path)
+        elif os.name == 'nt':
+            import ctypes
+            from ctypes import wintypes
+            import uuid
+            # A unique local server instance owned only by this synthetic test.
+            path = Path('\\\\.\\pipe\\hatch-budget-input-' + uuid.uuid4().hex)
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            create = kernel.CreateNamedPipeW
+            create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                               wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                               wintypes.DWORD, wintypes.LPVOID]
+            create.restype = wintypes.HANDLE
+            # PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE; PIPE_NOWAIT.
+            handle = create(str(path), 0x00080003, 0x00000001, 1, 4096, 4096, 0, None)
+            if handle is None or handle == ctypes.c_void_p(-1).value:
+                raise ctypes.WinError(ctypes.get_last_error())
+            close = kernel.CloseHandle
+            close.argtypes = [wintypes.HANDLE]
+            close.restype = wintypes.BOOL
+
+            def close_pipe():
+                if not close(handle):
+                    raise ctypes.WinError(ctypes.get_last_error())
+
+            self.addCleanup(close_pipe)
+            # Keep the handle alive; never connect, read or wait on the server.
+        else:
+            self.fail('required special-input fixture unsupported on ' + os.name)
         regular = self.owner / 'regular.json'
         regular.write_text('{}', encoding='utf-8')
         link = self.owner / 'linked.json'
-        link.symlink_to(regular)
+        link.symlink_to(regular)  # Required native link fixture; failure is not a skip.
+        self.assertTrue(link.is_symlink())
         script = (
             "import sys; from pathlib import Path; import hatch\n"
             "for name in ('input_bytes', 'input_digest', 'input_json'):\n"

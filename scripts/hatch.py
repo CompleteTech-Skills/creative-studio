@@ -18,7 +18,7 @@ import zipfile
 
 from PIL import Image
 from profile_spec import load_profile
-from asset_contracts import versions, resolve_ref, check_image, hash_object, REVIEW_DIMENSIONS, generation_projection, extraction_projection, MAX_SOURCE_BYTES
+from asset_contracts import versions, resolve_ref, check_image, hash_object, REVIEW_DIMENSIONS, generation_projection, extraction_projection, MAX_SOURCE_BYTES, MAX_SOURCE_PIXELS
 
 SCRIPTS = Path(__file__).resolve().parent
 SCHEMA = 3
@@ -726,7 +726,43 @@ def record_base_review(root, data, note, accept_color_warning=False):
     return {'base_reviewed': True, 'calibration': settings}
 
 
-def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
+def _preserve_ingest_bytes(root, payload):
+    """Validate immutable raster bytes and exclusively preserve an owned copy."""
+    from io import BytesIO
+    from atomic_publish import publish_verified_file, pinned_directory_fd
+    if type(payload) is not bytes or not 0 < len(payload) <= MAX_SOURCE_BYTES:
+        raise ValueError('source must be nonempty immutable bytes within the encoded-file bound')
+    with Image.open(BytesIO(payload)) as image:
+        if image.format not in ('PNG', 'WEBP', 'JPEG') or getattr(image, 'n_frames', 1) != 1:
+            raise ValueError('supported sources are single-frame PNG, WebP or JPEG')
+        if image.width * image.height > MAX_SOURCE_PIXELS:
+            raise ValueError(f'source exceeds {MAX_SOURCE_PIXELS} pixels; reduce resolution before decoding')
+        suffix = {'PNG': '.png', 'WEBP': '.webp', 'JPEG': '.jpg'}[image.format]
+        image.verify()
+    source_hash = hashlib.sha256(payload).hexdigest()
+    # Publish a new independent inode from a held descriptor. Never adopt an
+    # existing candidate path or hardlink, including one with matching bytes.
+    target = Path(root) / ('native-source-' + uuid.uuid4().hex + suffix)
+    with tempfile.TemporaryFile() as source:
+        source.write(payload)
+        source.flush()
+        if os.name == 'nt':
+            from atomic_windows import pinned_directory
+            with pinned_directory(root) as parent:
+                info = os.stat(parent.path, follow_symlinks=False)
+                publish_verified_file(source.fileno(), target,
+                    expected_sha256=source_hash, expected_size=len(payload),
+                    max_bytes=MAX_SOURCE_BYTES, expected_parent_identity=(info.st_dev, info.st_ino))
+        else:
+            with pinned_directory_fd(root) as parent:
+                info = os.fstat(parent)
+                publish_verified_file(source.fileno(), target,
+                    expected_sha256=source_hash, expected_size=len(payload),
+                    max_bytes=MAX_SOURCE_BYTES, expected_parent_identity=(info.st_dev, info.st_ino))
+    return target, source_hash
+
+
+def ingest(root, data, name, source, token, note, used_inputs, fixture=False, *, source_bytes=None):
     root = Path(root).resolve()
     job = job_for(data, name)
     if job['status'] != 'running' or token != job.get('token'):
@@ -757,20 +793,26 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
         raise ValueError('generation inputs changed; record failure before retrying')
     if budget is not None:
         budget.authorize_finalization(job, token, observation)
-    source = Path(source).resolve()
-    managed = [root / folder for folder in ('decoded', 'frames', 'final', 'qa')]
-    if any(source == p or source.is_relative_to(p) for p in managed) or source == root / 'references/canonical-base.png':
-        raise ValueError('ingest source must be an original outside managed outputs; its source file will be preserved')
-    source_hash = digest(source)
-    check_image(source)
-    with Image.open(source) as image:
-        image.verify()
+    if source_bytes is None:
+        source = Path(source).resolve()
+        managed = [root / folder for folder in ('decoded', 'frames', 'final', 'qa')]
+        if any(source == p or source.is_relative_to(p) for p in managed) or source == root / 'references/canonical-base.png':
+            raise ValueError('ingest source must be an original outside managed outputs; its source file will be preserved')
+        source_hash = digest(source)
+        check_image(source)
+        with Image.open(source) as image:
+            image.verify()
+        image_input = source
+    else:
+        from io import BytesIO
+        source, source_hash = _preserve_ingest_bytes(root, source_bytes)
+        image_input = BytesIO(source_bytes)
     invalidate(data, 'ingest ' + name)
     save(root, data)  # A crash during file replacement cannot leave approval valid.
     output = inside(root, job['output_path'])
     output.parent.mkdir(parents=True, exist_ok=True)
     temp = output.with_name(output.name + '.' + uuid.uuid4().hex + '.incoming')
-    with Image.open(source) as image:
+    with Image.open(image_input) as image:
         image.convert('RGBA').save(temp, format='PNG')
     os.replace(temp, output)
     if name == 'base':

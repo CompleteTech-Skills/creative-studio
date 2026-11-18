@@ -49,6 +49,18 @@ Rig exports must bind the registered source hash and identity and contain matchi
 decoded geometry. Requested visual characteristics remain unreviewed without
 authoritative visual evidence, including when scale or format adaptation is needed.
 
+The resolver parses `context.deadline` with the shared `parse_rfc3339`
+authority, including its accepted lowercase `t`/`z` and explicit offsets.
+An expired request raises `DIRECTOR_RESOLVER_DEADLINE` before reading the
+registry, specifications, manifests or native payloads. UTC wall-clock checks
+also run between specifications and candidates, around library reads and native
+geometry/rig inspection, and before returning a validated success. Reaching the
+deadline exactly counts as expiry. Expiry aborts the whole operation; candidate
+error handling must never turn it into an `unavailable` disposition or continue
+to later candidates. These are cooperative boundaries: an in-progress native
+read or decode finishes before its following deadline check, so this adapter
+does not promise hard interruption of native work.
+
 Each result contains one requirement disposition per input specification,
 ranked exact candidate references, required conversions and conservative budget
 fields. CPU time is measured locally; provider calls and GPU execution are zero.
@@ -60,6 +72,12 @@ Run `PYTHONPATH=scripts:tests python -m unittest test_rig_director_resolver -v`
 with the optional rig test dependencies. Tests reuse actual Aster/Moss/laboratory
 and access-key outputs, inspect no-generation/no-mutation behavior, then inject
 missing/changed manifests, corrupt library bytes, wrong identities, disallowed
-licenses, unsupported capabilities and duplicate snapshots. The separate
-[acquisition adapter](director-acquisition.md) preserves existing native claims;
+licenses, unsupported capabilities and duplicate snapshots. Deadline cases use
+actual synthetic native assets with a controlled UTC clock, check that expired
+entry performs zero artifact/native work, stop later candidates/specifications,
+and reject success after native work or final validation crosses the deadline.
+The request helper derives deadlines from that controlled clock, so test validity
+does not depend on the historical contract fixture's 2030 timestamp. These test
+cases are synthetic regression coverage, not production or visual acceptance.
+The separate [acquisition adapter](director-acquisition.md) preserves existing native claims;
 3D provider execution remains unavailable until its owner supplies that backend.
