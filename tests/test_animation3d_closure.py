@@ -421,6 +421,37 @@ class NativeClosureRegressionTests(unittest.TestCase):
         value['clip']=self.project['clips'][0];refresh()
         self.assertTrue(self.check()['source_ready'])
 
+    def test_shot_camera_resolves_once_across_bound_native_scenes(self):
+        scene, _ = self.native_scene()
+        native_root = self.root / 'native'
+        native = json.loads((native_root / 'project.json').read_bytes())
+        second = json.loads((native_root / 'example-scene.json').read_bytes())
+        second.update(id='second-scene', shots=[])
+        camera = next(node for node in second['nodes'] if node['type'] == 'camera')
+        sequence = self.values['sequence']
+
+        def admit(second_camera_id, active_camera_id):
+            camera['id'] = second_camera_id
+            second['cameras'] = [second_camera_id]
+            second_ref = self.put('native/second-scene.json', second)
+            second_ref['path'] = 'second-scene.json'
+            native['scenes'] = native['scenes'][:1] + [second_ref]
+            native['dependency_lock'] = [ref for ref in native['dependency_lock']
+                                         if ref['id'] != second['id']] + [second_ref]
+            scene['scene_asset'] = self.put('native/project.json', native, 'scene')
+            self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+            sequence['shots'][0]['active_camera_id'] = active_camera_id
+            self.project['sequences'] = [self.put('sequence.json', sequence, 'sequence')]
+            return self.check()
+
+        self.assertTrue(admit('second-camera', 'camera')['source_ready'])
+        self.assertTrue(admit('second-camera', 'second-camera')['source_ready'])
+        for second_camera_id, active_camera_id in (('second-camera', 'root'), ('camera', 'camera')):
+            with self.subTest(second_camera_id=second_camera_id, active_camera_id=active_camera_id):
+                with self.assertRaises(RigError) as rejected:
+                    admit(second_camera_id, active_camera_id)
+                self.assertEqual(rejected.exception.report['code'], 'ANIMATION_TARGET')
+
     def test_actor_retarget_profile_pins_its_actual_target_rig(self):
         from rig_errors import object_hash
 

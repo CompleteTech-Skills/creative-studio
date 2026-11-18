@@ -681,9 +681,9 @@ def _validate_bindings(project, documents, native, snapshot_root):
             for shot in d['shots']:
                 require(shot['scene_id'] in scenes, 'ANIMATION_REFERENCE', 'Shot scene is absent from project closure.')
                 scene = scenes[shot['scene_id']]
-                camera_ids = {node['id'] for doc in native_scene(scene)['documents'].values() if doc['kind']=='scene3d-scene'
-                              for node in doc['nodes'] if node['type']=='camera'}
-                require(shot['active_camera_id'] in camera_ids, 'ANIMATION_TARGET', 'Shot camera is absent from native scene.')
+                camera_matches = sum(1 for doc in native_scene(scene)['documents'].values() if doc['kind'] == 'scene3d-scene'
+                                     for node in doc['nodes'] if node['type'] == 'camera' and node['id'] == shot['active_camera_id'])
+                require(camera_matches == 1, 'ANIMATION_TARGET', 'Shot camera is absent or ambiguous in the native project.')
                 for value in shot['clip_placements']: placement(value, scene, duration=shot['duration_frames'])
                 for identifier, values in shot.get('actor_overrides', {}).items():
                     actor = next((a for a in scene['actors'] if a['actor_id']==identifier), None)
