@@ -7,6 +7,8 @@ from pathlib import Path
 import struct
 import tempfile
 
+import scene3d_import
+
 from asset_library import AssetLibrary, detect_format, file_record, read_source_bytes
 from asset_library_contracts import MAX_FILE_BYTES, seal, validate
 from rig_contracts import DEFAULT_LIMITS
@@ -17,6 +19,7 @@ from rig_interop import validate_gltf
 from rig_load_limits import _JSON_FACTOR, effective_limits
 from scene3d_import import _dump, _local_uri, _wireframe_preview, source_snapshot
 
+BLENDER_VALIDATOR = '2.0.0-dev.3.10'
 TOOL = 'hatch-native-gltf-import'
 VERSION = '1.0.0'
 # These extensions use retained node/material/texture indices and do not
@@ -208,10 +211,13 @@ class ImportPipeline:
         self.limits['dependency_bytes'] = min(
             self.limits['dependency_bytes'], self.limits['memory_bytes'] // 66)
 
-    def _snapshot(self, source, root):
+    def _snapshot(self, source, root, *, retained_bytes=0):
+        total_limit = min(scene3d_import.MAX_SOURCE_BYTES, self.limits['dependency_bytes'])
+        require(retained_bytes < total_limit, 'RIG_LIMIT_DEPENDENCIES',
+                'Captured source leaves no budget for glTF.')
         snapshot = source_snapshot(source, root,
             maximum_file_bytes=min(MAX_FILE_BYTES, self.limits['source_bytes']),
-            maximum_total_bytes=self.limits['dependency_bytes'])
+            maximum_total_bytes=total_limit - retained_bytes)
         snapshot.pop('document')
         return snapshot
 
@@ -227,6 +233,16 @@ class ImportPipeline:
     def import_asset(self, source, *, identity, version, metadata, license_file,
                      unit_scale=1.0, fixture=False):
         """Independently validate source/output and publish one immutable version."""
+        return self._import(source, identity, version, metadata, license_file, unit_scale, fixture,
+                            blender_fixture=False)
+
+    def import_blender_fixture(self, *, identity, version, metadata, license_file):
+        """Create and reopen a packed triangle with the pinned Linux Blender worker."""
+        return self._import(None, identity, version, metadata, license_file, 1.0, True,
+                            blender_fixture=True)
+
+    def _import(self, source, identity, version, metadata, license_file, unit_scale, fixture,
+                *, blender_fixture):
         require(type(unit_scale) in (int, float) and 1e-3 <= unit_scale <= 1e6,
                 'ASSET_IMPORT_SCALE', 'Unit scale must be in [1e-3, 1e6].')
         require(type(fixture) is bool, 'ASSET_IMPORT_REQUEST', 'Fixture classification must be boolean.')
@@ -239,7 +255,8 @@ class ImportPipeline:
             temporary = tempfile.TemporaryDirectory(prefix='asset-gltf-import-')
             try:
                 manifest, paths = self._stage(source, Path(temporary.name), identity, version,
-                                              metadata, license_bytes, float(unit_scale), fixture)
+                                              metadata, license_bytes, float(unit_scale), fixture,
+                                              blender_fixture=blender_fixture)
                 return self.library.register(manifest, paths)
             finally:
                 try:
@@ -249,8 +266,16 @@ class ImportPipeline:
                     # exact reference returned by the canonical store.
                     pass
 
-    def _stage(self, source, root, identity, version, metadata, license_bytes, scale, fixture):
-        snapshot = self._snapshot(source, root / 'source')
+    def _stage(self, source, root, identity, version, metadata, license_bytes, scale, fixture,
+               *, blender_fixture=False):
+        blender = None
+        if blender_fixture:
+            from asset_import_blender import create_fixture
+            fixture_limits = {**self.limits,
+                'dependency_bytes': min(scene3d_import.MAX_SOURCE_BYTES, self.limits['dependency_bytes'])}
+            original, source, blender = create_fixture(root / 'blender', fixture_limits)
+        retained_bytes = blender['source_bytes'] if blender is not None else 0
+        snapshot = self._snapshot(source, root / 'source', retained_bytes=retained_bytes)
         document, images, inventory, embedded, preflight = _inspect(snapshot, self.limits)
         declarations = {name: len(document.json.get(name, []))
                         for name in ('skins', 'animations', 'materials', 'textures')}
@@ -278,12 +303,16 @@ class ImportPipeline:
         source_validation = _checked(snapshot['path'], self.limits)
         output_validation = _checked(normalized, self.limits)
         model = load_character_model(normalized, limits=decode_limits)
+        if blender is not None:
+            self._admit_blender_result(root, original, blender, inventory, model,
+                                       source_validation, output_validation)
         preview = _wireframe_preview(model.geometry, root / 'diagnostic.png')
         (root / 'license.txt').write_bytes(license_bytes)
         _dump(root / 'source-khronos.json', source_validation)
         _dump(root / 'normalized-khronos.json', output_validation)
         _dump(root / 'import-report.json', dict(schema_version=1, original_filename=snapshot['original_filename'],
             source_files=inventory, embedded=embedded, preflight=preflight, fixture=fixture,
+            **({'blender': blender} if blender is not None else {}),
             operation='pack glTF buffers and textures into GLB and apply explicit scene-root units',
             coordinate_system='glTF right-handed Y-up', source_unit_scale=scale,
             source_sha256=source_validation['asset_sha256'], normalized_sha256=output_validation['asset_sha256'],
@@ -296,18 +325,62 @@ class ImportPipeline:
             native_observation=dict(vertices=model.geometry.vertex_count, triangles=model.geometry.triangle_count,
                 morph_targets=sum(len(mesh.morphs) for mesh in model.geometry.meshes), clips=sorted(model.clips))))
         return self._manifest(root, snapshot, inventory, identity, version, metadata, scale, fixture, model,
-                             output_validation['validator'])
+                             output_validation['validator'], blender=blender)
 
-    def _manifest(self, root, snapshot, inventory, identity, version, metadata, scale, fixture, model, validator):
+    def _admit_blender_result(self, root, original, blender, inventory, model,
+                              source_validation, output_validation):
+        require(len(inventory) == 1, 'ASSET_BLENDER_OUTPUT', 'Fixture GLB must be self-contained.')
+        require(source_validation['validator'] == output_validation['validator'] == BLENDER_VALIDATOR,
+                'ASSET_BLENDER_VALIDATOR', 'The fixture requires the pinned Khronos validator.')
+        meshes = model.geometry.meshes
+        require(len(meshes) == 1 and meshes[0].triangles.shape == (1, 3)
+                and len(meshes[0].positions) == 3,
+                'ASSET_BLENDER_OUTPUT', 'The native GLB has a different triangle topology.')
+        vertices = [tuple(meshes[0].positions[index]) for index in meshes[0].triangles[0]]
+        expected = [(0, 0, 0), (1, 0, 0), (0, 1, -2)]
+        require(any(vertices == expected[index:] + expected[:index] for index in range(3)),
+                'ASSET_BLENDER_OUTPUT', 'The native GLB changed triangle coordinates or winding.')
+        limit = min(MAX_FILE_BYTES, self.limits['source_bytes'], self.limits['dependency_bytes'])
+        original_bytes = read_source_bytes(original, limit)
+        require(hashlib.sha256(original_bytes).hexdigest() == blender['source_sha256'],
+                'ASSET_BLENDER_SOURCE', 'The packed original changed before publication.')
+        (root / 'source' / 'fixture.blend').write_bytes(original_bytes)
+        blender.update(original_filename=original.name, original_path='source/fixture.blend',
+                       derivative_path='source/model.glb',
+                       derivative_sha256=source_validation['asset_sha256'])
+
+    def _manifest(self, root, snapshot, inventory, identity, version, metadata, scale, fixture, model, validator,
+                  *, blender=None):
         original = {f'source/{entry["path"]}': entry for entry in inventory}
         roles = {path: 'source' for path in original}
         roles.update({'normalized.glb': 'payload', 'license.txt': 'license', 'diagnostic.png': 'evidence',
                       'source-khronos.json': 'evidence', 'normalized-khronos.json': 'evidence',
                       'import-report.json': 'evidence'})
+        if blender is not None:
+            roles.update({'source/fixture.blend': 'source', 'source/model.glb': 'evidence'})
         paths = {path: root / path for path in roles}
         records = {path: file_record(paths[path], path, role) for path, role in roles.items()}
         sources = [records[path] for path in original]
         created = timestamp()
+        origin = 'Native local glTF import'
+        tools = [dict(name=TOOL, version=VERSION), dict(name='Khronos glTF Validator', version=validator)]
+        source_records = [dict(file=records[path], source_uri='local:' + original[path]['path'],
+                    original_filename=(snapshot['original_filename'] if 'source' in original[path]['roles']
+                                       else original[path]['path']),
+                    acquired_at=created, author=metadata['author']) for path in original]
+        conversions = [dict(tool=TOOL, version=VERSION, timestamp=created, operation='Pack and normalize GLB',
+                            inputs=sources, outputs=[records['normalized.glb'], records['import-report.json']])]
+        if blender is not None:
+            origin = 'App-authored packed Blender triangle fixture'
+            tool = dict(name='Blender', version=blender['inspection']['version'])
+            tools.append(tool)
+            sources = [records['source/fixture.blend']]
+            source_records = [dict(file=sources[0], source_uri='local:app-authored-fixture',
+                                   original_filename='fixture.blend', acquired_at=created,
+                                   author=metadata['author'])]
+            conversions.insert(0, dict(tool=tool['name'], version=tool['version'], timestamp=created,
+                operation='Reopen packed triangle and export GLB', inputs=sources,
+                outputs=[records['source/model.glb']]))
         manifest = seal(dict(schema_version=1, kind='asset-library-version', identity=identity,
             version=version, files=list(records.values()), dependencies=[], metadata=metadata, previews=[],
             compatibility=dict(coordinate_system='right-handed-y-up-z-forward', unit_scale=scale,
@@ -315,17 +388,11 @@ class ImportPipeline:
                 animation_channels=sorted({track['path'] for clip in model.clips.values() for track in clip['tracks']}),
                 renderers=[], formats=sorted({'glb', snapshot['path'].suffix[1:]}),
                 extensions=model.geometry.extensions_used, consumer_capabilities=[]),
-            provenance=dict(method='fixture' if fixture else 'import', origin='Native local glTF import',
-                fixture=fixture, sources=sources, provider=[], tools=[dict(name=TOOL, version=VERSION),
-                    dict(name='Khronos glTF Validator', version=validator)],
+            provenance=dict(method='fixture' if fixture else 'import', origin=origin,
+                fixture=fixture, sources=sources, provider=[], tools=tools,
                 parents=[], edits=[], license_evidence=[records['license.txt']], permissions=[],
                 uncertainty=['Diagnostic preview has no visual review'],
-                source_records=[dict(file=records[path], source_uri='local:' + original[path]['path'],
-                    original_filename=(snapshot['original_filename'] if 'source' in original[path]['roles']
-                                       else original[path]['path']),
-                    acquired_at=created, author=metadata['author']) for path in original],
-                conversions=[dict(tool=TOOL, version=VERSION, timestamp=created, operation='Pack and normalize GLB',
-                    inputs=sources, outputs=[records['normalized.glb'], records['import-report.json']])]),
+                source_records=source_records, conversions=conversions),
             publication=dict(visibility='project-local', distribution='restricted', license_evaluation='evidence-retained',
                 inventory=list(records), verification='payload-verified', integration='native-reference')))
         return manifest, paths
