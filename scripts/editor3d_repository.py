@@ -647,7 +647,7 @@ class EditorRepository:
                         archive.writestr(name, _regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
                     archive.writestr('archive-receipt.json', _bytes(receipt))
                 self.verify_archive(stage)
-                with stage.open('rb') as stream: os.fsync(stream.fileno())
+                with stage.open('r+b') as stream: os.fsync(stream.fileno())
                 _rename_no_replace(stage, destination)
                 _sync_directory(destination.parent)
         return dict(archive=str(destination), sha256=hashlib.sha256(destination.read_bytes()).hexdigest(), revision=head['revision'])
