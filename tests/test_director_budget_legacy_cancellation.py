@@ -180,9 +180,10 @@ class LegacyCancellationTests(unittest.TestCase):
         key = 'native-observation-' + hatch.object_hash([operation['operation_id'], payload['id']])
         retained = self.proof + [self.retain_json(dict(kind='native-budget-usage',
             operation_id=operation['operation_id'], fixture=True, **payload))]
-        receipt = self.generic(identifier, 'uncertain', key, retained, usage=payload['usage'])
-        operation['events'].append(dict(key=key, payload=payload, evidence=retained, receipt=receipt))
-        hatch.save(self.root, data)
+        operation['events'].append(dict(key=key, payload=payload, evidence=retained))
+        with hatch.ownership(self.root):
+            hatch.save(self.root, data)
+            interop.NativeBudget.for_run(self.root, data, recovery=True).reconcile()
         self.generic(identifier, 'retry', 'direct-known', self.proof, usage=interop.quantities())
         self.fail_native(second, self.observe('second-known', 'retry', amount='0.75'))
         self.assertEqual(self.row()['state'], 'reserved')

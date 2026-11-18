@@ -595,6 +595,13 @@ integrated PR head; the earlier failing artifacts remain historical evidence.
 
 A committed historical cancellation also binds the ordered claim/failure history and attempt-token list during recovery. Exact receipt replay cannot acknowledge a changed history. A subsequent explicit native repair may reset current job status and attempt count; its separate repair record leaves the attested original claim/failure history unchanged. Independent synthetic lost-acknowledgement and repair controls distinguish that permitted replay from changed failure details or reordered/extra attempt identities.
 
+## Native observation origin at settlement
+
+Retaining a JSON document proves its byte identity, not native owner authorization. A new native-shaped settlement must match the enrolled run’s current on-disk observation and committed admission while the ledger writer lock is held. The run locator is revalidated; naming a sibling run cannot authorize the event. Current-protocol attempt rows record a ledger-generated native_owner_verified marker. A generic caller cannot set that marker. Unmarked historical observations may retain uncertainty but cannot independently resolve it or establish a latest-attempt cancellation. The enrolled owner can recover its authentic journal and reconcile those records without rewriting finalized history. Earlier writer versions retain their earlier behavior; all writers must use the corrected boundary.
+
+Historical fixture setup now persists its genuine observation journal before the current writer replays it. All prior behavioral assertions remain, and the original four-field historical attempt wire format is asserted explicitly. A separate prior-version process produced authentic unmarked ledger bytes; corrected generic finalization/cancellation refused without changing them, while owner cancellation preserved the measured call and amount. No provider was invoked.
+
+Captured extraction settings must be an object before claim warnings or admission. JSON null must not select an ordinary pathname-reader fallback. Seven additional synthetic origin/settings tests exercise public complete/failed/retry attempts, latest-token cancellation evidence, valid owner replay, null refusal and a valid captured-object control. Four origin cases and the null boundary failed on the preceding source; the current correction passes them without changing the retained uncertainty or source authority on refusal.
 
 ### Durable owner finalization and interruption capacity
 

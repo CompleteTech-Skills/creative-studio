@@ -741,7 +741,8 @@ def claim(root, data, name):
                         **claim_job_identity(job)}
     settings = json.loads(settings_payload) if settings_payload is not None else request.get('extraction', {})
     if not isinstance(settings, dict) or not isinstance(request.get('extraction', {}), dict):
-        raise ValueError('captured extraction settings must be an object')
+        from rig_errors import RigError
+        raise RigError('DIRECTOR_BUDGET_INPUT', 'Captured extraction settings must be an object.')
     if name != 'base' and job.get('prompt_settings_hash') != settings_identity['extraction-settings.json']:
         raise ValueError('captured calibration differs from the approved row prompt')
     if name != 'base' and data.get('base_review', {}).get('canonical_hash') != hashes.get('references/canonical-base.png'):

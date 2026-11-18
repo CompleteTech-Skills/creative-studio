@@ -128,7 +128,8 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
         The policy and original input hashes come from a fresh public enrollment.
         Both claim records, the failed transition, and the token-bound measured
         retry match main165 public Hatch output; no modern event is removed or
-        rewritten. Only the first token has a usage observation in the ledger.
+        rewritten. Only the first token has a usage observation in the ledger. Journal it
+        before replay so the current writer can verify its historical owner.
         """
         data = hatch.manifest(self.root)
         job = hatch.job_for(data, 'base')
@@ -150,13 +151,10 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
         key = 'native-observation-' + hatch.object_hash([operation_id, payload['id']])
         retained = self.proof + [self.retain_json(dict(kind='native-budget-usage',
             fixture=data['fixture_mode'], operation_id=operation_id, **payload))]
-        receipt = self.ledger.settle(reservation['reservation_id'], usage=payload['usage'],
-            outcome='retry', evidence=retained, idempotency_key=key,
-            expected_revision=self.ledger.snapshot()['sha256'])
         operation = dict(operation_id=operation_id, input_hashes=hashes,
             reservation_request=request, reservation_id=reservation['reservation_id'],
             attempts=[first, second] if second_running else [first],
-            events=[dict(key=key, payload=payload, evidence=retained, receipt=receipt)])
+            events=[dict(key=key, payload=payload, evidence=retained)])
         request_value = hatch.read(self.root / 'pet_request.json')
         prompt_bytes = (self.root / job['prompt_file']).read_bytes()
 
@@ -185,6 +183,7 @@ class BudgetInteropAuthorityTests(unittest.TestCase):
         events = self.ledger.snapshot()['state']['events']
         self.assertFalse(any(event['action'] == 'native-claim' for event in events))
         self.assertNotIn('publication_protocol', intent)
+        self.assertEqual(set(self.row()['attempts'][0]), {'usage', 'outcome', 'evidence', 'idempotency_key'})
         return reservation['reservation_id'], first, second
 
     def test_legacy_measured_retry_does_not_prove_latest_running_token_is_known(self):
