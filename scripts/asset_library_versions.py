@@ -23,6 +23,7 @@ _SELECTION_OPERATIONS = ('promote', 'rollback')
 
 class LifecycleStore(Protocol):
     def resolve(self, reference: AssetRef) -> AssetVersion: ...
+    def inspect(self, reference: AssetRef, *, verify_payloads: bool = True) -> AssetVersion: ...
     def list_references(self, *, limit: int = MAX_VERSIONS) -> list[AssetRef]: ...
     def append_event(self, stream: str, *, expected_revision: int, document: dict) -> dict: ...
     def events(self, stream: str) -> list[dict]: ...
@@ -142,6 +143,27 @@ def _event_stream(store, stream):
     return events
 
 
+def _validate_consumer_evidence(consumers, operation):
+    if (not isinstance(consumers, list) or len(consumers) > MAX_CONSUMERS
+            or (operation == 'deprecate' and consumers)):
+        fail('HISTORY', 'Invalid consumer evidence.')
+    names = set()
+    for item in consumers:
+        if (not isinstance(item, dict) or set(item) != {'id', 'compatible', 'mismatches'}
+                or item['compatible'] is not True or item['mismatches'] != []):
+            fail('HISTORY', 'Invalid consumer evidence.')
+        name = identifier(item['id'])
+        if name in names:
+            fail('HISTORY', 'Duplicate consumer evidence.')
+        names.add(name)
+
+
+def _rollback_target(state):
+    return next((item['previous'] for item in reversed(state['history'])
+                 if item['operation'] in _SELECTION_OPERATIONS and item['previous'] is not None
+                 and item['previous'] != state['promoted'] and item['previous'] not in state['deprecated']), None)
+
+
 class AssetVersions:
     def __init__(self, library: LifecycleStore):
         self.library = library
@@ -154,6 +176,7 @@ class AssetVersions:
         asset_id = identifier(asset_id)
         events = _event_stream(self.library, self._stream(asset_id))
         result = dict(revision=0, promoted=None, deprecated=[], history=[])
+        checked_references = set()
         for item in events:
             document = item['document']
             if (not isinstance(document, dict) or set(document) != _EVENT_FIELDS
@@ -166,8 +189,13 @@ class AssetVersions:
             if document['previous'] != result['promoted']:
                 fail('HISTORY', 'Lifecycle event has a stale previous selection.')
             _reason(document['reason'])
-            if not isinstance(document['consumers'], list):
-                fail('HISTORY', 'Invalid consumer evidence.')
+            _validate_consumer_evidence(document['consumers'], operation)
+            key = (reference['version'], reference['sha256'])
+            if key not in checked_references:
+                self.library.inspect(reference, verify_payloads=False)
+                checked_references.add(key)
+            if operation == 'rollback' and reference != _rollback_target(result):
+                fail('HISTORY', 'Rollback must restore a retained previous selection.')
             if operation == 'deprecate':
                 if reference == result['promoted'] or reference in result['deprecated']:
                     fail('HISTORY', 'Invalid deprecation of current/already deprecated version.')
@@ -219,9 +247,7 @@ class AssetVersions:
         state = self.state(asset_id)
         if revision(expected_revision) != state['revision']:
             fail('CONFLICT', 'Reload stale lifecycle state before rollback.')
-        prior = next((item['previous'] for item in reversed(state['history'])
-                      if item['operation'] in _SELECTION_OPERATIONS and item['previous'] is not None
-                      and item['previous'] != state['promoted'] and item['previous'] not in state['deprecated']), None)
+        prior = _rollback_target(state)
         if prior is None:
             fail('ROLLBACK', 'No retained previous selected version is available.')
         plan = self.promotion_plan(prior, consumers=consumers)

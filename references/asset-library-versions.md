@@ -22,7 +22,8 @@ if plan["compatible"]:
 
 `history()` lists registered references in numeric version order. `state()`
 returns the current lifecycle revision, promoted reference, deprecated
-references and replayed decisions for an ID. `compare()` verifies both exact
+references and replayed decisions for an ID. Replay checks each distinct exact
+reference against its canonical manifest. `compare()` verifies both exact
 references and the canonical payload and dependency closure before reporting
 changes in file hashes, lengths, roles, required status and declared
 compatibility. The stable identity must match.

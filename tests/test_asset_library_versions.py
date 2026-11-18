@@ -233,3 +233,35 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(breaking['breaking'], ['renderers'])
         self.assertEqual(breaking['minimum_bump'], 'major')
         self.assertFalse(breaking['allowed'])
+
+    def test_replay_rejects_unregistered_exact_event_reference(self):
+        first = self.initial()
+        wrong = {**first, 'sha256': 'f' * 64}
+        document = dict(schema_version=1, operation='promote', reference=wrong,
+                        previous=None, reason='Imported historical decision', consumers=[])
+        stream = self.versions._stream('triangle')
+        self.library.append_event(stream, expected_revision=0, document=document)
+        reopened = AssetVersions(AssetLibrary(self.library.root))
+        with self.assertRaises(RigError) as rejected:
+            reopened.state('triangle')
+        self.assertEqual(rejected.exception.report['code'], 'LIBRARY_HASH')
+
+    def test_replay_rejects_invalid_action_and_evidence(self):
+        first = self.initial()
+        stream = self.versions._stream('triangle')
+        document = dict(schema_version=1, reference=first,
+                        previous=None, reason='Imported historical decision')
+        invalid = [
+            dict(operation='rollback', consumers=[]),
+            dict(operation='deprecate', consumers=[dict(id='actor', compatible=True, mismatches=[])]),
+            dict(operation='promote', consumers=[dict(id='actor', compatible=False, mismatches=['formats'])]),
+        ]
+        for fields in invalid:
+            with self.subTest(fields=fields):
+                library = AssetLibrary(self.root / fields['operation'], create=True)
+                library.register(self.manifest, self.sources)
+                library.append_event(stream, expected_revision=0, document={**document, **fields})
+                reopened = AssetVersions(AssetLibrary(library.root))
+                with self.assertRaises(RigError) as rejected:
+                    reopened.state('triangle')
+                self.assertEqual(rejected.exception.report['code'], 'LIBRARY_VERSION_HISTORY')
