@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, finite_json
+from rig_errors import RigError, RoundedJsonInteger, decode_json, finite_json
 
 MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_FILES = 4096
@@ -526,6 +526,10 @@ def _schema_shape(value, schema):
 
 def _normalize_integers(value, schema, path='$'):
     """Normalize declared local integer positions in an already copied tree."""
+    if isinstance(value, RoundedJsonInteger):
+        # Only shot FPS uses its original wire precision. Other numeric fields
+        # retain the decoder's ordinary float behavior and type.
+        value = float(value)
     if '$ref' in schema:
         schema = definitions()[schema['$ref'].rsplit('/', 1)[-1]]
     if schema.get('type') == 'integer':
@@ -555,6 +559,11 @@ def validate_document(value, kind=None):
         require(isinstance(value, dict) and value.get('kind') in MANIFEST_KINDS, 'Unknown scene3d document kind.')
         kind = value['kind'][8:]
     checker = validator(kind)
+    rate = value.get('fps') if kind == 'shot' and isinstance(value, dict) else None
+    if isinstance(rate, dict):
+        for name in ('numerator', 'denominator'):
+            require(not isinstance(rate.get(name), RoundedJsonInteger),
+                    '$.fps.' + name + ': expected an exact integer-valued JSON number.')
     value = _normalize_integers(deepcopy(value), ref(kind))
     error = next(checker.iter_errors(value), None)
     require(error is None, '' if error is None else '.'.join(map(str, error.absolute_path)) + ': ' + error.message)
@@ -694,7 +703,7 @@ def read_document(path):
     with Path(path).open('rb') as stream:
         data = stream.read(MAX_DOCUMENT_BYTES + 1)
     require(len(data) <= MAX_DOCUMENT_BYTES, 'Document exceeds 16 MiB.')
-    return validate_document(decode_json(data))
+    return validate_document(decode_json(data, mark_rounded_integers=True))
 
 
 def load_project(root, name='project.json'):
@@ -768,7 +777,8 @@ def load_project(root, name='project.json'):
                     _legacy_reference(payload, expected)
                 return
         require(path.endswith('.json'), 'Scene3D manifests must use .json filenames.')
-        document = validate_document(decode_json(payload))
+        is_shot = expected is not None and expected.get('kind') == 'scene3d-shot'
+        document = validate_document(decode_json(payload, mark_rounded_integers=is_shot))
         if expected and expected.get('kind') in MANIFEST_KINDS:
             _reference_identity(document, expected)
         require(depth == 0 or document['kind'] != 'scene3d-project', 'Nested Scene3D project manifests are unsupported.')
