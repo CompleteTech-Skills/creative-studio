@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -27,6 +28,8 @@ def quantities(**values):
     return {key: values.get(key, 0) for key in METRICS}
 
 
+@unittest.skipUnless(hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd,
+                     'Native acquisition budget tests require secure descriptor-relative artifact reads.')
 class DirectorAcquisitionBudgetTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

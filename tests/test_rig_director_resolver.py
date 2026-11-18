@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 import sqlite3
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +23,8 @@ def artifact(path,root,kind='asset-library-version',identifier=None):
         media_type='application/json',provenance_ref=None,fixture=True,dependencies=[])
 
 
+@unittest.skipUnless(sys.platform.startswith('linux'),
+                     'Native resolver fixtures require Linux descriptor-pinned asset publication.')
 class ResolverTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
