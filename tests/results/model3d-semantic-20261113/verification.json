@@ -11,7 +11,7 @@
     "independent_surfaces": 15
   },
   "demonstration": {
-    "path": "/home/complete/.cache/hatch-coordination-20261112/model47-demo-final",
+    "path": "<local-work-dir>/model3d-semantic-evidence",
     "vertices": 144,
     "triangles": 48,
     "files": 29,
