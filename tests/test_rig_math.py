@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from rig_errors import RigError
-from rig_math import (BLENDER_FROM_CANONICAL, axis_angle, compose, decompose, qbetween,
+from rig_math import (BLENDER_FROM_CANONICAL, axis_angle, compose, decompose, qangle, qbetween,
                       qmatrix, quaternion, slerp, transform_points)
 from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone, skeleton_from_heads, validate_skeleton
 from rig_gltf import GltfBuilder, export_geometry, node_matrix
@@ -27,6 +27,18 @@ def chain_skeleton(count=3):
 
 
 class RigMathTests(unittest.TestCase):
+    def test_quaternion_angle_preserves_small_rotations_and_hemisphere(self):
+        base = [0.0, 0.0, math.sin(0.35), math.cos(0.35)]
+        angle = 1e-8
+        rotated = [0.0, 0.0, math.sin(0.35 + angle / 2), math.cos(0.35 + angle / 2)]
+        for sign in (-1, 1):
+            with self.subTest(sign=sign):
+                scaled = [component * sign * 2 for component in rotated]
+                self.assertAlmostEqual(qangle(base, scaled), angle, delta=1e-15)
+                self.assertAlmostEqual(qangle(scaled, base), angle, delta=1e-15)
+        self.assertEqual(qangle(base, [-component for component in base]), 0.0)
+        self.assertEqual(qangle([0, 0, 1, 0]), math.pi)
+
     def test_gltf_invertibility_is_independent_of_units_and_axis_magnitudes(self):
         for scale in ([1e-6]*3, [1e6]*3, [1e-100]*3, [1e100]*3,
                       [1e-6, 1, 1e6], [-1e-6, 2e-6, 3e-6]):

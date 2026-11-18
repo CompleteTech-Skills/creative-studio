@@ -104,7 +104,12 @@ def slerp(a: Sequence[float], b: Sequence[float], weight: float) -> np.ndarray:
 
 
 def qangle(a: Sequence[float], b: Sequence[float] = IDENTITY_Q) -> float:
-    return 2 * math.acos(float(np.clip(abs(np.dot(quaternion(a), quaternion(b))), 0, 1)))
+    a, b = quaternion(a), quaternion(b)
+    # The shorter chord selects the nearest quaternion sign. Its length
+    # retains small rotations even when the dot product rounds to one.
+    difference = math.hypot(*(a - b))
+    sum_length = math.hypot(*(a + b))
+    return 4 * math.atan2(min(difference, sum_length), max(difference, sum_length))
 
 
 def compose(translation=(0., 0., 0.), rotation=IDENTITY_Q, scale=(1., 1., 1.)) -> np.ndarray:
