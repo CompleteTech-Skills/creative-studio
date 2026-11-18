@@ -1,4 +1,4 @@
-# GLB/glTF continuity inspection
+# GLB/glTF and saved rig continuity inspection
 
 This slice of issue #114 uses the canonical rig importer's glTF reader,
 preflight, and model importer. It provides read-only engineering evidence for
@@ -38,6 +38,29 @@ names. The receipt reports distance in meters and as a fraction of observed
 height. Landmark names are authored. Optional variant references are separately
 verified evidence pointers. They confer no approval.
 
+## Saved native rigs
+
+Supply a `hatch-3d-rig` source reference to the saved `rig.json` with its
+manifest ID and version. Dependencies are the files the native loader consumes
+under that rig directory. Include `identity.json`, the original source and its
+dependencies, the geometry and skin bundles, animation clips, validation
+records, review receipts, and the evidence referenced by those receipts. Supply
+each consumed path once. History and other project files outside that inventory
+stay on disk. A rig restored through the native ZIP API uses the same inspection
+request and pin rules.
+
+The file pins use the inspector's closure limits during capture and the final
+comparison recheck. The native loader also applies the manifest's effective
+limits, including its byte cap on the original source asset.
+The native preflight checks the consumed inventory and reserves capacity for
+geometry analysis and receipt projection before the loader materializes arrays.
+The receipt reports the combined estimate in `native_analysis_admission`. The
+native loader accounts for image framing and clip limits in its load estimate.
+This path reports the saved rest hierarchy, inverse binds, weights, and geometry
+of the pinned rig. The source directory and its parent require read access.
+The inspector creates its copy in temporary storage and rechecks source pins
+before returning. Production artwork approval requires a separate review.
+
 ## What the receipts measure
 
 Receipts retain selected scene hierarchy and transforms, geometry measurements,
@@ -67,9 +90,11 @@ The comparison reports main-file byte identity and full closure byte identity.
 It measures triangle surfaces, attributes and morphs, height-normalized
 surfaces, and materials and textures. `observed_material_identity` compares the
 projected material fields, texture bytes, sampler settings, and the slot at
-each source node and primitive index. A position-only change leaves those
-assignments intact. `material_identity` uses that result within the supported
-profile and is `null` if either input's material coverage is partial. The surface fingerprint uses coordinates
+each source node and primitive index for GLB/glTF, or at each saved mesh
+index for a native rig. A position-only change leaves those assignments
+intact. Both material identity fields are `null` when comparing a saved rig
+with a GLB/glTF file. Within a format, `material_identity` is `null` if either
+input's material coverage is partial. The surface fingerprint uses coordinates
 quantized to 1e-9 meters and is independent of winding and triangle order.
 Separate index fingerprints preserve connectivity evidence, including
 distinctions between shared indices and coincident vertices.
@@ -143,6 +168,6 @@ geometry and texture changes, partial material-extension comparison, exact
 external closure acceptance and missing pin rejection, and aggregate image
 capacity acceptance and rejection. The shared rig interoperability gate
 registers the inspection suite. Hosted probe evidence and independent
-Khronos Validator, Blender, and Three.js observations remain follow-up work. Native `rig.json`, owner capability registration, rig compatibility and
-facial classification, renderer-specific outputs, and production artwork
-review are outside this slice.
+Khronos Validator, Blender, and Three.js observations remain follow-up work.
+Owner capability registration, rig compatibility and facial classification,
+renderer-specific outputs, and production artwork review also remain open.
