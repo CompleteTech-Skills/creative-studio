@@ -123,6 +123,8 @@ def _loaded(root, root_identity, source, dependencies, requested):
                 fail('CLOSURE', 'supplied pins differ from native source closure: ' +
                      ', '.join(sorted(expected ^ observed)))
             parents, world, order = scene_graph(document)
+            animations = _animation_admission(document, images, limits, order)
+            analysis = _analysis_admission(document, admission, animations, limits, order)
             nodes = document.json['nodes']
             hierarchy = [dict(node_id=i, parent=parents.get(i),
                               local_matrix=node_matrix(nodes[i]).tolist(), world_matrix=world[i].tolist(),
@@ -130,7 +132,8 @@ def _loaded(root, root_identity, source, dependencies, requested):
             features = _source_features(document)
             del document
             model = load_character_model(path, limits=limits)
-            model.report.update(source_features=features, source_preflight=admission, image_preflight=images)
+            model.report.update(source_features=features, source_preflight=admission, image_preflight=images,
+                                animation_preflight=animations, analysis_preflight=analysis)
             yield model, hierarchy, refs, limits, total
         except MemoryError:
             fail('LIMIT', 'native allocation failed inside admitted inspection')
@@ -166,6 +169,131 @@ def _image_admission(document,geometry_admission,limits):
                            sha256=hashlib.sha256(payload).hexdigest()))
     return dict(budget.report(),method='native-gltf-image-capacity-v1',images=images,
                 scope='native image headers and combined geometry/decoded-texture capacity; not pixel integrity')
+
+
+def _animation_admission(document, image_admission, limits, order):
+    """Charge native retained tracks before any animation accessor expansion."""
+    from rig_errors import require
+    from rig_gltf import WIDTHS, _index
+    from rig_load_limits import LoadBudget
+
+    budget = LoadBudget(limits)
+    budget.add(image_admission['estimated_memory_bytes'] - budget.memory,
+               'retained native geometry/image admission')
+    for field in ('input_bytes', 'json_bytes', 'array_bytes', 'texture_rgba_bytes'):
+        setattr(budget, field, image_admission[field])
+    body = document.json
+    nodes, meshes, accessors = body.get('nodes', []), body.get('meshes', []), body.get('accessors', [])
+    active = set(order)
+    animations = body.get('animations', [])
+    require(isinstance(animations, list), 'RIG_GLTF_PREFLIGHT', 'Animations must be an array.')
+    require(len(animations) <= limits['clips'], 'RIG_LIMIT_CLIPS', 'Imported animation clip budget exceeded.')
+    channels = destinations = source_keys = instantiated_keys = retained = working = 0
+    for animation in animations:
+        budget.add(4096, 'native animation clip metadata')
+        retained += 4096
+        samplers = animation['samplers']
+        for channel in animation.get('channels', []):
+            sampler = samplers[_index(channel['sampler'], len(samplers), 'animation sampler')]
+            target = channel['target']
+            node_id = _index(target['node'], len(nodes), 'animation target')
+            path = target['path']
+            require(path in ('translation', 'rotation', 'scale', 'weights'),
+                    'RIG_ANIMATION_PATH', 'Unsupported animation target.')
+            source = accessors[_index(sampler['input'], len(accessors), 'animation input')]
+            output = accessors[_index(sampler['output'], len(accessors), 'animation output')]
+            # Match the native reader's ravel(), even for malformed non-scalar
+            # time accessors; validation of actual samples remains native.
+            keys = source['count'] * WIDTHS[source['type']]
+            scalars = output['count'] * WIDTHS[output['type']]
+            source_keys += keys
+            require(source_keys <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
+                    'Animation key budget exceeded.')
+            interpolation = sampler.get('interpolation', 'LINEAR')
+            require(interpolation in ('STEP', 'LINEAR', 'CUBICSPLINE'),
+                    'RIG_INTERPOLATION', 'Unsupported interpolation.')
+            copies = 1
+            if path == 'weights':
+                require(node_id in active and 'mesh' in nodes[node_id], 'RIG_ANIMATION_REFERENCE',
+                        'Animation references unavailable geometry.')
+                mesh = meshes[_index(nodes[node_id]['mesh'], len(meshes), 'animation mesh')]
+                copies = len(mesh['primitives'])
+                require(copies > 0, 'RIG_ANIMATION_REFERENCE', 'Animation references unavailable geometry.')
+            # rig_import._animations retains one times list and one nested
+            # value list per destination, plus both tangent lists for cubic.
+            # 64 bytes per scalar includes a Python float and its list slot;
+            # 128 per list and 4096 per track cover containers/metadata.
+            rows = 3 if interpolation == 'CUBICSPLINE' else 1
+            track_bytes = 4096 + 128 + keys * 64 + rows * (128 + keys * 128) + scalars * 64
+            retained_bytes = copies * track_bytes
+            # Float64 conversions and transformed working copies are charged
+            # in addition to the unique-accessor estimate, across all channels.
+            working_bytes = (keys + scalars) * 8 * 4
+            budget.add(retained_bytes + working_bytes, 'instantiated native animation tracks')
+            budget.array_bytes += working_bytes
+            retained += retained_bytes
+            working += working_bytes
+            channels += 1
+            destinations += copies
+            instantiated_keys += copies * keys
+    return dict(budget.report(), method='native-gltf-animation-capacity-v1',
+                scope='combined geometry/images and native animation lists/working arrays; not process RSS',
+                channels=channels, destinations=destinations, source_keyframes=source_keys,
+                instantiated_keyframes=instantiated_keys, animation_retained_bytes=retained,
+                animation_working_bytes=working)
+
+
+def _analysis_admission(document, geometry_admission, animation_admission, limits, order):
+    """Reserve native analysis arrays from admitted instance counts, before import."""
+    from rig_load_limits import LoadBudget
+
+    budget = LoadBudget(limits)
+    budget.add(animation_admission['estimated_memory_bytes'] - budget.memory,
+               'retained native geometry/image/animation admission')
+    for field in ('input_bytes', 'json_bytes', 'array_bytes', 'texture_rgba_bytes'):
+        setattr(budget, field, animation_admission[field])
+    body = document.json
+    concatenated = 0
+    for node_id in order:
+        node = body['nodes'][node_id]
+        if 'mesh' not in node:
+            continue
+        for primitive in body['meshes'][node['mesh']]['primitives']:
+            count = body['accessors'][primitive['attributes']['POSITION']]['count']
+            # Match analyze_geometry's slices, including 513..1023 vertices
+            # per instance: the first sampling stage is not capped at 512.
+            step = max(1, count // 512)
+            concatenated += (count + step - 1) // step
+    step = max(1, concatenated // 2048)
+    samples = min(2048, (concatenated + step - 1) // step)
+    parts = max(1, samples // 128)
+    # array_split uses floor(N/128) parts, so batches can exceed 128 rows.
+    batch = (samples + parts - 1) // parts
+    difference = batch * samples * 3 * 8
+    squared = difference
+    reduction = batch * samples * 8
+    # The sliced sample retains its full concatenated base. Also reserve two
+    # centered PCA copies, reflection, nearest scalars/conversion, and batch
+    # minima/sqrt/output, even though not all coexist.
+    sample_arrays = concatenated * 3 * 8 + samples * (3 * 3 * 8 + 64 + 8) + batch * 3 * 8
+    # Conservative numerical workspace for triangle gathers/cross/norm/volume,
+    # both edge/unique passes (sorting, indices, masks and counts), component
+    # parent/output arrays, bounds and small 3x3 PCA/eigensolver arrays. Sum
+    # across instances so the last mesh's live arrays are included at symmetry.
+    topology_arrays = (geometry_admission['triangles'] * 1024
+                       + geometry_admission['vertices'] * 64
+                       + geometry_admission['mesh_instances'] * 512 + 4096)
+    working = difference + squared + reduction + sample_arrays + topology_arrays
+    budget.add(working, 'native geometry analysis working arrays')
+    budget.array_bytes += working
+    return dict(budget.report(), method='native-gltf-analysis-capacity-v1',
+                scope='combined geometry/images/animations and native geometry analysis working arrays; '
+                      'not process RSS, later evaluation or rendering',
+                concatenated_samples=concatenated, symmetry_samples=samples,
+                symmetry_batch_rows=batch, symmetry_difference_bytes=difference,
+                symmetry_square_bytes=squared, symmetry_reduction_bytes=reduction,
+                sample_working_bytes=sample_arrays, topology_working_bytes=topology_arrays,
+                analysis_working_bytes=working)
 
 
 def _source_features(document):
@@ -411,7 +539,9 @@ def _inspect_asset(root, root_identity, source, *, dependencies=(), landmarks=No
             source_features=features, status='partial' if material_partial else 'inspected-supported-data',
             material_coverage='partial' if material_partial else 'supported-profile',
             native_load_admission=model.report['source_preflight'],
-            native_image_admission=model.report['image_preflight'], measurements=measurements,
+            native_image_admission=model.report['image_preflight'],
+            native_animation_admission=model.report['animation_preflight'],
+            native_analysis_admission=model.report['analysis_preflight'], measurements=measurements,
             variant_references=list(variants),
             geometry_sha256=digest(sorted(m['geometry_sha256'] for m in meshes)),
             attribute_morph_sha256=digest([dict(attributes=m['attributes'],morphs=m['morphs'],defaults=m['morph_defaults']) for m in meshes]),
