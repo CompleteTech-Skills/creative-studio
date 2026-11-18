@@ -1,12 +1,13 @@
 from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
+from multiprocessing import get_context
 from pathlib import Path
 import os
 import tempfile
 import unittest
 
 from director_budget import BudgetLedger, METRICS
-from rig_errors import RigError
+from rig_errors import RigError, job_lock
 
 
 def quantities(value=0, **kwargs):
@@ -21,6 +22,14 @@ def reserve_child(args):
         return receipt['state']
     except RigError as error:
         return error.report['code']
+
+
+def acquire_lock_in_child(root):
+    try:
+        with job_lock(root):
+            return None
+    except RigError as error:
+        return error.report['code'], error.report['retryable']
 
 
 def die_before_publication(root):
@@ -113,6 +122,16 @@ class BudgetTests(unittest.TestCase):
         state=self.ledger.snapshot()['state']
         self.assertEqual(len(state['reservations']),1)
         self.assertEqual(sum(int(r['held']['provider_calls']) for r in state['reservations'].values()),6)
+
+    def test_empty_lock_sidecar_excludes_another_process(self):
+        root = self.directory / 'fresh-ledger'
+        sidecar = self.directory / '.fresh-ledger.rig.lock'
+        with ProcessPoolExecutor(max_workers=1, mp_context=get_context('spawn')) as pool:
+            with job_lock(root):
+                self.assertEqual(pool.submit(acquire_lock_in_child, root).result(timeout=10),
+                                 ('RIG_BUSY', True))
+            self.assertIsNone(pool.submit(acquire_lock_in_child, root).result(timeout=10))
+        self.assertEqual(sidecar.stat().st_size, 0)
 
     def test_interrupted_writer_does_not_publish_partial_state(self):
         from multiprocessing import Process
