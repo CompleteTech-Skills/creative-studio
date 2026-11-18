@@ -367,11 +367,23 @@ class NativeVerificationTests(unittest.TestCase):
         document = json.loads(source.read_bytes())
         document['materials'].extend({} for _ in range(1001))
         source.write_text(json.dumps(document), encoding='utf-8')
-        reference = self.import_asset(source)
+        with self.assertRaises(RigError) as rejected_import:
+            self.import_asset(source)
+        self.assertEqual(rejected_import.exception.report['code'], 'ASSET_IMPORT_VALIDATION')
+        self.assertEqual(self.library.list_references(), [])
+
+        def legacy_status(path, **options):
+            report = validate_gltf(path, **options)
+            return {**report, 'ok': report['issues']['numErrors'] == 0}
+
+        # Seed the canonical store under the former shared adapter policy.
+        # Both verifier calls below use the current, unpatched adapter.
+        with patch('asset_library_import.validate_gltf', side_effect=legacy_status):
+            reference = self.import_asset(source)
         normalized = self.root / 'normalized.glb'
         normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
         independent = validate_gltf(normalized)
-        self.assertTrue(independent['ok'])
+        self.assertIs(independent['ok'], False)
         self.assertEqual(independent['issues']['numErrors'], 0)
         self.assertIs(independent['issues']['truncated'], True)
         with self.assertRaises(RigError) as error:
