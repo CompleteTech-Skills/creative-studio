@@ -82,3 +82,64 @@ long-running production orchestration remain with their separate owners.
 Validation covers real two-process reservation contention, forced process exit
 before publication, stale writes, exact retry accounting, uncertain outcomes,
 duplicate settlements, changed evidence and strict Director request adaptation.
+
+
+## Opt-in native Hatch accounting
+
+The bounded native lane adds accounting hooks to the existing Hatch owner.
+It never invokes a provider. Legacy runs without an opt-in keep their existing
+behavior. Configure a fresh run before its first claim:
+
+```python
+from director_budget import bind_native_budget
+bind_native_budget(run, ledger.root, owner_root=project,
+    provider="imagegen", estimate=per_attempt_quantities, retry_allowance=2,
+    evidence=retained_rate_or_policy_evidence)
+```
+
+The run and ledger must be under the declared owner directory. The portable
+binding pins the ledger genesis, run identity, fixture label, original request,
+provider and policy. All opted-in runs in one project must use the same project
+ledger. One cumulative reservation covers each native job and its bounded
+attempts. Native claim history still owns tokens and call counts; these counts
+are not measurements of actual provider billing. A bare reservation ID is never
+an accounting authorization.
+
+Ingest receipts add a `budget_usage` object. Native `fail` and production
+`fail_generation` take the same object as an optional keyword argument, required
+for opted-in runs. It has exactly `id`, `outcome`, `usage`, `evidence`,
+`measurement_source`, and `resolves`. Usage contains all seven actual delta
+metrics; evidence references must already be retained by this ledger. Outcomes
+are `complete`, `failed`, `retry`, or `uncertain`. Null measurements require
+`uncertain`. Known reconciliation lists every outstanding uncertain observation
+ID for that token in `resolves` and supplies only newly measured usage deltas.
+Never submit cumulative usage again as a new delta.
+
+`hatch.record_budget_usage` can record evidence for the original token even when
+source bytes cannot be ingested. Native ingest records actual spend before
+validating/promoting the output. A bad output never refunds provider usage.
+`hatch.release_budget` accepts an evidenced `unstarted` or `canceled-known`
+remainder only when the native job is not running. Both functions, like existing
+Hatch mutations, require the caller to hold `hatch.ownership(run)`.
+
+The native manifest persists each accounting intent before ledger mutation.
+Reconciliation replays accounting idempotently; it never creates a provider call,
+clears an uncertain token or declares source ingestion complete. If accounting
+commits before native finalization, replay the original fail/ingest operation.
+A pending preclaim intent reuses its token after restart. Estimates, known spent
+totals, held capacity and individual observations are reported separately;
+unavailable metrics remain visible in observations.
+
+This first lane supports one budgeted operation per job. Explicit repair cannot
+reopen a settled reservation or erase spend; new work requires a separately
+identified run. Native CLI flags and canonical AcquisitionGateway reservation
+binding are separate integration work. PR #315's non-null reservation field alone
+does not verify this ledger. No live provider, production rendering or artistic
+acceptance is established by these hooks or their synthetic tests.
+
+Proposed validation (not executed while preparing this patch):
+```sh
+PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_director_budget*.py' -v
+PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_workflow.py' -v
+PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_production_workflow.py' -v
+```
