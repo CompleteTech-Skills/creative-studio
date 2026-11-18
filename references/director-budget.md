@@ -146,8 +146,21 @@ intents without this digest remain available for accounting recovery but cannot
 issue another handoff under the stronger descriptor boundary. An older intent
 without that marker cannot prove that a missing
 publication event means no handoff was issued. Its authentic historical usage
-remains recoverable, but it cannot issue further work or use an `unstarted`
-release. Recovery must retain and reconcile the original claim journal.
+remains recoverable. Further work, every `unstarted` release and a direct
+generic `canceled-known` release are refused.
+
+For a historical reservation, the original native owner may explicitly attest
+that **all outstanding attempts** have stopped by submitting `canceled-known`
+with retained nonexecution evidence. Use this path only when the evidence covers
+every outstanding attempt, including work absent from the recovered journal.
+The current on-disk journal must show ordered, failed claims and measured retry
+usage for each, with all native and direct uncertainty reconciled. The ledger
+retains the attestation, its original evidence, the claim-history digest, latest
+token and latest observation identity. It rechecks these bindings under its
+writer lock. A genuine historical snapshot may omit a later unmeasured handoff.
+The native owner's all-attempt nonexecution attestation covers that gap. Neither
+a per-token usage measurement nor the journal's current contents can establish
+historical completeness.
 
 A protocol-1 pending token created before publication remains reusable after an ordinary
 interruption, including an input-change refusal before claim publication. Once
@@ -173,7 +186,10 @@ publication mutation; public ledger mutations still require their exact revision
 
 Generic ledger operations may use any valid operation identifier, including one
 that resembles a native hash. Native admissions are recognized by authenticated
-retained native intent evidence and their reserve identity. Direct generic
+retained native intent evidence and their reserve identity. A different
+operation's native intent is ordinary provenance; neither its proof kind nor a
+native-shaped operation name can give it authority over this reservation.
+Direct generic
 settlements and cancellations remain authoritative in the ledger without needing
 an invented native journal event. Actual native observation events must still
 retain their matching native journal entries. A directly released reservation
@@ -189,6 +205,10 @@ resolve any native observations by their IDs. This is checked before retaining
 a known native intent and again under the ledger mutation lock. A concurrent
 unknown observation therefore preserves the hold even after a native intent
 has been saved. Status and unrelated sibling operations remain readable.
+Conversely, generic terminal settlement cannot clear token-bound native
+uncertainty. Every native unknown must be resolved by its observation identity
+before either `complete` or `failed` may release the remaining hold. Known
+generic deltas and ordinary generic-only reconciliation remain available.
 
 `canceled-known` does not imply that an earlier published attempt cost nothing.
 Cancellation of a native reservation requires reconciled usage for its latest
@@ -355,8 +375,11 @@ The accounting adapter receives the captured settings/profile identity, rather
 than independently rebinding a later read. Input checks run again after capacity
 preflight and after durable publication. A change before saving the claim leaves
 the original intent pending; a change after publication returns no handoff and
-leaves the original running claim for reconciliation. Returned file paths are
-not a promise that a downstream consumer cannot edit them after a successful
+leaves the original running claim for reconciliation. Returned attachment paths
+retain the admitted lexical run-relative spelling after containment checks;
+transient aliases cannot substitute a cached resolved target from another
+attachment. Returned file paths are not a promise that a downstream consumer
+cannot edit them after a successful
 handoff; the retained hashes and captured native history identify admitted bytes.
 
 Reservation normalization retains its explicit 128-digit decimal context during
@@ -408,6 +431,12 @@ change between durable intent and settlement, cancellation before usage or after
 a newer token, and real parent-directory replacement during prompt staging.
 Windows exercises the native pinned-parent refusal when directory renaming is
 denied; POSIX verifies the foreign replacement is untouched and no claim issues.
+Eleven independent interoperability cases additionally cover generic terminal
+settlement over native uncertainty, ambiguous historical cancellation, foreign
+intent provenance, and transient in-run attachment aliases, with positive
+generic/native accounting, regular attachment and bounded FIFO controls.
+The historical fixture was checked against actual public claim/fail-retry/claim
+behavior on the preceding default branch; committed tests are self-contained.
 
 ### Complete retained identity and readable recovery journals
 
@@ -470,3 +499,5 @@ On Linux with Python 3.12.14, correction commit `bba9f339` passed 68 budget test
 skips. These results are local synthetic/native execution. Corrected Windows and
 macOS hosted runs must independently establish those platform outcomes on the
 integrated PR head; the earlier failing artifacts remain historical evidence.
+
+A committed historical cancellation also binds the ordered claim/failure history and attempt-token list during recovery. Exact receipt replay cannot acknowledge a changed history. A subsequent explicit native repair may reset current job status and attempt count; its separate repair record leaves the attested original claim/failure history unchanged. Independent synthetic lost-acknowledgement and repair controls distinguish that permitted replay from changed failure details or reordered/extra attempt identities.

@@ -725,7 +725,10 @@ def claim(root, data, name):
     if name != 'base' and data.get('base_review', {}).get('canonical_hash') != hashes.get('references/canonical-base.png'):
         raise ValueError('captured canonical base differs from its approved review')
     warnings = style_warnings(root, request=request, profile=profile, settings=settings)
-    input_images = [{**x, 'path': str(inside(root, x['path']))} for x in job['input_images']]
+    input_images = []
+    for attachment in job['input_images']:
+        inside(root, attachment['path'])  # Validate containment without caching a resolved alias.
+        input_images.append({**attachment, 'path': str(root / attachment['path'])})
     tool_arguments = {'transparent_background':
                       (settings if name != 'base' else request['extraction']).get('background') != 'chroma'}
     job.pop('stale', None)
