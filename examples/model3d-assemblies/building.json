@@ -1,0 +1,320 @@
+{
+  "description": "building seed=7",
+  "fixture": true,
+  "id": "building",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "plastic",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "floor",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 0.06,
+        "width": 1.0
+      },
+      "parent": null,
+      "primitive": "box",
+      "semantic": "floor",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.03,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "back_wall",
+      "material": "main",
+      "parameters": {
+        "depth": 0.06,
+        "height": 2.0,
+        "width": 1.0
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "back_wall",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.97,
+          -0.47
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "left_wall",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 2.0,
+        "width": 0.06
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "left_wall",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.47,
+          0.97,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "right_wall",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 2.0,
+        "width": 0.06
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "right_wall",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.47,
+          0.97,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "front_left_pier",
+      "material": "main",
+      "parameters": {
+        "depth": 0.06,
+        "height": 2.0,
+        "width": 0.28
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "front_left_pier",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.36,
+          0.97,
+          0.47
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "front_right_pier",
+      "material": "main",
+      "parameters": {
+        "depth": 0.06,
+        "height": 2.0,
+        "width": 0.28
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "front_right_pier",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.36,
+          0.97,
+          0.47
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "front_lintel",
+      "material": "main",
+      "parameters": {
+        "depth": 0.06,
+        "height": 0.5,
+        "width": 0.44
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "front_lintel",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          1.72,
+          0.47
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "roof",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 0.06,
+        "width": 1.0
+      },
+      "parent": "floor",
+      "primitive": "box",
+      "semantic": "roof",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          1.9999999999999998,
+          0.0
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

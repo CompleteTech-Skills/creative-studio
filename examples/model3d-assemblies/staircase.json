@@ -1,0 +1,209 @@
+{
+  "description": "staircase seed=7",
+  "fixture": true,
+  "id": "staircase",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "plastic",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "step_1",
+      "material": "main",
+      "parameters": {
+        "depth": 0.2,
+        "height": 0.4,
+        "width": 1.0
+      },
+      "parent": null,
+      "primitive": "box",
+      "semantic": "step_1",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.2,
+          -0.4
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "step_2",
+      "material": "main",
+      "parameters": {
+        "depth": 0.2,
+        "height": 0.8,
+        "width": 1.0
+      },
+      "parent": "step_1",
+      "primitive": "box",
+      "semantic": "step_2",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.2,
+          0.20000000000000007
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "step_3",
+      "material": "main",
+      "parameters": {
+        "depth": 0.2,
+        "height": 1.2000000000000002,
+        "width": 1.0
+      },
+      "parent": "step_1",
+      "primitive": "box",
+      "semantic": "step_3",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.4000000000000001,
+          0.4
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "step_4",
+      "material": "main",
+      "parameters": {
+        "depth": 0.2,
+        "height": 1.6,
+        "width": 1.0
+      },
+      "parent": "step_1",
+      "primitive": "box",
+      "semantic": "step_4",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.6000000000000001,
+          0.6000000000000001
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "step_5",
+      "material": "main",
+      "parameters": {
+        "depth": 0.2,
+        "height": 2.0,
+        "width": 1.0
+      },
+      "parent": "step_1",
+      "primitive": "box",
+      "semantic": "step_5",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.8,
+          0.8
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

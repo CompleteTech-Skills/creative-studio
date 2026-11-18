@@ -1,0 +1,142 @@
+{
+  "description": "mug seed=7",
+  "fixture": true,
+  "id": "mug",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "ceramic",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.15
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "handle_mount": [
+          0.3,
+          0.0,
+          0.0
+        ],
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "body",
+      "material": "main",
+      "parameters": {
+        "height": 1.8,
+        "inner_radius": 0.264,
+        "radius": 0.3,
+        "segments": 32
+      },
+      "parent": null,
+      "primitive": "tube",
+      "semantic": "body",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          1.1,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "bottom",
+      "material": "main",
+      "parameters": {
+        "height": 0.2,
+        "radius": 0.3,
+        "segments": 16
+      },
+      "parent": "body",
+      "primitive": "cylinder",
+      "semantic": "bottom",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          -0.9000000000000001,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "handle",
+      "material": "main",
+      "parameters": {
+        "major_radius": 0.46,
+        "minor_radius": 0.075,
+        "rings": 12,
+        "segments": 32
+      },
+      "parent": "body",
+      "primitive": "torus",
+      "semantic": "handle",
+      "transform": {
+        "rotation": [
+          0.7071067811865476,
+          0.0,
+          0.0,
+          0.7071067811865476
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.56,
+          -0.040000000000000036,
+          0.0
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

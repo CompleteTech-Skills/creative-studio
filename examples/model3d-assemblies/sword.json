@@ -1,0 +1,213 @@
+{
+  "description": "sword seed=7",
+  "fixture": true,
+  "id": "sword",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "metal",
+      "id": "main",
+      "metallic": 1.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "grip",
+      "material": "main",
+      "parameters": {
+        "height": 0.46,
+        "radius": 0.075,
+        "segments": 16
+      },
+      "parent": null,
+      "primitive": "cylinder",
+      "semantic": "grip",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.32,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "pommel",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.11,
+          0.11,
+          0.11
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "grip",
+      "primitive": "ellipsoid",
+      "semantic": "pommel",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          -0.21000000000000002,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "guard",
+      "material": "main",
+      "parameters": {
+        "depth": 0.15,
+        "height": 0.09,
+        "width": 0.85
+      },
+      "parent": "grip",
+      "primitive": "box",
+      "semantic": "guard",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.27999999999999997,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "blade",
+      "material": "main",
+      "parameters": {
+        "depth": 0.07,
+        "height": 1.2,
+        "width": 0.22
+      },
+      "parent": "guard",
+      "primitive": "box",
+      "semantic": "blade",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.64,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "tip",
+      "material": "main",
+      "parameters": {
+        "height": 0.24,
+        "radius": 0.11,
+        "segments": 4
+      },
+      "parent": "blade",
+      "primitive": "cone",
+      "semantic": "tip",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          0.32
+        ],
+        "translation": [
+          0.0,
+          0.72,
+          0.0
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

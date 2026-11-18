@@ -1,0 +1,184 @@
+{
+  "description": "tree seed=7",
+  "fixture": true,
+  "id": "tree",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "wood",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "trunk",
+      "material": "main",
+      "parameters": {
+        "height": 1.28,
+        "radius": 0.1,
+        "segments": 16
+      },
+      "parent": null,
+      "primitive": "cylinder",
+      "semantic": "trunk",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.64,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "foliage_1",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.47,
+          0.36,
+          0.47
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "trunk",
+      "primitive": "ellipsoid",
+      "semantic": "foliage_1",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.5399999999999999,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "foliage_2",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.35,
+          0.36,
+          0.35
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "trunk",
+      "primitive": "ellipsoid",
+      "semantic": "foliage_2",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.88,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "foliage_3",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.22,
+          0.36,
+          0.22
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "trunk",
+      "primitive": "ellipsoid",
+      "semantic": "foliage_3",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          1.1800000000000002,
+          0.0
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

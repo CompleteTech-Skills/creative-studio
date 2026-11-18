@@ -1,0 +1,135 @@
+{
+  "description": "doorway seed=7",
+  "fixture": true,
+  "id": "doorway",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "plastic",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "left_jamb",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 2.0,
+        "width": 0.18
+      },
+      "parent": null,
+      "primitive": "box",
+      "semantic": "left_jamb",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.41,
+          1.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "right_jamb",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 2.0,
+        "width": 0.18
+      },
+      "parent": null,
+      "primitive": "box",
+      "semantic": "right_jamb",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.41,
+          1.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "lintel",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 0.36,
+        "width": 0.64
+      },
+      "parent": "left_jamb",
+      "primitive": "box",
+      "semantic": "lintel",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.41,
+          0.8200000000000001,
+          0.0
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}
