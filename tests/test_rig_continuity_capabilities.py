@@ -25,7 +25,7 @@ class CapabilityTest(unittest.TestCase):
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         (self.root/'evidence').mkdir()
         (self.root/'project.json').write_bytes(b'{"fixture":true}\n')
         self.project = pointer(self.root, self.root/'project.json', kind='project-revision')
