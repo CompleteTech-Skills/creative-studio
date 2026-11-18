@@ -14,6 +14,22 @@ def ik_chain(count=3, solver='two-bone'):
                 pole=[0, 0, 2], tolerance=1e-5, iterations=128)
 
 
+def orientation_skeleton(count):
+    specs = [dict(id=f'b{i}', parent=f'b{i-1}' if i else None,
+                  head=[0, i, 0], tail=[0, i+1, 0]) for i in range(count)]
+    specs.extend([
+        dict(id='follower', parent='b0', head=[2, 0, 0], tail=[2, 1, 0]),
+        dict(id='transitive', parent='b0', head=[4, 0, 0], tail=[4, 1, 0]),
+        dict(id='tip', parent=f'b{count-1}', head=[0, count, 0], tail=[0, count+1, 0]),
+        dict(id='tip-child', parent='tip', head=[0, count+1, 0], tail=[0, count+2, 0]),
+        dict(id='aim-child', parent=f'b{count-1}', head=[1, count, 0], tail=[1, count+1, 0]),
+        dict(id='tracker', parent='b0', head=[6, 0, 0], tail=[6, 1, 0]),
+        dict(id='look', parent='b0', head=[8, 0, 0], tail=[8, 1, 0]),
+        dict(id='anchor', parent='b0', head=[10, 0, 0], tail=[10, 1, 0]),
+    ])
+    return skeleton_from_heads([dict(s, role=s['id']) for s in specs])
+
+
 class RigControlTests(unittest.TestCase):
     def test_analytic_reachable_target_and_geometric_pole(self):
         skeleton = chain_skeleton()
@@ -98,6 +114,187 @@ class RigControlTests(unittest.TestCase):
                                 constraints=[constraint],orientation=orientation)
                 np.testing.assert_allclose(evaluate_fk(skeleton,result.pose)['copy'][:3,3],[3,0,0],atol=1e-10)
                 self.assertEqual(sum(c['constraint']=='fractional' for c in result.constraints_applied),1)
+
+    def test_endpoint_orientation_precedes_direct_and_transitive_followers(self):
+        # Full extension forces one pass even for FABRIK, so stale followers
+        # cannot accidentally catch up on a later iteration.
+        for count, solver in ((3, 'two-bone'), (4, 'fabrik')):
+            skeleton = orientation_skeleton(count)
+            endpoint = f'b{count-1}'
+            original = rotate_bone(skeleton, neutral_pose(skeleton), endpoint,
+                                   axis_angle([1, 0, 0], 1.2))
+            for inherited in (False, True):
+                for requested, maximum, final_angle in ((.2, .2, .2), (1.2, .2, .2),
+                                                        (.7, None, .7)):
+                    with self.subTest(solver=solver, inherited=inherited,
+                                      requested=requested, maximum=maximum):
+                        chain = ik_chain(count, solver)
+                        goal = axis_angle([1, 0, 0], requested).tolist()
+                        constraints = [
+                            dict(schema_version=1, id='second', bone='transitive',
+                                 type='copy-rotation', target='follower'),
+                            dict(schema_version=1, id='first', bone='follower',
+                                 type='copy-rotation', target=endpoint),
+                        ]
+                        if maximum is not None:
+                            constraints.append(dict(schema_version=1, id='endpoint-limit',
+                                                    bone=endpoint, type='hinge', axis=[1, 0, 0],
+                                                    minimum=0, maximum=maximum))
+                        kwargs = dict(constraints=constraints)
+                        if inherited:chain['orientation'] = goal
+                        else:kwargs['orientation'] = goal
+                        result = solve_ik(skeleton, original, chain, [0, count-1, 0], **kwargs)
+                        world = evaluate_fk(skeleton, result.pose)
+                        expected = [[1, 0, 0],
+                                    [0, math.cos(final_angle), -math.sin(final_angle)],
+                                    [0, math.sin(final_angle), math.cos(final_angle)]]
+                        for bone in (endpoint, 'follower', 'transitive'):
+                            np.testing.assert_allclose(world[bone][:3, :3], expected, atol=1e-10)
+                        self.assertEqual(result.iterations, 1)
+                        self.assertTrue(result.reachable)
+                        self.assertEqual(result.converged, requested == final_angle)
+                        self.assertAlmostEqual(result.residual_m, 0., places=10)
+                        self.assertAlmostEqual(result.orientation_residual_rad,
+                                               abs(requested-final_angle), places=7)
+                        self.assertAlmostEqual(result.report()['orientation_residual_rad'],
+                                               abs(requested-final_angle), places=7)
+            np.testing.assert_allclose(original['bones'][endpoint]['rotation'],
+                                       axis_angle([1, 0, 0], 1.2), atol=1e-12)
+
+    def test_endpoint_orientation_precedes_hierarchy_and_aim_consumers(self):
+        for count, solver in ((3, 'two-bone'), (4, 'fabrik')):
+            for inherited in (False, True):
+                with self.subTest(solver=solver, inherited=inherited):
+                    skeleton = orientation_skeleton(count)
+                    endpoint = f'b{count-1}'
+                    original = rotate_bone(skeleton, neutral_pose(skeleton), endpoint,
+                                           axis_angle([1, 0, 0], 1.2))
+                    point = np.array([2., count+2., 1.])
+                    constraints = [
+                        dict(schema_version=1, id='track-descendant', bone='tracker',
+                             type='copy-position', target='tip-child'),
+                        dict(schema_version=1, id='aim-at-descendant', bone='look',
+                             type='aim', target='tip-child', axis=[0, 1, 0]),
+                        dict(schema_version=1, id='aim-from-descendant', bone='aim-child',
+                             type='aim', point=point.tolist(), axis=[0, 1, 0]),
+                    ]
+                    chain = ik_chain(count, solver)
+                    goal = axis_angle([1, 0, 0], .6).tolist()
+                    kwargs = dict(constraints=constraints)
+                    if inherited:chain['orientation'] = goal
+                    else:kwargs['orientation'] = goal
+                    result = solve_ik(skeleton, original, chain, [0, count-1, 0], **kwargs)
+                    self.assertTrue(result.converged, result.report())
+                    world = evaluate_fk(skeleton, result.pose)
+                    expected_tip = [0, count-1+2*math.cos(.6), 2*math.sin(.6)]
+                    np.testing.assert_allclose(world['tip-child'][:3, 3], expected_tip, atol=1e-10)
+                    np.testing.assert_allclose(world['tracker'][:3, 3], expected_tip, atol=1e-10)
+                    for bone, target in (('look', np.array(expected_tip)), ('aim-child', point)):
+                        direction = target-world[bone][:3, 3]
+                        direction /= np.linalg.norm(direction)
+                        np.testing.assert_allclose(world[bone][:3, 1], direction, atol=1e-10)
+
+    def test_orientation_uses_constrained_parent_world_frame(self):
+        for count, solver in ((3, 'two-bone'), (4, 'fabrik')):
+            with self.subTest(solver=solver):
+                skeleton = orientation_skeleton(count)
+                original = rotate_bone(skeleton, neutral_pose(skeleton), 'anchor',
+                                       axis_angle([0, 1, 0], .4))
+                endpoint = f'b{count-1}'
+                constraints = [
+                    dict(schema_version=1, id='follower', bone='follower',
+                         type='copy-rotation', target=endpoint),
+                    dict(schema_version=1, id='parent', bone='b1',
+                         type='copy-rotation', target='anchor'),
+                ]
+                result = solve_ik(skeleton, original, ik_chain(count, solver), [0, count-1, 0],
+                                  constraints=constraints, orientation=axis_angle([1, 0, 0], .6))
+                self.assertTrue(result.converged, result.report())
+                world = evaluate_fk(skeleton, result.pose)
+                expected = [[1, 0, 0], [0, math.cos(.6), -math.sin(.6)],
+                            [0, math.sin(.6), math.cos(.6)]]
+                np.testing.assert_allclose(world[endpoint][:3, :3], expected, atol=1e-10)
+                np.testing.assert_allclose(world['follower'][:3, :3], expected, atol=1e-10)
+                np.testing.assert_allclose(world['b1'][:3, :3],
+                                           [[math.cos(.4), 0, math.sin(.4)], [0, 1, 0],
+                                            [-math.sin(.4), 0, math.cos(.4)]], atol=1e-10)
+
+    def test_fabrik_followers_observe_final_pose_after_multiple_passes(self):
+        skeleton = orientation_skeleton(4)
+        original = rotate_bone(skeleton, neutral_pose(skeleton), 'b3',
+                               axis_angle([1, 0, 0], 1.2))
+        constraints = [
+            dict(schema_version=1, id='second', bone='transitive',
+                 type='copy-rotation', target='follower'),
+            dict(schema_version=1, id='first', bone='follower',
+                 type='copy-rotation', target='b3'),
+        ]
+        target = np.array([1.2, 1.8, .2])
+        goal = axis_angle([1, 0, 0], .6)
+        result = solve_ik(skeleton, original, ik_chain(4, 'fabrik'), target,
+                          constraints=constraints, orientation=goal)
+        self.assertTrue(result.converged, result.report())
+        self.assertGreater(result.iterations, 1)
+        self.assertLessEqual(result.iterations, 128)
+        world = evaluate_fk(skeleton, result.pose)
+        expected = [[1, 0, 0], [0, math.cos(.6), -math.sin(.6)],
+                    [0, math.sin(.6), math.cos(.6)]]
+        for bone in ('b3', 'follower', 'transitive'):
+            np.testing.assert_allclose(world[bone][:3, :3], expected, atol=1e-10)
+        measured = float(np.linalg.norm(world['b3'][:3, 3]-target))
+        self.assertAlmostEqual(result.residual_m, measured, places=12)
+        self.assertLess(measured, 1e-5)
+
+    def test_orientation_barrier_rejects_invalid_dependencies(self):
+        skeleton = orientation_skeleton(3)
+        follower = dict(schema_version=1, id='follow', bone='follower',
+                        type='copy-rotation', target='b2')
+        invalid = [
+            [follower, dict(schema_version=1, id='cycle', bone='b2',
+                            type='copy-rotation', target='follower')],
+            [follower, dict(follower)],
+            [dict(follower, target='missing')],
+        ]
+        for constraints in invalid:
+            with self.subTest(constraints=constraints):
+                with self.assertRaises(RigError):
+                    solve_ik(skeleton, neutral_pose(skeleton), ik_chain(), [0, 2, 0],
+                             constraints=constraints, orientation=axis_angle([1, 0, 0], .2))
+
+    def test_orientation_barrier_applies_fractional_prefix_and_suffix_once(self):
+        specs = [
+            dict(id='b0', parent=None, head=[0, 0, 0], tail=[0, 1, 0]),
+            dict(id='before', parent='b0', head=[2, 0, 0], tail=[2, 1, 0]),
+            dict(id='before-target', parent='b0', head=[4, 0, 0], tail=[4, 1, 0]),
+            dict(id='b1', parent='b0', head=[0, 1, 0], tail=[0, 2, 0]),
+            dict(id='b2', parent='b1', head=[0, 2, 0], tail=[0, 3, 0]),
+            dict(id='follower', parent='b0', head=[0, 0, 2], tail=[0, 1, 2]),
+            dict(id='after', parent='b0', head=[6, 0, 0], tail=[6, 1, 0]),
+            dict(id='after-target', parent='b0', head=[8, 0, 0], tail=[8, 1, 0]),
+        ]
+        skeleton = skeleton_from_heads([dict(s, role=s['id']) for s in specs])
+        constraints = [
+            dict(schema_version=1, id='before', bone='before', type='copy-position',
+                 target='before-target', influence=.5),
+            dict(schema_version=1, id='limit', bone='b2', type='hinge',
+                 axis=[1, 0, 0], minimum=0, maximum=.2),
+            dict(schema_version=1, id='follow', bone='follower', type='copy-rotation', target='b2'),
+            dict(schema_version=1, id='after', bone='after', type='copy-position',
+                 target='after-target', influence=.5),
+        ]
+        original = rotate_bone(skeleton, neutral_pose(skeleton), 'b2', axis_angle([1, 0, 0], 1.2))
+        for orientation in (None, axis_angle([1, 0, 0], .2)):
+            with self.subTest(orientation=orientation):
+                result = solve_ik(skeleton, original, ik_chain(), [0, 2, 0],
+                                  constraints=constraints, orientation=orientation)
+                world = evaluate_fk(skeleton, result.pose)
+                np.testing.assert_allclose(world['before'][:3, 3], [3, 0, 0], atol=1e-10)
+                np.testing.assert_allclose(world['after'][:3, 3], [7, 0, 0], atol=1e-10)
+                np.testing.assert_allclose(world['follower'][:3, :3], world['b2'][:3, :3], atol=1e-10)
+                for name in ('before', 'after'):
+                    self.assertEqual(sum(c['constraint'] == name for c in result.constraints_applied), 1)
+                self.assertTrue(result.converged)
+                if orientation is None:self.assertIsNone(result.orientation_residual_rad)
 
     def test_hinge_and_prismatic_limits_act_on_actual_pose(self):
         skeleton = chain_skeleton();pose = rotate_bone(skeleton, neutral_pose(skeleton), 'b1', axis_angle([1, 0, 0], 1.2))
