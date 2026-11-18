@@ -148,7 +148,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     matched_fold = (distance <= 1e-9 and np.linalg.norm(points[-1]-origin) <= 1e-9
                     and np.linalg.norm(points[-1]-target) <= tolerance
                     and np.linalg.norm(pole_delta) > 1e-9
-                    and np.dot(unit(pole_delta), unit(points[1]-origin)) >= 1.-1e-12)
+                    and np.linalg.norm(unit(pole_delta)-unit(points[1]-origin)) <= 8*np.finfo(float).eps)
     if matched_fold:
         # A closed chain has no endpoint axis from which to reconstruct its
         # interior. Keep its authoritative matched seed, then run the same

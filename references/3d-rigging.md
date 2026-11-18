@@ -374,7 +374,9 @@ A matching pole preserves an already closed authoritative seed and its evaluated
 joint transforms and bound geometry. Ordinary matches retain their original
 reach-based pole distance. Closure is tested within `1e-9` meters, the matched
 endpoint must also meet the chain's residual tolerance, and normalized pole/first
-segment alignment must have dot product at least `1 - 1e-12`. A finite pole
+segment directions must differ by at most eight machine epsilons in unit-vector
+distance. Comparing the vector difference avoids a dot product rounding a
+measurable small pole change to an apparent exact match. A finite pole
 direction must exceed `1e-9` meters. An explicitly changed pole reorients a closed
 seed's existing shape, including backfolded multisegment chains with degenerate
 neighbor axes. At the equal-length two-segment fold, either solver can also
@@ -414,6 +416,13 @@ of `1e-8` and `1e-12` radians, with a `1e-5` control. All six pole-precision
 methods, twelve folded boundaries and fourteen native math tests passed after
 this correction: 32 tests in 1.211 seconds, exit 0, zero skips. Earlier failed
 cases remain in the gate and in source history.
+
+Ten further independent methods cover explicit positive and negative pole changes
+of 1e-6 and 1e-7 radians through both declared and override inputs at 1 m and
+1000 m segment lengths. Cartesian joint and actual blended-skin oracles detect
+changes hidden by a normalized dot product. Four methods failed on 5e8d6df2
+(16 failing subcases); all ten pass with the direct unit-vector comparison,
+including exact-match, orientation, joint-limit and runtime-length controls.
 
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
