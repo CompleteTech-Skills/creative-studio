@@ -1,0 +1,15 @@
+test_analysis_job_binds_new_backend_and_parameters_without_inference (test_decomposition_clipseg.ClipSegContracts.test_analysis_job_binds_new_backend_and_parameters_without_inference) ... ok
+test_capture_binds_immutable_bytes_and_rejects_later_replacement (test_decomposition_clipseg.ClipSegContracts.test_capture_binds_immutable_bytes_and_rejects_later_replacement) ... ok
+test_capture_enforces_configuration_and_aggregate_bounds (test_decomposition_clipseg.ClipSegContracts.test_capture_enforces_configuration_and_aggregate_bounds) ... ok
+test_capture_rejects_symlink_directory_instead_of_resolving_it (test_decomposition_clipseg.ClipSegContracts.test_capture_rejects_symlink_directory_instead_of_resolving_it) ... ok
+test_input_hash_and_decode_share_admitted_bytes (test_decomposition_clipseg.ClipSegContracts.test_input_hash_and_decode_share_admitted_bytes) ... ok
+test_invalid_thresholds_duplicate_taxonomy_and_prompt_rejected (test_decomposition_clipseg.ClipSegContracts.test_invalid_thresholds_duplicate_taxonomy_and_prompt_rejected) ... ok
+test_mismatched_reference_geometry_and_resource_bounds_rejected (test_decomposition_clipseg.ClipSegContracts.test_mismatched_reference_geometry_and_resource_bounds_rejected) ... ok
+test_missing_snapshot_never_downloads (test_decomposition_clipseg.ClipSegContracts.test_missing_snapshot_never_downloads) ... ok
+test_model_files_are_pinned_and_symlinks_rejected (test_decomposition_clipseg.ClipSegContracts.test_model_files_are_pinned_and_symlinks_rejected) ... ok
+test_streamed_model_hash_uses_explicit_byte_bound (test_decomposition_clipseg.ClipSegContracts.test_streamed_model_hash_uses_explicit_byte_bound) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.270s
+
+OK

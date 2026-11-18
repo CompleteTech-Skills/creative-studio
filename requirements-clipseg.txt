@@ -1,0 +1,5 @@
+# Optional CPU text-conditioned masks; keep out of the default 2D installation.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.10.0+cpu
+transformers==4.57.6
+Pillow==13.0.0

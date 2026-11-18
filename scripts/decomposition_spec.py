@@ -211,8 +211,10 @@ def safe_path(root, value):
     if path.is_absolute() or any(p in ('.', '..', '') for p in value.split('/')):
         raise ValueError('decomposition artifact path escapes package')
     target = Path(root) / path
-    root = Path(root).resolve()
-    if not target.resolve().is_relative_to(root):
+    from rig_errors import normalize_root
+    root = normalize_root(root)
+    target = root / path
+    if not normalize_root(target.parent).is_relative_to(root):
         raise ValueError('decomposition artifact path escapes package')
     current = root
     for part in path.parts:

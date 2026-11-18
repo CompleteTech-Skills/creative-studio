@@ -1,0 +1,626 @@
+{
+  "schema_version": 1,
+  "kind": "foreground-increment-execution-evidence",
+  "recorded_utc": "2026-11-13T12:37:16.670756+00:00",
+  "validated_source_sha": "25813737f1bb89b1be66f66b9534b42e089e2780",
+  "base_sha": "0c940ebf6b00c6c235e51f50257dfaa423c1d6bd",
+  "release_approval": false,
+  "issue_225_complete": false,
+  "semantic_approval": false,
+  "source_hashes": {
+    "scripts/decomposition_foreground.py": "ace977a5c3ec8bc3ffe04bf827b93ec6ad4705990f9ec0c91b1ac8ef43db278c",
+    "scripts/character_decomposition.py": "f474fb0f4ec641aaf77590bd41b712e65aa35edc267e61b25a84f2eba5663a9c",
+    "scripts/decomposition_masks.py": "2677891e0618283958f0ed95223a4648a25a9b5278fd412c33fad92a9cb9e675",
+    "scripts/decomposition_spec.py": "cf6ebfa0b6699c98fad47754f877782daaa457a295c53e592509d9955ba006c8",
+    "scripts/atomic_publish.py": "74b589c94967683261b087edfc9f2378c20a619e50c93177e76fa677d0b2fbdc",
+    "tests/test_decomposition_foreground.py": "8ddcf2de995ac5d68442b080671c6eb9bf387213a7f41e5435af0fea15589fcc",
+    "tests/test_decomposition_foreground_backend.py": "9f506009f75c3f3166d057bcb562397d2595947a94b690c5cec9d8bd47696033",
+    "profiles/decomposition-foreground.schema.json": "3c64b4f5a66e0977d0e9bdb36b94d2dfa04221a4528b092e6c28d33221abf504"
+  },
+  "checks": [
+    {
+      "name": "integrated decomposition regression",
+      "discovered": 151,
+      "passed": 146,
+      "skipped": 5,
+      "log": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/regression-integrated.log",
+        "sha256": "128948c90a241f7a3bcdc23263d815a3407a303a7fcfce91657f57848dea2f94"
+      }
+    },
+    {
+      "name": "independent exact-source real model tests",
+      "passed": 2,
+      "skipped": 0,
+      "log": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/reviews/foreground225-r1-native.log",
+        "sha256": "74d3822ca73f3227ba1a0795c62fbcf808f364793eb81d9e219334ea3dfb62fd"
+      }
+    },
+    {
+      "name": "independent contract/security fixtures",
+      "passed": 12,
+      "skipped": 0,
+      "log": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/reviews/foreground225-r1-unit.log",
+        "sha256": "3ec15324857ff136f0d25ed3c1423718fccab8854228946be14a57863f3d02e4"
+      }
+    }
+  ],
+  "real_model_bundles": [
+    {
+      "root": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/astronaut-test/proposals",
+      "receipt_sha256": "41f36b63cfc03a39019ced50f4cd7d9de7303ac89db322beb13221e55562a271",
+      "candidates": [
+        {
+          "id": "candidate-1",
+          "category": "person",
+          "confidence": 0.9972118735313416,
+          "pixels": 108367
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/astronaut-test/proposals/foreground-proposals.json",
+          "sha256": "41f36b63cfc03a39019ced50f4cd7d9de7303ac89db322beb13221e55562a271"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/astronaut-test/proposals/masks/candidate-1.png",
+          "sha256": "f71190b88a5ebc3f006274b5fcfde8ab2adbeacf18787d3f9a3ea0d8b8ee2d12"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/astronaut-test/proposals/masks/overlap.png",
+          "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/astronaut-test/proposals/overlay.png",
+          "sha256": "997a680c7e0caf77c4d90566f5d080632dc8983cb47b3caf761d6c4026cda08d"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/astronaut-test/proposals/source/original.png",
+          "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+        }
+      ],
+      "execution": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "elapsed_seconds": 7.4765633280039765,
+      "review_status": "pending"
+    },
+    {
+      "root": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals",
+      "receipt_sha256": "be29a6a1a418580cf0a42ab83f1c86ed9396e1891c4fa7d7981a372f72049f40",
+      "candidates": [
+        {
+          "id": "candidate-1",
+          "category": "person",
+          "confidence": 0.9997574687004089,
+          "pixels": 12482
+        },
+        {
+          "id": "candidate-2",
+          "category": "person",
+          "confidence": 0.9996280670166016,
+          "pixels": 18760
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals/foreground-proposals.json",
+          "sha256": "be29a6a1a418580cf0a42ab83f1c86ed9396e1891c4fa7d7981a372f72049f40"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals/masks/candidate-1.png",
+          "sha256": "60d70e87171651aca7714729437304703f9dfd5784d80042b451e59c915c781d"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals/masks/candidate-2.png",
+          "sha256": "87a850c1b515cf257145e80011e9a0b0a74af9caf82fa1a50a3d4c4376fd7808"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals/masks/overlap.png",
+          "sha256": "440895c5f52035c12dc62155ee5b156141f8d268aec8b758f1a85908a9bb6459"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals/overlay.png",
+          "sha256": "3b0169a4a082a4909da779d7c4259d667586b8bda62a8791544895b7968b6e6e"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/final-1/two-people-test/proposals/source/original.png",
+          "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343"
+        }
+      ],
+      "execution": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "elapsed_seconds": 6.911409350002941,
+      "review_status": "pending"
+    },
+    {
+      "root": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals",
+      "receipt_sha256": "7fc0985e660675eafc4b1c54f544d95ecd50b303fbffea15104569c008fbf095",
+      "candidates": [
+        {
+          "id": "candidate-1",
+          "category": "person",
+          "confidence": 0.9996302127838135,
+          "pixels": 15817
+        },
+        {
+          "id": "candidate-2",
+          "category": "person",
+          "confidence": 0.9994056224822998,
+          "pixels": 15243
+        },
+        {
+          "id": "candidate-3",
+          "category": "person",
+          "confidence": 0.9951953291893005,
+          "pixels": 19083
+        },
+        {
+          "id": "candidate-4",
+          "category": "backpack",
+          "confidence": 0.9925260543823242,
+          "pixels": 3440
+        },
+        {
+          "id": "candidate-5",
+          "category": "car",
+          "confidence": 0.9906172156333923,
+          "pixels": 2408
+        },
+        {
+          "id": "candidate-6",
+          "category": "car",
+          "confidence": 0.9898757338523865,
+          "pixels": 1258
+        },
+        {
+          "id": "candidate-7",
+          "category": "person",
+          "confidence": 0.9891429543495178,
+          "pixels": 12154
+        },
+        {
+          "id": "candidate-8",
+          "category": "car",
+          "confidence": 0.980332612991333,
+          "pixels": 804
+        },
+        {
+          "id": "candidate-9",
+          "category": "car",
+          "confidence": 0.9788934588432312,
+          "pixels": 30446
+        },
+        {
+          "id": "candidate-10",
+          "category": "car",
+          "confidence": 0.9776601791381836,
+          "pixels": 3031
+        },
+        {
+          "id": "candidate-11",
+          "category": "car",
+          "confidence": 0.9548183083534241,
+          "pixels": 2344
+        },
+        {
+          "id": "candidate-12",
+          "category": "car",
+          "confidence": 0.9526679515838623,
+          "pixels": 1594
+        },
+        {
+          "id": "candidate-13",
+          "category": "car",
+          "confidence": 0.9474095702171326,
+          "pixels": 549
+        },
+        {
+          "id": "candidate-14",
+          "category": "car",
+          "confidence": 0.8678492903709412,
+          "pixels": 744
+        },
+        {
+          "id": "candidate-15",
+          "category": "car",
+          "confidence": 0.7520776391029358,
+          "pixels": 165
+        },
+        {
+          "id": "candidate-16",
+          "category": "car",
+          "confidence": 0.7460410594940186,
+          "pixels": 1645
+        },
+        {
+          "id": "candidate-17",
+          "category": "car",
+          "confidence": 0.7242377996444702,
+          "pixels": 270
+        },
+        {
+          "id": "candidate-18",
+          "category": "car",
+          "confidence": 0.7235604524612427,
+          "pixels": 2323
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/foreground-proposals.json",
+          "sha256": "7fc0985e660675eafc4b1c54f544d95ecd50b303fbffea15104569c008fbf095"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-1.png",
+          "sha256": "d3f981cecb6837d9f72fa956fe809b2b0e061c47f8852913ed9a991923bc7391"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-10.png",
+          "sha256": "c1792935addd2be027fc6913aa79fc3bf80b1838d75c4da82d9296f832080e1f"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-11.png",
+          "sha256": "fe257f473c213379f1b3d397b60f43db3b85ec1d66ac32fb2069c19a6472ba25"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-12.png",
+          "sha256": "0bca4c1e06a3bad9348bd5eff0a23d7b0241d18dec55b76a67793ca2d4c5d7c2"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-13.png",
+          "sha256": "23a27806eb0043f7cc8ba6905e120af3354c24b40627e4ffb2b08fa8ca2db946"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-14.png",
+          "sha256": "63dafea45abd90bcae92859c753e0141d052fcd6a43739656e3deb26a6fb9334"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-15.png",
+          "sha256": "043d5bbc881032709a300b8c35c5b514d482e990fe9aada8e69e0c00a13cb8b4"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-16.png",
+          "sha256": "9b40076d0692514894d73f00fd13a84c32c78235e2ce74ff6340726d13b556ed"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-17.png",
+          "sha256": "3bb70b657f6cc061f61b7bb8fd66968463d14fc203f6ec9497d447e46dfe9199"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-18.png",
+          "sha256": "d779d888dd39caae9217f43a659faf491aef0ddcdfcc0004e1c24f7822957afb"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-2.png",
+          "sha256": "bb454d3d56432190d97eedfd85e6f85008f21cc307d5c99c097d160297aa4790"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-3.png",
+          "sha256": "4efa6bc25e4b3da012b44a20852cba23f4dd06b1cca5281678abc81b9fc626de"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-4.png",
+          "sha256": "ed54d25b013309e003649587f7bf035dfcff4423b339869b7622574ca2423bfb"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-5.png",
+          "sha256": "a3cdbff043df78e5bd63ce0decc057d0fedceaf025261fb157fd4442ccc0228a"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-6.png",
+          "sha256": "f875e204f075661c6ad087e01e688c2d80c219ead02b5ebad0e2b845aaf40dfa"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-7.png",
+          "sha256": "d359126dc582254066cc7d7426ec19fe7c13f74a5966554f1921d7fc380bcf15"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-8.png",
+          "sha256": "df3c9e92d24abdcbdc4360f8318200db5e28533a86858d5aaff341b7042e2a94"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/candidate-9.png",
+          "sha256": "f44aac5ef9aabff1683489a34a3bed48ac88620f75e345248b170c78bfed3508"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/masks/overlap.png",
+          "sha256": "874c47b968738da0f3766160a94a2dbd17a719c3ffd84376d91957bfee60853f"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/overlay.png",
+          "sha256": "dfcb337abe88840d27e4e543020bf8b61345d15c7d9a5adfa8641902d9f1d2f7"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-proposals/source/original.png",
+          "sha256": "2d99494275178c949069a1b75824a9c065efafb049d6ec2dcd45bdf203d12ee9"
+        }
+      ],
+      "execution": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "elapsed_seconds": 9.85631509200175,
+      "review_status": "pending"
+    },
+    {
+      "root": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals",
+      "receipt_sha256": "c50c05cdda551f7c1ad045a26d075f7403046908eb15f898f6898f193226f9d1",
+      "candidates": [
+        {
+          "id": "candidate-1",
+          "category": "person",
+          "confidence": 0.9986541271209717,
+          "pixels": 10601
+        },
+        {
+          "id": "candidate-2",
+          "category": "person",
+          "confidence": 0.9980607628822327,
+          "pixels": 13580
+        },
+        {
+          "id": "candidate-3",
+          "category": "person",
+          "confidence": 0.9966147541999817,
+          "pixels": 7378
+        },
+        {
+          "id": "candidate-4",
+          "category": "person",
+          "confidence": 0.9941788911819458,
+          "pixels": 11034
+        },
+        {
+          "id": "candidate-5",
+          "category": "car",
+          "confidence": 0.9529584050178528,
+          "pixels": 7743
+        },
+        {
+          "id": "candidate-6",
+          "category": "car",
+          "confidence": 0.8020841479301453,
+          "pixels": 7992
+        },
+        {
+          "id": "candidate-7",
+          "category": "person",
+          "confidence": 0.7543505430221558,
+          "pixels": 7246
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/foreground-proposals.json",
+          "sha256": "c50c05cdda551f7c1ad045a26d075f7403046908eb15f898f6898f193226f9d1"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-1.png",
+          "sha256": "507036f370ed0d968d6fe931a28ce5d4c26f7c833f0a14e776f64782b3300d63"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-2.png",
+          "sha256": "3309840bc240e3503cadf4d213999175d42292edb723643eaad27d60e7e855e1"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-3.png",
+          "sha256": "87ea126da7b203c481a4bb59a4adf76858798f19e02f55aca6bfe0dee3174f00"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-4.png",
+          "sha256": "88b3119b2e426e7af1aa2bbd548359b3471a5290ca731ea9541d30a895d9fdb9"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-5.png",
+          "sha256": "34f266c72e27b4bb3e42bcd1fd8d629db8481f2528fd01a5365f127a649c08ed"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-6.png",
+          "sha256": "310eba168beb062e874fac3ecf1f1943004d3032550235464719d84c7db848cd"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/candidate-7.png",
+          "sha256": "66daaf46d1cfea1c54333ce836f987e329d45d3a4cdaad58a079384268bac695"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/masks/overlap.png",
+          "sha256": "da2b6b82afeb269ad9406807a9060530188b8176937c349fdcdf2c5339edd282"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/overlay.png",
+          "sha256": "1b5391120fd760d3f4589179cbca32e2cacb89ebdd3b6f2c83863a5e821a4279"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped-proposals/source/original.png",
+          "sha256": "f575f99f1ab0238e74b00febf313fe78c55d8ead6831e8a931e59c0fc6138c8e"
+        }
+      ],
+      "execution": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "elapsed_seconds": 6.975849727001332,
+      "review_status": "pending"
+    },
+    {
+      "root": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals",
+      "receipt_sha256": "0503ec28cc7e964b9d57297eb2234f10512bbcc11de788a5315c420886e5c39c",
+      "candidates": [
+        {
+          "id": "candidate-1",
+          "category": "teddy bear",
+          "confidence": 0.9972911477088928,
+          "pixels": 166404
+        },
+        {
+          "id": "candidate-2",
+          "category": "tie",
+          "confidence": 0.8481392860412598,
+          "pixels": 6765
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals/foreground-proposals.json",
+          "sha256": "0503ec28cc7e964b9d57297eb2234f10512bbcc11de788a5315c420886e5c39c"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals/masks/candidate-1.png",
+          "sha256": "d1ce5ffd9ac3c08dc5171a1b46c3b6c7116e00bf6c2893ed0f1e1c41708f4eb7"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals/masks/candidate-2.png",
+          "sha256": "e2f1e58f59ee32dd21956012c4adc30fc5be1273539f4544b06a3a20cdef4fbf"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals/masks/overlap.png",
+          "sha256": "e2f1e58f59ee32dd21956012c4adc30fc5be1273539f4544b06a3a20cdef4fbf"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals/overlay.png",
+          "sha256": "d8ab6a12bcd628ec6d7f78a8c3fa04fac86a40b162d5a26ddae820278441e0bd"
+        },
+        {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped-proposals/source/original.png",
+          "sha256": "fc1302fadee9991289c9cb5458680e8cae18927b0a1fab93e6b2895ca50b7065"
+        }
+      ],
+      "execution": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "elapsed_seconds": 6.857298753995565,
+      "review_status": "pending"
+    }
+  ],
+  "two_person_reference_iou": [
+    0.8708990536277602,
+    0.9178319840185049
+  ],
+  "overlap_and_crop_reference_metrics": [
+    {
+      "case": "PennPed00034",
+      "person_proposals": 4,
+      "ground_truth_instances": 4,
+      "best_matches": [
+        {
+          "ground_truth_instance": 1,
+          "best_candidate": "candidate-3",
+          "iou": 0.7473367195576932
+        },
+        {
+          "ground_truth_instance": 2,
+          "best_candidate": "candidate-2",
+          "iou": 0.8769211147248263
+        },
+        {
+          "ground_truth_instance": 3,
+          "best_candidate": "candidate-1",
+          "iou": 0.8734308348567946
+        },
+        {
+          "ground_truth_instance": 4,
+          "best_candidate": "candidate-7",
+          "iou": 0.7642964071856287
+        }
+      ]
+    },
+    {
+      "case": "PennPed00034-cropped",
+      "person_proposals": 5,
+      "ground_truth_instances": 4,
+      "best_matches": [
+        {
+          "ground_truth_instance": 1,
+          "best_candidate": "candidate-2",
+          "iou": 0.7190467763817613
+        },
+        {
+          "ground_truth_instance": 2,
+          "best_candidate": "candidate-1",
+          "iou": 0.8753631082062454
+        },
+        {
+          "ground_truth_instance": 3,
+          "best_candidate": "candidate-3",
+          "iou": 0.8522209917558755
+        },
+        {
+          "ground_truth_instance": 4,
+          "best_candidate": "candidate-7",
+          "iou": 0.7092520536100303
+        }
+      ]
+    }
+  ],
+  "source_transforms": [
+    {
+      "source": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034.png",
+        "sha256": "2d99494275178c949069a1b75824a9c065efafb049d6ec2dcd45bdf203d12ee9"
+      },
+      "derived": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/PennPed00034-cropped.png",
+        "sha256": "f575f99f1ab0238e74b00febf313fe78c55d8ead6831e8a931e59c0fc6138c8e"
+      },
+      "crop": [
+        100,
+        150,
+        450,
+        422
+      ],
+      "resized": false
+    },
+    {
+      "source": {
+        "path": "examples/production-pilot/acquisition/milo/decoded/base.png",
+        "sha256": "29b857963c2d5b3ffceaa0231f49da394aabe897a9a60734cb30d7da0f83c41f"
+      },
+      "source_history": {
+        "path": "examples/production-pilot/acquisition/milo/imagegen-jobs.json",
+        "sha256": "4a4b13d6bb2f8555c01830c1e649d2ac229ff4234b612a46c3c8be397e0ffa6e"
+      },
+      "derived": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+        "sha256": "fc1302fadee9991289c9cb5458680e8cae18927b0a1fab93e6b2895ca50b7065"
+      },
+      "crop": [
+        0,
+        240,
+        370,
+        960
+      ],
+      "resized": false
+    }
+  ],
+  "limitations": [
+    "The cropped four-person photograph produced five person proposals; all remain retained and pending review.",
+    "The Milo illustration scarf was labeled tie with score0.848; this is a model class mismatch, not an approved semantic label.",
+    "Natural overlapping-person masks have best reference IoU0.747\u20130.877; cropped masks0.709\u20130.875. Exact selected-pixel recomposition does not establish accurate foreground.",
+    "No full pixel-art, fine disconnected detail, fantasy or robot acceptance established; no anatomy or nonhuman part semantics implemented.",
+    "No dedicated candidate correction UI, resumable224foreground bridge, or233one-command workflow; existing manual correction remains available.",
+    "A later224independent review found a FIFO/history retry issue after this base; incorporate its fix and review final integration before release."
+  ],
+  "evidence_scope": "Original sources, masks and logs are retained at these local paths, not embedded in this small historical record. Source hashes refer to validated_source_sha, not future code."
+}

@@ -23,7 +23,7 @@ def add_arguments(parser):
     for flag in ('annotations', 'foreground-mask', 'origin', 'select', 'hidden-mask', 'author',
                  'operation', 'operation-note', 'color', 'offset'):
         parser.add_argument('--' + flag)
-    parser.add_argument('--analysis-backend', choices=('opencv-haar', 'external'), help='Optional real analysis: fixed local face/eye cascade or attributed external result; disabled by default')
+    parser.add_argument('--analysis-backend', choices=('opencv-haar', 'clipseg', 'external'), help='Optional real analysis: fixed local face/eye detector, pinned text-conditioned masks, or attributed external result; disabled by default')
     parser.add_argument('--enable-analysis', action='store_true', help='Explicitly permit local no-cost image analysis; never grants semantic approval')
     parser.add_argument('--analysis-taxonomy', action='append', help='Allowed proposed semantic category; repeat for several')
     parser.add_argument('--component', action='append', default=[])
@@ -130,7 +130,7 @@ def dispatch(root, args):
         if args.analysis_backend:
             from decomposition_analysis import prepare, run
             prepared = prepare(root, args.analysis_backend, enabled=args.enable_analysis, taxonomy=args.analysis_taxonomy)
-            return run(root, prepared['job']) if args.analysis_backend == 'opencv-haar' else prepared
+            return run(root, prepared['job']) if args.analysis_backend != 'external' else prepared
         return read_json(root / 'analysis-request.json')
     if command.startswith('decompose-analysis-'):
         _require(args, 'job')

@@ -1,0 +1,13 @@
+{
+  "caption_mentions": [
+    "eyes",
+    "mouth",
+    "ears",
+    "head"
+  ],
+  "selected_for_budget": [
+    "eyes",
+    "mouth"
+  ],
+  "note": "Exploratory caption-text selection; not validated semantic recognition or held-out acceptance."
+}

@@ -86,6 +86,7 @@
     "backend": {
       "enum": [
         "opencv-haar",
+        "clipseg",
         "external"
       ]
     },

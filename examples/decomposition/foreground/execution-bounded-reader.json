@@ -1,0 +1,649 @@
+{
+  "schema_version": 1,
+  "kind": "foreground-bounded-reader-execution",
+  "recorded_utc": "2026-11-13T16:39:28.459958+00:00",
+  "validated_source_sha": "4002f039abc1e22d234860d324aa0ebb1f2edd8a",
+  "source_hashes": {
+    "scripts/decomposition_foreground.py": "9f0df36567235d19704018e04e40695aea2c66520d5d80f1e328e5476d06df63",
+    "scripts/decomposition_analysis.py": "f50c3536c5b1842a6f3093b0fbbdbd4c00a3fc259757eaf837e641778c650711",
+    "scripts/character_decomposition.py": "f474fb0f4ec641aaf77590bd41b712e65aa35edc267e61b25a84f2eba5663a9c",
+    "scripts/decomposition_masks.py": "2677891e0618283958f0ed95223a4648a25a9b5278fd412c33fad92a9cb9e675",
+    "scripts/decomposition_spec.py": "cf6ebfa0b6699c98fad47754f877782daaa457a295c53e592509d9955ba006c8",
+    "scripts/atomic_publish.py": "74b589c94967683261b087edfc9f2378c20a619e50c93177e76fa677d0b2fbdc",
+    "tests/test_decomposition_foreground.py": "510a35cd8e1dc0ca4bfc23a343a4a69a2ea4cae04fd39874fa57c8a3d2b46494",
+    "tests/optional/test_decomposition_foreground_backend.py": "af2ec94db03b72e70d5cf74e8252f3f74c01272b31b7fe7e3f5cb0ac18c484a2",
+    "profiles/decomposition-foreground.schema.json": "9b6e74f8b9ce1cf231501c6b05f8c21231592f1bb2a01aa177cd312d00b669ef"
+  },
+  "checks": [
+    {
+      "name": "portable contract and source replacement regressions",
+      "passed": 17,
+      "skipped": 0,
+      "seconds": 0.2,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-final-tests.log",
+      "sha256": "58e8f6aac6b78e599b856b7cfb2681955a515024ad46a18611c0662a7904a356"
+    },
+    {
+      "name": "actual local pinned Mask R-CNN inference and selected-source reconstruction",
+      "passed": 2,
+      "skipped": 0,
+      "seconds": 28.032,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1.log",
+      "sha256": "e88fd39f1d6c5705cbe44143baec6cd75e8d07f12cfeb0912b0d8305585c209c"
+    }
+  ],
+  "receipts": [
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/foreground-proposals.json",
+      "sha256": "98506bee2d9f0346d08e14a061a030be6d66726cdd31b337d5210d782903f67f",
+      "runtime": {
+        "torch_threads": 1,
+        "torch_interop_threads": 1
+      },
+      "backend": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "source": {
+        "asset": {
+          "path": "source/original.png",
+          "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+        },
+        "width": 512,
+        "height": 512,
+        "origin": "NASA public domain astronaut photograph",
+        "fixture": false
+      },
+      "candidate_count": 1
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground-analysis/foreground-proposals.json",
+      "sha256": "98506bee2d9f0346d08e14a061a030be6d66726cdd31b337d5210d782903f67f",
+      "runtime": {
+        "torch_threads": 1,
+        "torch_interop_threads": 1
+      },
+      "backend": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "source": {
+        "asset": {
+          "path": "source/original.png",
+          "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+        },
+        "width": 512,
+        "height": 512,
+        "origin": "NASA public domain astronaut photograph",
+        "fixture": false
+      },
+      "candidate_count": 1
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/foreground-proposals.json",
+      "sha256": "0531d58f9f5a510bbf4ab321b5a9fb2dba7910b97fd63f7d5c7eef15dcbbf76d",
+      "runtime": {
+        "torch_threads": 1,
+        "torch_interop_threads": 1
+      },
+      "backend": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "source": {
+        "asset": {
+          "path": "source/original.png",
+          "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343"
+        },
+        "width": 559,
+        "height": 536,
+        "origin": "Penn-Fudan FudanPed00001; dataset ground truth used only after inference",
+        "fixture": false
+      },
+      "candidate_count": 2
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/foreground-proposals.json",
+      "sha256": "0531d58f9f5a510bbf4ab321b5a9fb2dba7910b97fd63f7d5c7eef15dcbbf76d",
+      "runtime": {
+        "torch_threads": 1,
+        "torch_interop_threads": 1
+      },
+      "backend": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "source": {
+        "asset": {
+          "path": "source/original.png",
+          "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343"
+        },
+        "width": 559,
+        "height": 536,
+        "origin": "Penn-Fudan FudanPed00001; dataset ground truth used only after inference",
+        "fixture": false
+      },
+      "candidate_count": 2
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/foreground-proposals.json",
+      "sha256": "0531d58f9f5a510bbf4ab321b5a9fb2dba7910b97fd63f7d5c7eef15dcbbf76d",
+      "runtime": {
+        "torch_threads": 1,
+        "torch_interop_threads": 1
+      },
+      "backend": {
+        "name": "torchvision-maskrcnn-coco-v1",
+        "weights_sha256": "bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0",
+        "execution": "local",
+        "torch": "2.10.0+cpu",
+        "torchvision": "0.25.0+cpu"
+      },
+      "source": {
+        "asset": {
+          "path": "source/original.png",
+          "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343"
+        },
+        "width": 559,
+        "height": 536,
+        "origin": "Penn-Fudan FudanPed00001; dataset ground truth used only after inference",
+        "fixture": false
+      },
+      "candidate_count": 2
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/foreground-proposals.json",
+      "sha256": "98506bee2d9f0346d08e14a061a030be6d66726cdd31b337d5210d782903f67f",
+      "bytes": 1900
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/input.json",
+      "sha256": "27a709b482cbe718ef8364e47ff10fc01197664be6308f34b3e004852a1a6b2f",
+      "bytes": 245
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/masks/candidate-1.png",
+      "sha256": "f71190b88a5ebc3f006274b5fcfde8ab2adbeacf18787d3f9a3ea0d8b8ee2d12",
+      "bytes": 2846
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/masks/overlap.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6",
+      "bytes": 334
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/output.json",
+      "sha256": "7a4cd6b1ce391bb45692beeb5ed372e97c73a8d72542d1dc6c4bc5d6f51f0b1a",
+      "bytes": 718
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/overlay.png",
+      "sha256": "997a680c7e0caf77c4d90566f5d080632dc8983cb47b3caf761d6c4026cda08d",
+      "bytes": 463821
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/source/original.png",
+      "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+      "bytes": 791555
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/proposals/worker.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/analysis-request.json",
+      "sha256": "7a4b1d292d59a905cadfc0b925d0343adb32dc9c42f8b502a8256b1c89559532",
+      "bytes": 1766
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/annotations/current.json",
+      "sha256": "89d7877ab0f92145f288ad2687def6a282bf21b98cfd1297a269bc166b7c06a2",
+      "bytes": 62736
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/components/unassigned/unassigned-679ae4e59cfd9b1a01b50cce.png",
+      "sha256": "ab72cf3102ca35d98bc2b644c3dd63afff10bb75d98f64c283b4d883ed22d0b1",
+      "bytes": 250986
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/decomposition.json",
+      "sha256": "403647c3d350849077f45b622a5a2508dea6a838b1864a1ab4b8fa87fe4df47e",
+      "bytes": 8333
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground-analysis/foreground-proposals.json",
+      "sha256": "98506bee2d9f0346d08e14a061a030be6d66726cdd31b337d5210d782903f67f",
+      "bytes": 1900
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground-analysis/masks/candidate-1.png",
+      "sha256": "f71190b88a5ebc3f006274b5fcfde8ab2adbeacf18787d3f9a3ea0d8b8ee2d12",
+      "bytes": 2846
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground-analysis/masks/overlap.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6",
+      "bytes": 334
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground-analysis/overlay.png",
+      "sha256": "997a680c7e0caf77c4d90566f5d080632dc8983cb47b3caf761d6c4026cda08d",
+      "bytes": 463821
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground-analysis/source/original.png",
+      "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+      "bytes": 791555
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/foreground.png",
+      "sha256": "f280432f6c3145bbb911d2a6200b5d4183b47b3bed54dacd5cca385ee418766d",
+      "bytes": 254267
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/identity.json",
+      "sha256": "8ca9fccf7bc63f7b44a8dab5abf1d3fed13f50d145ab8e5ece3aa9ad8f019ec6",
+      "bytes": 849
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/masks/foreground-6fc14ee253a06ff4636c9c96.png",
+      "sha256": "f71190b88a5ebc3f006274b5fcfde8ab2adbeacf18787d3f9a3ea0d8b8ee2d12",
+      "bytes": 2846
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/masks/unassigned-6fc14ee253a06ff4636c9c96.png",
+      "sha256": "f71190b88a5ebc3f006274b5fcfde8ab2adbeacf18787d3f9a3ea0d8b8ee2d12",
+      "bytes": 2846
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/original.png",
+      "sha256": "7a9bd44240a01302d761aa2eacc22a487bc7f0a6982dc0893bace7ce211bf869",
+      "bytes": 491433
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/bounding-boxes.png",
+      "sha256": "df7529ac1f1d5e408f399a6bac06d69ef686f56d593bc0618212e8d3d03f03e4",
+      "bytes": 256303
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/comparison.png",
+      "sha256": "f08169af2a6dd7e82343a850882f018c4e415d7bfcb938b1b70ab80c8afcba80",
+      "bytes": 450085
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/contact-sheet.png",
+      "sha256": "d243b7c490fba14d10c677d26f7dbad3b995eafb97eb5f7485b89308c82c25db",
+      "bytes": 30877
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/mask-coverage.png",
+      "sha256": "1db82410de669239da25c65f2a31051b382f931bc9e5fd665d12008d65f947e6",
+      "bytes": 3773
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/overlay.png",
+      "sha256": "89d498ee346a078d77546f563bd51db53dbd63116ec3f019e964deb49bf6bdba",
+      "bytes": 255302
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/pixel-difference.png",
+      "sha256": "e9c4a470ad900801f7de4f9402eb27af8a1cc00eac80d618ef16bac39fb27d33",
+      "bytes": 842
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/reconstructed.png",
+      "sha256": "f280432f6c3145bbb911d2a6200b5d4183b47b3bed54dacd5cca385ee418766d",
+      "bytes": 254267
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/previews/transparent.png",
+      "sha256": "f280432f6c3145bbb911d2a6200b5d4183b47b3bed54dacd5cca385ee418766d",
+      "bytes": 254267
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/provenance.json",
+      "sha256": "addf8fb36a8b4823a1a4534c8cca42eebe496a9a5f8fe5b48a26efc05ddb2921",
+      "bytes": 1253
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/source/original.png",
+      "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+      "bytes": 791555
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/astronaut-test/selected/validation.json",
+      "sha256": "6fab4c42b65dc5213c368848e4ed758c07c8d4ecd8b57ff07a50cb8e4d4cc0bd",
+      "bytes": 1153
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/analysis-request.json",
+      "sha256": "a2753fe61b435ef10510ee99c2e541e33a6ac45805c3676ea0e92221a164c29a",
+      "bytes": 1766
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/annotations/current.json",
+      "sha256": "986325fbe857d990ce9d2cd1b07eb09fe488705432db97167863eabe911c03d7",
+      "bytes": 44094
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/components/unassigned/unassigned-7950f804e747b1622583c423.png",
+      "sha256": "92d7318bd9ee3c158379af58a65ae2b1fa7ed73ced7df27491412cd148519ec4",
+      "bytes": 31883
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/decomposition.json",
+      "sha256": "073fe2443ae411a43643c32b47b32feb53516c5eae091c3adfb844f62e04a9dd",
+      "bytes": 8366
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/foreground-proposals.json",
+      "sha256": "0531d58f9f5a510bbf4ab321b5a9fb2dba7910b97fd63f7d5c7eef15dcbbf76d",
+      "bytes": 2291
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/masks/candidate-1.png",
+      "sha256": "60d70e87171651aca7714729437304703f9dfd5784d80042b451e59c915c781d",
+      "bytes": 1716
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/masks/candidate-2.png",
+      "sha256": "87a850c1b515cf257145e80011e9a0b0a74af9caf82fa1a50a3d4c4376fd7808",
+      "bytes": 1771
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/masks/overlap.png",
+      "sha256": "440895c5f52035c12dc62155ee5b156141f8d268aec8b758f1a85908a9bb6459",
+      "bytes": 371
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/overlay.png",
+      "sha256": "3b0169a4a082a4909da779d7c4259d667586b8bda62a8791544895b7968b6e6e",
+      "bytes": 540505
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground-analysis/source/original.png",
+      "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343",
+      "bytes": 497496
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/foreground.png",
+      "sha256": "ffb18d2537bafa708a42e78deed453cd3d296f3fc3982cc9ede92aa5c7cd8427",
+      "bytes": 35805
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/identity.json",
+      "sha256": "62587eb1f8f38f3b03d6e7e37ee662ad2eaf64d3cb5353d1ed830dd9a05445de",
+      "bytes": 871
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/masks/foreground-e5e0fc1b905a1d3a7c918798.png",
+      "sha256": "60d70e87171651aca7714729437304703f9dfd5784d80042b451e59c915c781d",
+      "bytes": 1716
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/masks/unassigned-e5e0fc1b905a1d3a7c918798.png",
+      "sha256": "60d70e87171651aca7714729437304703f9dfd5784d80042b451e59c915c781d",
+      "bytes": 1716
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/original.png",
+      "sha256": "9bdb00d6bdeb22483c62664babf6a26dc26ee9b111e19d90088665f63d868a95",
+      "bytes": 544796
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/bounding-boxes.png",
+      "sha256": "0a383558ea0bf2a64cbb768b929d2a8f1642cd2daa8657161a7eb9a253e8d5c2",
+      "bytes": 38541
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/comparison.png",
+      "sha256": "8685e6db96b123f722f0c7f77f8b3c242082e35d3ee5c9766636749ef2fe555d",
+      "bytes": 533212
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/contact-sheet.png",
+      "sha256": "590dd3ebdb87339a793683f69670dda39bd8036cb2e566b71ab9ae3b4651ca59",
+      "bytes": 15742
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/mask-coverage.png",
+      "sha256": "602cb5bef158628615dd8402d598a8fe2c3cdf3dd9536387614d36a571c81861",
+      "bytes": 2703
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/overlay.png",
+      "sha256": "414edc4857bbdc6f617206ef858ec0eeaef27826a809c392adc86be2a0fc41a5",
+      "bytes": 37580
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/pixel-difference.png",
+      "sha256": "8085d77abc3433445391beef2608bd1ebef1a7c38afda12e26c6ddaa9ad3d129",
+      "bytes": 951
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/reconstructed.png",
+      "sha256": "ffb18d2537bafa708a42e78deed453cd3d296f3fc3982cc9ede92aa5c7cd8427",
+      "bytes": 35805
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/previews/transparent.png",
+      "sha256": "ffb18d2537bafa708a42e78deed453cd3d296f3fc3982cc9ede92aa5c7cd8427",
+      "bytes": 35805
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/provenance.json",
+      "sha256": "30ed3bcf45a85b31395318c6334771de6845902a854a563e47eeeb5308a827af",
+      "bytes": 1286
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/source/original.png",
+      "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343",
+      "bytes": 497496
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-0/validation.json",
+      "sha256": "2697b46ff05c01cb8e080b8a6815a83efdc5bcc6e33fd87b8e66c05564d47436",
+      "bytes": 1150
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/analysis-request.json",
+      "sha256": "1ff5ae33742c8d5e8835eeedca43be69e3681aebb605746aadc2c9d20a285098",
+      "bytes": 1766
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/annotations/current.json",
+      "sha256": "c4a5ad7955750e68e0e0b19720226362f214c7e5b6b0989b7fde53e8b6b21eb6",
+      "bytes": 49554
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/components/unassigned/unassigned-98fa96600fdcd5c8021693bf.png",
+      "sha256": "7dfc09ed2644765422eca720ff01cd0da93ea7f4b04d482dad61691aefcd0375",
+      "bytes": 44854
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/decomposition.json",
+      "sha256": "3642cbb96af4d5e468a872678e66096a0d49dd212ed95a1927f480d510fa01c9",
+      "bytes": 8370
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/foreground-proposals.json",
+      "sha256": "0531d58f9f5a510bbf4ab321b5a9fb2dba7910b97fd63f7d5c7eef15dcbbf76d",
+      "bytes": 2291
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/masks/candidate-1.png",
+      "sha256": "60d70e87171651aca7714729437304703f9dfd5784d80042b451e59c915c781d",
+      "bytes": 1716
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/masks/candidate-2.png",
+      "sha256": "87a850c1b515cf257145e80011e9a0b0a74af9caf82fa1a50a3d4c4376fd7808",
+      "bytes": 1771
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/masks/overlap.png",
+      "sha256": "440895c5f52035c12dc62155ee5b156141f8d268aec8b758f1a85908a9bb6459",
+      "bytes": 371
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/overlay.png",
+      "sha256": "3b0169a4a082a4909da779d7c4259d667586b8bda62a8791544895b7968b6e6e",
+      "bytes": 540505
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground-analysis/source/original.png",
+      "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343",
+      "bytes": 497496
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/foreground.png",
+      "sha256": "5f67c0a8f326b57f3a497e2281006da1de57a18b1299c13ba19c73c6fca84508",
+      "bytes": 50018
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/identity.json",
+      "sha256": "890a1c09720f1a4fa139bd5e64239306db8dd0a3a962c3ab9a115182f7ddd449",
+      "bytes": 869
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/masks/foreground-528ab11c6502f59c6fa29c3a.png",
+      "sha256": "87a850c1b515cf257145e80011e9a0b0a74af9caf82fa1a50a3d4c4376fd7808",
+      "bytes": 1771
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/masks/unassigned-528ab11c6502f59c6fa29c3a.png",
+      "sha256": "87a850c1b515cf257145e80011e9a0b0a74af9caf82fa1a50a3d4c4376fd7808",
+      "bytes": 1771
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/original.png",
+      "sha256": "9bdb00d6bdeb22483c62664babf6a26dc26ee9b111e19d90088665f63d868a95",
+      "bytes": 544796
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/bounding-boxes.png",
+      "sha256": "12b065ac5a6db3091ba1311236841fa70111123af9d7c57b09f2af984d9ae367",
+      "bytes": 52704
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/comparison.png",
+      "sha256": "acf90675b712cae85a35160cffff8807e67c23b5fd61b251dc5f555b47c4f572",
+      "bytes": 533979
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/contact-sheet.png",
+      "sha256": "982f0647315d7b191168a9eb19e0f485a39486ddf90bd77837d3abdc155afe69",
+      "bytes": 14672
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/mask-coverage.png",
+      "sha256": "828f5a2db8a85012a163018d03771b83a843929770c30a5c7a5415e98ca3eb40",
+      "bytes": 2864
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/overlay.png",
+      "sha256": "bd9555afdac5401f5b8e36f9ba30cdb41b7493f9670747669f8cc10b82fcdbcb",
+      "bytes": 51479
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/pixel-difference.png",
+      "sha256": "8085d77abc3433445391beef2608bd1ebef1a7c38afda12e26c6ddaa9ad3d129",
+      "bytes": 951
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/reconstructed.png",
+      "sha256": "5f67c0a8f326b57f3a497e2281006da1de57a18b1299c13ba19c73c6fca84508",
+      "bytes": 50018
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/previews/transparent.png",
+      "sha256": "5f67c0a8f326b57f3a497e2281006da1de57a18b1299c13ba19c73c6fca84508",
+      "bytes": 50018
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/provenance.json",
+      "sha256": "08fde6775f1c5e02c7874602bd51be2bf7bf143587f4aa178d6691cb9739d3ce",
+      "bytes": 1286
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/source/original.png",
+      "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343",
+      "bytes": 497496
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/person-1/validation.json",
+      "sha256": "5d135aa092793ac4b029ae75e6465b76c7233420ba0f929b46515e056d99c47a",
+      "bytes": 1150
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/foreground-proposals.json",
+      "sha256": "0531d58f9f5a510bbf4ab321b5a9fb2dba7910b97fd63f7d5c7eef15dcbbf76d",
+      "bytes": 2291
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/input.json",
+      "sha256": "bd1fa5f608c70a88fb80bdd8d548dbf938e8631637b869132d8083775bc44711",
+      "bytes": 278
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/masks/candidate-1.png",
+      "sha256": "60d70e87171651aca7714729437304703f9dfd5784d80042b451e59c915c781d",
+      "bytes": 1716
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/masks/candidate-2.png",
+      "sha256": "87a850c1b515cf257145e80011e9a0b0a74af9caf82fa1a50a3d4c4376fd7808",
+      "bytes": 1771
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/masks/overlap.png",
+      "sha256": "440895c5f52035c12dc62155ee5b156141f8d268aec8b758f1a85908a9bb6459",
+      "bytes": 371
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/output.json",
+      "sha256": "3352b75b30e64912748b0022a24120898e6afc89edb79d6ececacddc34393d1c",
+      "bytes": 1076
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/overlay.png",
+      "sha256": "3b0169a4a082a4909da779d7c4259d667586b8bda62a8791544895b7968b6e6e",
+      "bytes": 540505
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/source/original.png",
+      "sha256": "130e9f9121b88ab69105f1685ce17625e97d0ef590adb9b9f076f62fc08b3343",
+      "bytes": 497496
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/bounded-reader-native-1/two-people-test/proposals/worker.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ],
+  "preserved_historical_evidence": "examples/decomposition/foreground/execution.json",
+  "scope": "Partial issue225 foreground instance increment; not semantic anatomy recognition or full diversity acceptance.",
+  "issue_225_complete": false,
+  "semantic_approval": false,
+  "release_approval": false,
+  "limitations": [
+    "Existing photographic overlap/crop false positives and scarf class mismatch remain; historical evidence retains all raw outputs.",
+    "Full transparent/pixel-art/fine-disconnected/fantasy/robot diversity and correction UI requirements remain open.",
+    "Source and checkpoint digest/decode share admitted bytes; no same-UID process isolation guarantee."
+  ]
+}
