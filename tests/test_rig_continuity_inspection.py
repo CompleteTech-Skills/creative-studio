@@ -85,6 +85,33 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertEqual(d['hierarchy'][1]['skin'], 0)
         self.assertFalse(d['visual_approval']);self.assertEqual(d['semantic_equivalence'],'unverified')
 
+    def test_texture_coordinates_follow_transform_override_and_core_fallback(self):
+        path, builder = gltf(self.root)
+        attrs = builder.json['meshes'][0]['primitives'][0]['attributes']
+        attrs['TEXCOORD_1'] = builder.accessor([[0, .5], [.5, 0], [1, 1]], 'VEC2')
+        material = builder.json['materials'][0]
+        builder.json['extensionsUsed'] = ['KHR_texture_transform']
+        material['pbrMetallicRoughness']['baseColorTexture'].update(
+            texCoord=0, extensions={'KHR_texture_transform': {'texCoord': 1}},
+        )
+        material['emissiveTexture'] = dict(
+            index=0, texCoord=1, extensions={'KHR_texture_transform': {'texCoord': 0}},
+        )
+        material['occlusionTexture'] = dict(
+            index=0, texCoord=1, extensions={'KHR_texture_transform': {'offset': [.25, 0]}},
+        )
+        material['normalTexture'] = dict(index=0)
+        builder.write(path)
+
+        receipt = inspect_asset(self.root, pointer(self.root, path))['inspection']
+        coordinates = {slot['slot_path'][-1]: slot['texcoord']
+                       for slot in receipt['texture_color_spaces']}
+        self.assertEqual(coordinates, dict(baseColorTexture=1, emissiveTexture=0,
+                                           occlusionTexture=1, normalTexture=0))
+        base_color = receipt['materials'][0]['inputs']['pbrMetallicRoughness']['baseColorTexture']
+        self.assertEqual(base_color['texCoord'], 0)
+        self.assertEqual(base_color['extensions']['KHR_texture_transform']['texCoord'], 1)
+
     def test_fixture_position_accessors_retain_bounds(self):
         path, _ = gltf(self.root, skinned=True)
         document = read_gltf(path)
@@ -369,6 +396,38 @@ class ContinuityInspectionTests(unittest.TestCase):
         request.write_bytes(canonical_bytes(dict(source=pointer(self.root,path),execute_script=True)))
         p=subprocess.run([sys.executable,str(ROOT/'scripts/continuity_inspection.py'),'--root',str(self.root),'--request',str(request)],capture_output=True,text=True)
         self.assertEqual(p.returncode,1);self.assertIn('INSPECTION_REQUEST',p.stdout)
+
+    def test_cli_failure_reports_codes_and_counts_without_authored_text(self):
+        label = 'private_fixture_label'
+        path, builder = gltf(self.root, f'{label}.glb')
+        request = self.root / 'request.json'
+        command = [sys.executable, str(ROOT/'scripts/continuity_inspection.py'),
+                   '--root', str(self.root), '--request', str(request)]
+
+        def rejected(payload):
+            request.write_bytes(payload)
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, '')
+            self.assertNotIn(label, result.stdout)
+            return json.loads(result.stdout)
+
+        extension = f'EXT_{label}'
+        builder.json['extensionsUsed'] = builder.json['extensionsRequired'] = [extension]
+        builder.write(path)
+        error = rejected(canonical_bytes(dict(source=pointer(self.root, path))))
+        self.assertEqual(error['native_diagnostic'], {'code': 'RIG_GLTF_EXTENSION'})
+        error = rejected(f'{{"{label}":1,"{label}":2}}'.encode())
+        self.assertEqual(error['native_diagnostic'], {'code': 'RIG_JSON_DUPLICATE'})
+
+        del builder.json['extensionsUsed'], builder.json['extensionsRequired']
+        builder.write(path)
+        source = pointer(self.root, path)
+        error = rejected(canonical_bytes(dict(source=source, limits=dict(vertices=2))))
+        self.assertEqual(error['native_diagnostic'],
+                         dict(code='RIG_LIMIT_VERTICES', expected=2, observed=3))
+        error = rejected(canonical_bytes(dict(source=dict(source, sha256='0' * 64))))
+        self.assertIn('CONTINUITY_INSPECTION_HASH', error['error'])
 
 
 if __name__=='__main__':unittest.main()

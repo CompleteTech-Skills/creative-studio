@@ -17,8 +17,14 @@ CAPS = dict(source_bytes=8*1024**2, dependency_bytes=32*1024**2,
 MAX_FILES = 256
 
 
+class _InspectionError(ValueError):
+    def __init__(self, code, message):
+        self.code = 'CONTINUITY_INSPECTION_' + code
+        super().__init__(f'{self.code}: {message}')
+
+
 def fail(code, text):
-    raise ValueError('CONTINUITY_INSPECTION_' + code + ': ' + text)
+    raise _InspectionError(code, text)
 
 
 def _limits(requested):
@@ -305,7 +311,9 @@ def _color_spaces(materials):
         for name,child in value.items():
             current=path+[name]
             if name.endswith('Texture') and isinstance(child,dict) and 'index' in child:
-                result.append(dict(slot_path=current,texture=child['index'],texcoord=child.get('texCoord',0),
+                transform = child.get('extensions', {}).get('KHR_texture_transform', {})
+                texcoord = transform.get('texCoord', child.get('texCoord', 0))
+                result.append(dict(slot_path=current,texture=child['index'],texcoord=texcoord,
                     color_space='sRGB color channels; alpha linear' if name in srgb else 'linear-data',
                     basis='portable glTF slot semantics; renderer implementation unverified'))
             else:
@@ -460,6 +468,25 @@ def _finish_comparison(root, root_identity, result, receipts):
     return result
 
 
+def _public_failure(exc):
+    if isinstance(exc, RigError):
+        report = exc.report
+        diagnostic = {'code': report['code']}
+        # These errors report resource totals and limits, rather than arbitrary
+        # JSON values or identifiers. Bound their public integer representation.
+        if report['code'] in {'RIG_LIMIT_BINARY', 'RIG_LIMIT_MEMORY', 'RIG_LIMIT_MORPHS',
+                              'RIG_LIMIT_TRIANGLES', 'RIG_LIMIT_VERTICES'}:
+            for key in ('expected', 'observed'):
+                count = report.get(key)
+                if type(count) is int and 0 <= count <= 2**53 - 1:
+                    diagnostic[key] = count
+        return dict(error='Native inspection input rejected.', native_diagnostic=diagnostic)
+    if isinstance(exc, _InspectionError):
+        return dict(error=f'{exc.code}: Inspection input rejected.', native_diagnostic=None)
+    message = 'Inspection I/O failed.' if isinstance(exc, OSError) else 'Inspection input rejected.'
+    return dict(error=message, native_diagnostic=None)
+
+
 def main(argv=None):
     import argparse,json
     parser=argparse.ArgumentParser(description=__doc__)
@@ -483,8 +510,7 @@ def main(argv=None):
         print(json.dumps(result, sort_keys=True, allow_nan=False))
         return 0
     except (ValueError,OSError) as exc:
-        print(json.dumps(dict(error=str(exc) if isinstance(exc, ValueError) else 'Inspection I/O failed.',
-                              native_diagnostic=getattr(exc, 'report', None))))
+        print(json.dumps(_public_failure(exc), allow_nan=False))
         return 1
 
 

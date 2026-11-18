@@ -29,8 +29,9 @@ python scripts/continuity_inspection.py --root project --request inspect-request
 ```
 
 Successful inspections contain `inspection` and its canonical `sha256`.
-Comparisons retain both inspection receipts. The CLI reports structured
-diagnostics from the native readers and returns a nonzero exit on rejection.
+Comparisons retain both inspection receipts. On rejection, the CLI returns a
+nonzero exit and reports diagnostic codes and bounded resource counts when
+available. Public failures omit authored names, paths, and native message text.
 
 Named landmarks bind the receipt's `mesh_id` and a `vertex_index`. Distances bind two landmark
 names. The receipt reports distance in meters and as a fraction of observed
@@ -55,8 +56,9 @@ texture byte hashes. Authored resource names and arbitrary metadata stay in
 the pinned source with other extension parameters. Morph labels, bone roles and unsupported extension labels
 are represented by fingerprints.
 
-Texture slot color spaces describe portable
-glTF semantics. Optional extensions outside supported coverage yield partial
+Texture slot color spaces describe portable glTF semantics. Their UV binding
+uses the texture transform coordinate set when specified, otherwise the base
+coordinate set or glTF default of zero. Optional extensions outside supported coverage yield partial
 evidence. Recognized material extensions with semantics beyond the projected
 fields also yield partial material coverage. The native reader rejects
 unsupported required extensions.
