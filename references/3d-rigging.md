@@ -369,12 +369,27 @@ therefore have `reachable: true` and `converged: false` when a joint limit preve
 the orientation. Contact and grasp reports retain this angular residual.
 
 FK-to-IK matching accepts fully folded chains whose endpoint coincides with
-their root, using the existing first segment to derive a finite matching pole.
+their root, using the already evaluated first joint position as its matching pole.
 A matching pole preserves an already closed authoritative seed and its evaluated
-joint transforms and bound geometry. At the equal-length two-segment fold,
-either solver uses an explicitly changed pole to select the elbow direction.
+joint transforms and bound geometry. Ordinary matches retain their original
+reach-based pole distance. Closure is tested within `1e-9` meters, the matched
+endpoint must also meet the chain's residual tolerance, and normalized pole/first
+segment alignment must have dot product at least `1 - 1e-12`. A finite pole
+direction must exceed `1e-9` meters. An explicitly changed pole reorients a closed
+seed's existing shape, including backfolded multisegment chains with degenerate
+neighbor axes. At the equal-length two-segment fold, either solver can also
+construct the elbow along that pole from an open seed.
 Runtime segment-length checks, joint limits, endpoint orientation, actual
 residuals and bounded convergence reporting remain authoritative.
+
+Twelve independent boundary tests exercise ordinary near-folded matching,
+small segments at large world translations, both explicit backfolded pole
+directions, actual blended skinning, length limits and the native orientation/
+constraint pass. They produced four failing methods on the previous candidate
+and passed all twelve after the correction on Linux/Python 3.12.14 (1.845s,
+exit 0, zero skips). The original thirteen #348 test methods remain unchanged.
+This is local numerical evidence; independent review and exact published-head
+checks are required before integration.
 
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
