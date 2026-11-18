@@ -1,0 +1,37 @@
+[
+  {
+    "case": "upgrade-removed-optional-subtree",
+    "result": {
+      "applied": true,
+      "conflicts": [
+        "child:optional"
+      ],
+      "comparison": {
+        "added": [],
+        "removed": [
+          "prefab-mesh"
+        ],
+        "changed": [],
+        "parameters_changed": false,
+        "materials_changed": false
+      },
+      "revision": 2,
+      "dirty": [],
+      "removed": []
+    }
+  },
+  {
+    "case": "mismatched-animation-context",
+    "exception": "RigError",
+    "error": "Parsed animation context must match its exact verified source bytes."
+  },
+  {
+    "case": "duplicate-shared-clip-DAG",
+    "result": {
+      "unique_source_clips": 30,
+      "map_calls": 59,
+      "unique_derived_clips": 30,
+      "seconds": 0.48698599892668426
+    }
+  }
+]

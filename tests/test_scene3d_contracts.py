@@ -732,9 +732,9 @@ class SceneClosureTests(unittest.TestCase):
             prefab = fixture('example-prefab')
             prefab.update(id=identifier, nodes=[node('nested-root')], roots=['nested-root'], dependencies=[])
             if pointers:
-                child = node('child', 'prefab_instance', 'nested-root')
-                child['prefab'] = deepcopy(pointers[-1])
-                prefab['nodes'].append(child)
+                # Isolate manifest closure depth from the independently bounded
+                # expanded transform hierarchy tested by the scene service.
+                prefab['dependencies'] = [deepcopy(pointers[-1])]
             payload = canonical_bytes(prefab)
             path = identifier + '.json'
             (self.root / path).write_bytes(payload)

@@ -1,0 +1,37 @@
+{
+  "issue": 27,
+  "scope": "restricted-intent-planner",
+  "source_sha256": "a7115826c768bcc7539abf626a5e1ef2e3f79f4ee23a407cb82a18f64c11708f",
+  "tests": {
+    "command": "PYTHONPATH=scripts:tests /home/complete/.cache/hatch-fleet/rig-py312/bin/python -m unittest test_director_planner test_director_capabilities test_rig_director_capabilities test_rig_compatibility -v",
+    "count": 29,
+    "seconds": 6.88,
+    "result": "PASS",
+    "optional_safe_discovery_only": 1004
+  },
+  "actual_admission": {
+    "capability_evidence": "tests/results/director-capabilities-20261113",
+    "required_operations": [
+      "blender.cpu",
+      "codec.h264",
+      "importer.glb"
+    ],
+    "successful": true,
+    "tampered_story_budget_and_false_completion": "rejected"
+  },
+  "historical_attempts": [
+    {
+      "description": "The initial older capability execution1 proof was rejected after stricter policy/version receipt binding was added. Final admission uses current committed capability proof.",
+      "result": "expected rejection; not relabeled success"
+    }
+  ],
+  "limits": [
+    "A planned/admitted intent is not produced geometry, rendered frames or production completion.",
+    "Only the explicit two-robot laboratory grammar is implemented.",
+    "No LLM or provider invocation."
+  ],
+  "files": {
+    "actual-admission.json": "dbd9edbce8f8d287b92f67cb7e60d3995659d8b00f28064d7403e61670207efb",
+    "tests.log": "6dada6e2ed49cb3ae5f6840e57d2a29bc4728905789f8e3d38ed9375d9db3662"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "animation_retarget_3d",
+  "id": "retarget",
+  "version": "1.0.0",
+  "source_rig": {
+    "id": "source",
+    "version": "1.0.0",
+    "path": "source.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "rig"
+  },
+  "target_rig": {
+    "id": "other",
+    "version": "1.0.0",
+    "path": "source.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "rig"
+  },
+  "source_skeleton_signature": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_skeleton_signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "source_rest_pose": "rest",
+  "target_rest_pose": "rest",
+  "mappings": [
+    {
+      "source_bone": "a",
+      "target_bone": "b",
+      "rotation_offset": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "mode": "rotation"
+    }
+  ],
+  "root_policy": "in_place",
+  "scale_policy": "explicit",
+  "explicit_scale": 1,
+  "preserve_end_effectors": false,
+  "preserve_contacts": false,
+  "missing_bone_policy": "error",
+  "validation_thresholds": {
+    "maximum_joint_error_rad": 0.1,
+    "maximum_contact_error_m": 0.01,
+    "maximum_root_drift_m": 0.01
+  },
+  "provenance": {
+    "origin": "synthetic-contract-fixture",
+    "kind": "fixture",
+    "fixture": true,
+    "sources": []
+  }
+}

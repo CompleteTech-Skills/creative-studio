@@ -1,0 +1,16 @@
+.F.......
+======================================================================
+FAIL: test_real_contact_slop_and_velocity_limit_failure (test_physics_timing.NativeTimingTests.test_real_contact_slop_and_velocity_limit_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-physics169/tests/test_physics_timing.py", line 143, in test_real_contact_slop_and_velocity_limit_failure
+    self.assertEqual(raised.exception.report['category'],'numerical-instability')
+AssertionError: 'backend-crash' != 'numerical-instability'
+- backend-crash
++ numerical-instability
+
+
+----------------------------------------------------------------------
+Ran 9 tests in 38.294s
+
+FAILED (failures=1)

@@ -1,0 +1,8 @@
+{
+  "status": "executed-and-verified",
+  "destination": "/tmp/hatch-physics168/tests/results/physics-backends-20261024/pybullet-demo",
+  "world_sha256": "d6869d7b6ffdabf1adef6bbd5732ec0b81e51f54d94b1428da2a914de0c918f2",
+  "fixture": true,
+  "review_status": "unreviewed",
+  "sample_count": 49
+}

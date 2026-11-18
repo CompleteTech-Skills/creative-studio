@@ -1,0 +1,4267 @@
+[
+  {
+    "schema_version": 1,
+    "kind": "director-creative-brief",
+    "id": "creative-brief-fixture",
+    "semantic_version": "1.0.0",
+    "project_id": "fixture",
+    "request_id": "fixture",
+    "original_prompt": "Synthetic contract example: two fixture robots inspect a laboratory object.",
+    "requirements": {
+      "explicit": [],
+      "inferred": [],
+      "locked": [],
+      "ambiguities": [],
+      "assumptions": []
+    },
+    "duration": {
+      "numerator": 30,
+      "denominator": 1
+    },
+    "frame_rate": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "resolution": [
+      1280,
+      720
+    ],
+    "aspect_ratio": {
+      "numerator": 16,
+      "denominator": 9
+    },
+    "characters": [
+      "aster-fixture",
+      "moss-fixture"
+    ],
+    "object_count": 1,
+    "locations": [],
+    "actions": [],
+    "mood": "fixture",
+    "style": "fixture",
+    "content_restrictions": [],
+    "outputs": [],
+    "budget": {
+      "max_provider_calls": 0,
+      "max_cpu_seconds": 0,
+      "max_gpu_seconds": 0,
+      "max_storage_bytes": 0,
+      "max_memory_bytes": 0,
+      "currency": null,
+      "max_amount": null,
+      "policy_ref": null
+    },
+    "references": [],
+    "provenance": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-story-plan",
+    "id": "story-plan-fixture",
+    "semantic_version": "1.0.0",
+    "brief": {
+      "artifact_id": "creative-brief-fixture",
+      "kind": "director-creative-brief",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/creative-brief-fixture.json",
+      "sha256": "1e562d24a7f49414dcb905ef1452df71df2c7797792e400d971b5b89b69c8fbf",
+      "byte_size": 1120,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "logline": "fixture",
+    "premise": "fixture",
+    "beginning": "fixture",
+    "middle": "fixture",
+    "end": "fixture",
+    "emotional_progression": [],
+    "objectives": [],
+    "discoveries": [],
+    "spatial_continuity": [],
+    "motifs": [],
+    "establishing_information": [],
+    "outcome": "fixture",
+    "silent": false,
+    "communication_methods": [],
+    "beats": [
+      {
+        "id": "discovery",
+        "description": "Synthetic discovery beat.",
+        "actions": [
+          "Inspect the object."
+        ],
+        "composition": []
+      }
+    ]
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-shot-plan",
+    "id": "shot-plan-fixture",
+    "semantic_version": "1.0.0",
+    "story": {
+      "artifact_id": "story-plan-fixture",
+      "kind": "director-story-plan",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/story-plan-fixture.json",
+      "sha256": "0ac5c41b2d022ddf8f5cc8a9dc559cb41988043d349c97457d457010e42ac2ed",
+      "byte_size": 1094,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "duration_frames": 720,
+    "frame_rate": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "shots": [
+      {
+        "id": "shot-a",
+        "scene_id": "laboratory-fixture",
+        "beat_ids": [
+          "discovery"
+        ],
+        "start_frame": 0,
+        "end_frame": 720,
+        "duration_frames": 720,
+        "camera": {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        },
+        "actors": [
+          "aster-fixture",
+          "moss-fixture"
+        ],
+        "props": [
+          "object-fixture"
+        ],
+        "actions": [],
+        "markers": [],
+        "environment": {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        },
+        "lighting": {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        },
+        "composition": [],
+        "entry_constraints": [],
+        "exit_constraints": [],
+        "transition": {
+          "kind": "cut",
+          "overlap_frames": 0
+        },
+        "required_assets": [],
+        "dependencies": [],
+        "render_settings": {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        },
+        "qa_requirements": [],
+        "review": "unreviewed"
+      }
+    ]
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-asset-spec",
+    "id": "asset-spec-fixture",
+    "semantic_version": "1.0.0",
+    "logical_id": "fixture",
+    "asset_type": "fixture",
+    "semantic_role": "fixture",
+    "visual_characteristics": [],
+    "capabilities": [],
+    "source_policy": {
+      "network": "deny",
+      "providers": [],
+      "paid": "deny",
+      "policy_ref": null
+    },
+    "candidates": [],
+    "formats": [],
+    "scale_meters": 1,
+    "coordinates": {
+      "handedness": "right",
+      "right": "+X",
+      "up": "+Y",
+      "forward": "+Z",
+      "unit": "meter",
+      "angles": "radian",
+      "quaternion": "XYZW",
+      "matrices": "column-vectors",
+      "time": "second"
+    },
+    "materials": [],
+    "textures": [],
+    "polygon_budget": 0,
+    "memory_budget": 0,
+    "licensing": "fixture",
+    "attribution": "fixture",
+    "dependencies": [],
+    "review": "unreviewed",
+    "substitutions": [],
+    "generation_required": false
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-character-identity",
+    "id": "character-identity-fixture",
+    "semantic_version": "1.0.0",
+    "character_id": "aster-fixture",
+    "canonical_design": {
+      "artifact_id": "fixture-evidence",
+      "kind": "test-fixture",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/evidence.txt",
+      "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+      "byte_size": 82,
+      "media_type": "text/plain",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "geometry": "fixture",
+    "silhouette": "fixture",
+    "proportions": [],
+    "scale_meters": 1,
+    "palette": [],
+    "materials": [],
+    "markings": [],
+    "asymmetries": [],
+    "costume": [],
+    "accessories": [],
+    "rig": null,
+    "bone_mapping": [],
+    "animation_capabilities": [],
+    "expression_capabilities": [],
+    "viewpoints": [],
+    "provenance": [],
+    "approved_variations": [],
+    "forbidden_transformations": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-project",
+    "id": "project-fixture",
+    "semantic_version": "1.0.0",
+    "original_request": {
+      "artifact_id": "fixture-evidence",
+      "kind": "test-fixture",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/evidence.txt",
+      "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+      "byte_size": 82,
+      "media_type": "text/plain",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "brief": {
+      "artifact_id": "creative-brief-fixture",
+      "kind": "director-creative-brief",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/creative-brief-fixture.json",
+      "sha256": "1e562d24a7f49414dcb905ef1452df71df2c7797792e400d971b5b89b69c8fbf",
+      "byte_size": 1120,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "story": {
+      "artifact_id": "story-plan-fixture",
+      "kind": "director-story-plan",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/story-plan-fixture.json",
+      "sha256": "0ac5c41b2d022ddf8f5cc8a9dc559cb41988043d349c97457d457010e42ac2ed",
+      "byte_size": 1094,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "shot_plan": {
+      "artifact_id": "shot-plan-fixture",
+      "kind": "director-shot-plan",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/shot-plan-fixture.json",
+      "sha256": "b4a5e299dddc83d780afcf471a183ab787459ce7c2d781190e073d3844e989ee",
+      "byte_size": 3163,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "asset_registry": {
+      "artifact_id": "fixture-evidence",
+      "kind": "test-fixture",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/evidence.txt",
+      "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+      "byte_size": 82,
+      "media_type": "text/plain",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "characters": [
+      {
+        "artifact_id": "character-identity-fixture",
+        "kind": "director-character-identity",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/character-identity-fixture.json",
+        "sha256": "b687c3216782dfd6a42334dfef7e210543f54038c5f2c489e1fef3d3db2a7f08",
+        "byte_size": 1001,
+        "media_type": "application/json",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    ],
+    "scenes": [],
+    "timelines": [],
+    "render_configuration": {
+      "artifact_id": "fixture-evidence",
+      "kind": "test-fixture",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "examples/director-contracts/evidence.txt",
+      "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+      "byte_size": 82,
+      "media_type": "text/plain",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    "execution_graph": null,
+    "budget_ledger": null,
+    "acquisition_bindings": [],
+    "dependencies": [],
+    "reviews": [],
+    "exports": [],
+    "inventory": [
+      {
+        "artifact_id": "creative-brief-fixture",
+        "kind": "director-creative-brief",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/creative-brief-fixture.json",
+        "sha256": "1e562d24a7f49414dcb905ef1452df71df2c7797792e400d971b5b89b69c8fbf",
+        "byte_size": 1120,
+        "media_type": "application/json",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      {
+        "artifact_id": "story-plan-fixture",
+        "kind": "director-story-plan",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/story-plan-fixture.json",
+        "sha256": "0ac5c41b2d022ddf8f5cc8a9dc559cb41988043d349c97457d457010e42ac2ed",
+        "byte_size": 1094,
+        "media_type": "application/json",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      {
+        "artifact_id": "shot-plan-fixture",
+        "kind": "director-shot-plan",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/shot-plan-fixture.json",
+        "sha256": "b4a5e299dddc83d780afcf471a183ab787459ce7c2d781190e073d3844e989ee",
+        "byte_size": 3163,
+        "media_type": "application/json",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      {
+        "artifact_id": "asset-spec-fixture",
+        "kind": "director-asset-spec",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/asset-spec-fixture.json",
+        "sha256": "1b3816531d00377f2367b7877c1a43b7e4905ce8cd5476586b59d185eb3990a0",
+        "byte_size": 901,
+        "media_type": "application/json",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      {
+        "artifact_id": "character-identity-fixture",
+        "kind": "director-character-identity",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/character-identity-fixture.json",
+        "sha256": "b687c3216782dfd6a42334dfef7e210543f54038c5f2c489e1fef3d3db2a7f08",
+        "byte_size": 1001,
+        "media_type": "application/json",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    ],
+    "status": "draft",
+    "milestones": [
+      {
+        "name": "planning",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "assets",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "scene",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "motion",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "rendering",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "video",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "native_editability",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "visual_qa",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      },
+      {
+        "name": "delivery",
+        "status": "unverified",
+        "evidence": [],
+        "diagnostics": [],
+        "authority": "automated",
+        "scope": "Synthetic contract fixture only."
+      }
+    ],
+    "coordinates": {
+      "handedness": "right",
+      "right": "+X",
+      "up": "+Y",
+      "forward": "+Z",
+      "unit": "meter",
+      "angles": "radian",
+      "quaternion": "XYZW",
+      "matrices": "column-vectors",
+      "time": "second"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "CapabilityRegistry.probe",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "CapabilityRegistry-probe-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "operations": [],
+      "local_probes": [],
+      "provider_configuration_refs": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "CapabilityRegistry.probe",
+    "status": "succeeded",
+    "operation_id": "CapabilityRegistry-probe-fixture",
+    "input_digest": "f5701a8fcaab55b6b816fa99786a52cf23361cdc1e80b79b045e7f2307b2e014",
+    "value": {
+      "capabilities": [],
+      "expires_at": "2030-01-01T00:00:00Z",
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "PlanningProvider.generate_structured",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "PlanningProvider-generate_structured-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "stage": "brief",
+      "original_prompt": "fixture",
+      "context_refs": [],
+      "output_schema_id": "test-fixture",
+      "output_schema_version": 1,
+      "locked_constraints": [],
+      "template_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "max_repairs": 0
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "PlanningProvider.generate_structured",
+    "status": "succeeded",
+    "operation_id": "PlanningProvider-generate_structured-fixture",
+    "input_digest": "450c897924166f675b202c6e65995df48a3aa2fcd0d74c55c54f9a5214899b21",
+    "value": {
+      "content": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "assumptions": [],
+      "provider": null,
+      "model": null,
+      "template_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "raw_response": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "repair_history": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AssetResolver.resolve",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AssetResolver-resolve-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "specs": [],
+      "registry_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "reuse_policy": "fixture",
+      "license_policy": "fixture"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AssetResolver.resolve",
+    "status": "succeeded",
+    "operation_id": "AssetResolver-resolve-fixture",
+    "input_digest": "2593ff4a61761935f56ef9ce40c49c33ce236521122c085ce614e49e21a30d2d",
+    "value": {
+      "requirements": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AcquisitionGateway.prepare",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AcquisitionGateway-prepare-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "spec": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "binding_id": "fixture-evidence",
+      "claim_id": "native-fixture-claim",
+      "expected_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "candidates": [],
+      "diagnostics": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AcquisitionGateway.prepare",
+    "status": "succeeded",
+    "operation_id": "AcquisitionGateway-prepare-fixture",
+    "input_digest": "b030544487561b350272d104a8bc3a7de1a253826545b45469469df019cb9620",
+    "value": {
+      "binding": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "claim_id": "native-fixture-claim",
+      "native_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "outcome": "known",
+      "receipt": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AcquisitionGateway.claim",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AcquisitionGateway-claim-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "spec": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "binding_id": "fixture-evidence",
+      "claim_id": "native-fixture-claim",
+      "expected_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "candidates": [],
+      "diagnostics": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AcquisitionGateway.claim",
+    "status": "succeeded",
+    "operation_id": "AcquisitionGateway-claim-fixture",
+    "input_digest": "906282bcf3291f91d794ca3fcc05da2d5d123a4a7cc019078dbff94e87005076",
+    "value": {
+      "binding": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "claim_id": "native-fixture-claim",
+      "native_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "outcome": "known",
+      "receipt": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AcquisitionGateway.ingest",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AcquisitionGateway-ingest-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "spec": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "binding_id": "fixture-evidence",
+      "claim_id": "native-fixture-claim",
+      "expected_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "candidates": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "diagnostics": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AcquisitionGateway.ingest",
+    "status": "succeeded",
+    "operation_id": "AcquisitionGateway-ingest-fixture",
+    "input_digest": "e84996b91ffd83da1110d2323699cd5afc47be2cac205a0ec00cb61093fa12c8",
+    "value": {
+      "binding": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "claim_id": "native-fixture-claim",
+      "native_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "outcome": "known",
+      "receipt": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AcquisitionGateway.fail",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AcquisitionGateway-fail-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "spec": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "binding_id": "fixture-evidence",
+      "claim_id": "native-fixture-claim",
+      "expected_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "candidates": [],
+      "diagnostics": [
+        {
+          "code": "fixture",
+          "severity": "info",
+          "stage": "fixture",
+          "entity_id": null,
+          "field_path": "fixture",
+          "expected": null,
+          "observed": null,
+          "retryable": false,
+          "recommended_action": "fixture",
+          "evidence": []
+        }
+      ]
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AcquisitionGateway.fail",
+    "status": "succeeded",
+    "operation_id": "AcquisitionGateway-fail-fixture",
+    "input_digest": "bee8a14a66b226daf52fd0c66958a409ba6c53439ef26e60e21d58accb5230bc",
+    "value": {
+      "binding": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "claim_id": "native-fixture-claim",
+      "native_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "outcome": "known",
+      "receipt": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AcquisitionGateway.reconcile",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AcquisitionGateway-reconcile-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "spec": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "binding_id": "fixture-evidence",
+      "claim_id": "native-fixture-claim",
+      "expected_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "candidates": [],
+      "diagnostics": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AcquisitionGateway.reconcile",
+    "status": "succeeded",
+    "operation_id": "AcquisitionGateway-reconcile-fixture",
+    "input_digest": "fc0fc0089e4462f7ca47f6c6e6955bc5718b3742ab19612e29adc58aa43a4ac1",
+    "value": {
+      "binding": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "claim_id": "native-fixture-claim",
+      "native_state": "fixture",
+      "provider_request_id": "fixture-provider-id",
+      "outcome": "known",
+      "receipt": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "AssetBuildAdapter.build",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "AssetBuildAdapter-build-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "spec": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "inputs": [],
+      "capability": "fixture",
+      "provider": null,
+      "seed": null,
+      "limits": {
+        "max_provider_calls": 0,
+        "max_cpu_seconds": 0,
+        "max_gpu_seconds": 0,
+        "max_storage_bytes": 0,
+        "max_memory_bytes": 0,
+        "currency": null,
+        "max_amount": null,
+        "policy_ref": null
+      },
+      "acquisition_binding": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "AssetBuildAdapter.build",
+    "status": "succeeded",
+    "operation_id": "AssetBuildAdapter-build-fixture",
+    "input_digest": "25efdeac9d8496bf85484f57b18b74edf544be3874ecf1b002f54b7806757163",
+    "value": {
+      "artifacts": [],
+      "meshes": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "materials": [],
+      "bounds": {
+        "minimum": [
+          -1000000000.0,
+          -1000000000.0,
+          -1000000000.0
+        ],
+        "maximum": [
+          -1000000000.0,
+          -1000000000.0,
+          -1000000000.0
+        ]
+      },
+      "vertices": 3,
+      "triangles": 1,
+      "coordinates": {
+        "handedness": "right",
+        "right": "+X",
+        "up": "+Y",
+        "forward": "+Z",
+        "unit": "meter",
+        "angles": "radian",
+        "quaternion": "XYZW",
+        "matrices": "column-vectors",
+        "time": "second"
+      },
+      "uncertainty": [],
+      "origin": "imported",
+      "backend_receipt": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RigMotionAdapter.prepare",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RigMotionAdapter-prepare-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "mesh": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "identity": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "required_anatomy": [],
+      "actions": [],
+      "landmarks": [],
+      "supplied_rig": null,
+      "motions": [],
+      "contact_requirements": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RigMotionAdapter.prepare",
+    "status": "succeeded",
+    "operation_id": "RigMotionAdapter-prepare-fixture",
+    "input_digest": "1162a279605ec6750c9dd1ce44ccaba01f12b7d46a4d47973930c05fb65cebac",
+    "value": {
+      "artifacts": [],
+      "rig": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "bindings": [],
+      "clips": [],
+      "deformation_checks": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "unsupported_actions": [],
+      "contact_diagnostics": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "SceneAssembler.assemble",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "SceneAssembler-assemble-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "shot_plan": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "story_plan": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "assets": [],
+      "rig_motion": [],
+      "layout_requirements": [],
+      "look_requirements": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "SceneAssembler.assemble",
+    "status": "succeeded",
+    "operation_id": "SceneAssembler-assemble-fixture",
+    "input_digest": "070791e2afc86d098bbc2b2ee8673fb9aece3455cd0a0d3658b276d3225edd7d",
+    "value": {
+      "artifacts": [],
+      "scenes": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "node_ids": [],
+      "actor_ids": [],
+      "cameras": [],
+      "lights": [],
+      "materials": [],
+      "timelines": [],
+      "spatial_feasibility": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "native_exports": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "FrameEvaluator.evaluate",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "FrameEvaluator-evaluate-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "scene": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "shot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "frame": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "frame_rate": {
+        "numerator": 1,
+        "denominator": 1
+      },
+      "dependency_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "FrameEvaluator.evaluate",
+    "status": "succeeded",
+    "operation_id": "FrameEvaluator-evaluate-fixture",
+    "input_digest": "d634b33c3758389f9c83f4919c6507ffc0ad7284e5a48c716bc5a3f75d0cccf1",
+    "value": {
+      "scene": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "frame": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "node_transforms": [],
+      "bone_matrices": [],
+      "skinning_matrices": [],
+      "morph_weights": [],
+      "camera_states": [],
+      "light_states": [],
+      "material_states": [],
+      "contacts": [],
+      "prop_ownership": [],
+      "active_clips": [],
+      "diagnostics": [],
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "GraphCompiler.compile",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "GraphCompiler-compile-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "plan": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "capabilities": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "resolution": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "budget": {
+        "max_provider_calls": 0,
+        "max_cpu_seconds": 0,
+        "max_gpu_seconds": 0,
+        "max_storage_bytes": 0,
+        "max_memory_bytes": 0,
+        "currency": null,
+        "max_amount": null,
+        "policy_ref": null
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "GraphCompiler.compile",
+    "status": "succeeded",
+    "operation_id": "GraphCompiler-compile-fixture",
+    "input_digest": "31f636a2e21a3a1681ab769d46ec5300ccd8d96b15f40775ee25c57272b7966a",
+    "value": {
+      "nodes": [
+        {
+          "id": "fixture",
+          "operation": "CapabilityRegistry.probe",
+          "inputs": [],
+          "output_schema": "fixture",
+          "resource_class": "fixture",
+          "cache_key": "0000000000000000000000000000000000000000000000000000000000000000",
+          "gates": [],
+          "native_owner": "fixture"
+        }
+      ],
+      "edges": [],
+      "critical_path_seconds": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "BudgetLedger.reserve",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "BudgetLedger-reserve-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "operation": "fixture",
+      "estimated_bound": {
+        "classification": "unavailable",
+        "provider_calls": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "input_tokens": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "output_tokens": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "cpu_seconds": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "gpu_seconds": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "storage_bytes": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "currency": null,
+        "amount": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "measurement_source": "Synthetic contract fixture; no invocation."
+      },
+      "retry_allowance": 0,
+      "rate_evidence": [],
+      "expected_ledger_revision": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "BudgetLedger.reserve",
+    "status": "succeeded",
+    "operation_id": "BudgetLedger-reserve-fixture",
+    "input_digest": "d2d9a24104a7026008631524513a965a60cd11eb330d9d0014e9b0e2aa85ab32",
+    "value": {
+      "reservation_id": "fixture",
+      "ledger_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "remaining": {
+        "max_provider_calls": 0,
+        "max_cpu_seconds": 0,
+        "max_gpu_seconds": 0,
+        "max_storage_bytes": 0,
+        "max_memory_bytes": 0,
+        "currency": null,
+        "max_amount": null,
+        "policy_ref": null
+      },
+      "state": "reserved",
+      "evidence": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "BudgetLedger.settle",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "BudgetLedger-settle-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "reservation_id": "fixture",
+      "actual_usage": {
+        "classification": "actual",
+        "provider_calls": {
+          "value": 0,
+          "explanation": "Synthetic zero-usage contract example; no invocation."
+        },
+        "input_tokens": {
+          "value": 0,
+          "explanation": "Synthetic zero-usage contract example; no invocation."
+        },
+        "output_tokens": {
+          "value": 0,
+          "explanation": "Synthetic zero-usage contract example; no invocation."
+        },
+        "cpu_seconds": {
+          "value": 0,
+          "explanation": "Synthetic zero-usage contract example; no invocation."
+        },
+        "gpu_seconds": {
+          "value": 0,
+          "explanation": "Synthetic zero-usage contract example; no invocation."
+        },
+        "storage_bytes": {
+          "value": 0,
+          "explanation": "Synthetic zero-usage contract example; no invocation."
+        },
+        "currency": null,
+        "amount": {
+          "value": null,
+          "explanation": "No actual usage is measured by this synthetic fixture."
+        },
+        "measurement_source": "Synthetic contract fixture; no invocation."
+      },
+      "expected_ledger_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "outcome": "complete",
+      "evidence": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "BudgetLedger.settle",
+    "status": "succeeded",
+    "operation_id": "BudgetLedger-settle-fixture",
+    "input_digest": "910ceca5dec99bc04e8a906fb62a9b67b55d00202c0b5da8feec1dff6d606c87",
+    "value": {
+      "reservation_id": "fixture",
+      "ledger_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "remaining": {
+        "max_provider_calls": 0,
+        "max_cpu_seconds": 0,
+        "max_gpu_seconds": 0,
+        "max_storage_bytes": 0,
+        "max_memory_bytes": 0,
+        "currency": null,
+        "max_amount": null,
+        "policy_ref": null
+      },
+      "state": "settled",
+      "evidence": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "BudgetLedger.release",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "BudgetLedger-release-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "reservation_id": "fixture",
+      "expected_ledger_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "outcome": "complete",
+      "evidence": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "BudgetLedger.release",
+    "status": "succeeded",
+    "operation_id": "BudgetLedger-release-fixture",
+    "input_digest": "c4020486bb4289abf414b69c1f70d71aa5e02e1ec0130223806a3d264a2b5c6f",
+    "value": {
+      "reservation_id": "fixture",
+      "ledger_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "remaining": {
+        "max_provider_calls": 0,
+        "max_cpu_seconds": 0,
+        "max_gpu_seconds": 0,
+        "max_storage_bytes": 0,
+        "max_memory_bytes": 0,
+        "currency": null,
+        "max_amount": null,
+        "policy_ref": null
+      },
+      "state": "released",
+      "evidence": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "ExecutionService.submit",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "ExecutionService-submit-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "graph": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "ExecutionService.submit",
+    "status": "succeeded",
+    "operation_id": "ExecutionService-submit-fixture",
+    "input_digest": "3ee173047a357bdce36fde1967d92c2781322289a445609b602d82a12afda592",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "ExecutionService.status",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "ExecutionService-status-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "job_id": "fixture",
+      "expected_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "fixture"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "ExecutionService.status",
+    "status": "succeeded",
+    "operation_id": "ExecutionService-status-fixture",
+    "input_digest": "e9fd1075a77ebf247ef50ab3fbb52a4a0335384c44b000930eda829008ad8eb2",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "ExecutionService.resume",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "ExecutionService-resume-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "job_id": "fixture",
+      "expected_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "fixture",
+      "dependency_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "ownership_evidence": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "ExecutionService.resume",
+    "status": "succeeded",
+    "operation_id": "ExecutionService-resume-fixture",
+    "input_digest": "4529c0e741160ea57e068fe0431da8cb1f86a27dc6fe8bf5347c7aafd8855cd8",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "ExecutionService.cancel",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "ExecutionService-cancel-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "job_id": "fixture",
+      "expected_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "fixture"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "ExecutionService.cancel",
+    "status": "succeeded",
+    "operation_id": "ExecutionService-cancel-fixture",
+    "input_digest": "f54f421aef49673a3387059f0401f2da55e2fe3911ce1903c69de832e3f11951",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RenderAdapter.preflight",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RenderAdapter-preflight-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "scene_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "shot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "frame_ranges": [
+        {
+          "start_frame": 0,
+          "end_frame": 1
+        }
+      ],
+      "frame_rate": {
+        "numerator": 1,
+        "denominator": 1
+      },
+      "evaluated_state_schema": "fixture",
+      "engine": "fixture",
+      "device_policy": "fixture",
+      "settings": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "budget": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RenderAdapter.preflight",
+    "status": "succeeded",
+    "operation_id": "RenderAdapter-preflight-fixture",
+    "input_digest": "d3e5c206347a61d05e51d5e4fe3a4d90efcb81c211948b6f20fc205872e921f4",
+    "value": {
+      "ready": false,
+      "missing_capabilities": [],
+      "diagnostics": [],
+      "evidence": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RenderAdapter.submit",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RenderAdapter-submit-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "scene_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "shot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "frame_ranges": [
+        {
+          "start_frame": 0,
+          "end_frame": 1
+        }
+      ],
+      "frame_rate": {
+        "numerator": 1,
+        "denominator": 1
+      },
+      "evaluated_state_schema": "fixture",
+      "engine": "fixture",
+      "device_policy": "fixture",
+      "settings": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "budget": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RenderAdapter.submit",
+    "status": "succeeded",
+    "operation_id": "RenderAdapter-submit-fixture",
+    "input_digest": "d4a05b2d80d9282496401da00ec526a97af3f06e947a47f7b39e55c1db196c95",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RenderAdapter.status",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RenderAdapter-status-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "job_id": "fixture",
+      "expected_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "fixture"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RenderAdapter.status",
+    "status": "succeeded",
+    "operation_id": "RenderAdapter-status-fixture",
+    "input_digest": "4190f63427cdabe5e5cfc383d882744f84253d3bc7f6d9187c4c0ffe87a4b41f",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RenderAdapter.cancel",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RenderAdapter-cancel-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "job_id": "fixture",
+      "expected_revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "fixture"
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RenderAdapter.cancel",
+    "status": "succeeded",
+    "operation_id": "RenderAdapter-cancel-fixture",
+    "input_digest": "252bdf27c49f6604dfb9d47d3a19b5241099c67f045ea4dadbceb3b4c5ba77d4",
+    "value": {
+      "job_id": "fixture",
+      "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "queued",
+      "nodes": [],
+      "attempts": 0,
+      "native_workers": [],
+      "claims": [],
+      "progress": null,
+      "reservations": [],
+      "diagnostics": [],
+      "artifacts": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RenderAdapter.verify",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RenderAdapter-verify-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "job": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "scene_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "frames": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "frame_range": {
+        "start_frame": 0,
+        "end_frame": 1
+      },
+      "frame_rate": {
+        "numerator": 24,
+        "denominator": 1
+      },
+      "resolution": [
+        1,
+        1
+      ]
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RenderAdapter.verify",
+    "status": "succeeded",
+    "operation_id": "RenderAdapter-verify-fixture",
+    "input_digest": "c63f92b1c0d49bfed2352879095862ee63937b2e540bb7e4636be42917969599",
+    "value": {
+      "scene_snapshot": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "backend": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "frame_range": {
+        "start_frame": 0,
+        "end_frame": 1
+      },
+      "frame_rate": {
+        "numerator": 24,
+        "denominator": 1
+      },
+      "resolution": [
+        1,
+        1
+      ],
+      "frames": [
+        {
+          "index": 0,
+          "timestamp": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "resolution": [
+            1,
+            1
+          ],
+          "artifact": {
+            "artifact_id": "fixture-evidence",
+            "kind": "test-fixture",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "examples/director-contracts/evidence.txt",
+            "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+            "byte_size": 82,
+            "media_type": "text/plain",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          },
+          "decode_evidence": {
+            "artifact_id": "fixture-evidence",
+            "kind": "test-fixture",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "examples/director-contracts/evidence.txt",
+            "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+            "byte_size": 82,
+            "media_type": "text/plain",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          },
+          "dependency_snapshot": {
+            "artifact_id": "fixture-evidence",
+            "kind": "test-fixture",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "examples/director-contracts/evidence.txt",
+            "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+            "byte_size": 82,
+            "media_type": "text/plain",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        }
+      ]
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "ExportService.export",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "ExportService-export-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "sources": [],
+      "target": "native_blend",
+      "codec": null,
+      "options": [],
+      "verification": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "ExportService.export",
+    "status": "succeeded",
+    "operation_id": "ExportService-export-fixture",
+    "input_digest": "b363553e7388e9e81202394cdc5359c85943de88882f61c130c88b1f869cb163",
+    "value": {
+      "target": "native_blend",
+      "outputs": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "format_losses": [],
+      "verification": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "verified": true,
+      "decoded_frames": null,
+      "audio_streams": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "ExportService.verify",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "ExportService-verify-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "export": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "sources": [],
+      "expected_frames": null,
+      "frame_rate": null,
+      "zero_audio_streams": false
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "ExportService.verify",
+    "status": "succeeded",
+    "operation_id": "ExportService-verify-fixture",
+    "input_digest": "69d382f762377bd45ee899a0202f1a85d41810333113349a4ed3150e78997786",
+    "value": {
+      "target": "native_blend",
+      "outputs": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "format_losses": [],
+      "verification": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ],
+      "verified": true,
+      "decoded_frames": null,
+      "audio_streams": null
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "QAService.validate",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "QAService-validate-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "artifacts": [],
+      "check_profile": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "thresholds": []
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "QAService.validate",
+    "status": "succeeded",
+    "operation_id": "QAService-validate-fixture",
+    "input_digest": "e4833b2f5161e2d73b5f03d29bb71e8bbde117886904ca18bc31c8e06a98bb3c",
+    "value": {
+      "measured": [],
+      "unmeasured": [],
+      "findings": [],
+      "status": "passed"
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "QAService.record_review",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "QAService-record_review-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "reviewer_id": "fixture",
+      "authority": "assistant",
+      "scope": [],
+      "decisions": [
+        {
+          "dimension": "fixture",
+          "verdict": "approved",
+          "rationale": "fixture"
+        }
+      ],
+      "evidence": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "QAService.record_review",
+    "status": "succeeded",
+    "operation_id": "QAService-record_review-fixture",
+    "input_digest": "677863c1a3c47c25d3dedc2e671194e1c7cf79ff19a1bb4f0d93ebd2bb6b5ee9",
+    "value": {
+      "reviewer_id": "fixture",
+      "authority": "assistant",
+      "scope": [],
+      "decisions": [
+        {
+          "dimension": "fixture",
+          "verdict": "approved",
+          "rationale": "fixture"
+        }
+      ],
+      "evidence": [
+        {
+          "artifact_id": "fixture-evidence",
+          "kind": "test-fixture",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "examples/director-contracts/evidence.txt",
+          "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+          "byte_size": 82,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RevisionService.plan",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RevisionService-plan-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "instruction": "fixture",
+      "current_project": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "locked_constraints": [],
+      "budget": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "capabilities": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RevisionService.plan",
+    "status": "succeeded",
+    "operation_id": "RevisionService-plan-fixture",
+    "input_digest": "53bed3559c4985b594641231cbb3f75b09dbb61c4cfae09e1df979788fc8159d",
+    "value": {
+      "patch": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "changed_ids": [],
+      "assumptions": [],
+      "diagnostics": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RevisionService.apply",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RevisionService-apply-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "patch": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "expected_revision": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+      "authorization": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RevisionService.apply",
+    "status": "succeeded",
+    "operation_id": "RevisionService-apply-fixture",
+    "input_digest": "847fc1c09df60928e86216e5e95459f91ae8b1b41be4b764cee4fd7ab1bdcb16",
+    "value": {
+      "project": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "parent": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "changed_ids": [],
+      "stale_descendants": [],
+      "preserved_outputs": [],
+      "diagnostics": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-request",
+    "method": "RevisionService.impact",
+    "context": {
+      "project_id": "project-fixture",
+      "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "request_id": "RevisionService-impact-fixture",
+      "idempotency_key": "fixture",
+      "attempt_id": "fixture",
+      "capability_snapshot_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "budget_reservation_id": null,
+      "cancellation_token": "fixture",
+      "deadline": "2030-01-01T00:00:00Z",
+      "policy": {
+        "network": "deny",
+        "providers": [],
+        "paid": "deny",
+        "policy_ref": null
+      }
+    },
+    "input": {
+      "patch": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "graph": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      }
+    }
+  },
+  {
+    "schema_version": 1,
+    "kind": "director-result",
+    "method": "RevisionService.impact",
+    "status": "succeeded",
+    "operation_id": "RevisionService-impact-fixture",
+    "input_digest": "d74de07dddc706b92847817a5a723ef8f869d3eeb3c3714d9fe4bbeabbe7c4d0",
+    "value": {
+      "changed_ids": [],
+      "stale_descendants": [],
+      "preserved_outputs": [],
+      "diagnostics": []
+    },
+    "artifacts": [],
+    "diagnostics": [],
+    "usage": {
+      "classification": "unavailable",
+      "provider_calls": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "input_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "output_tokens": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "cpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "gpu_seconds": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "storage_bytes": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "currency": null,
+      "amount": {
+        "value": null,
+        "explanation": "No actual usage is measured by this synthetic fixture."
+      },
+      "measurement_source": "Synthetic contract fixture; no invocation."
+    },
+    "provenance_receipts": []
+  }
+]

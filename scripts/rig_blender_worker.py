@@ -49,6 +49,9 @@ def inspect_scene(job):
     meshes=[o for o in bpy.data.objects if o.type=='MESH']
     report=dict(blender_version=bpy.app.version_string,meshes=len(meshes),vertices=sum(len(o.data.vertices) for o in meshes),
         armatures=len(armatures),bones=sum(len(o.data.bones) for o in armatures),
+        bone_metadata={bone.name:dict(native_id=bone.get('hatch_bone_id'),role=bone.get('hatch_role'),
+            deform=bool(bone.use_deform),parent=bone.parent.name if bone.parent else None)
+            for arm in armatures for bone in arm.data.bones},
         armature_modifiers=sum(sum(m.type=='ARMATURE' for m in o.modifiers) for o in meshes),
         vertex_groups=sum(len(o.vertex_groups) for o in meshes),
         shape_keys={o.name:[k.name for k in o.data.shape_keys.key_blocks] for o in meshes if o.data.shape_keys},
