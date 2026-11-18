@@ -433,4 +433,22 @@ The optional Python `rig_state_runtime.RigStateRuntime` executes selected valida
 
 Runtime root placement is applied before native constraints and contact IK, retaining authored world-space poles and constraint points. Internal multi-clip intervals are half-open; the final non-looping endpoint remains clamped. Numerical regressions compare every joint transform and complete skinned positions.
 
-Event dispatch, explicit catalog recovery, reduced-motion execution and detailed dependency discovery remain deferred. See [bounded runtime preservation](rig-state-runtime-preservation.md) for exact source boundaries, retained tests and remaining verification gates.
+Use `dispatch(event, now)` for selected catalog events or `state:<name-or-alias>`,
+and `recover(now)` for the selected catalog recovery target. Dispatch uses native
+transition/priority policy; recovery is an explicit transactional override.
+Opt-in `reduced_motion=True` requires `reduced_motion_poses` to provide a valid
+current native Pose for every executable state, named by its first clip's
+`reduced_motion_pose`. The runtime holds those copied authored alternatives
+without clip playback, crossfades or automatic completion. Explicit state
+changes still obey time and policy guards; no catalog 2D frame becomes 3D geometry.
+
+State maps also report catalog anatomy/prop requirements separately from actual
+validated clip dependencies. Complete recipes report channel, skin, controller,
+ancestor and authored-default-morph dependencies, plus exact copied rig/clip
+provenance. Incomplete recipes report present/missing clips without inventing
+concrete dependencies. Existing work estimates and approval boundaries remain.
+
+See [bounded runtime preservation](rig-state-runtime-preservation.md),
+[event and still-pose preservation](rig-state-events-preservation.md) and
+[dependency discovery preservation](rig-state-discovery-preservation.md) for
+source boundaries, retained tests and remaining verification gates.
