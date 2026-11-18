@@ -79,6 +79,23 @@ class RigAnimationTests(unittest.TestCase):
         self.assertEqual(bake_clip(self.rig,clip),clip)
     def test_key_reduction_preserves_midpoint_cue(self):
         reduced=reduce_keys(self.rig.clips['bend'],tolerance=.001);self.assertEqual(len(reduced['tracks'][0]['times']),3)
+    def test_key_reduction_respects_small_rotation_tolerance(self):
+        rig = self.rig
+        rest = neutral_pose(rig.skeleton)
+        angle = 1e-8
+        midpoint = rotate_bone(rig.skeleton, rest, 'b1', axis_angle([0, 0, 1], angle))
+        clip = clip_from_poses(rig, 'small-rotation', [0., .5, 1.], [rest, midpoint, rest], fps=12)
+        saved = deepcopy(clip)
+
+        retained = reduce_keys(clip, tolerance=1e-9)
+        self.assertEqual(retained['tracks'][0]['times'], [0., .5, 1.])
+        np.testing.assert_array_equal(evaluate_track(retained['tracks'][0], .5),
+                                      evaluate_track(saved['tracks'][0], .5))
+
+        removed = reduce_keys(clip, tolerance=1e-7)
+        self.assertEqual(removed['tracks'][0]['times'], [0., 1.])
+        self.assertEqual(clip, saved)
+
     def test_retarget_requires_matching_identity_and_archetype(self):
         target=fixture(self.temp.name,name='target');profile=build_retarget_profile(self.rig,target)
         result=retarget_animation(self.rig,target,'bend',profile=profile);self.assertGreater(len(result['clip']['tracks']),0)

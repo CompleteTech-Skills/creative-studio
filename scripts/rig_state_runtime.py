@@ -32,8 +32,9 @@ class RigStateRuntime:
     def __init__(self, rig, initial, *, recipes=None, selected=None,
                  blend_seconds=0.2, now=0.0, transition_budget=32,
                  control_transition='continuous'):
-        require(isinstance(now, (int, float)) and not isinstance(now, bool) and 0 <= now <= float_info.max,
-                'RIG_STATE_TIME', 'Runtime time must be finite and nonnegative.')
+        require(isinstance(now, (int, float)) and not isinstance(now, bool) and
+                0 <= now <= float_info.max and float(now) == now,
+                'RIG_STATE_TIME', 'Runtime time must be finite, nonnegative and exactly representable by its float clock.')
         require(isinstance(blend_seconds, (int, float)) and not isinstance(blend_seconds, bool)
                 and 0 <= blend_seconds <= 10,
                 'RIG_STATE_BLEND', 'Blend duration must be within zero to ten seconds.')
@@ -63,8 +64,8 @@ class RigStateRuntime:
 
     def _check(self, now):
         require(isinstance(now, (int, float)) and not isinstance(now, bool)
-                and self.time <= now <= float_info.max,
-                'RIG_STATE_TIME', 'Runtime time must be finite and monotonic.')
+                and self.time <= now <= float_info.max and float(now) == now,
+                'RIG_STATE_TIME', 'Runtime time must be finite, monotonic and exactly representable by its float clock.')
         require(self._signature == self._current_signature(), 'RIG_STATE_STALE',
                 'Rig or animation changed; create a fresh runtime mapping.')
 
@@ -120,6 +121,7 @@ class RigStateRuntime:
         absolute_intervals = not looping
         cycle_offset = 0.
         if looping and math.isfinite(cycles):
+            original_cycles = cycles
             cycle_start = self.entered+cycles*duration
             cycle_end = self.entered+(cycles+1)*duration
             if cycle_end > cycle_start:
@@ -128,8 +130,12 @@ class RigStateRuntime:
                     cycles += 1
                 elif now < cycle_start and cycles > 0:
                     cycles -= 1
+                if cycles != original_cycles:
+                    local = max(0., min(math.nextafter(duration, -math.inf),
+                                       local+(original_cycles-cycles)*duration))
                 cycle_offset = cycles*duration
                 absolute_intervals = True
+        phase = local
         cycle_delta = np.zeros(3)
         prior_duration = 0.
         exact_duration = Fraction()
@@ -147,7 +153,13 @@ class RigStateRuntime:
                 if completed:
                     local = clip['duration']
                 elif absolute_intervals:
-                    local = max(0., now-(self.entered+(cycle_offset+prior_duration)))
+                    # Rounded absolute boundaries decide interval ownership,
+                    # but cannot replace the elapsed/remainder clock inside it.
+                    # Subtracting a rounded large-origin cycle start changes
+                    # interior key selection and can hide invalid samples.
+                    local = max(0., phase-prior_duration)
+                    if now == self.entered+(cycle_offset+prior_duration):
+                        local = 0.
                 # Every interval is half-open except a known completed final
                 # non-looping clip. Equivalent floating-point sums can disagree
                 # at a loop edge, without making its terminal STEP key visible.

@@ -306,3 +306,21 @@ root trajectory extraction samples only the root translation. The corrected
 completion and sample-admission modules passed all 27 methods in 43.733 seconds,
 exit 0, zero skips. These focused executions do not substitute for the corrected
 tree's full gate, independent re-review or protected hosted checks.
+
+The subsequent source `ae221055` / published tree `0f29d019` passed all 149
+animation/IK tests in 103.762 seconds, exit 0, zero skips, before security review
+identified an interior phase mismatch and inconsistent large integer clocks.
+Interior loop samples now retain the native elapsed-time remainder. Rounded
+absolute boundaries only determine interval ownership and exact starts; they
+do not replace that interior clock. Five independent regression/control methods
+cover an ordinary STEP blink, cubic scale admission at a large origin, and
+integer constructor/playback/rollback boundaries. Together with prior completion
+and sample-admission cases, all 32 methods passed in 47.360 seconds, zero skips.
+
+The runtime clock stores binary64 seconds. Integer timestamps are accepted only
+when they round-trip exactly through that representation; an inexact integer
+raises `RIG_STATE_TIME` on first admission rather than silently changing its
+monotonic order. Exactly representable large integers and repeated timestamps
+remain supported. This explicit representation boundary applies to construction,
+evaluation, requests and cancellation. Corrected full-gate execution and fresh
+exact-head independent review remain required.
