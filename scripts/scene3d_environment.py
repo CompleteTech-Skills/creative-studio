@@ -64,8 +64,10 @@ def plan(recipe):
                 'Primitive requires a text kind and dimensions object.')
         add('mesh',primitive(p['kind'],**p['dimensions']))
     elif kind=='terrain':
-        allowed={'width','depth','resolution','elevation','max_slope','heights','smooth','paths','scatter_count','spacing','scatter_slope','exclusions','mask','mask_target','elevation_edits','lod_strides'}
+        allowed={'width','depth','resolution','elevation','max_slope','heights','smooth','paths','scatter_count','spacing','scatter_slope','exclusions','mask','mask_target','elevation_edits','lod_strides','planar_uv'}
         require(not set(p)-allowed,'Unknown terrain parameter.')
+        planar_uv=p.get('planar_uv',False)
+        require(type(planar_uv) is bool,'Terrain planar_uv must be boolean.')
         terrain=Heightfield(seed=recipe['seed'],**{k:v for k,v in p.items() if k in {'width','depth','resolution','elevation','max_slope','heights'}})
         if p.get('smooth',0):terrain.smooth(p['smooth'])
         if 'elevation_edits' in p:terrain.edit(p['elevation_edits'])
@@ -77,10 +79,10 @@ def plan(recipe):
         for path in paths:
             require(isinstance(path,dict) and set(path)=={'points','width','elevation'},'Invalid terrain path.')
             terrain.path(**path)
-        add('ground',terrain.mesh())
+        add('ground',terrain.mesh(planar_uv=planar_uv))
         strides=p.get('lod_strides',[])
         require(isinstance(strides,list) and len(strides)<=4 and all(type(v) is int for v in strides) and len(set(strides))==len(strides),'Terrain supports up to four distinct integer LOD strides.')
-        objects[-1]['lods']=[terrain.lod_mesh(stride) for stride in strides]
+        objects[-1]['lods']=[terrain.lod_mesh(stride,planar_uv=planar_uv) for stride in strides]
         total=count(p.get('scatter_count',0),'scatter count',0,10000)
         positions=[] if total==0 else scatter(terrain,total,spacing=p.get('spacing',1.3),seed=recipe['seed'],clearance=.65,
                         max_slope=p.get('scatter_slope',30),exclusions=p.get('exclusions',()))

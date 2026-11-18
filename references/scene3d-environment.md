@@ -27,8 +27,8 @@ revision once. `create_environments(destination, recipes,
 offsets=None, parents=None)` constructs a first project through this batch API.
 
 Meshes use meters, right-handed Y-up coordinates and counterclockwise exterior
-triangles. OBJ resources contain actual triangles, explicit flat normals and
-per-triangle UVs; they are not textured material demonstrations.
+triangles. OBJ resources contain actual triangles and explicit flat normals.
+The default UVs repeat per triangle.
 
 `rooms`, `workshop`, `fantasy`, and `science-fiction` accept room count,
 width/depth/height, wall thickness, door width/height, a windows boolean, and an `external_door` boolean (default
@@ -42,8 +42,8 @@ claim the complete themed asset/material catalogs requested by issue #61.
 `terrain` accepts width/depth, resolution, elevation, optional exact heights,
 maximum slope in degrees, smoothing iterations, explicit elevation edits,
 mask/target grids, LOD strides, paths (points/width/elevation),
-and bounded seeded tree scatter. Heights use the actual emitted triangular
-surface for queries. A supplied slope limit is clamped against both triangles
+bounded seeded tree scatter, and optional planar UVs. Height queries use the
+actual emitted triangular surface. A supplied slope limit is clamped against both triangles
 of every cell, and checked again before publication after path/height edits.
 Elevation edits use exact grid coordinates and explicit bounds. Mask weights in
 [0,1] blend the actual elevations toward a bounded target. Both operations reject
@@ -52,6 +52,13 @@ Optional LOD strides must divide the grid interval count; each LOD samples exact
 existing vertices, persists as a separate mesh asset, and stays in the hash-bound
 asset dependency closure. Maximum four LOD levels and the aggregate triangle
 budget include all coarse meshes.
+
+Set `parameters.planar_uv` to `true` to map the whole ground footprint into
+one texture tile. Native U increases with +X and V with +Z, with both axes
+spanning [0, 1]. The stored OBJ uses bottom-left V, which the native importer
+converts to glTF V. Each LOD uses the same coordinates at its shared vertices.
+The option defaults to `false` and preserves existing recipe and OBJ bytes
+when omitted.
 
 Tree placement checks complete crown footprint clearance at the boundary and
 exclusions and uses a grid index for minimum-distance tests. Spacing defaults

@@ -264,6 +264,51 @@ class EnvironmentTests(unittest.TestCase):
                 with self.assertRaises(RigError) as failure:load_meshes(staged,selected)
                 self.assertIsNotNone(failure.exception.__cause__)
 
+    def test_saved_planar_terrain_uvs_match_lods_and_native_obj_import(self):
+        from rig_obj import import_obj
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            arguments = dict(width=12, depth=6, resolution=13, elevation=2, lod_strides=[2, 3])
+            original = root / 'original'
+            create_environment(original, recipe('terrain', **arguments))
+            planar = root / 'planar'
+            create_environment(planar, recipe('terrain', planar_uv=True, **arguments))
+
+            def assets(project):
+                bundle = load_project(project)
+                path = bundle['project']['scenes'][-1]['path']
+                scene = bundle['documents'][path]
+                ground = next(node for node in scene['nodes'] if node['id'] == 'test-ground')
+                asset = bundle['documents'][ground['asset']['path']]
+                return path, [asset, *(bundle['documents'][r['path']] for r in asset['lods'])]
+
+            legacy_path, legacy_assets = assets(original)
+            planar_path, planar_assets = assets(planar)
+            self.assertEqual(load_meshes(original, legacy_path), load_meshes(planar, planar_path))
+            for stride, legacy_asset, asset in zip((1, 2, 3), legacy_assets, planar_assets, strict=True):
+                with self.subTest(stride=stride):
+                    path = planar / asset['content']['path']
+                    lines = path.read_text().splitlines()
+                    old = (original / legacy_asset['content']['path']).read_text().splitlines()
+                    self.assertEqual([line for line in lines if line.startswith(('v ', 'vn '))],
+                                     [line for line in old if line.startswith(('v ', 'vn '))])
+                    uv = np.array([list(map(float, line.split()[1:])) for line in lines if line.startswith('vt ')])
+                    n = 12 // stride + 1
+                    self.assertEqual(uv.shape, (n*n, 2))
+                    np.testing.assert_array_equal(uv[[0, n-1, -n, -1]], [[0, 1], [1, 1], [0, 0], [1, 0]])
+                    if stride == 1:
+                        full_uv = uv.reshape(n, n, 2)
+                    else:
+                        np.testing.assert_array_equal(uv, full_uv[::stride, ::stride].reshape(-1, 2))
+                    mesh = import_obj(path).geometry.meshes[0]
+                    native_uv = np.column_stack((mesh.positions[:, 0] / 12 + .5, mesh.positions[:, 2] / 6 + .5))
+                    np.testing.assert_allclose(mesh.attributes['TEXCOORD_0'], native_uv, rtol=0, atol=1e-15)
+            invalid = root / 'invalid'
+            with self.assertRaises(RigError):
+                create_environment(invalid, recipe('terrain', planar_uv=1))
+            self.assertFalse(invalid.exists())
+
     def test_actual_terrain_lod_dependency_closure_survives_reopen(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)/'terrain'
