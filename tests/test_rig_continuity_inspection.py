@@ -1,4 +1,5 @@
 """Actual saved native sources; fixture decisions never prove artwork approval."""
+from copy import deepcopy
 import hashlib
 import io
 import json
@@ -14,15 +15,26 @@ from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from continuity_inspection import inspect_asset, compare_assets
+from continuity_inspection import NativeInspectionOwner, classify_rigs, inspect_asset, compare_assets
 from continuity_contracts import canonical_bytes,digest
+from continuity_test_helpers import sample
 from rig_gltf import GltfBuilder, read_gltf
+from rig_jobs import save_rig
+from rig_retarget import build_retarget_profile
+from rig_skinning import generate_skin_weights
+from rig_test_helpers import fixture
 
 
 def pointer(root,path,*,kind='mesh',identity='fixture',version='1.0.0'):
     path=Path(path)
     return dict(id=identity,version=version,path=path.relative_to(root).as_posix(),
                 sha256=hashlib.sha256(path.read_bytes()).hexdigest(),kind=kind)
+
+
+def native_request(root,rig):
+    source=pointer(root,rig.root/'rig.json',kind='hatch-3d-rig',identity=rig.manifest['id'],version=rig.manifest['version'])
+    deps=[pointer(root,p,kind='native-dependency') for p in sorted(rig.root.rglob('*')) if p.is_file() and p!=rig.root/'rig.json']
+    return dict(source=source,dependencies=deps)
 
 
 def gltf(root,name='source.glb',*,color=(20,40,60),width=1.,external=False, skinned=False):
@@ -428,6 +440,114 @@ class ContinuityInspectionTests(unittest.TestCase):
                          dict(code='RIG_LIMIT_VERTICES', expected=2, observed=3))
         error = rejected(canonical_bytes(dict(source=dict(source, sha256='0' * 64))))
         self.assertIn('CONTINUITY_INSPECTION_HASH', error['error'])
+
+
+    def test_native_rig_inspection_measures_real_bind_weights_and_sockets(self):
+        rig=fixture(self.root,animated=False)
+        request=native_request(self.root,rig)
+        protected={r['path']:r['sha256'] for r in [request['source'],*request['dependencies']]}
+        result=inspect_asset(self.root,**request)['inspection']
+        self.assertEqual(len(result['skeleton']['bones']),3)
+        self.assertEqual(result['skins']['strip']['weights']['shape'],[4,4])
+        self.assertEqual(len(result['skins']['strip']['inverse_bind_matrices']),3)
+        self.assertLess(result['skins']['strip']['maximum_weight_sum_error'],1e-12)
+        self.assertEqual(result['hierarchy'][1]['parent'],'b0')
+        self.assertEqual(protected,{p:hashlib.sha256((self.root/p).read_bytes()).hexdigest() for p in protected})
+        result=classify_rigs(self.root,request,request)
+        self.assertEqual(result['status'],'unverified');self.assertTrue(result['structure_and_binding_equal'])
+        self.assertEqual(result['issues'][0]['code'],'APPROVAL_REQUIRED')
+
+    def test_actual_capability_admission_executes_and_retains_source_bound_receipt(self):
+        from continuity_capabilities import Admission,Policy
+        path,_=gltf(self.root);source=pointer(self.root,path)
+        (self.root/'evidence').mkdir()
+        owner=NativeInspectionOwner(self.root,source,'evidence')
+        engine=Admission(self.root,policy=Policy(asset_rights=True,allowed_owners=frozenset(['hatch-rig'])),owners=[owner])
+        resources=dict(memory_bytes=512*1024**2,disk_bytes=64*1024**2,cpu_seconds=60,gpu_bytes=0,concurrency=1)
+        request=dict(schema_version='1.0.0',kind='continuity-capability-request',request_id='actual-inspection',project_revision=source,
+            checks=[dict(id='geometry',capability='geometry-inspection',schema_version='1.0.0',inputs=[source],
+                input_types=['mesh'],output_types=['native-inspection'],resources=resources,required_fields=['source-hierarchy'],
+                allow_fallback=True,gpu_required=False,needs_visual_approval=False)])
+        result=engine.run(request)
+        self.assertIn(result['checks'][0]['outcome'],['executed','supported_fallback'],json.dumps(result))
+        self.assertFalse(result['checks'][0]['missing_fields']);self.assertFalse(result['visual_approval'])
+        ref=result['checks'][0]['evidence'][0]
+        payload=(self.root/ref['path']).read_bytes()
+        self.assertEqual(hashlib.sha256(payload).hexdigest(),ref['sha256'])
+        retained=json.loads(payload)
+        self.assertEqual(retained['sha256'],digest(retained['inspection']))
+        self.assertEqual(retained['inspection']['source'],source)
+        self.assertEqual(retained['inspection']['analysis']['vertices'],3)
+        request['checks'][0]['resources']['memory_bytes']=1
+        blocked=engine.run(request)
+        self.assertNotIn(blocked['checks'][0]['outcome'],['executed','supported_fallback'])
+
+    def test_inspection_owner_reservation_excludes_concurrent_caller(self):
+        from concurrent.futures import ThreadPoolExecutor
+        path,_=gltf(self.root);(self.root/'evidence').mkdir()
+        owner=NativeInspectionOwner(self.root,pointer(self.root,path),'evidence')
+        def attempt():
+            with owner.reserve(None):
+                return 'incorrectly-reserved'
+        with owner.reserve(None):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                with self.assertRaisesRegex(ValueError,'INSPECTION_OWNERSHIP'):
+                    pool.submit(attempt).result(timeout=5)
+
+    def test_exact_classification_uses_native_retained_review_gate_not_an_approval_flag(self):
+        from rig_review import apply_review
+        from rig_validation import REVIEW_DIMENSIONS
+        from rig_models import rig_signature
+        rig=fixture(self.root,animated=True)
+        evidence=rig.manifest['geometry']['data']
+        decision=dict(schema_version=1,kind='hatch-3d-rig-review',rig_id=rig.manifest['id'],
+            rig_version=rig.manifest['version'],expected_sha256=rig_signature(rig.manifest),
+            author='Explicit simulated review decision for fixture persistence gate; no actual artwork approval',
+            reviewer_kind='agent',created_at='2026-11-13T00:00:00Z',fixture=True,evidence=[evidence],
+            dimensions={name:dict(verdict='approved',note='Simulated fixture decision; not independent visual evidence') for name in REVIEW_DIMENSIONS})
+        applied=apply_review(rig,decision)
+        self.assertFalse(applied['production_artwork_approved'])
+        request=native_request(self.root,rig)
+        result=classify_rigs(self.root,request,request)
+        self.assertEqual(result['status'],'exact');self.assertFalse(result['production_artwork_approved'])
+
+    def test_partial_correspondence_uses_measured_rest_structure(self):
+        a=fixture(self.root,name='a',animated=False);b=fixture(self.root,name='b',animated=False)
+        b.geometry.meshes[0].positions*=2
+        b.weights=generate_skin_weights(b.geometry,b.skeleton);save_rig(b,operation='explicit-fixture-scale')
+        result=classify_rigs(self.root,native_request(self.root,a),native_request(self.root,b))
+        self.assertEqual(result['status'],'partial');self.assertEqual(result['verified_rest_joint_overlap'],['b0','b1','b2'])
+        self.assertEqual(result['issues'][0]['code'],'APPROVED_MAPPING_REQUIRED')
+
+    def test_missing_required_socket_and_bone_are_precise_incompatible_states(self):
+        rig=fixture(self.root,animated=False);r=native_request(self.root,rig)
+        result=classify_rigs(self.root,r,r,required_bones=['missing-joint'],required_sockets=['missing-hand'])
+        self.assertEqual(result['status'],'incompatible')
+        self.assertEqual({x['code'] for x in result['issues']},{'MISSING_BONE','MISSING_SOCKET'})
+
+    def test_supported_approved_mapping_executes_native_retarget_and_deformation(self):
+        a=fixture(self.root,name='a',animated=False);b=fixture(self.root,name='b',animated=False)
+        b.geometry.meshes[0].positions*=2
+        b.weights=generate_skin_weights(b.geometry,b.skeleton);save_rig(b,operation='explicit-fixture-scale')
+        left,right=native_request(self.root,a),native_request(self.root,b)
+        profile=build_retarget_profile(a,b)
+        (self.root/'map.json').write_bytes(canonical_bytes(profile))
+        mapref=pointer(self.root,self.root/'map.json',kind='rig-retarget')
+        decision=sample('review');decision.update(reviewer_kind='assistant',fixture=True,verdict='approved',
+                notes='Simulated retained mapping decision for fixture gate test, not production or visual approval.',
+                subject_sha256=mapref['sha256'],inspected=[mapref,left['source'],right['source']])
+        (self.root/'retained-decision.json').write_bytes(canonical_bytes({k:v for k,v in decision.items() if k!='native_receipt'}))
+        decision['native_receipt']=pointer(self.root,self.root/'retained-decision.json',kind='review-evidence')
+        (self.root/'decision.json').write_bytes(canonical_bytes(decision))
+        reviewref=pointer(self.root,self.root/'decision.json',kind='continuity-review')
+        r=classify_rigs(self.root,left,right,profile=mapref,review=reviewref)
+        self.assertEqual(r['status'],'retargetable');self.assertEqual(r['native_pose_proof']['deformed_vertices'],4)
+        self.assertGreater(r['native_pose_proof']['maximum_displacement_m'],0)
+        self.assertFalse(r['production_artwork_approved']);self.assertFalse(r['visual_approval'])
+        bad=deepcopy(decision);bad['subject_sha256']='0'*64
+        (self.root/'decision.json').write_bytes(canonical_bytes(bad))
+        with self.assertRaisesRegex(ValueError,'INSPECTION_REVIEW'):
+            classify_rigs(self.root,left,right,profile=mapref,review=pointer(self.root,self.root/'decision.json',kind='continuity-review'))
 
 
 if __name__=='__main__':unittest.main()

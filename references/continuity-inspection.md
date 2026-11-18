@@ -100,3 +100,71 @@ registers the inspection suite. Hosted probe evidence and independent
 Khronos Validator, Blender, and Three.js observations remain follow-up work. Native `rig.json`, owner capability registration, rig compatibility and
 facial classification, renderer-specific outputs, and production artwork
 review are outside this slice.
+
+## Rig classification
+
+```python
+result = classify_rigs("project", source_request, target_request,
+    required_bones=["hand"], required_sockets=["grip"],
+    required_morphs=["blink"], profile=exact_profile_ref, review=exact_review_ref)
+```
+
+The classifications are `exact`, `retargetable`, `partial`, `incompatible`, and
+`unverified`. They concern structural/pose transfer, never artistic approval.
+
+- `exact` requires equal measured skeleton, skin/bind data, controllers,
+  sockets, geometry and morph/attribute definitions, and native owner-validated
+  approved status on both rigs. Equal unreviewed structures remain unverified.
+- `retargetable` requires an exact native retarget profile, an existing retained
+  approved continuity review covering the profile and both exact rig sources,
+  real bone/rest/root-scale calibration, and native retarget pose/deformation
+  execution. It preserves the decision's fixture classification and rejects a
+  synthetic-test reviewer. Retained caller-supplied decisions are not signed
+  attestations; actual review authority remains with the native review workflow.
+- `partial` identifies differing structures with some supported correspondence
+  but an absent approved mapping, or an explicitly incomplete validated map.
+- Missing required bones/morphs/sockets, or incompatible mapped sockets, yield
+  precise incompatible diagnostics. Missing actual skeleton data is unverified.
+
+Retarget calibration does not prove that a future animation preserves contact,
+root motion, facial intent or timing. Those claims require the native animation
+and continuity validators. Tests label simulated retained approval decisions as
+fixture gate tests; they are not actual visual reviews or production approvals.
+
+## Capability and resource ownership
+
+`NativeInspectionOwner(root, source, evidence_folder, dependencies=...)` is an
+additive trusted host adapter to the existing `Admission` and `Policy` APIs.
+Construction performs and retains an actual source-bound probe. Requests must
+bind every source reference. It executes inspection again on admission and
+writes a new immutable receipt into a caller-owned existing evidence directory.
+Native rig locks remain the existing rig owner's locks. GLB/glTF processing uses
+a private read-only source snapshot, not a second job lifecycle.
+
+Before parsing, the existing continuity descriptor reader rejects symlinks,
+nonregular files, path aliases, changed handles, invalid hashes and oversized
+closures. It copies only pinned bytes into a private directory; native parsers
+cannot follow original dependencies outside that directory. Original source
+hashes are rechecked even when parsing fails. Caller limits only narrow native
+caps. Current inspector caps are 256 files, 8 MiB/file, 32 MiB total encoded data,
+100,000 vertices/triangles, 256 bones, 32 morph targets and 256 MiB conservative
+data admission. Aggregate instantiated glTF accessor/geometry accounting runs
+through the shared `rig_gltf.preflight_gltf` authority before native import. It
+reuses native `LoadBudget`, restrictive effective limits and the canonical JSON
+expansion factor. The caller supplies its measured captured-closure byte count;
+the helper never reopens source paths or alters descriptor APIs. Conservative
+memory accounting can narrow the encoded-byte caps further.
+That shared helper covers geometry only. Before the importer decodes any image,
+the inspector separately reuses native `image_dimensions` and `LoadBudget` to
+combine admitted geometry/metadata with every image's four RGBA working copies.
+The native PNG/JPEG decoder still validates complete containers and actual pixels;
+an image header is capacity evidence, not integrity or visual approval.
+
+Capability reservations additionally check native whole-process lifetime peak,
+reserve 32 MiB inspection workspace, narrow native loading limits to remaining
+memory, and account snapshot plus emitted receipt disk bytes. These are admission
+and result checks, not OS allocation preemption or a filesystem sandbox against
+hostile ancestor renames. Untrusted executable Blender content never runs.
+Blender-native inspection requires a separately validated data-only export or a
+trusted native adapter; this API does not invent one. No network provider, GPU,
+encoder, renderer or review service is implicitly invoked.
