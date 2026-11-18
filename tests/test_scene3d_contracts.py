@@ -449,7 +449,7 @@ class SceneClosureTests(unittest.TestCase):
         self.root = Path(self.temp.name) / 'project'
         shutil.copytree(EXAMPLE, self.root)
 
-    def rehash(self):
+    def rehash(self, *, rewrite_payload=None):
         # Rebind genuine changes bottom-up, preserving exact raw-byte hashes.
         documents = {p.name: json.loads(p.read_text()) for p in self.root.glob('*.json')}
         from scene3d_contracts import all_refs
@@ -462,6 +462,8 @@ class SceneClosureTests(unittest.TestCase):
                 for r in all_refs(doc):
                     r['sha256'] = visit(r['path'])
                 payload = canonical_bytes(doc)
+                if rewrite_payload is not None:
+                    payload = rewrite_payload(name, payload)
                 (self.root / name).write_bytes(payload)
             else:
                 payload = (self.root / name).read_bytes()
@@ -956,6 +958,48 @@ class SceneClosureTests(unittest.TestCase):
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
         self.assertTrue(all(inventory[name]['sha256'] == hashlib.sha256(payload).hexdigest()
                             for name, payload in before.items()))
+
+    def test_native_read_and_closure_require_exact_wire_shot_rates(self):
+        shot_path = self.root / 'example-shot.json'
+        shot = json.loads(shot_path.read_bytes())
+        shot['metadata']['measurement'] = 1.0
+        shot_path.write_bytes(canonical_bytes(shot))
+
+        for field, integer, token in (
+            ('numerator', 24, '24.000000000000001'),
+            ('denominator', 1, '1.0000000000000000001'),
+            ('numerator', 24, '24.0'),
+            ('denominator', 1, '1.0'),
+        ):
+            with self.subTest(field=field, token=token):
+                def rewrite(name, payload):
+                    if name != shot_path.name:
+                        return payload
+                    return (payload
+                            .replace(f'"{field}":{integer}'.encode(), f'"{field}":{token}'.encode())
+                            .replace(b'"measurement":1.0', b'"measurement":1.0000000000000000001'))
+
+                self.rehash(rewrite_payload=rewrite)
+                shot_bytes = shot_path.read_bytes()
+                shot_sha256 = hashlib.sha256(shot_bytes).hexdigest()
+                root_bytes = (self.root / 'project.json').read_bytes()
+                self.assertIn(f'"{field}":{token}'.encode(), shot_bytes)
+                self.assertIn(shot_sha256.encode(), root_bytes)
+                loaders = [lambda: read_document(shot_path),
+                           lambda: load_project(self.root)['documents'][shot_path.name]]
+                for load in loaders:
+                    if token.endswith('.0'):
+                        document = load()
+                        self.assertEqual(document['fps'], {'numerator': 24, 'denominator': 1})
+                        self.assertIs(type(document['fps'][field]), int)
+                        self.assertEqual(frame_time(1, document['fps']), Fraction(1, 24))
+                        self.assertIs(type(document['metadata']['measurement']), float)
+                        self.assertEqual(document['metadata']['measurement'], 1.0)
+                    else:
+                        with self.assertRaisesRegex(RigError, rf'fps\.{field}: expected an exact integer'):
+                            load()
+                self.assertEqual(shot_path.read_bytes(), shot_bytes)
+                self.assertEqual((self.root / 'project.json').read_bytes(), root_bytes)
 
     def test_real_cli_rejects_invalid_integer_fields_without_mutating_files(self):
         for label, value in [('boolean', True), ('fraction', 24.5), ('nonfinite', float('inf')),
