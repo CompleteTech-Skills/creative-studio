@@ -53,7 +53,7 @@ class SilentContracts(unittest.TestCase):
         with self.assertRaises(ValueError) as failed:
             video._run(command,video.DEFAULT_LIMITS)
         raw=failed.exception.evidence['command_failure']
-        self.assertEqual(raw['command'],command)
+        self.assertEqual(raw['command'],[Path(command[0]).name,*command[1:]])
         self.assertEqual(raw['exit_status'],7)
         self.assertIn('fixture stdout',raw['stdout'])
         self.assertIn('fixture stderr',raw['stderr'])
@@ -166,6 +166,22 @@ class SilentContracts(unittest.TestCase):
                 self.assertFalse(report['verified'])
                 for field in ('video_stream_count','audio_stream_count','other_stream_count'):
                     self.assertNotIn(field,report)
+
+    def test_strict_decode_rejects_truncated_whitespace_diagnostics(self):
+        artifact = self.root / 'decode-contract.mp4'
+        artifact.write_bytes(b'synthetic contract fixture; not native media evidence')
+        probe = {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p',
+            'width': 64, 'height': 48, 'nb_read_frames': '6', 'sample_aspect_ratio': '1:1',
+            'display_aspect_ratio': '4:3', 'avg_frame_rate': '24/1', 'time_base': '1/12288'}],
+            'format': {'format_name': 'mp4', 'duration': '0.25'}}
+        timeline = {'frames': [{'best_effort_timestamp': i * 512} for i in range(6)]}
+        records = [dict(command=['fixture-probe'], exit_status=0, stdout=json.dumps(probe), stderr=''),
+                   dict(command=['fixture-timeline'], exit_status=0, stdout=json.dumps(timeline), stderr=''),
+                   dict(command=['fixture-decode'], exit_status=0, stdout='', stderr=' \t ', stderr_truncated=True)]
+        with patch.object(video, '_binary', return_value=sys.executable), patch.object(video, '_run', side_effect=records):
+            with self.assertRaisesRegex(ValueError, 'truncated') as failed:
+                video.verify_export(artifact, self.request)
+        self.assertTrue(failed.exception.evidence['decode']['stderr_truncated'])
 
     def test_recognized_unwanted_stream_types_remain_counted_and_rejected(self):
         artifact=self.root/'extra-stream.mp4';artifact.write_bytes(b'synthetic fixture')

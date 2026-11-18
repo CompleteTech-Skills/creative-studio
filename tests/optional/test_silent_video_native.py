@@ -311,6 +311,32 @@ class SilentMedia(core.SilentContracts):
             for field in ('video_stream_count','audio_stream_count','other_stream_count'):
                 self.assertNotIn(field,value)
 
+    def test_failed_probe_redacts_owned_temporary_paths_in_python_and_cli(self):
+        marker = 'SYNTHETIC_WORKDIR_MARKER'
+        private = self.root / marker
+        private.mkdir()
+        artifact = self.root / 'path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, request)
+        evidence = failed.exception.evidence
+        self.assertNotIn(marker, str(failed.exception) + json.dumps(evidence))
+        self.assertIn('<media-workdir>', json.dumps(evidence))
+        self.assertNotEqual(evidence['probe']['exit_status'], 0)
+        for field in ('stdout', 'stderr'):
+            self.assertLessEqual(len(evidence['probe'][field].encode()), 1024)
+        request_path = self.root / 'path-error-request.json'
+        request_path.write_text(json.dumps(request))
+        env = dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        self.assertFalse(json.loads(result.stdout)['verified'])
+
     def test_failed_probe_excludes_unneeded_editorial_metadata(self):
         artifact=self.root/'tagged-audio.mp4'
         marker='SYNTHETIC_EDITORIAL_MARKER'

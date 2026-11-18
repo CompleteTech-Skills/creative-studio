@@ -49,7 +49,7 @@ native silent-media workflow. Current-head execution remains pending at authorin
 ## Later failure-evidence correction (#525 / #227)
 
 The correction based on main `69304deb3e55a35aa3717e1e6fcd949502c8bb99`
-passed 39 portable tests and 57 tests in the optional native suite locally on
+passed 40 portable tests and 59 tests in the optional native suite locally on
 Linux, with no skips. The native suite includes inherited portable contract
 tests and actual FFmpeg/ffprobe 7.1.5 checks on synthetic media. An actual
 corrupt MP4 produced ffprobe exit 1; Python and CLI failures retained the raw
@@ -67,6 +67,11 @@ without echoing its arbitrary editorial metadata. Missing or unknown stream
 types reject before measured counts are reported. Historical full-probe receipts
 remain valid through a shared projection onto the same authoritative fields;
 codec, missing-field, numeric-type and extra-stream tampering still reject.
+Actual corrupt-media tests also verify that exported failure JSON and errors
+replace command-owned absolute directory paths with stable aliases. Byte limits
+are reapplied after replacement. A separate contract fixture proves that a
+truncated strict-decode transcript cannot succeed merely because the retained
+prefix contains only whitespace; that fixture is not a native artifact bypass.
 
 The original 17 core and 30 native test method bodies remain unchanged. The new
 regressions failed on the preceding source before the correction. Independent

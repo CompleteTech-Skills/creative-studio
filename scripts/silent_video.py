@@ -294,6 +294,42 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
+def _failure_diagnostics(evidence, message, limit):
+    """Export bounded diagnostics with stable aliases for command-owned paths."""
+    result = copy.deepcopy(evidence)
+    records = [value for value in result.values() if isinstance(value, dict) and
+               isinstance(value.get('command'), list)]
+    substitutions = {}
+    for record in records:
+        for index, argument in enumerate(record['command']):
+            if not isinstance(argument, str) or not Path(argument).is_absolute():
+                continue
+            path = Path(argument)
+            substitutions[argument] = path.name if index == 0 else '<media-workdir>/' + path.name
+            if path.parent != path.parent.parent:
+                substitutions.setdefault(str(path.parent), '<media-tool-dir>' if index == 0 else '<media-workdir>')
+    # Native diagnostics can use slash-normalized or JSON-escaped Windows paths.
+    for path, alias in list(substitutions.items()):
+        substitutions.setdefault(path.replace('\\', '/'), alias)
+        substitutions.setdefault(json.dumps(path)[1:-1], alias)
+    ordered = sorted(substitutions, key=len, reverse=True)
+    def redact(value):
+        for path in ordered:
+            value = value.replace(path, substitutions[path])
+        return value
+    def bounded(value):
+        encoded = redact(value).encode('utf-8')
+        return encoded[:limit].decode('utf-8', 'ignore'), len(encoded) > limit
+    for record in records:
+        record['command'] = [redact(value) if isinstance(value, str) else value
+                             for value in record['command']]
+        for field in ('stdout', 'stderr'):
+            record[field], clipped = bounded(record[field])
+            if clipped:
+                record[field + '_truncated'] = True
+    return result, bounded(message)[0]
+
+
 def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     """Bound process duration and retain bounded observed failure transcripts."""
     start = time.monotonic()
@@ -343,7 +379,9 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     if failure is not None:
         if str(failure) == 'media command exceeded timeout':
             record['timed_out'] = True
-        failure.evidence = {'command_failure': record}
+        evidence, message = _failure_diagnostics({'command_failure': record}, str(failure), limits['max_log_bytes'])
+        failure.args = (message,)
+        failure.evidence = evidence
         raise failure
     return record
 
@@ -557,6 +595,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     decoded = execute('decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
                     '-err_detect', 'explode', '-i', str(path.resolve()), '-map', '0:v:0',
                     '-an', '-sn', '-dn', '-f', 'null', '-'])
+    if decoded.get('stderr_truncated'):
+        raise ValueError('strict decode diagnostics were truncated')
     if decoded['stderr'].strip():
         raise ValueError('strict decode reported errors: '+decoded['stderr'][-2000:])
     pixel_checks = []
@@ -623,7 +663,10 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
             result = _verify_snapshot(snapshot, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
                                       cancel=cancel, diagnostics=diagnostics)
         except ValueError as exc:
-            exc.evidence = {**getattr(exc, 'evidence', {}), **diagnostics}
+            evidence, message = _failure_diagnostics(
+                {**getattr(exc, 'evidence', {}), **diagnostics}, str(exc), request['limits']['max_log_bytes'])
+            exc.evidence = evidence
+            exc.args = (message,)
             raise
         checked = hashlib.sha256()
         checked_bytes = 0

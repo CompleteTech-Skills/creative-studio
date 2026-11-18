@@ -282,6 +282,11 @@ and its verifier stage (`probe`, `timeline` or `decode`). Each transcript stays
 within the request's `max_log_bytes` byte limit, including UTF-8 replacement.
 Truncated streams carry an explicit truncation flag; timeout failures carry
 `timed_out: true` and the observed terminated-process status.
+Failed exported records replace absolute executable and temporary-directory
+paths with stable tool/work-directory aliases in commands, transcripts and the
+error message. Per-stream byte limits apply after this replacement. Strict
+decode requires complete diagnostics and rejects a truncated stderr transcript,
+including one whose retained prefix contains only whitespace.
 
 Successful raw command results are retained before JSON or stream interpretation.
 Malformed ffprobe output therefore leaves inspectable raw evidence. If probing
