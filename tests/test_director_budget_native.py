@@ -332,3 +332,37 @@ class NativeBudgetTests(unittest.TestCase):
         self.assertEqual(hatch.job_for(hatch.manifest(self.root), 'base')['status'], 'generated')
         self.assertEqual(self.row()['spent']['amount'], '0.7')
         self.assertEqual(self.row()['state'], 'settled')
+
+    def test_new_native_outcome_replays_earlier_durable_usage_before_finalizing(self):
+        token = self.claim()['token']
+        earlier = self.observe('pending-retry', 'retry', amount='0.25')
+        with patch.object(BudgetLedger, 'settle', side_effect=RuntimeError('synthetic crash')):
+            with self.assertRaises(RuntimeError):
+                self.fail(token, earlier)
+        self.assertEqual(self.row()['spent']['amount'], '0')
+        # No caller reconcile: the same native token now reports a further delta.
+        self.fail(token, self.observe('later-final', 'failed', calls=0, amount='0.75'))
+        row = self.row()
+        self.assertEqual(row['spent']['provider_calls'], '1')
+        self.assertEqual(row['spent']['amount'], '1.00')
+        self.assertEqual(len(row['attempts']), 2)
+        self.assertEqual(row['state'], 'settled')
+        job = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual(job['status'], 'failed')
+        self.assertEqual(len(job['budget_operation']['events']), 2)
+
+    def test_substituted_reservation_is_rejected_before_charging_other_operation(self):
+        token = self.claim()['token']
+        other = self.prepare('other-operation')
+        self.bind(other)
+        self.claim(other)
+        other_id = self.row(other)['id']
+        data = hatch.manifest(self.root)
+        hatch.job_for(data, 'base')['budget_operation']['reservation_id'] = other_id
+        hatch.save(self.root, data)
+        before = self.ledger.snapshot()
+        with self.assertRaises(RigError):
+            self.fail(token, self.observe('wrong-reservation', 'failed'))
+        self.assertEqual(self.ledger.snapshot(), before)
+        self.assertEqual(self.row(other)['spent']['amount'], '0')
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root), 'base')['token'], token)

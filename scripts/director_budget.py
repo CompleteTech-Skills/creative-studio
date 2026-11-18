@@ -596,6 +596,9 @@ class NativeBudget:
         Evidence must already be retained in this ledger. Known reconciliation
         explicitly names every earlier uncertain observation for the same token.
         """
+        # Earlier durable usage and the reservation association are authoritative
+        # even when their native acknowledgement was interrupted.
+        self.reconcile()
         _need(isinstance(observation, dict) and set(observation) == {
             'id', 'outcome', 'usage', 'evidence', 'measurement_source', 'resolves'},
             'INPUT', 'Native outcomes require one complete actual-usage observation.')
