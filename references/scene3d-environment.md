@@ -1,0 +1,111 @@
+# Scene3D generated environments
+
+`scene3d_environment.plan(recipe)` builds deterministic, bounded real triangle
+meshes before publishing anything. `create_environment(destination, recipe)`
+creates a first project, and `apply_recipe(source, destination, scene_path,
+recipe, policy='preserve')` publishes an immutable validated snapshot using the
+existing Scene3D snapshot service. Destinations must be new directories.
+
+A recipe contains exactly `id`, `version` (currently integer 1), `seed`
+(unsigned 32-bit integer), `generator`, `parameters`, and `budget` (maximum
+emitted nodes). Published recipe IDs start with a lowercase letter, contain
+only lowercase ASCII letters, digits, and hyphens, and fit within 46 characters.
+Individual generators can impose shorter limits. The same recipe produces the same geometry and node IDs.
+`primitive` accepts `kind` and `dimensions`; the available kinds are box, plane,
+cylinder, cone, sphere, capsule, torus, stairs, ramp, pipe, beam, platform, door,
+window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygon), and curve (capped straight spans).
+`apply_recipes(source, destination, scene_path, recipes, offsets=None, parents=None)`
+prepares up to sixteen distinct named recipes and publishes one snapshot. A
+failure anywhere publishes nothing. Optional maps select recipe IDs: offsets are
+local three-vectors and parents are exact node IDs (including earlier batch
+outputs). Placements are recorded beside each persisted recipe. Omitting a
+placement entry keeps that recipe's stored value. For a new recipe, the defaults
+are a zero offset and the scene root. A map entry of `None` explicitly restores
+the corresponding default. The singular `apply_recipe` uses the same rules for
+its `offset` and `parent` keyword arguments. One batch increments the scene
+revision once. `create_environments(destination, recipes,
+offsets=None, parents=None)` constructs a first project through this batch API.
+
+Meshes use meters, right-handed Y-up coordinates and counterclockwise exterior
+triangles. OBJ resources contain actual triangles and explicit flat normals.
+The default UVs repeat per triangle.
+
+`rooms`, `workshop`, `fantasy`, and `science-fiction` accept room count,
+width/depth/height, wall thickness, door width/height, a windows boolean, and an `external_door` boolean (default
+false). An external door creates a real entrance through the first end wall;
+internal shared partitions retain their connected-room doors.
+Adjacent rooms share an actual partition with an opening. Window and doorway
+voids contain no wall triangles. Fantasy adds editable tower meshes;
+science-fiction adds editable structural beams. These basic variations do not
+claim the complete themed asset/material catalogs requested by issue #61.
+
+`terrain` accepts width/depth, resolution, elevation, optional exact heights,
+maximum slope in degrees, smoothing iterations, explicit elevation edits,
+mask/target grids, LOD strides, paths (points/width/elevation),
+bounded seeded tree scatter, and optional planar UVs. Height queries use the
+actual emitted triangular surface. A supplied slope limit is clamped against both triangles
+of every cell, and checked again before publication after path/height edits.
+Elevation edits use exact grid coordinates and explicit bounds. Mask weights in
+[0,1] blend the actual elevations toward a bounded target. Both operations reject
+invalid slopes atomically and preserve the original heightfield on failure.
+Optional LOD strides must divide the grid interval count; each LOD samples exact
+existing vertices, persists as a separate mesh asset, and stays in the hash-bound
+asset dependency closure. Maximum four LOD levels and the aggregate triangle
+budget include all coarse meshes.
+
+Set `parameters.planar_uv` to `true` to map the whole ground footprint into
+one texture tile. Native U increases with +X and V with +Z, with both axes
+spanning [0, 1]. The stored OBJ uses bottom-left V, which the native importer
+converts to glTF V. Each LOD uses the same coordinates at its shared vertices.
+The option defaults to `false` and preserves existing recipe and OBJ bytes
+when omitted.
+`test_saved_planar_terrain_uvs_match_lods_and_native_obj_import` verifies the
+saved boolean, unchanged assets for explicit `false`, shared ground/LOD UVs,
+and actual GLB/glTF native roundtrips with preserved triangles. It rejects
+non-boolean recipe options before publication. With `HATCH_RIG_INTEROP_TEST=1`,
+`test_khronos_accepts_saved_planar_ground_and_lod_transports` also runs the
+independent Khronos validator on both formats for the ground and each saved LOD.
+
+Tree placement checks complete crown footprint clearance at the boundary and
+exclusions and uses a grid index for minimum-distance tests. Spacing defaults
+to 1.3 meters and cannot be less than the crown diameter. Impossible counts
+fail before publication. Heightfields cannot represent caves or overhangs.
+
+Every generated base and LOD asset uses the shared `scene3d_materials` canonical
+OBJ projection: one named `surface`, with no invented source material index or
+Blender local slot index. Adding this projection creates a new immutable asset
+identity even when its OBJ bytes match an earlier generated asset. Existing
+projects and their old pins remain reopenable during regeneration upgrades.
+The projection records logical slot metadata. The Blender inspection demo
+assigns its own clay materials.
+
+Generated assets and recipes have exact file hashes. Generated nodes retain
+fingerprints and stable IDs. Regeneration preserves changed nodes, manual
+children where valid, and deleted-node tombstones, and returns explicit
+conflicts. `policy='reject'` refuses any changed/deleted generated node.
+Other generators' recipe records and authored nodes are retained. A changed
+parenting dependency that makes regeneration invalid fails atomically under
+the existing graph/snapshot validation.
+
+`load_meshes(root, scene_path)` returns verified generated geometry keyed by
+node ID as `{vertices, triangles}` in local coordinates. It accepts only the
+bounded triangular OBJ grammar owned here. Imported GLB/rig geometry continues
+to use the import/evaluation adapter.
+
+Run focused regression coverage with:
+
+```bash
+PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_environment test_rig_scene3d_math -v
+```
+
+`demonstrate_scene3d_environment.py DESTINATION --blender /path/to/blender`
+constructs a workshop, exports its real geometry to GLB, independently reimports
+that GLB, and renders an inspection PNG. The inspection image explicitly hides
+ceilings; the exported GLB retains them. In shared coordinated runs this command
+must hold the native validation flock for its entire execution. Saved receipts
+report actual runtime versions and exact hashes.
+
+Remaining issue #61 acceptance: full architectural/themed catalogs, material
+assignment and terrain material blending through the lookdev owner, runtime
+LOD selection policies, polygon holes and richer layout policies still need implementation
+and review. Neither these APIs nor the example claim whole-issue completion.

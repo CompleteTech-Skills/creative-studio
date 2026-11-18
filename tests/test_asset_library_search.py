@@ -349,6 +349,39 @@ class SearchTests(unittest.TestCase):
 
 
 
+    def test_native_collections_reopen_invalidate_and_rebuild_search(self):
+        from asset_library_versions import AssetVersions
+        selected=self.register('selected',keywords=['matching'])
+        other=self.register('other',keywords=['matching'])
+        reference=selected['reference']
+        manifest=self.library.resolve(reference)
+        payloads={item['path']:self.library.read_file(reference,item['path'])
+                  for item in manifest['files']}
+        versions=AssetVersions(self.library)
+        versions.set_collections(reference,expected_revision=0,collections=['chosen'])
+        index=SearchIndex(self.root/'native-collections',{'local':self.library},
+                          versions={'local':versions},create=True)
+        index.rebuild()
+        first=index.search('matching',sort='name',limit=1)
+        self.assertIsNotNone(first['next_cursor'])
+        self.assertEqual(index.search(filters={'collections':['chosen']})['results'][0]['location'],selected)
+        self.assertEqual(index.search(filters={'collections':['absent']})['total'],0)
+        versions.set_collections(reference,expected_revision=1,collections=[])
+        versions.set_collections(other['reference'],expected_revision=0,collections=['chosen'])
+        self.assert_code('STALE',lambda:index.search(filters={'collections':['chosen']}))
+        reopened_library=AssetLibrary(self.library.root)
+        reopened=SearchIndex(index.root,{'local':reopened_library},
+                             versions={'local':AssetVersions(reopened_library)})
+        reopened.rebuild()
+        self.assertEqual([row['location'] for row in reopened.search(
+            filters={'collections':['chosen']})['results']],[other])
+        self.assert_code('CURSOR',lambda:reopened.search(
+            'matching',sort='name',limit=1,cursor=first['next_cursor']))
+        self.assertEqual(reopened_library.resolve(reference),manifest)
+        for path,payload in payloads.items():
+            self.assertEqual(reopened_library.read_file(reference,path),payload)
+
+
 class LocalEmbeddingAdmissionTests(unittest.TestCase):
     def test_unknown_model_and_unpinned_revision_reject_before_runtime(self):
         from asset_search_embeddings import LocalSentenceTransformer

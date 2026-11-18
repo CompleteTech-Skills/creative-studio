@@ -54,15 +54,17 @@ as "compatible with this animation rig" requires explicit compatibility
 requirements and an authority; it never infers a rig from a pronoun.
 Keyword retrieval is not embedding inference.
 
-## Optional owner admission and deferred integration
+## Optional owner admission and native collections
 
 Supplied collection owners must provide callable `collections(reference)`.
 The retained `versions` argument maps library aliases to those owners.
-The bounded `AssetVersions` history/promotion API from PR #460 does not supply
-collections and must not be passed as that authority. Collection filtering
-requires an owner for every configured library. A usage owner must provide
-callable `bindings(project_id)`; only explicitly named projects are inspected.
-These collection and project-binding implementations are deferred.
+Current `AssetVersions` supplies `collections` and `set_collections` through the
+canonical event store; pass `versions={'local': AssetVersions(library)}` to index
+that metadata. The original bounded history/promotion API from PR #460 alone
+did not supply collections. Collection filtering requires an owner for every
+configured library. Changes invalidate the search snapshot until rebuild.
+A usage owner must provide callable `bindings(project_id)`; only explicitly
+named projects are inspected. Project-binding integration remains deferred.
 
 A dependency graph must expose the same explicit `libraries` mapping and
 callable `closure`/`inspect` methods. It also requires the native module
@@ -97,7 +99,7 @@ admission. Bounds are 512 directory entries, 128 directory levels, 128 files,
 64 MiB per file and 256 MiB total. Actual model/runtime execution and quality
 acceptance remain separate and unverified for this preservation change.
 
-## Preservation and pending validation
+## Preservation and validation
 
 Sources: original PR #312 at `a10709b30a276a622ccfdc6c017e4c5c8c5da980`,
 with corrected search/parser, bounded model scanning and Windows SQLite fixture
@@ -106,13 +108,33 @@ cleanup preserved from PR #406 at
 `4b89ab1ce3e76ebef69a825212ab207d746c3112`. Historical execution evidence
 applies only to its recorded revision; it is not a result for this change.
 
-All 22 preserved test methods remain, with additional optional-owner refusal
-tests. Provider doubles prove dispatch/admission controls only. No Python
-executor was available during preparation, so neither these tests nor the
-integration gates were run. Pending commands are:
+The exact preservation source is PR #501 at
+`53706b555a135c5512f4f20236e34db8836d90fe`, refreshed onto main
+`094e4c5f04c255178be6a09cb10d25280201fe92`. Both implementation modules and
+all 26 source test methods remain verbatim, including the 22 corrected historical
+methods and four optional-owner refusal methods. One new native collections test
+covers canonical event persistence, reopening, stale snapshot/cursor refusal,
+rebuild and preservation of original manifests and payload bytes. The guide now
+reflects the collection owner available on this main revision.
+
+On this base, the unchanged 26 source tests passed locally with no skips before
+adding the native collections test. On executable source
+`8796e4e0ecfce969ea7bd93b03964ecef05a3bd7`, Linux x86_64 with Python 3.12.14,
+the final search suite passed 27 tests in 5.261 seconds and the canonical
+foundation/storage/version suites passed 77 tests in 3.462 seconds. Both
+commands returned exit status 0 with no skips. Exact commands were:
 
 ```bash
-PYTHONPATH=scripts python -m unittest discover -s tests -p test_asset_library_search.py -v
+PYTHONPATH=scripts:tests python -m unittest -v test_asset_library_search
+PYTHONPATH=scripts:tests python -m unittest -v test_asset_library test_asset_library_storage test_asset_library_versions
+```
+
+These are local Linux synthetic-fixture checks. Provider doubles prove
+dispatch/admission controls only; no live provider or model was called.
+Historical results remain tied to their original revisions. The shared gates
+require separate execution on the integrated candidate:
+
+```bash
 python scripts/test_rig_gate.py operations-archive
 python scripts/test_rig_gate.py compatibility
 ```
@@ -124,5 +146,6 @@ outside this preservation slice. No historical demonstration script is copied.
 Search bounds: 32 libraries, 4,096 selected records, 2,048 query characters,
 64 lexical terms, 128 project IDs, 100 results/page, 16 MiB captured metadata,
 16 MiB vectors, 2,048 vector dimensions and a 64 MiB derived SQLite index.
-Full dependency, collection, project usage, browser and parent #132/#128
-acceptance remain open.
+Full dependency, project usage, browser and parent #132/#128 acceptance remain
+open. This search slice does not complete dependency closure/locks/replacement
+acceptance in #143 or the broader #144 search integration requirements.
