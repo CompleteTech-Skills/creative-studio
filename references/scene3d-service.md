@@ -161,6 +161,27 @@ Operations include `create`, `delete`, `reparent`, `duplicate`, `reorder`,
 status 2, preserves original bytes, and publishes no destination. Exact prefab
 references must already be known; planned hashes are never invented.
 
+## Evaluating a shot
+
+`scene3d_evaluate.evaluate_scene(project, scene, shot, frame)` opens a verified
+project directory and selects exact scene and shot paths or unique IDs. Pass an
+integer or `Fraction` frame in the half-open shot interval. Scene3D tracks,
+published native rig clips and imported component transforms are evaluated
+through their existing owners. Graph constraints and visibility apply to the
+evaluated scene. Each evaluation preserves the authored input.
+
+Pass `sample_geometry=True` to obtain world-space vertices and bounds for
+active native bindings. The evaluator checks exact native manifest and clip
+digests and captures each selected source once after project verification.
+The result reports the sampling status and which nodes have evaluated geometry.
+Camera matrices and exact material pins are available separately through
+`camera_matrices()` and `resolve_materials()`. Pose bindings, path bindings,
+physical-light extensions and automatic camera framing return a typed refusal.
+
+The interoperability gate includes the [shot evaluator tests](../tests/test_rig_scene3d_evaluate.py).
+They cover a hash-locked project reopen, fractional native clip replay, imported
+component projection, binding collisions, limits and source preservation.
+
 ## Acceptance map
 
 | #60 / parent requirement | Executed implementation and regression |
