@@ -158,6 +158,56 @@ class ReconstructionTests(unittest.TestCase):
                     mask_from_image(evidence, mode='luminance')
                 self.assertEqual(caught.exception.report['code'], code)
 
+    def test_webp_canvas_admission_precedes_open_for_supported_variants(self):
+        variants = (
+            ('RGB', (1, 2, 3), False, b'VP8 '),
+            ('RGB', (1, 2, 3), True, b'VP8L'),
+            ('RGBA', (1, 2, 3, 200), False, b'VP8X'),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'source.webp'
+            for mode, color, lossless, chunk in variants:
+                with self.subTest(chunk=chunk):
+                    Image.new(mode, (4, 3), color).save(path, lossless=lossless)
+                    evidence = read_image(path)
+                    self.assertEqual(evidence.payload[12:16], chunk)
+                    self.assertEqual(mask_from_image(evidence, mode='luminance').shape, (3, 4))
+                    if mode == 'RGBA':
+                        self.assertTrue(mask_from_image(evidence, mode='alpha').all())
+
+                    direct = Evidence(path.name, evidence.payload, 'mask', 1, 1)
+                    with (patch('model3d_reconstruction.MAX_IMAGE_PIXELS', 11),
+                          patch('model3d_reconstruction.Image.open',
+                                side_effect=AssertionError('Image opened before canvas preflight'))):
+                        for operation in (lambda: read_image(path),
+                                          lambda: mask_from_image(direct, mode='luminance')):
+                            with self.assertRaises(RigError) as caught:
+                                operation()
+                            self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE_LIMIT')
+
+    def test_direct_mask_evidence_requires_supported_image_and_matching_dimensions(self):
+        encoded = io.BytesIO()
+        Image.new('RGB', (4, 3)).save(encoded, format='GIF')
+        evidence = Evidence('image.gif', encoded.getvalue(), 'mask', 4, 3)
+        with self.assertRaises(RigError) as caught:
+            mask_from_image(evidence, mode='luminance')
+        self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE')
+
+        encoded = io.BytesIO()
+        Image.new('RGB', (4, 3)).save(encoded, format='PNG')
+        evidence = Evidence('image.png', encoded.getvalue(), 'mask', 3, 4)
+        with self.assertRaises(RigError) as caught:
+            mask_from_image(evidence, mode='luminance')
+        self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE')
+
+        result = extrude_mask([[True]], pixel_size=.2, thickness=.4)
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / 'result'
+            with self.assertRaises(RigError) as caught:
+                publish(result, destination, evidence=[evidence])
+            self.assertEqual(caught.exception.report['code'], 'RECON_SOURCE')
+            self.assertFalse(destination.exists())
+
     def test_image_parent_alias_preserves_leaf_symlink_rejection(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
