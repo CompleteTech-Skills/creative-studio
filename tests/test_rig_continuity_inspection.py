@@ -56,7 +56,7 @@ def gltf(root,name='source.glb',*,color=(20,40,60),width=1.,external=False, skin
 
 class ContinuityInspectionTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name).resolve()
 
     def test_actual_hierarchy_geometry_uv_normals_material_texture_morph_and_landmarks(self):
         path,_=gltf(self.root, skinned=True)
