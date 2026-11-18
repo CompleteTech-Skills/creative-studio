@@ -41,7 +41,7 @@ jobs:
           git rev-parse HEAD | tee scene3d-evidence/head.txt
           python scripts/generate_schemas.py --check 2>&1 | tee scene3d-evidence/schemas.log
           python scripts/generate_rig_templates.py --check 2>&1 | tee scene3d-evidence/templates.log
-          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service -v 2>&1 | tee scene3d-evidence/service.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_environment test_rig_scene3d_materials test_rig_scene3d_catalog -v 2>&1 | tee scene3d-evidence/service.log
         env:
           HATCH_SCENE3D_EVIDENCE: ${{ github.workspace }}/scene3d-evidence/native
           HATCH_RIG_BLENDER_TEST: '1'
@@ -50,6 +50,12 @@ jobs:
           HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
       - name: Real robotic scene and portable snapshot
         run: python scripts/demonstrate_scene3d_service.py --destination scene3d-evidence/demo 2>&1 | tee scene3d-evidence/demo.log
+      - name: Real generated environment GLB reopen and inspection render
+        run: python scripts/demonstrate_scene3d_environment.py scene3d-evidence/environment --blender /tmp/blender-4.5.3-linux-x64/blender 2>&1 | tee scene3d-evidence/environment.log
+      - name: Real village and modeled cavern catalog interoperability
+        run: |
+          python scripts/demonstrate_scene3d_environment.py scene3d-evidence/catalog-village --blender /tmp/blender-4.5.3-linux-x64/blender --preset village 2>&1 | tee scene3d-evidence/catalog-village.log
+          python scripts/demonstrate_scene3d_environment.py scene3d-evidence/catalog-cavern --blender /tmp/blender-4.5.3-linux-x64/blender --preset cavern 2>&1 | tee scene3d-evidence/catalog-cavern.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
