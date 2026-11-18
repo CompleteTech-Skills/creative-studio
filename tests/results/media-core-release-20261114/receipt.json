@@ -1,0 +1,116 @@
+{
+  "version": "1.0.0",
+  "scope": "Ancestry-preserving integration of frozen PR391,PR292,PR341; full parent programs and WindowsHANDLEpublisher remain open",
+  "base": "e2765dd494125a2f4dbfe13e4f4a66a3a5aba5dd",
+  "tested_merge_head": "f95b234501f857e7e28248ea2ab38558b0054a99",
+  "tested_tree": "55df4f96d87cf3572ede35c142f07a061bdc0588",
+  "final_receipt_commit": "This receipt is added after the tested merge; no implementation file changes",
+  "source_heads": {
+    "391": "f59514e3b963608fdafe8b51e54368d671646591",
+    "292": "3d30731e549fb00c5495c96736b302fba46c4790",
+    "341": "6ba61738636e4f157d368647ac0a4b8572b01b6c"
+  },
+  "conflicts": {
+    "scripts/atomic_publish.py": "exact391 additive FD APIs preserved over older341 helper",
+    "references/atomic-publication.md": "exact391 preserves addedPOSIX/capability documentation"
+  },
+  "preservation": {
+    "changed_files": 90,
+    "source_identical": 89,
+    "hybrid_files": [
+      "README.md"
+    ],
+    "collector_union": "All current-main/source GROUPS set memberships preserved;compatibility retainsAnimation exclusion",
+    "legacy_evidence": "All originalsource receipts unchanged"
+  },
+  "tests": {
+    "focused": {
+      "source_head": "f95b234501f857e7e28248ea2ab38558b0054a99",
+      "modules": [
+        "test_atomic_fd_stage",
+        "test_atomic_private_stage",
+        "test_portable_paths",
+        "test_rig_directory_capability",
+        "test_rig_workflow",
+        "test_decomposition_analysis",
+        "test_silent_video",
+        "test_rig_cinematics3d_contracts",
+        "test_atomic_private_stage_linux",
+        "test_atomic_capability_linux",
+        "test_decomposition_package",
+        "test_production_sources",
+        "test_rig_skinning"
+      ],
+      "ran": 208,
+      "passed": 208,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 13.242740864000098
+    },
+    "schema_math": {
+      "ran": 263,
+      "passed": 262,
+      "skipped": 1,
+      "skip": "explicitoptionalBlenderopticsgate;merged385realproofishistorical",
+      "log": "schema-math.log"
+    },
+    "actual_ffmpeg_ffprobe": {
+      "ran": 42,
+      "passed": 42,
+      "skipped": 0,
+      "log": "actual-media.log",
+      "notes": "H264/VP9/rationalrates/zeroaudio/realAACOpusnegative/namespacecancellation/legacyAACreviewCLI"
+    },
+    "actual_opencv": {
+      "ran": 2,
+      "passed": 2,
+      "skipped": 0,
+      "log": "actual-analysis.log",
+      "notes": "Realnewimportface/eyes,oneattemptresume/idempotentapply/sourcefidelityandexplicitunsupportedblank"
+    },
+    "generated_schema_check": {
+      "exit_code": 0,
+      "log": "generated.log"
+    },
+    "optional_dependency_isolation": {
+      "discovered_2d_tests": 1127,
+      "executed": false,
+      "notes": "Discoverywithoptional3Dimportsblocked;NOTfull2Dtestexecution"
+    }
+  },
+  "environment": {
+    "core_python": "/home/complete/.cache/hatch-coordination-20261112/rig-test-py312/bin/python",
+    "analysis_python": "/home/complete/.cache/hatch-coordination-20261112/analysis-venv/bin/python",
+    "media_binaries": {
+      "ffmpeg": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+      "ffprobe": "ffprobe version n9.0.2 Copyright (c) 2007-2026 the FFmpeg developers"
+    },
+    "resources": "pure3-slotrun-budgeted;mediaandnativeseparatelocks;numericalthreads1;ownedhomeTMP"
+  },
+  "logs": {
+    "focused.log": {
+      "sha256": "0af331abaccf89802adab8b4415298d30c3600fae425efa89c0b8a6a6d5e9c56",
+      "bytes": 33934
+    },
+    "schema-math.log": {
+      "sha256": "b679b526f16993ee07833135a8b6ae77dc928eda20b23b29756a66dafbe841c0",
+      "bytes": 44238
+    },
+    "actual-media.log": {
+      "sha256": "86bb653c6846acb969ba426565f37011c1660c790f87717f93e7c9243069620f",
+      "bytes": 6062
+    },
+    "actual-analysis.log": {
+      "sha256": "b96786320ef0fc80901b3a0dd7942312c575c562497f9a0480fd4115bfbed4fc",
+      "bytes": 496
+    },
+    "generated.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  },
+  "review": "A NEW fresh-context whole combined-candidate review is still required; source reviews do not approve this union",
+  "ci": "Required checks must pass on final pushed head; older source checks do not approve this union",
+  "remaining": "Rootonlyordinarymerge,actualmergedmainverification,fullleaf224auditbeforeclosure;227/228/97/241/238remainopen"
+}
