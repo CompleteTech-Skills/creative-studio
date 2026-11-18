@@ -1,4 +1,5 @@
 """Operational hierarchy/prefab/import acceptance using real native files."""
+from contextlib import nullcontext
 from copy import deepcopy
 import base64
 import hashlib
@@ -8,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -25,6 +27,7 @@ from scene3d_import import (add_import, evaluate_imported_vertices, import_gltf,
                             materialize, source_snapshot, resolve_import, edit_mesh_vertices)
 from scene3d_edit import apply_commands
 from scene3d_prefabs import PrefabLibrary
+import scene3d_snapshot
 from scene3d_snapshot import snapshot_project
 
 
@@ -945,7 +948,7 @@ class SceneServiceTests(unittest.TestCase):
         self.assertEqual(output['inventory'][path]['sha256'], hashlib.sha256(payload).hexdigest())
         load_project(self.root/'foreign-copy')
 
-    def test_hybrid_snapshot_delegates_complete_native_legacy_closure(self):
+    def _verify_hybrid_snapshot_round_trip(self):
         from production_fixture import build_fixture_project
         from production_contracts import load_project as load_legacy_project
         legacy_root = self.root/'source/legacy'
@@ -966,6 +969,51 @@ class SceneServiceTests(unittest.TestCase):
         for path, payload in before.items():
             self.assertEqual((self.root/'hybrid/legacy'/path).read_bytes(), payload)
         self.assertGreater(len(output['inventory']), len(self.bundle['inventory'])+len(legacy['inventory']))
+        return output
+
+    def test_hybrid_snapshot_delegates_complete_native_legacy_closure(self):
+        self._verify_hybrid_snapshot_round_trip()
+
+    @unittest.skipUnless(sys.platform == 'darwin' or sys.platform.startswith('linux'),
+                         'POSIX descriptor-relative snapshot publication')
+    def test_protected_descriptor_hybrid_snapshot_round_trip(self):
+        # Linux exercises the same consumer with its own kernel exclusive rename.
+        # In the macOS workflow the native platform dispatch needs no override.
+        routing = (nullcontext() if sys.platform == 'darwin'
+                   else patch.object(scene3d_snapshot, 'sys', SimpleNamespace(platform='darwin')))
+        with routing, patch.object(scene3d_snapshot, '_publish_snapshot_fd',
+                                   wraps=scene3d_snapshot._publish_snapshot_fd) as publisher:
+            output = self._verify_hybrid_snapshot_round_trip()
+            publisher.assert_called_once()
+        destination = self.root / 'hybrid'
+        observed = {}
+        for path in destination.rglob('*'):
+            if path.is_file():
+                data = path.read_bytes()
+                observed[path.relative_to(destination).as_posix()] = dict(
+                    bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+        self.assertEqual(observed, output['inventory'])
+        self.assertEqual(observed['project.json']['sha256'], output['project_sha256'])
+        stages = list(self.root.glob('.scene3d-snapshot-*'))
+        self.assertEqual(len(stages), 1)
+        self.assertEqual(list(stages[0].iterdir()), [])
+
+    @unittest.skipUnless(os.open in os.supports_dir_fd, 'descriptor-relative project reads')
+    def test_hybrid_legacy_descriptor_validates_canonical_fixture(self):
+        from production_fixture import build_fixture_project
+        from production_contracts import load_project as load_legacy_project, load_project_at
+        legacy_root = (self.root / 'source' / 'legacy').resolve()
+        build_fixture_project(legacy_root)
+        expected = load_legacy_project(legacy_root)
+        fd = os.open(legacy_root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            project_digest = hashlib.sha256((legacy_root / 'project.json').read_bytes()).hexdigest()
+            observed = load_project_at(fd, expected_project_sha256=project_digest)
+            self.assertEqual(os.fstat(fd).st_ino, legacy_root.stat().st_ino)
+        finally:
+            os.close(fd)
+        self.assertIsNone(observed['root'])
+        self.assertEqual(observed, dict(expected, root=None))
 
     def test_locked_promoted_child_and_invalid_contexts_are_structured(self):
         graph = self.graph()
