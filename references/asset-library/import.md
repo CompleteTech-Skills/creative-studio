@@ -82,6 +82,8 @@ widths also fail the import. The OBJ parser checks the caller's time budget
 between source records and after triangulating each face. `probe` checks the
 captured geometry and inventories the single source. The preflight records
 the captured OBJ size alongside the generated glTF JSON and binary sizes.
+Import stops with `RIG_OBJ_PRECISION` if encoding positions as glTF float32
+would collapse a triangle that has area in the parsed OBJ.
 The version retains the original bytes under
 `source/model.obj` and records the original filename and SHA-256.
 Khronos validates the normalized GLB, with its receipt retained as

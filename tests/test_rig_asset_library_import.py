@@ -31,7 +31,8 @@ METADATA = dict(description='Authored test geometry', category='geometry',
                 license='CC0-1.0', allowed_uses=['test'], keywords=[], style_refs=[],
                 capabilities=[], review_status='unreviewed')
 STATIC_OBJ = (b'# exact source with CRLF and tab indentation\r\n'
-              b'o Panel\r\n\tv\t0 0 0\r\nv 2 0 0\r\nv 2 1 0\r\nv 0 1 0\r\n'
+              b"o Baker's Panel\r\n"
+              b'\tv\t0 0 0\r\nv 2 0 0\r\nv 2 1 0\r\nv 0 1 0\r\n'
               b'vt 0 0\r\nvt 1 0\r\nvt 1 1\r\nvt 0 1\r\nvt 0.25 0.5\r\n'
               b'vn 0 0 1\r\ns off\r\n'
               b'f 1/1/1 2/2/1 3/3/1\r\nf -4/5/1 -2/3/1 -1/4/1\r\n')
@@ -156,7 +157,9 @@ class NativeImportTests(unittest.TestCase):
         normalized = self.root / 'obj.glb'
         normalized.write_bytes(output)
         document = read_gltf(normalized)
-        primitive = document.json['meshes'][0]['primitives'][0]
+        mesh = document.json['meshes'][0]
+        self.assertEqual(mesh['name'], "Baker's Panel")
+        primitive = mesh['primitives'][0]
         self.assertEqual(document.accessor(primitive['indices']).ravel().tolist(), [0, 1, 2, 3, 2, 4])
         self.assertEqual(set(primitive['attributes']), {'POSITION', 'TEXCOORD_0', 'NORMAL'})
         accessors = {name: document.accessor(index).tolist()
@@ -217,6 +220,31 @@ class NativeImportTests(unittest.TestCase):
         with self.assertRaises(RigError) as error:
             self.pipeline.probe(source)
         self.assertEqual(error.exception.report['code'], 'RIG_OBJ_RECORD')
+
+    def test_static_obj_rejects_triangles_collapsed_by_glb_position_precision(self):
+        source = self.root / 'precision.obj'
+        cases = [
+            b'v 16777216 0 0\nv 16777217 0 0\nv 16777216 1 0\n',
+            b'v 16777216 0 0\nv 16777217 1 0\nv 16777216 2 0\n',
+            b'v 0 0 0\nv 1e-200 0 0\nv 0 1e-200 0\n',
+        ]
+        with patch('asset_library_import.build_static_gltf') as build:
+            for vertices in cases:
+                with self.subTest(vertices=vertices):
+                    source.write_bytes(vertices + b'f 1 2 3\n')
+                    for operation in (self.pipeline.probe, self.import_source):
+                        with self.assertRaises(RigError) as error:
+                            operation(source)
+                        self.assertEqual(error.exception.report['code'], 'RIG_OBJ_PRECISION')
+            build.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_static_obj_keeps_preexisting_degeneracy(self):
+        source = self.root / 'collinear.obj'
+        source.write_bytes(b'v 16777216 0 0\nv 16777217 0 0\nv 16777218 0 0\nf 1 2 3\n')
+        self.assertTrue(self.pipeline.probe(source)['geometry_validated'])
+        reference = self.import_source(source)
+        self.assertEqual(resolve_import(self.library, reference)['native_observation']['triangles'], 1)
 
     def test_static_obj_normalizes_finite_large_normals(self):
         source = self.root / 'large-normal.obj'

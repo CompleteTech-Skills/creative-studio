@@ -1,11 +1,14 @@
 """Bounded offline glTF and static OBJ ingestion into the canonical AssetLibrary."""
 from contextlib import contextmanager
 from copy import deepcopy
+from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
 import struct
 import tempfile
+
+import numpy as np
 
 import scene3d_import
 
@@ -13,7 +16,7 @@ from asset_library import AssetLibrary, detect_format, file_record, read_source_
 from asset_library_contracts import MAX_FILE_BYTES, seal, validate
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, decode_json, require, timestamp
-from rig_gltf import GltfDocument, MATERIAL_EXTENSIONS, build_static_gltf, preflight_gltf, read_gltf
+from rig_gltf import DTYPES, GltfDocument, MATERIAL_EXTENSIONS, build_static_gltf, preflight_gltf, read_gltf
 from rig_import import load_character_model
 from rig_interop import validate_gltf
 from rig_load_limits import _JSON_FACTOR, effective_limits
@@ -105,6 +108,46 @@ def _inspect(snapshot, limits):
     return document, images, inventory, embedded, preflight
 
 
+_OBJ_PRECISION_BATCH = 4096
+# Covers the gathered source and rounded coordinates and vectorized predicates.
+_OBJ_PRECISION_BYTES_PER_TRIANGLE = 768
+_OBJ_PRECISION_EXACT_WORKSPACE = 16 * 1024
+
+
+def _has_exact_triangle_area(points):
+    corners = [[Fraction(float(coordinate)) for coordinate in point] for point in points]
+    left = [b - a for a, b in zip(corners[0], corners[1])]
+    right = [c - a for a, c in zip(corners[0], corners[2])]
+    return any(left[i] * right[j] != left[j] * right[i] for i, j in ((0, 1), (1, 2), (2, 0)))
+
+
+def _check_obj_float32_triangles(geometry):
+    for mesh in geometry.meshes:
+        for start in range(0, len(mesh.triangles), _OBJ_PRECISION_BATCH):
+            triangles = mesh.triangles[start:start + _OBJ_PRECISION_BATCH]
+            source = mesh.positions[triangles]
+            with np.errstate(over='ignore', under='ignore'):
+                rounded = source.astype(DTYPES[5126]).astype(np.float64)
+            require(np.isfinite(rounded).all(), 'RIG_EXPORT_ACCESSOR',
+                    'OBJ coordinates must be finite at glTF precision.')
+            changed = np.any(rounded != source, axis=(1, 2))
+            if not changed.any():
+                continue
+
+            # The determinant test is performed in float64 on float32 inputs,
+            # so products neither underflow nor overflow. A conservative error
+            # bound identifies ambiguous results for exact dyadic arithmetic.
+            left = rounded[:, 1] - rounded[:, 0]
+            right = rounded[:, 2] - rounded[:, 0]
+            first = left * np.roll(right, -1, axis=1)
+            second = np.roll(left, -1, axis=1) * right
+            error = 8 * np.finfo(np.float64).eps * (np.abs(first) + np.abs(second))
+            certified = np.any(np.abs(first - second) > error, axis=1)
+            for index in np.flatnonzero(changed & ~certified):
+                require(_has_exact_triangle_area(rounded[index]) or not _has_exact_triangle_area(source[index]),
+                        'RIG_OBJ_PRECISION', 'Converting OBJ to glTF precision collapses a source triangle.')
+
+
 def _inspect_source(snapshot, limits):
     path = snapshot['path']
     if path.suffix != '.obj':
@@ -125,8 +168,13 @@ def _inspect_source(snapshot, limits):
     output_limit = min(MAX_FILE_BYTES, limits['source_bytes'], limits['dependency_bytes'])
     require(28 + packed_bytes <= output_limit, 'ASSET_IMPORT_LIMIT',
             'Converted OBJ binary cannot fit in the normalized GLB budget.')
-    _admit_memory(4 * geometry_bytes + 4 * packed_bytes + metadata_workspace,
-                  limits, 'OBJ glTF synthesis')
+    synthesis_workspace = 4 * geometry_bytes + 4 * packed_bytes + metadata_workspace
+    _admit_memory(synthesis_workspace, limits, 'OBJ glTF synthesis')
+    batch_triangles = min(_OBJ_PRECISION_BATCH, geometry.triangle_count)
+    _admit_memory(geometry_bytes + _OBJ_PRECISION_EXACT_WORKSPACE
+                  + _OBJ_PRECISION_BYTES_PER_TRIANGLE * batch_triangles,
+                  limits, 'OBJ coordinate precision')
+    _check_obj_float32_triangles(geometry)
     builder = build_static_gltf(geometry, generate_normals=False)
     del geometry
     document = GltfDocument(path, builder.json, [builder.binary], limits)
