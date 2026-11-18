@@ -357,3 +357,69 @@ bitstream valid without a decoder warning. Exact preserved bytes and an
 independently supplied original SHA-256 remain the separate authenticity gate;
 neither codec success nor numerical checks create visual approval or close the
 broader #52/#44/#139 packages.
+
+### IK orientation goals and retargeted contacts
+
+An IK endpoint orientation is a world-space goal. Declared joint constraints remain
+in force after that goal is applied. The result reports `orientation_residual_rad`
+when an orientation was requested, and `null` for position-only solves. A solve is
+`converged` only when its positional residual meets the chain's meter tolerance
+and its requested orientation is within `1e-5` radians. A reachable position can
+therefore have `reachable: true` and `converged: false` when a joint limit prevents
+the orientation. Contact and grasp reports retain this angular residual.
+
+Retargeting transforms an authored contact orientation using the endpoint's
+calibrated rest-orientation offset. It does not replace that goal with the target
+rest pose. Position-only contacts remain position-only; their orientation is not
+silently pinned. These numerical checks do not establish visual or anatomical
+approval. Likewise, a neutral-only or zero-effect expression catalog does not
+admit states requiring an expressive face: a nonzero authored morph deformation
+or a changed weighted-bone transform must exist.
+
+## Ordered IK orientation evaluation
+
+Native IK evaluates constraints in the canonical parent/target dependency order.
+When an explicit or chain-inherited endpoint orientation is required, each
+analytical pass or bounded FABRIK iteration applies the prefix before endpoint
+consumers, converts the world goal in the finalized parent frame, then applies
+the complete remaining ordered suffix. Endpoint limits and direct, transitive,
+hierarchy and aim consumers therefore observe the same finalized pose. Each
+constraint runs once per solver pass; unrelated fractional constraints are not
+replayed. Position-only solving retains its ordered constraint pass.
+
+`tests/test_rig_controls.py` covers explicit and inherited goals, both solvers,
+endpoint limits and final residuals, dependent consumers, constrained parents,
+multiple iterations, invalid dependency graphs and fractional controls. These
+are synthetic numerical regressions; their source does not establish an
+executed pass, visual approval or complete rig acceptance. Broader contact
+validation must also assess required orientation outcomes (tracked in #496).
+
+Morph retargeting preserves a matching source/target mesh ID before considering a
+unique name match. Use `mesh-id::morph-name` keys and values in `morph_mapping` to
+map independently authored controls when mesh IDs differ. Unqualified names are
+accepted only when they select one target; ambiguous matches and multiple source
+controls writing the same target fail with `RIG_RETARGET_MORPH`. Missing optional
+unmapped target morphs remain omitted rather than broadcasting to unrelated faces.
+
+Appendage control parameters include `wing_twist` in `[-1, 1]` (up to 0.7 radians
+around each wing bone's local length axis) and `wing_side` (`both`, `left` or
+`right`). Existing joint constraints still apply. They are available through
+`rig_facial.appendage_controls` and the `appendages` object in a pose-operation
+request. An unsupported requested side fails rather than inventing a wing. A
+one-sided pose does not automatically mirror to the other side. Finger spread and
+tail phase follow parent-to-child hierarchy, so reordering the serialized bone
+array does not change those authored motions.
+
+For imported wing joints, the twist axis follows the authored head-to-tail
+direction in the space where rotation acts after local rest scale. The full
+parent transform is removed before restoring that local scale. Pure twist
+therefore preserves the authored endpoints under nonuniform local rest scale;
+numerical regression cases also cover imported rotations and transformed parents.
+
+State-map discovery includes a `work_estimate` for one export cycle of each unique
+existing clip used by the selected executable recipes. It reports clip duration,
+keyframe/scalar counts, samples at the declared clip frame rates, and uncompressed
+float64 position-buffer sizes. Missing-animation/capability results add no work.
+These figures exclude normals, textures, renderer memory, repeated playback,
+encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
+zero model calls and does not generate the catalog's missing animations.
