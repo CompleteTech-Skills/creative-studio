@@ -31,13 +31,17 @@ A texture category requires a validated texture object that references a decoded
 image. Independent validation includes the validator version and requires an
 explicitly untruncated issue report with zero errors and a nonnegative warning
 count.
-The verifier compares source and decoded clip counts and the ordered track
-paths, interpolation modes and key counts for each clip. A morph weight
-channel contributes a track for each active primitive of its target node.
-Animation summaries derive the exact source key-time endpoint from the
-decoded key times and report native playback duration separately. Each track
-includes a key count, rational endpoints and a SHA-256 of its complete decoded
-key-time sequence in the native canonical JSON encoding.
+The verifier compares source and decoded clip counts and reconciles each ordered
+track's destination, path, interpolation and full key-time sequence against
+the corresponding source channel and its input accessor. The native decoder
+provides the mapping from numeric glTF node indices to bone and mesh IDs.
+Each track reports the numeric source node. A morph weight channel contributes
+a track for each active primitive of its target node and includes the numeric
+primitive index on each track. Animation summaries give the exact source
+key-time endpoint and the native playback duration. Each track includes a key
+count, rational endpoints and a SHA-256 of the complete verified key-time
+sequence in the native canonical JSON encoding. The sequence comparison
+preserves the sign of zero.
 Skeleton hierarchy and rest measurements are represented as digests. The
 report omits embedded names and arbitrary validator messages. Errors retain
 typed codes, retryability and applicable integer counts.
