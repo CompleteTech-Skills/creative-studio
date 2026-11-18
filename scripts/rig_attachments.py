@@ -63,4 +63,5 @@ def solve_grasp(rig, pose, chain_id: str, socket_id: str, object_transform: dict
                       constraints=rig.manifest['controllers']['constraints'])
     actual = socket_world(rig, result.pose, socket_id)
     return dict(pose=result.pose, residual_m=float(np.linalg.norm(actual[:3, 3]-grip[:3, 3])),
+                orientation_residual_rad=result.orientation_residual_rad,
                 converged=result.converged, reachable=result.reachable, grip_world=grip.tolist(), hand_world=actual.tolist())

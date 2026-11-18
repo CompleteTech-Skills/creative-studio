@@ -8,7 +8,7 @@ import numpy as np
 from rig_contracts import validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import require
-from rig_math import (decompose, qbetween, qinverse, qmul, quaternion, unit, vector)
+from rig_math import (decompose, qangle, qbetween, qinverse, qmul, quaternion, unit, vector)
 from rig_skeleton import evaluate_fk
 
 
@@ -20,11 +20,13 @@ class IKResult:
     converged: bool
     iterations: int
     constraints_applied: list[dict]
+    orientation_residual_rad: float | None = None
 
     def report(self) -> dict:
         return dict(pose=self.pose, residual_m=self.residual_m, reachable=self.reachable,
                     converged=self.converged, iterations=self.iterations,
-                    constraints_applied=self.constraints_applied)
+                    constraints_applied=self.constraints_applied,
+                    orientation_residual_rad=self.orientation_residual_rad)
 
 
 def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
@@ -83,6 +85,27 @@ def _pole_perpendicular(direction, origin, pole):
     return unit(perpendicular)
 
 
+def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
+    """Split the validated order before any consumer of the endpoint pose."""
+    # Follow the same parent/target edges validated by constraint_order().
+    # Keep a contiguous suffix so every constraint still runs once, in order.
+    dependents = {b['id']: [] for b in skeleton['bones']}
+    for bone in skeleton['bones']:
+        if bone['parent']:
+            dependents[bone['parent']].append(bone['id'])
+    for c in constraints:
+        if c['type'] in ('copy-position', 'copy-rotation', 'aim') and 'target' in c:
+            dependents[c['target']].append(c['bone'])
+    affected, pending = set(), [endpoint]
+    while pending:
+        name = pending.pop()
+        if name in affected:continue
+        affected.add(name)
+        pending.extend(dependents[name])
+    return next((i for i, c in enumerate(constraints) if c['bone'] in affected),
+                len(constraints))
+
+
 def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
              constraints=(), orientation=None) -> IKResult:
     validate_chain(skeleton, chain)
@@ -96,6 +119,28 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     reachable = lower-1e-7 <= distance <= lengths.sum()+1e-7
     direction = unit(target-origin) if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
     constrained = constraint_order(skeleton, list(constraints))
+    orientation = orientation if orientation is not None else chain.get('orientation')
+    barrier = (_orientation_barrier(skeleton, constrained, names[-1])
+               if orientation is not None else len(constrained))
+    prefix, suffix = constrained[:barrier], constrained[barrier:]
+
+    def apply_pass(current):
+        applied = []
+        if prefix:
+            current, applied = apply_constraints(skeleton, current, prefix, ordered=True)
+        if orientation is not None:
+            # All endpoint ancestors/targets precede the barrier. Convert the
+            # world goal using their finalized FK before limits and followers.
+            world = evaluate_fk(skeleton, current)
+            parent = next(b['parent'] for b in skeleton['bones'] if b['id'] == names[-1])
+            parent_q = decompose(world[parent])['rotation'] if parent else [0, 0, 0, 1]
+            current['bones'].setdefault(names[-1], {})['rotation'] = quaternion(
+                qmul(qinverse(parent_q), quaternion(orientation))).tolist()
+        if suffix:
+            current, following = apply_constraints(skeleton, current, suffix, ordered=True)
+            applied.extend(following)
+        return current, applied
+
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
@@ -107,7 +152,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         points[1] = origin + direction*x + _pole_perpendicular(direction, origin, pole)*y
         points[2] = origin + direction*d
         result = _orient_chain(skeleton, result, names, points)
-        if constrained:result, changes = apply_constraints(skeleton, result, constrained, ordered=True)
+        result, changes = apply_pass(result)
         iterations = 1
     else:
         for iterations in range(1, limit+1):
@@ -131,20 +176,17 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
                     radius = np.linalg.norm(delta-projection)
                     points[i] = points[i-1]+projection+_pole_perpendicular(axis, points[i-1], pole)*radius
             result = _orient_chain(skeleton, result, names, points)
-            if constrained:
-                result, current = apply_constraints(skeleton, result, constrained, ordered=True);changes.extend(current)
+            result, current = apply_pass(result)
+            changes.extend(current)
             world = evaluate_fk(skeleton, result)
             points = np.array([world[name][:3, 3] for name in names])
             if np.linalg.norm(points[-1]-target) <= tolerance or not reachable:break
-    orientation = orientation if orientation is not None else chain.get('orientation')
-    if orientation is not None:
-        world = evaluate_fk(skeleton, result)
-        parent = next(b['parent'] for b in skeleton['bones'] if b['id'] == names[-1])
-        parent_q = decompose(world[parent])['rotation'] if parent else [0, 0, 0, 1]
-        result['bones'].setdefault(names[-1], {})['rotation'] = quaternion(qmul(qinverse(parent_q), quaternion(orientation))).tolist()
-    final = evaluate_fk(skeleton, result)[names[-1]][:3, 3]
-    error = float(np.linalg.norm(final-target))
-    return IKResult(result, error, bool(reachable), bool(reachable and error <= tolerance), iterations, changes)
+    final = evaluate_fk(skeleton, result)[names[-1]]
+    error = float(np.linalg.norm(final[:3, 3]-target))
+    orientation_error = (qangle(decompose(final)['rotation'], orientation)
+                         if orientation is not None else None)
+    converged = reachable and error <= tolerance and (orientation_error is None or orientation_error <= 1e-5)
+    return IKResult(result, error, bool(reachable), bool(converged), iterations, changes, orientation_error)
 
 
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
