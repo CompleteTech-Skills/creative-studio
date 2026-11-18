@@ -33,8 +33,11 @@ def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
     """Use the same evaluated segment boundary for rest and runtime poses."""
     world = evaluate_fk(skeleton, pose)
     points = np.array([world[name][:3, 3] for name in names])
-    lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
-    require(np.all(lengths > 1e-8), 'RIG_IK_LENGTH', 'IK segments must have measurable length.')
+    lengths = np.array([math.dist(a, b) for a, b in zip(points[:-1], points[1:])])
+    with np.errstate(over='ignore', invalid='ignore'):
+        finite = np.isfinite(lengths).all() and math.isfinite(float(lengths.sum()))
+    require(finite and np.all(lengths > 1e-8), 'RIG_IK_LENGTH',
+            'IK segments must have finite measurable lengths and a finite total.')
     return points, lengths
 
 
@@ -114,10 +117,11 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     names = chain['bones']
     points, lengths = _chain_points_and_lengths(skeleton, names, result)
     origin = points[0].copy()
-    distance = float(np.linalg.norm(target-origin))
-    lower = max(0., float(2*lengths.max()-lengths.sum()))
+    distance = math.dist(target, origin)
+    require(math.isfinite(distance), 'RIG_NONFINITE', 'IK target distance exceeds finite representation.')
+    lower = max(0., float(lengths.max()-(lengths.sum()-lengths.max())))
     reachable = lower-1e-7 <= distance <= lengths.sum()+1e-7
-    direction = unit(target-origin) if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
+    direction = (target-origin)/distance if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
     constrained = constraint_order(skeleton, list(constraints))
     orientation = orientation if orientation is not None else chain.get('orientation')
     barrier = (_orientation_barrier(skeleton, constrained, names[-1])
@@ -180,11 +184,13 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
             changes.extend(current)
             world = evaluate_fk(skeleton, result)
             points = np.array([world[name][:3, 3] for name in names])
-            if np.linalg.norm(points[-1]-target) <= tolerance or not reachable:break
+            if math.dist(points[-1], target) <= tolerance or not reachable:break
     final = evaluate_fk(skeleton, result)[names[-1]]
-    error = float(np.linalg.norm(final[:3, 3]-target))
+    error = math.dist(final[:3, 3], target)
     orientation_error = (qangle(decompose(final)['rotation'], orientation)
                          if orientation is not None else None)
+    require(math.isfinite(error) and (orientation_error is None or math.isfinite(orientation_error)),
+            'RIG_NONFINITE', 'IK residual exceeds finite representation.')
     converged = reachable and error <= tolerance and (orientation_error is None or orientation_error <= 1e-5)
     return IKResult(result, error, bool(reachable), bool(converged), iterations, changes, orientation_error)
 

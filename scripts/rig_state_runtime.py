@@ -14,6 +14,7 @@ from rig_animation import (evaluate_animation, blend_poses, contact_is_active,
 from rig_constraints import apply_joint_limits
 from rig_errors import RigError, require, object_hash
 from rig_skeleton import evaluate_fk
+from rig_skinning import evaluate_deformation
 from rig_states import map_states
 
 
@@ -167,6 +168,10 @@ class RigStateRuntime:
                 self.rig.skeleton, controlled['pose'],
                 self.rig.manifest['controllers']['constraints'])
             controlled['control_stage'] = 'contact-release-blend'
+        # Finite FK can still overflow when applied to valid vertices or inverse
+        # binds. Admit every returned/captured runtime sample through the actual
+        # bounded native skinning owner before any playback state is committed.
+        evaluate_deformation(self.rig, controlled['pose'])
         # Keep the native evaluator's per-solve reports separate; runtime
         # contacts always describe the final geometry after every chain.
         controlled['solve_contacts'] = controlled['contacts']

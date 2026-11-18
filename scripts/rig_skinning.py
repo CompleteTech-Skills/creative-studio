@@ -143,11 +143,27 @@ def validate_skin(skin: SkinWeights, mesh: Mesh, skeleton: dict, limits=None) ->
                 vertices=len(weights), influences=weights.shape[1], locked_vertices=len(skin.locked))
 
 
-def deform_mesh(mesh: Mesh, skin: SkinWeights, world: dict, morph_weights=None) -> np.ndarray:
-    vertices = np.array(mesh.positions, dtype=np.float64, copy=True)
-    for name, amount in {**mesh.morph_defaults, **(morph_weights or {})}.items():
+def _validated_morph_weights(mesh: Mesh, morph_weights=None) -> dict:
+    values = {**mesh.morph_defaults, **(morph_weights or {})}
+    for name, amount in values.items():
         require(name in mesh.morphs, 'RIG_MORPH_REFERENCE', 'Morph target is unavailable: ' + name, asset=mesh.id)
         require(np.isfinite(amount) and -2 <= amount <= 2, 'RIG_MORPH_RANGE', 'Morph weights must be finite in [-2, 2].')
+    return values
+
+
+def validate_deformation_pose(rig: RigAsset, pose: dict | None = None) -> dict:
+    """Validate FK and morph domains; deform_mesh checks vertex arithmetic."""
+    world = evaluate_fk(rig.skeleton, pose)
+    morphs = (pose or {}).get('morphs', {})
+    require(set(morphs) <= set(rig.geometry.by_id()), 'RIG_MORPH_REFERENCE', 'Morph pose references missing geometry.')
+    for mesh in rig.geometry.meshes:
+        _validated_morph_weights(mesh, morphs.get(mesh.id))
+    return world
+
+
+def deform_mesh(mesh: Mesh, skin: SkinWeights, world: dict, morph_weights=None) -> np.ndarray:
+    vertices = np.array(mesh.positions, dtype=np.float64, copy=True)
+    for name, amount in _validated_morph_weights(mesh, morph_weights).items():
         vertices += mesh.morphs[name]['POSITION']*amount
     matrices = np.array([world[name] @ skin.inverse_bind[i] for i, name in enumerate(skin.joints)])
     output = np.zeros_like(vertices)
@@ -163,9 +179,8 @@ def deform_mesh(mesh: Mesh, skin: SkinWeights, world: dict, morph_weights=None) 
 
 def evaluate_deformation(rig: RigAsset, pose: dict | None = None, *, normals=False) -> dict:
     require(set(rig.weights) == set(rig.geometry.by_id()), 'RIG_MISSING_SKIN', 'Every mesh must have a real skin binding.')
-    world = evaluate_fk(rig.skeleton, pose)
+    world = validate_deformation_pose(rig, pose)
     morphs = (pose or {}).get('morphs', {})
-    require(set(morphs) <= set(rig.geometry.by_id()), 'RIG_MORPH_REFERENCE', 'Morph pose references missing geometry.')
     output = {}
     for mesh in rig.geometry.meshes:
         positions = deform_mesh(mesh, rig.weights[mesh.id], world, morphs.get(mesh.id))

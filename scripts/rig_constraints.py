@@ -41,7 +41,12 @@ def constraint_order(skeleton: dict, constraints: list[dict]) -> list[dict]:
         active.remove(name);done.add(name);order.append(name)
     for name in hierarchy_order(skeleton):visit(name)
     priority = {name: i for i, name in enumerate(order)}
-    return sorted(constraints, key=lambda c: (priority[c['bone']], c['type'] in ('hinge', 'ball', 'swing-twist', 'locked'), c['id']))
+    # Positional followers precede hard translation limits; world rotations
+    # then use the final constrained position, followed by hard angular limits.
+    # Constraint identifiers must not decide whether a hard limit is retained.
+    phase = {'copy-position': 0, 'translation': 1, 'aim': 2, 'copy-rotation': 2,
+             'hinge': 3, 'ball': 3, 'swing-twist': 3, 'locked': 3}
+    return sorted(constraints, key=lambda c: (priority[c['bone']], phase[c['type']], c['id']))
 
 
 def apply_joint_limits(skeleton: dict, pose: dict, constraints: list[dict]) -> tuple[dict, list[dict]]:

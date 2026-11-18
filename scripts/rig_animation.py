@@ -12,6 +12,7 @@ from rig_ik import solve_ik, validate_chain
 from rig_math import IDENTITY_Q, decompose, qangle, qinverse, qmul, quaternion, slerp, vector
 from rig_models import RigAsset
 from rig_skeleton import evaluate_fk, neutral_pose
+from rig_skinning import validate_deformation_pose
 
 
 def validate_animation(rig: RigAsset, clip: dict) -> dict:
@@ -112,15 +113,20 @@ def apply_animation_controls(rig: RigAsset, clip: dict, pose: dict, local_time: 
                                 residual_m=result.residual_m, orientation_residual_rad=result.orientation_residual_rad,
                                 reachable=result.reachable, converged=result.converged))
     final_reports = deepcopy(reports)
+    # Valid keys do not guarantee valid cubic samples or finite composed FK.
+    # Reuse the deformation owner's bounds before returning any native pose,
+    # including clips with no contacts or constraints to trigger FK otherwise.
+    world = validate_deformation_pose(rig, pose)
     if final_reports:
-        world = evaluate_fk(rig.skeleton, pose)
         active = [c for c in clip['contacts'] if contact_is_active(c, local_time, clip['duration'])]
         for report, contact in zip(final_reports, active):
             chain = chains[report['chain']]
             endpoint = world[chain['bones'][-1]]
-            report['residual_m'] = float(np.linalg.norm(endpoint[:3, 3]-report['target']))
+            report['residual_m'] = math.dist(endpoint[:3, 3], report['target'])
             goal = contact.get('orientation', chain.get('orientation'))
             angle = qangle(decompose(endpoint)['rotation'], goal) if goal is not None else None
+            require(math.isfinite(report['residual_m']) and (angle is None or math.isfinite(angle)),
+                    'RIG_NONFINITE', 'Final contact residual exceeds finite representation.')
             report['orientation_residual_rad'] = angle
             report['converged'] = bool(report['converged'] and report['residual_m'] <= chain['tolerance']
                                       and (angle is None or angle <= 1e-5))

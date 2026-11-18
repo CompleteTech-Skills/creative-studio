@@ -222,3 +222,40 @@ python scripts/test_rig_gate.py interoperability
 Report actual failures, optional-tool skips and environmental blockers separately.
 These numerical fixtures cannot provide artistic review, external interoperability
 acceptance when tools are skipped, or full six-fixture/parent acceptance.
+
+## Sampled geometry and finite native diagnostics
+
+Issue #530 extends the admission boundary to every evaluated sample. Native
+animation controls validate composed FK and the canonical morph domain even
+when a clip has no contacts or constraints. Runtime sampling also evaluates the
+actual native deformation after controls and contact-release projection, before
+returning a pose or committing transition state. Finite transforms alone do not
+establish finite skinned vertices. Rejected samples restore all nine runtime
+transaction fields, including the captured source/input poses and contact
+placement. This adds one native deformation evaluation to each runtime sample;
+it does not perform rendering or external application validation.
+
+Within one bone, positional copy precedes hard translation limits. World-space
+rotation controls then use that final position, and hard angular limits follow.
+Constraint identifiers no longer determine whether a positional follower can
+escape a hard translation limit. The contact-release path and ordinary native
+evaluation therefore retain the same hard bounds at the completion boundary.
+
+IK segment lengths, target distances and residual reports use overflow-safe
+Euclidean distances. Finite coordinates can have an unrepresentable combined
+distance; such samples raise a structured error before runtime state commits.
+Representable large distances retain finite, strict-JSON diagnostics without
+claiming that an unreachable contact converged. The legacy per-solve reports and
+the final-geometry reports both retain this finite boundary.
+
+On Linux/Python 3.12.14, source
+`d8c0484c972c059c58086395b2648b34cb45e3c1`, which includes protected main
+`165d57101e667c58a5af217d306422ecd32d87e6`, passed the full `animation-ik`
+gate: 132 tests in 64.687 seconds, exit 0, zero skips. The `skinning` gate passed
+63 tests in 7.162 seconds, exit 0, zero skips. Ten independently authored sampled
+pose/deformation cases and six independently authored numerical-boundary cases
+are additive gate members. The latter six methods previously produced 15
+assertion/subtest failures, zero errors and zero skips on source `38fafd68`;
+the corrected focused run passed all six in 2.801 seconds. These are executed
+synthetic native FK, IK and skin-deformation results. The final published tree
+still requires independent review and exact-head protected hosted checks.
