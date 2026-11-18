@@ -42,6 +42,24 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(restored, jobs.status(self.job))
         self.assertEqual(sha256(self.root/'restored'/result['current_revision']/'output/model/model.glb'), original)
 
+    def test_job_and_archive_parent_aliases_preserve_leaf_symlink_rejection(self):
+        actual = self.root/'actual'; actual.mkdir()
+        source = actual/'source.bin'; source.write_bytes(b'original')
+        alias = self.root/'alias'
+        try:
+            alias.symlink_to(actual,target_is_directory=True)
+            (actual/'linked.bin').symlink_to(source)
+        except OSError:
+            self.skipTest('This host cannot create symlinks.')
+        with self.assertRaises(RigError):
+            jobs.create_job(alias/'rejected',self.request,inputs={'source.bin':alias/'linked.bin'})
+        job = alias/'job'
+        jobs.create_job(job,self.request,inputs={'source.bin':alias/'source.bin'})
+        jobs.run_job(job,self.handler,handler_version='alias-test')
+        archive = actual/'job.zip'
+        jobs.archive_job(job,archive)
+        self.assertEqual(jobs.restore_job(alias/archive.name,self.root/'restored'),jobs.status(job))
+
     def test_input_capture_and_tamper_fail_before_callback(self):
         source = self.root/'source.bin'; source.write_bytes(b'original')
         self.create(inputs={'source.bin':source}); source.write_bytes(b'changed')
