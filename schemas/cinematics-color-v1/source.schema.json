@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cinematics color source v1",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "cinematics-color-source"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "config_closure_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "working_space": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "primaries": {
+      "type": "object",
+      "properties": {
+        "r": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "g": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "b": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "w": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b",
+        "w"
+      ],
+      "additionalProperties": false
+    },
+    "transfer": {
+      "const": "linear"
+    },
+    "alpha_mode": {
+      "enum": [
+        "straight",
+        "premultiplied"
+      ]
+    },
+    "view_applied": {
+      "const": false
+    },
+    "exposure_applied": {
+      "const": false
+    },
+    "source_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_artifact_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "config_closure_sha256",
+    "working_space",
+    "primaries",
+    "transfer",
+    "alpha_mode",
+    "view_applied",
+    "exposure_applied",
+    "source_manifest_sha256",
+    "source_artifact_sha256"
+  ],
+  "additionalProperties": false
+}

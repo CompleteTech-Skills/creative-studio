@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cinematics color probe v1",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "cinematics-scene-linear-probe"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "config_closure_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ocio_version": {
+      "const": "2.5.2"
+    },
+    "working_space": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "xyz_role": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "primaries": {
+      "type": "object",
+      "properties": {
+        "r": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "g": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "b": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "w": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b",
+        "w"
+      ],
+      "additionalProperties": false
+    },
+    "method": {
+      "const": "actual-ocio-basis-to-cie-xyz-d65"
+    },
+    "source_render_verified": {
+      "const": false
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "config_closure_sha256",
+    "ocio_version",
+    "working_space",
+    "xyz_role",
+    "primaries",
+    "method",
+    "source_render_verified"
+  ],
+  "additionalProperties": false
+}

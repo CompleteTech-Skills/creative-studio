@@ -1,0 +1,36 @@
+# Synthetic engineering color profile; no production artwork or render approval.
+ocio_profile_version: 2
+search_path: luts
+strictparsing: true
+roles:
+  default: Linear Rec.709
+  scene_linear: Linear Rec.709
+  cie_xyz_d65_interchange: XYZ D65
+displays:
+  sRGB:
+    - !<View> {name: Standard, colorspace: sRGB}
+active_displays: [sRGB]
+active_views: [Standard]
+colorspaces:
+  - !<ColorSpace>
+    name: XYZ D65
+    bitdepth: 32f
+    isdata: false
+  - !<ColorSpace>
+    name: Linear Rec.709
+    bitdepth: 32f
+    isdata: false
+    to_scene_reference: !<MatrixTransform> {matrix: [0.4123907992659595, 0.3575843393838780, 0.1804807884018343, 0, 0.2126390058715104, 0.7151686787677560, 0.0721923153607337, 0, 0.0193308187155918, 0.1191947797946259, 0.9505321522496606, 0, 0, 0, 0, 1]}
+  - !<ColorSpace>
+    name: sRGB
+    bitdepth: 32f
+    isdata: false
+    from_scene_reference: !<GroupTransform>
+      children:
+        - !<MatrixTransform> {matrix: [3.2409699419045226, -1.5373831775700940, -0.4986107602930034, 0, -0.9692436362808796, 1.8759675015077202, 0.0415550574071756, 0, 0.0556300796969937, -0.2039769588889765, 1.0569715142428786, 0, 0, 0, 0, 1]}
+        - !<ExponentWithLinearTransform> {gamma: [2.4, 2.4, 2.4, 1], offset: [0.055, 0.055, 0.055, 0], direction: inverse}
+  - !<ColorSpace>
+    name: Unused LUT calibration fixture
+    bitdepth: 32f
+    isdata: false
+    from_scene_reference: !<FileTransform> {src: identity.spi1d, interpolation: linear}

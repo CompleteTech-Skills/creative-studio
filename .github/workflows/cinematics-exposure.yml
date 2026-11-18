@@ -1,0 +1,56 @@
+name: Measured optional exposure advice
+permissions:
+  contents: read
+on:
+  pull_request:
+    paths:
+      - 'scripts/cinematics3d_color.py'
+      - 'scripts/cinematics3d_exposure.py'
+      - 'scripts/rig_errors.py'
+      - 'references/cinematics3d-exposure.md'
+      - 'requirements-color*.txt'
+      - 'schemas/cinematics-exposure-v1/**'
+      - 'tests/optional/test_cinematics3d_exposure.py'
+      - 'tests/fixtures/cinematics-color/**'
+      - '.github/workflows/cinematics-exposure.yml'
+  push:
+    paths:
+      - 'scripts/cinematics3d_color.py'
+      - 'scripts/cinematics3d_exposure.py'
+      - 'scripts/rig_errors.py'
+      - 'references/cinematics3d-exposure.md'
+      - 'requirements-color*.txt'
+      - 'schemas/cinematics-exposure-v1/**'
+      - 'tests/optional/test_cinematics3d_exposure.py'
+      - 'tests/fixtures/cinematics-color/**'
+      - '.github/workflows/cinematics-exposure.yml'
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  color:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-color-test.txt
+      - run: python -m unittest discover -s tests/optional -p test_cinematics3d_exposure.py -v 2>&1 | tee exposure-tests.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: exposure-tests-${{ matrix.os }}
+          path: exposure-tests.log

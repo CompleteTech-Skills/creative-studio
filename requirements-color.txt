@@ -1,0 +1,4 @@
+# Optional color processing only; not part of a 2D-only installation.
+opencolorio==2.5.2
+PyYAML==6.0.3
+numpy==2.3.5
