@@ -7,6 +7,8 @@ from rig_animation import validate_animation
 from rig_errors import require
 from rig_math import qangle
 from state_catalog import load_library
+from rig_state_events import compile_state_events
+from rig_state_discovery import asset_provenance, state_discovery
 
 DEFAULT_RECIPES={'static-neutral':'neutral','standing':'neutral','walking-forward':'walk','waving':'wave',
                  'crouching':'crouch','blinking':'blink-expression','sitting':'sit','tail-wagging':'tail-wag',
@@ -60,14 +62,19 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         [library.resolve(s) for s in (selected or [])]+(library.expand_pack(pack) if pack else [])))
     capabilities=rig_capabilities(rig);archetype=rig.manifest['archetype']
     if archetype not in library.archetypes:archetype='generic'
-    mapping={};compiled={}
+    mapping={};compiled={};discovery={};controllers_validated=False
     for name in names:
         reasons=library.incompatibilities(name,archetype,capabilities,approved_props)
-        clips=resolved.get(name,[])
+        requested=resolved.get(name,[])
+        clips=requested
         if reasons:status='requires-rig-capability';reason='; '.join(reasons);clips=[]
         elif not clips or any(c not in rig.clips for c in clips):
             status='requires-animation';reason='No complete executable 3D clip recipe is available for this state.';clips=[]
         else:
+            if not controllers_validated:
+                from rig_ik import validate_controllers
+                validate_controllers(rig.skeleton,rig.manifest['controllers'])
+                controllers_validated=True
             for clip in clips:validate_animation(rig,rig.clips[clip])
             status='supported' if rig.manifest['review']['status']=='approved' else 'needs-review'
             reason='Executable 3D channels are available; state-specific semantic and visual review is required.'
@@ -78,6 +85,9 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
                 reduced_motion=deepcopy(state['reduced_motion']),cancel_state='static-neutral',
                 anatomical_adaptation='Uses only existing weighted anatomy; no invented body parts.',semantic_review=state['semantic_review'])
         mapping[name]=dict(status=status,clips=clips,reason=reason)
+        discovery[name]=state_discovery(rig,library.states[name],requested,
+            clips if name in compiled else [],capabilities,archetype,approved_props)
+    events=compile_state_events(library,compiled)
     clip_ids=sorted({clip for recipe in compiled.values() for clip in recipe['clips']})
     clips=[rig.clips[name] for name in clip_ids]
     samples=sum(max(2,int(math.ceil(clip['duration']*clip['fps']))+1) for clip in clips)
@@ -92,4 +102,5 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         limitations='Position buffers only; excludes normals, textures, pose matrices, renderer memory, encoded output and repeated runtime loops.')
     return dict(schema_version=1,catalog_version=library.version,catalog_sha256=library.sha256,total_catalog_states=len(library.states),
                 selected_states=len(names),capabilities=capabilities,mapping=mapping,recipes=compiled,
+                events=events,discovery=discovery,asset_provenance=asset_provenance(rig,clip_ids),
                 counts=dict(Counter(v['status'] for v in mapping.values())),work_estimate=estimate,all_416_animated=False)

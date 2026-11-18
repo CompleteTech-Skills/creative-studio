@@ -12,9 +12,10 @@ import numpy as np
 from rig_animation import evaluate_animation, blend_poses
 from rig_errors import RigError, require, object_hash
 from rig_states import map_states
+from rig_state_events import RigStateEvents
 
 
-class RigStateRuntime:
+class RigStateRuntime(RigStateEvents):
     """Play a selected mapping; callers provide monotonic seconds explicitly.
 
     Requests use the incoming state's interruption policy, as catalog event
@@ -24,7 +25,8 @@ class RigStateRuntime:
     """
 
     def __init__(self, rig, initial, *, recipes=None, selected=None,
-                 blend_seconds=0.2, now=0.0, transition_budget=32):
+                 blend_seconds=0.2, now=0.0, transition_budget=32,
+                 reduced_motion=False, reduced_motion_poses=None):
         require(isinstance(now, (int, float)) and not isinstance(now, bool) and 0 <= now <= float_info.max,
                 'RIG_STATE_TIME', 'Runtime time must be finite and nonnegative.')
         require(isinstance(blend_seconds, (int, float)) and not isinstance(blend_seconds, bool)
@@ -36,6 +38,7 @@ class RigStateRuntime:
         self.mapping = map_states(rig, recipes=recipes, selected=selected)
         self.recipes = deepcopy(self.mapping['recipes'])
         self._require_state(initial)
+        self._configure_state_events(reduced_motion, reduced_motion_poses)
         self.state = initial
         self.entered = self.time = float(now)
         self.blend_seconds = float(blend_seconds)
@@ -75,6 +78,8 @@ class RigStateRuntime:
         return self._root(pose)
 
     def _pose(self, now):
+        if self.reduced_motion:
+            return self._held_state_pose()
         recipe = self.recipes[self.state]
         elapsed = max(0., now-self.entered)
         clips = recipe['clips']
@@ -162,7 +167,7 @@ class RigStateRuntime:
         """Evaluate geometry-driving pose and perform available completion edges."""
         self._check(now)
         status = 'playing'
-        while self.recipes[self.state]['completion'] is not None:
+        while not self.reduced_motion and self.recipes[self.state]['completion'] is not None:
             # A short clip at a large timestamp can round back to its start.
             boundary = max(self.entered+self._duration(), math.nextafter(self.entered, math.inf))
             if now < boundary:
@@ -175,7 +180,8 @@ class RigStateRuntime:
         pose = self._pose(now)
         self.time = float(now)
         return dict(state=self.state, elapsed=now-self.entered, pose=pose,
-                    status=status, transition_count=self.transition_count,
+                    status='held-reduced-motion' if self.reduced_motion else status,
+                    transition_count=self.transition_count,
                     pending_completion=self.recipes[self.state]['completion'] if status == 'completion-unavailable' else None)
 
     def request(self, state, now):
