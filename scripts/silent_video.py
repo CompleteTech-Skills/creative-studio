@@ -340,7 +340,8 @@ def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
     ordered = sorted(substitutions, key=len, reverse=True)
     # Match known absolute path tokens, including a directory followed by a
     # separator. A prefix inside some other name is not that command-owned path.
-    path_tokens = re.compile(r'(?<![\w./\\-])(?:' +
+    path_start = re.compile(r'(?<![\w./\\-])')
+    path_tokens = re.compile(path_start.pattern + r'(?:' +
                              '|'.join(re.escape(path) for path in ordered) +
                              r')(?![\w.-])') if ordered else None
     def redact(value, truncated=False):
@@ -351,7 +352,7 @@ def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
                 start = max(0, len(value) - len(path) + 1)
                 position = value.find(path[0], start)
                 while position >= 0:
-                    if path.startswith(value[position:]):
+                    if path_start.match(value, position) and path.startswith(value[position:]):
                         value = value[:position] + '<media-path-truncated>'
                         break
                     position = value.find(path[0], position + 1)
@@ -947,7 +948,7 @@ def main():
             try:
                 request = read_json(args.request)
                 validate_request(request)
-            except (ValueError, OSError):
+            except (ValueError, OSError, OverflowError):
                 raise ValueError('silent media request could not be safely read or validated') from None
             if args.command == 'verify-export': result = verify_export(args.artifact, request, root=args.root)
             else: result = encode(request, args.root, args.destination)

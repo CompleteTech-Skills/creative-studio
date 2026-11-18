@@ -326,6 +326,11 @@ Failed exported records replace absolute executable and temporary-directory
 paths with stable tool/work-directory aliases in commands, transcripts and the
 error message. Per-stream byte limits apply after this replacement. Capture
 also suppresses a partial known path cut at the retained byte boundary.
+Partial-path suppression uses the same left token boundary as complete paths.
+A rational value cut immediately after its slash remains observed probe data;
+that slash alone does not establish a command-owned absolute path. CLI request
+intake also converts numeric overflow during structural validation into the
+fixed JSON refusal, without an interpreter traceback or caller filename.
 Stale source diagnostics identify the frame index rather than its caller-chosen
 directory or filename. Error summaries do not copy unsanitized transcript tails.
 Strict decode requires complete diagnostics and rejects a truncated stderr transcript,
