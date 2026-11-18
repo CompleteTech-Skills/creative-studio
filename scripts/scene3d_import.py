@@ -74,11 +74,13 @@ def _local_uri(uri):
     return path
 
 
-def source_snapshot(source, destination):
-    """Safely read explicit source dependencies once into an owned private tree."""
+def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None):
+    """Safely capture local dependencies under the active Scene3D limits."""
+    file_limit = MAX_FILE_BYTES if maximum_file_bytes is None else min(MAX_FILE_BYTES, maximum_file_bytes)
+    total_limit = MAX_SOURCE_BYTES if maximum_total_bytes is None else min(MAX_SOURCE_BYTES, maximum_total_bytes)
     source = Path(source).absolute()
     require(source.suffix.lower() in ('.glb', '.gltf'), 'Import accepts GLB or glTF.', 'SCENE3D_IMPORT_FORMAT')
-    payload = read_source_bytes(source, MAX_FILE_BYTES)
+    payload = read_source_bytes(source, min(file_limit, total_limit))
     document = _json(payload, source.suffix.lower())
     require(isinstance(document, dict), 'glTF root must be an object.', 'SCENE3D_IMPORT_FORMAT')
     primary = 'model'+source.suffix.lower()
@@ -106,11 +108,11 @@ def source_snapshot(source, destination):
             require('/'.join(parts[:index]) not in {n.casefold() for n in names},
                     'File/directory resource alias.', 'SCENE3D_IMPORT_URI')
     files, total = {primary: payload}, len(payload)
-    require(total <= MAX_SOURCE_BYTES, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+    require(total <= total_limit, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
     for path, target in sorted(resources.items()):
-        data = read_source_bytes(target, min(MAX_FILE_BYTES, MAX_SOURCE_BYTES-total))
+        data = read_source_bytes(target, min(file_limit, total_limit-total))
         total += len(data)
-        require(total <= MAX_SOURCE_BYTES, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+        require(total <= total_limit, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
         files[path] = data
     destination = Path(destination)
     destination.mkdir(mode=0o700)
@@ -141,10 +143,13 @@ def _preview(rig, destination):
         render_rig_preview(rig, destination, width=256, height=256, bounds=bounds)
         return dict(backend='hatch-native-cpu-triangle-zbuffer', textures='base-color-only',
                     animation='native-rest-pose', depth_test=True, bounds=bounds)
-    # Static imports have no fabricated source skeleton. A wireframe projection
-    # of genuine triangles is sufficient for their explicit geometry inspector.
-    from PIL import Image, ImageDraw
-    points = np.concatenate([mesh.positions for mesh in rig.geometry.meshes])
+    return _wireframe_preview(rig.geometry, destination)
+
+
+def _wireframe_preview(geometry, destination):
+    """Project the imported triangle positions directly into a diagnostic image."""
+    from PIL import ImageDraw
+    points = np.concatenate([mesh.positions for mesh in geometry.meshes])
     center = (points.min(axis=0)+points.max(axis=0))*.5
     forward = np.array([2.3, 1.1, 3.8]); forward /= np.linalg.norm(forward)
     right = np.cross([0, 1, 0], forward); right /= np.linalg.norm(right)
@@ -154,7 +159,7 @@ def _preview(rig, destination):
     scale = 200/max(float(np.ptp(view[:, :2], axis=0).max()), 1e-8)
     image = Image.new('RGB', (256, 256), (20, 28, 40))
     draw = ImageDraw.Draw(image)
-    for mesh in rig.geometry.meshes:
+    for mesh in geometry.meshes:
         p = (mesh.positions-center)@basis
         p = np.column_stack([128+p[:, 0]*scale, 128-p[:, 1]*scale])
         for tri in mesh.triangles:

@@ -1,0 +1,11 @@
+test_actual_worker_identity_survives_model_replacement_inside_real_constructor (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_actual_worker_identity_survives_model_replacement_inside_real_constructor) ... ok
+test_malformed_captured_cascade_fails_explicitly (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_malformed_captured_cascade_fails_explicitly) ... ok
+test_memory_classifier_hash_matches_loaded_bytes_after_model_path_replacement (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_memory_classifier_hash_matches_loaded_bytes_after_model_path_replacement) ... ok
+test_model_changed_before_capture_rejects_without_publishing_response (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_model_changed_before_capture_rejects_without_publishing_response) ... ok
+test_new_import_detects_face_and_eyes_without_masks_and_resumes (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_new_import_detects_face_and_eyes_without_masks_and_resumes) ... ok
+test_unsupported_source_is_explicit_and_does_not_claim_semantics (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_unsupported_source_is_explicit_and_does_not_claim_semantics) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 45.442s
+
+OK
