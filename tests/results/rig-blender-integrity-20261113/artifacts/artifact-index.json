@@ -6,8 +6,8 @@
   "files": [
     {
       "path": "blender-verification.json",
-      "bytes": 11083,
-      "sha256": "8f411431e936c5d7b1e23901572504335f633c37b523c03b51979a90047d3da5"
+      "bytes": 10857,
+      "sha256": "982d0a8abf3f1fcc369105d5fcdd9d4cf9d33b490ee3f2976b25015975e1df75"
     },
     {
       "path": "export-request.json",
@@ -86,13 +86,13 @@
     },
     {
       "path": "preview/frames.json",
-      "bytes": 994,
-      "sha256": "e491de10946b9398cbd3f18f3b87e5fc6257196671f9efa4097f17899467cce2"
+      "bytes": 856,
+      "sha256": "d4881999439f53e12e6c46f3a27d89c3b4f33a35fbb656eb15c009ed03c01c21"
     },
     {
       "path": "preview-verification.json",
-      "bytes": 994,
-      "sha256": "e491de10946b9398cbd3f18f3b87e5fc6257196671f9efa4097f17899467cce2"
+      "bytes": 856,
+      "sha256": "d4881999439f53e12e6c46f3a27d89c3b4f33a35fbb656eb15c009ed03c01c21"
     },
     {
       "path": "verified.blend",
