@@ -101,6 +101,11 @@ class NativeAcquisitionGateway:
             if _check is not None: _check(data)
             return self._result(data,job)
 
+    def reserve_budget(self, job):
+        """Reserve existing native capacity without a claim or automatic enrollment."""
+        with self._locked() as data:
+            return hatch.reserve_budget(self.root,data,job)
+
     def claim(self, job, *, _check=None):
         """Return the existing active token, or delegate one native claim."""
         with self._locked() as data:
@@ -119,7 +124,7 @@ class NativeAcquisitionGateway:
             hatch.reconcile(self.root,data)
             return self._result(data,job)
 
-    def fail(self, job, token, reason, *, outcome='known', _check=None):
+    def fail(self, job, token, reason, *, outcome='known', budget_usage=None, _check=None):
         """Only a known failure releases the native token; unknown work stays owned."""
         if outcome not in ('known','uncertain'):
             raise RigError('DIRECTOR_ACQUISITION_OUTCOME','Outcome must be known or uncertain.',stage='director')
@@ -130,6 +135,16 @@ class NativeAcquisitionGateway:
                 raise RigError('DIRECTOR_ACQUISITION_TOKEN','The original active native token is required.',stage='director')
             if not isinstance(reason,str) or not reason.strip():
                 raise RigError('DIRECTOR_ACQUISITION_REASON','A preserved failure reason is required.',stage='director')
+            budget=hatch._native_budget(self.root,data)
+            if budget is not None:
+                if (not isinstance(budget_usage,dict) or
+                    (budget_usage.get('outcome')=='uncertain') != (outcome=='uncertain')):
+                    raise RigError('DIRECTOR_ACQUISITION_OUTCOME',
+                                   'Failure diagnostic and native accounting outcome must agree.',stage='director')
+                hatch.fail(self.root,data,job,token,reason,budget_usage=budget_usage)
+                return self._result(data,job)
+            if budget_usage is not None:
+                raise RigError('DIRECTOR_ACQUISITION_POLICY','Usage requires an enrolled native budget.',stage='director')
             if outcome=='uncertain':
                 # Native claim history already records the original owner. Never
                 # translate an unknown remote outcome into permission to retry.
@@ -140,29 +155,46 @@ class NativeAcquisitionGateway:
             hatch.fail(self.root,data,job,token,reason)
             return self._result(data,job)
 
-    def ingest(self, job, token, source, *, source_sha256, receipt, note, _check=None):
-        """Preserve verified source bytes, then delegate native raster ingestion."""
-        if not isinstance(source_sha256,str) or len(source_sha256)!=64:
-            raise RigError('DIRECTOR_ACQUISITION_HASH','An exact source SHA-256 is required.',stage='director')
-        payload=read_source_bytes(source)
-        if hashlib.sha256(payload).hexdigest()!=source_sha256:
-            raise RigError('DIRECTOR_ACQUISITION_HASH','Source bytes differ from the declared candidate.',stage='director')
+    def ingest(self, job, token, source, *, source_sha256, receipt, note,
+               _check=None, _read_source=None):
+        """Account an authenticated receipt, then verify and ingest source bytes."""
         if not isinstance(receipt,dict):
             raise RigError('DIRECTOR_ACQUISITION_RECEIPT','An exact native handoff receipt is required.',stage='director')
         with self._locked() as data:
             if _check is not None: _check(data)
             selected=hatch.job_for(data,job)
-            # Reject invalid/stale claims before any publication or source copy.
-            if (selected['status']!='running' or selected.get('token')!=token or
-                selected.get('stale') or hatch.inputs(self.root,selected)!=selected['input_hashes']):
-                raise RigError('DIRECTOR_ACQUISITION_TOKEN','Active unchanged native claim required.',stage='director')
+            if selected['status']!='running' or selected.get('token')!=token:
+                raise RigError('DIRECTOR_ACQUISITION_TOKEN','The original active native claim is required.',stage='director')
             expected='$fixture' if data['fixture_mode'] else '$imagegen'
             value=deepcopy(receipt.get('receipt_template',receipt))
-            if (value.get('generation_skill')!=expected or value.get('input_hashes')!=selected['input_hashes'] or
+            if (not isinstance(value,dict) or value.get('generation_skill')!=expected or
+                value.get('input_hashes')!=selected['input_hashes'] or
                 value.get('token')!=token or value.get('job')!=job):
                 raise RigError('DIRECTOR_ACQUISITION_RECEIPT','Receipt does not match the native claim/provenance.',stage='director')
             if not isinstance(note,str) or not note.strip():
                 raise RigError('DIRECTOR_ACQUISITION_REASON','A native inspection note is required.',stage='director')
+            budget=hatch._native_budget(self.root,data)
+            if budget is not None:
+                # Accounting authenticates the original claim, independently of
+                # missing/stale inputs or rejected candidate bytes. Native ingest
+                # replays this exact observation; it cannot charge it twice.
+                hatch.record_budget_usage(self.root,data,job,token,value.get('budget_usage'))
+                if value['budget_usage']['outcome']!='complete':
+                    raise RigError('DIRECTOR_ACQUISITION_OUTCOME',
+                                   'Ingestion requires complete known native usage.',stage='director')
+            elif 'budget_usage' in value:
+                raise RigError('DIRECTOR_ACQUISITION_POLICY','Usage requires an enrolled native budget.',stage='director')
+            try:
+                fresh=not selected.get('stale') and hatch.inputs(self.root,selected)==selected['input_hashes']
+            except (OSError,ValueError):
+                fresh=False
+            if not fresh:
+                raise RigError('DIRECTOR_ACQUISITION_TOKEN','Active unchanged native claim required.',stage='director')
+            if not isinstance(source_sha256,str) or len(source_sha256)!=64:
+                raise RigError('DIRECTOR_ACQUISITION_HASH','An exact source SHA-256 is required.',stage='director')
+            payload=_read_source() if _read_source is not None else read_source_bytes(source)
+            if hashlib.sha256(payload).hexdigest()!=source_sha256:
+                raise RigError('DIRECTOR_ACQUISITION_HASH','Source bytes differ from the declared candidate.',stage='director')
             # Preserve exact candidate bytes inside the owned run, independently
             # of subsequent changes to an external source path. Existing native
             # ingestion validates actual image content before accepting it.
@@ -213,7 +245,11 @@ class AcquisitionGateway:
         from rig_errors import object_hash
         with self.native._locked() as data:
             selected=hatch.job_for(data,self.job)
-            try: return object_hash(hatch.inputs(self.root,selected))
+            if selected['status']=='running' and selected.get('input_hashes'):
+                return object_hash(selected['input_hashes'])
+            try:
+                reader=hatch.generation_inputs if selected['status'] in ('pending','failed') else hatch.inputs
+                return object_hash(reader(self.root,selected))
             except (OSError,ValueError):
                 if selected.get('input_hashes') and selected['status']=='running':
                     return object_hash(selected['input_hashes'])
@@ -243,16 +279,21 @@ class AcquisitionGateway:
         source=None
         receipt=None
         source_hash=None
+        source_reader=None
+        budget_usage=None
         if method=='AcquisitionGateway.ingest':
             require(len(candidates)==2 and not params['diagnostics'],
                     'DIRECTOR_ACQUISITION_INPUT','Ingest requires only exact source and receipt candidates.')
             source_ref,receipt_ref=candidates
-            source_bytes=_read_artifact(self.root,source_ref)
-            source_hash=hashlib.sha256(source_bytes).hexdigest()
-            require(source_ref['fixture']==self.native.binding['fixture'] and
-                    source_ref['kind']=='acquisition-source' and receipt_ref['kind']=='acquisition-receipt' and
+            source_hash=source_ref['sha256']
+            require(receipt_ref['kind']=='acquisition-receipt' and
                     receipt_ref['fixture']==self.native.binding['fixture'],
-                    'DIRECTOR_ACQUISITION_PROVENANCE','Candidate provenance must match the native run.')
+                    'DIRECTOR_ACQUISITION_PROVENANCE','Receipt provenance must match the native run.')
+            def source_reader():
+                require(source_ref['fixture']==self.native.binding['fixture'] and
+                        source_ref['kind']=='acquisition-source','DIRECTOR_ACQUISITION_PROVENANCE',
+                        'Candidate provenance must match the native run.')
+                return _read_artifact(self.root,source_ref)
             source=self.root/source_ref['path']
             receipt=decode_json(_read_artifact(self.root,receipt_ref))
         elif method=='AcquisitionGateway.fail':
@@ -263,6 +304,11 @@ class AcquisitionGateway:
                     failure['field_path']=='outcome' and failure['observed'] in ('known','uncertain') and
                     failure['entity_id']==self.job and not failure['retryable'],
                     'DIRECTOR_ACQUISITION_OUTCOME','Explicit non-retryable known/uncertain native outcome required.')
+            evidence=failure['evidence']
+            if len(evidence)==1 and evidence[0]['kind']=='acquisition-budget-observation':
+                require(evidence[0]['fixture']==self.native.binding['fixture'],
+                        'DIRECTOR_ACQUISITION_PROVENANCE','Observation must preserve the native fixture classification.')
+                budget_usage=decode_json(_read_artifact(self.root,evidence[0]))
         else:
             require(not candidates and not params['diagnostics'],'DIRECTOR_ACQUISITION_INPUT',
                     'This native operation takes no candidates or diagnostics.')
@@ -283,48 +329,74 @@ class AcquisitionGateway:
                     'DIRECTOR_ACQUISITION_SPEC','Prepare or claim must establish the exact specification binding first.')
             duplicate_claim=(method=='AcquisitionGateway.claim' and selected['status']=='running' and
                              params['expected_state'] in ('pending','failed') and params['claim_id'] is None)
-            recovery=method in ('AcquisitionGateway.reconcile','AcquisitionGateway.fail')
+            recovery=method in ('AcquisitionGateway.reconcile','AcquisitionGateway.fail','AcquisitionGateway.ingest') or (
+                method=='AcquisitionGateway.claim' and selected['status']=='running')
             recorded=selected.get('input_hashes')
             try:
-                current=hatch.inputs(self.root,selected)
+                reader=hatch.generation_inputs if selected['status'] in ('pending','failed') else hatch.inputs
+                current=reader(self.root,selected)
             except (OSError,ValueError) as exc:
                 require(recovery and recorded is not None,'DIRECTOR_ACQUISITION_INPUT',
                         'Native inputs are unavailable; only token-bound recovery is permitted.')
                 current=None
             recovery_stale[0]=recorded is not None and current!=recorded
             accepted_hashes={object_hash(current)} if current is not None else set()
-            if recovery and recorded is not None: accepted_hashes.add(object_hash(recorded))
+            if selected['status']=='running' and recorded is not None:
+                accepted_hashes={object_hash(recorded)}
+            elif recovery and recorded is not None:
+                accepted_hashes.add(object_hash(recorded))
             require(params['binding_id'] in (None,data['run_id']) and
                     (params['expected_state']==selected['status'] or duplicate_claim) and
                     params['input_sha256'] in accepted_hashes,
                     'DIRECTOR_ACQUISITION_STALE','Native identity, input hashes or expected state changed.')
             if (method in ('AcquisitionGateway.ingest','AcquisitionGateway.fail') or
-                    (recovery and recovery_stale[0] and selected['status']=='running')):
+                    (recovery and recovery_stale[0] and selected['status']=='running' and
+                     method!='AcquisitionGateway.claim')):
                 require(params['claim_id'] is not None and params['claim_id']==selected.get('token'),
                         'DIRECTOR_ACQUISITION_TOKEN','The original active native claim is required.')
             else:
                 require(params['claim_id'] is None or params['claim_id']==selected.get('token'),
                         'DIRECTOR_ACQUISITION_TOKEN','Request changed the original native claim.')
-            if method=='AcquisitionGateway.claim' and not data['fixture_mode']:
-                for policy in (request['context']['policy'],spec['source_policy']):
-                    require(policy['network']=='allow-configured' and 'imagegen' in policy['providers'] and
-                            policy['paid']!='deny','DIRECTOR_ACQUISITION_POLICY',
-                            'Production native handoff requires explicitly permitted imagegen and paid policy.')
-                    require(policy['policy_ref'] is not None,'DIRECTOR_ACQUISITION_POLICY',
-                            'Production handoff requires exact policy evidence.')
-                    _read_artifact(self.root,policy['policy_ref'])
-                    if policy['paid']=='bounded':
-                        limits=data.get('limits',{})
-                        require(request['context']['budget_reservation_id'] is not None and
-                                type(limits.get('generation_calls')) is int and limits['generation_calls']>0 and
-                                type(limits.get('unit_budget')) in (int,float) and limits['unit_budget']>0 and
-                                type(limits.get('estimated_units_per_call')) in (int,float) and
-                                limits['estimated_units_per_call']>0,
-                                'DIRECTOR_ACQUISITION_POLICY','Bounded handoff requires a reservation and native call/unit limits.')
-                    else:
+            budget=hatch._native_budget(self.root,data)
+            policies=(request['context']['policy'],spec['source_policy'])
+            paid_claim=(method=='AcquisitionGateway.claim' and
+                        (not data['fixture_mode'] or any(policy['paid']!='deny' or
+                         policy['network']=='allow-configured' for policy in policies)))
+            require(not paid_claim or budget is not None,'DIRECTOR_ACQUISITION_POLICY',
+                    'Paid canonical handoff requires an enrolled native reservation.')
+            if budget is not None:
+                reservation=request['context']['budget_reservation_id']
+                require(reservation is not None,'DIRECTOR_ACQUISITION_POLICY',
+                        'Every enrolled canonical operation requires its native reservation.')
+                bound_inputs=recorded if selected['status']=='running' else (
+                    current if method in ('AcquisitionGateway.prepare','AcquisitionGateway.claim') else None)
+                budget.verify_reservation(selected,reservation,input_hashes=bound_inputs)
+                if paid_claim and selected['status']!='running':
+                    require(budget.config['provider']=='imagegen','DIRECTOR_ACQUISITION_PROVIDER',
+                            'Native raster acquisition requires the configured imagegen provider.')
+                    for policy in policies:
+                        require(policy['network']=='allow-configured' and 'imagegen' in policy['providers'] and
+                                policy['paid'] in ('bounded','allow-unknown-price'),
+                                'DIRECTOR_ACQUISITION_POLICY',
+                                'New native handoff requires explicitly permitted imagegen and paid policy.')
                         require(policy['policy_ref'] is not None,'DIRECTOR_ACQUISITION_POLICY',
-                                'Unknown-price handoff requires exact policy evidence.')
+                                'New native handoff requires exact policy evidence.')
                         _read_artifact(self.root,policy['policy_ref'])
+                        require(not (budget.config['unknown_price'] or budget.config['estimate']['amount'] is None) or
+                                policy['paid']=='allow-unknown-price','DIRECTOR_ACQUISITION_POLICY',
+                                'Unknown native prices require explicit unknown-price permission.')
+                        if method=='AcquisitionGateway.claim' and policy['paid']=='bounded' and not data['fixture_mode']:
+                            limits=data.get('limits',{})
+                            require(type(limits.get('generation_calls')) is int and limits['generation_calls']>0 and
+                                    type(limits.get('unit_budget')) in (int,float) and limits['unit_budget']>0 and
+                                    type(limits.get('estimated_units_per_call')) in (int,float) and
+                                    limits['estimated_units_per_call']>0,
+                                    'DIRECTOR_ACQUISITION_POLICY','Bounded handoff requires native call/unit limits.')
+                if failure is not None:
+                    require(len(failure['evidence'])==1 and
+                            failure['evidence'][0]['kind']=='acquisition-budget-observation' and
+                            isinstance(budget_usage,dict),'DIRECTOR_ACQUISITION_INPUT',
+                            'Budgeted failure requires one exact native usage observation.')
             if pinned is None:
                 selected['director_spec_binding']=deepcopy(spec_ref)
                 selected['history'].append(dict(event='director-spec-bound',time=time.time(),spec=deepcopy(spec_ref)))
@@ -338,10 +410,11 @@ class AcquisitionGateway:
             result=self.native.reconcile(self.job,_check=check)
         elif method=='AcquisitionGateway.fail':
             result=self.native.fail(self.job,params['claim_id'],failure['recommended_action'],
-                                    outcome=failure['observed'],_check=check)
+                                    outcome=failure['observed'],budget_usage=budget_usage,_check=check)
         else:
             result=self.native.ingest(self.job,params['claim_id'],source,source_sha256=source_hash,
-                                      receipt=receipt,note='Exact Director candidate bytes verified; visual review not performed.',_check=check)
+                                      receipt=receipt,note='Exact Director candidate bytes verified; visual review not performed.',
+                                      _check=check,_read_source=source_reader)
         # The native manifest is mutable. Preserve an immutable evidence snapshot
         # so later operations cannot invalidate the result's exact ArtifactRef.
         with self.native._locked() as data:

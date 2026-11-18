@@ -240,6 +240,31 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         data=hatch.manifest(root)
         data['limits'].update(generation_calls=1,unit_budget=5,estimated_units_per_call=5)
         hatch.save(root,data)
+        # A plausible string and local limits cannot authenticate accounting.
+        with self.assertRaises(RigError):self.adapter.claim(request)
+        self.assertEqual(hatch.job_for(hatch.manifest(root),'base')['attempts'],0)
+        from director_budget import BudgetLedger, METRICS, bind_native_budget
+        limits={metric:100 for metric in METRICS}
+        ledger=BudgetLedger.create(self.parent/'budget',limits,
+            provider_limits={'imagegen':limits},currency='USD')
+        estimate={metric:0 for metric in METRICS};estimate['provider_calls']=1
+        proof=ledger.retain_evidence(root/'policy.txt')
+        bind_native_budget(root,ledger.root,owner_root=self.parent,provider='imagegen',
+            estimate=estimate,retry_allowance=0,evidence=[proof])
+        admission=self.gateway.reserve_budget('base')
+        self.assertEqual(self.gateway.reserve_budget('base')['reservation_id'],admission['reservation_id'])
+        reserved=hatch.job_for(hatch.manifest(root),'base')
+        self.assertEqual(reserved['attempts'],0)
+        self.assertNotIn('token',reserved)
+        self.assertEqual(reserved['budget_operation']['attempts'],[])
+        with self.assertRaises(RigError):self.adapter.claim(request)
+        request['context']['budget_reservation_id']=admission['reservation_id']
+        # Existing policy and local-bound assertions also apply after enrollment.
+        denied=deepcopy(request);denied['context']['policy']['paid']='deny'
+        with self.assertRaises(RigError):self.adapter.claim(denied)
+        data=hatch.manifest(root);data['limits']['generation_calls']=None;hatch.save(root,data)
+        with self.assertRaises(RigError):self.adapter.claim(request)
+        data=hatch.manifest(root);data['limits']['generation_calls']=1;hatch.save(root,data)
         result=self.adapter.claim(request)
         self.assertEqual(result['value']['native_state'],'running')
         self.assertFalse(result['value']['binding']['fixture'])
@@ -320,3 +345,60 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         self.assertEqual(result['value']['native_state'],'running')
         self.assertEqual(result['value']['claim_id'],replay['value']['claim_id'])
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],1)
+
+    @secure_artifact_test
+    def test_budgeted_missing_candidate_retains_usage_under_deny_policy(self):
+        from director_budget import BudgetLedger, METRICS, bind_native_budget
+        limits={metric:100 for metric in METRICS}
+        ledger=BudgetLedger.create(self.parent/'budget',limits,
+            provider_limits={'imagegen':limits},currency='USD')
+        estimate={metric:0 for metric in METRICS}
+        estimate.update(provider_calls=1,amount=1)
+        proof_path=self.parent/'usage-proof.txt'
+        proof_path.write_text('Synthetic local accounting observation; no provider execution.')
+        proof=ledger.retain_evidence(proof_path)
+        bind_native_budget(self.root,ledger.root,owner_root=self.parent,provider='imagegen',
+            estimate=estimate,retry_allowance=0,evidence=[proof])
+        admission=self.gateway.reserve_budget('base')
+        request=self.request('claim')
+        request['context']['budget_reservation_id']=admission['reservation_id']
+        # A fixture can exercise accounting while explicitly denying live work.
+        self.assertEqual(request['context']['policy']['paid'],'deny')
+        token=self.adapter.claim(request)['value']['claim_id']
+        job=hatch.job_for(hatch.manifest(self.root),'base')
+        observation=dict(id='synthetic-complete',outcome='complete',usage=estimate,
+            evidence=[proof],measurement_source='Explicit synthetic test deltas',resolves=[])
+        receipt=dict(generation_skill='$fixture',job='base',token=token,
+            input_hashes=job['input_hashes'],budget_usage=observation)
+        source_ref=self.ref('missing-candidate.png',self.source.read_bytes(),
+            'candidate','acquisition-source','image/png')
+        (self.root/'missing-candidate.png').unlink()
+        forged={**receipt,'token':'wrong-token'}
+        forged_ref=self.ref('forged-receipt.json',json.dumps(forged).encode(),
+            'forged-receipt','acquisition-receipt')
+        wrong=self.request('ingest','running',token,[source_ref,forged_ref])
+        wrong['context']['budget_reservation_id']=admission['reservation_id']
+        before=ledger.snapshot()
+        with self.assertRaises(RigError):self.adapter.ingest(wrong)
+        self.assertEqual(ledger.snapshot(),before)
+        receipt_ref=self.ref('receipt.json',json.dumps(receipt).encode(),'receipt','acquisition-receipt')
+        ingest=self.request('ingest','running',token,[source_ref,receipt_ref])
+        ingest['context']['budget_reservation_id']=admission['reservation_id']
+        for _ in range(2):
+            with self.assertRaises(RigError):self.adapter.ingest(ingest)
+        row=ledger.snapshot()['state']['reservations'][admission['reservation_id']]
+        self.assertEqual(row['spent']['provider_calls'],'1')
+        self.assertEqual(row['spent']['amount'],'1')
+        self.assertEqual(len(row['attempts']),1)
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['token'],token)
+        self.assertFalse((self.root/'decoded/base.png').exists())
+        observation_ref=self.ref('observation.json',json.dumps(observation).encode(),
+            'observation','acquisition-budget-observation')
+        diagnostic=dict(code='NATIVE_ACQUISITION_OUTCOME',severity='warning',stage='acquisition',
+            entity_id='base',field_path='outcome',expected=None,observed='known',retryable=False,
+            recommended_action='Known provider completion; candidate unavailable.',evidence=[observation_ref])
+        failure=self.request('fail','running',token,diagnostics=[diagnostic])
+        failure['context']['budget_reservation_id']=admission['reservation_id']
+        result=self.adapter.fail(failure)
+        self.assertEqual(result['value']['native_state'],'failed')
+        self.assertEqual(len(ledger.snapshot()['state']['reservations'][admission['reservation_id']]['attempts']),1)

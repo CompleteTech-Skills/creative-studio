@@ -10,11 +10,16 @@ unavailable until a native 3D acquisition owner exists.
 operations. Save the returned `binding` with the project and supply it when
 reopening. It pins run ID, original request bytes and fixture status. Repeated
 active claims return the same token; uncertain or stale claims remain owned.
-An uncertain failure appends its exact reason and original token to native job
-history without releasing it. Only a known failure releases that token.
+For enrolled runs, failure delegates its exact usage observation to native
+accounting. An uncertain failure preserves its exact reason, original token and
+held reservation. Unenrolled fixtures retain native history without accounting.
+Only a known failure authorized by the native owner releases its token.
 
 Ingestion requires the original token, unchanged inputs, exact source SHA-256,
-native handoff receipt and a nonempty inspection note. The adapter preserves
+native handoff receipt and a nonempty inspection note. For enrolled runs, the
+adapter authenticates the receipt and records its actual usage before reading or
+validating candidate source bytes. Missing, changed, invalid or stale inputs do
+not erase authenticated spend; they still prevent ingestion and preserve the token. The adapter preserves
 source bytes inside the run before native image validation and ingestion. It
 keeps fixture provenance. Import/procedural receipts cannot masquerade as the
 native imagegen handoff. The native controller does not expose provider request
@@ -35,11 +40,12 @@ as follows:
   unbound running/generated native jobs cannot be adopted or relabeled.
   A different specification cannot
   adopt that active acquisition, including changes to design or licensing.
-- `input_sha256` is `gateway.input_sha256()`, the canonical object hash of the
-  current native input hash mapping. It is checked under the native lock.
-  When inputs disappear or change, reconcile/fail may bind the original recorded
-  input hashes with the original active token; they preserve a stale-input warning.
-  Missing inputs cannot authorize new work or ingestion.
+- `input_sha256` is `gateway.input_sha256()`. Pending and failed jobs use the
+  native `generation_inputs` projection, which removes retained import/derivation
+  fields without mutating them. Running jobs use their original recorded input
+  identity. Verification occurs under the native lock. Reconcile/fail and
+  ingestion accounting authenticate the original claim when inputs disappear or
+  change. Missing/stale inputs cannot authorize new work or ingestion.
 - `binding_id` is null or the pinned run ID. `expected_state` is the native job
   state (`pending`, `running`, `failed` or `generated`). An identical active
   claim may replay its pre-claim pending/failed state and receives the same token.
@@ -54,7 +60,13 @@ as follows:
   `NATIVE_ACQUISITION_OUTCOME`, `entity_id` is the job, `field_path` is `outcome`,
   `observed` is exactly `known` or `uncertain`, and `retryable` is false. The exact
   `recommended_action` text is preserved as the native failure reason. Diagnostic
-  evidence remains part of the caller's hash-bound request.
+  evidence remains part of the caller's hash-bound request. Enrolled failure
+  requires exactly one diagnostic evidence ArtifactRef with kind
+  `acquisition-budget-observation` and the native fixture classification.
+  Its exact JSON uses the native six fields: `id`, `outcome`, `usage`,
+  `evidence`, `measurement_source`, and `resolves`. Inner evidence is already
+  retained by the same native ledger. Diagnostic known/uncertain must agree with
+  the observation; native accounting alone authorizes finalization.
 - Prepare, claim and reconcile have no candidates or diagnostics. Expired
   requests, mismatched identity and stale state fail before a native mutation.
   The deadline is checked again after acquiring native ownership.
@@ -66,13 +78,49 @@ mutable state remains `imagegen-jobs.json`. A zero provider-call measurement mea
 this adapter operation invoked no provider; it is not a claim about external
 work performed by the holder of a handoff.
 
-Non-fixture claims require both the request and AssetSpec policies to allow
-configured `imagegen` and paid work. Bounded policy requires a reservation ID
-and native positive call/unit limits. Unknown-price policy requires a readable
-exact policy evidence reference. The adapter does not validate a reservation
-against the separate Director budget ledger or dispatch paid requests; that
-integration remains the execution owner's responsibility. No production
-provider acceptance is inferred from these local handoff tests.
+## Native reservation admission
+
+Enroll a fresh run through `director_budget.bind_native_budget` using one existing
+owned ledger before its first claim. The adapter never enrolls automatically.
+Then reserve native capacity without publishing a claim:
+
+```python
+admission = native_gateway.reserve_budget(job)
+request['context']['budget_reservation_id'] = admission['reservation_id']
+result = gateway.claim(request)
+```
+
+This is a separate native reserve-only operation. It allocates no attempt or
+token and performs no provider call. The subsequent canonical request receives
+full existing schema and semantic validation; no dummy reservation or partial
+validation is used. Every enrolled canonical operation authenticates its supplied
+reservation against the original native operation, owner, inputs where applicable,
+ledger row and reserve receipt. Arbitrary or foreign IDs are rejected.
+
+New non-fixture claims and explicit paid/configured fixture claims require both
+request and AssetSpec policies to permit configured `imagegen`, exact policy
+evidence and the enrolled native reservation. Bounded non-fixture claims retain
+positive native call/unit limits. Native unknown prices require
+`allow-unknown-price` in both policies and the native finite cap. An existing
+active claim may replay without admitting another paid attempt.
+
+Historical accounting, ingestion and fail/reconcile authenticate the existing
+claim and reservation even when the current request denies new paid work.
+Accounting recovery does not grant new spending authority. Enrolled synthetic
+fixtures can exercise the same accounting under deny/deny policies; unenrolled
+fixtures keep their original lifecycle. No same-operation second ledger is used.
+
+Enrolled ingestion receipts include the existing native `budget_usage` object.
+The exact receipt, original token, spec and reservation are authenticated first.
+Usage is recorded once before source reads, hash checks or image validation.
+Native ingestion replays that same observation and requires complete known usage.
+An authentic observation remains retained if candidate bytes fail validation;
+the original token remains active. Known failure can then finalize using the
+current native observation. Uncertain failure routes through `hatch.fail`, so
+native held capacity, usage deltas, explicit reconciliation IDs and stale-receipt
+protections remain authoritative. Provider-call usage in the Director response
+still measures only this adapter operation; native snapshots retain externally
+observed accounting separately. No production provider acceptance is inferred.
 
 Run `PYTHONPATH=scripts:tests python -m unittest test_director_acquisition -v`.
 The tests execute native prepare/claim/ingest/fail/reconcile with an actual PNG,
@@ -82,10 +130,10 @@ handoff, explicit native limits, deadlines and immutable result evidence.
 
 ## Current-main preservation boundary
 
-This integration preserves the six unique owner paths from PR #315 at
+The source-preservation predecessor preserved the six unique owner paths from PR #315 at
 `1b3175364b8094e1bb6dfee584622225b2c841d6` on main
 `4b89ab1ce3e76ebef69a825212ab207d746c3112`, after procedural asset PR #448.
-The original resolver, resolver tests and resolution guide are unchanged.
+The resolver, resolver tests and resolution guide remain unchanged.
 The acquisition adapter uses the current canonical `parse_rfc3339` helper for
 both deadline checks; an additive lowercase timestamp regression covers that
 interface adjustment. All 19 original acquisition tests and 17 resolver tests
@@ -104,13 +152,15 @@ The builder owns generation, complete bundle inventory and exclusive publication
 this adapter creates no parallel asset registry or acquisition state machine.
 Native Hatch tokens, history and receipts remain authoritative.
 
-PR #484's native budget integration is a separate prerequisite for the paid
-Director bridge. Before enabling that bridge, add native reserve-only admission,
-verify the exact operation/reservation in its existing ledger, preserve usage
-even when candidate validation fails, and route uncertain outcomes through native
-accounting. Do not reserve again in another ledger for the same operation.
-This preservation does not validate arbitrary reservation IDs, implement a live
-provider, or claim #33, #34, P2 or production acceptance complete.
+The bridge is built on the native budget owner and reserve/verification APIs in
+integration base `9d39e1f9a7735f9e0312406b847ae8639d14a333`. It uses that owner's
+single reservation and token/attempt history. The original 19 acquisition methods
+and all their assertions remain; the paid positive setup now uses real offline
+enrollment and admission, with additional arbitrary-ID rejection. The lowercase
+deadline regression is retained, and an additive missing-candidate regression
+checks exact usage retention and known finalization under deny policy.
+This source integration does not implement a live provider or claim #33, #34,
+P2 or production acceptance complete.
 
 No runtime was available for this integration. Required fresh-head commands are
 `python scripts/test_rig_gate.py operations-archive` and
