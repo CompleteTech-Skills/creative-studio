@@ -324,3 +324,16 @@ monotonic order. Exactly representable large integers and repeated timestamps
 remain supported. This explicit representation boundary applies to construction,
 evaluation, requests and cancellation. Corrected full-gate execution and fresh
 exact-head independent review remain required.
+
+Published `341403c1` then passed 155 animation/IK and 63 skinning tests with
+zero skips, before a fresh reviewer reproduced two collapsed-cycle failures.
+At a large clock origin, distinct absolute cycle boundaries can become the same
+binary64 value. That fallback now compares the original loop remainder against
+the same once-rounded cumulative prefixes and subtracts the selected prefix
+only once. It does not repeatedly subtract clip durations. Two independently
+authored regressions preserve the valid fourth-clip morph boundary and an
+incoming fourth clip with finite FK but invalid native skinning. Both failed
+on the preceding head; the latter now rejects without changing any of the nine
+runtime fields, source data or replay geometry. Together with the previous
+clock and completion modules, all 22 methods passed in 28.030 seconds, exit 0,
+zero skips. Full corrected gates and fresh exact-head review remain required.

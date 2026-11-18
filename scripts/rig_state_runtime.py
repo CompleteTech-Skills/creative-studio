@@ -148,17 +148,20 @@ class RigStateRuntime:
             exact_duration += Fraction(clip['duration'])
             end_duration = float(exact_duration)
             boundary = self._boundary(cycle_offset+end_duration)
-            selected = not completed and (now < boundary if absolute_intervals else local < clip['duration'])
+            # Collapsed absolute cycle bounds still use the same once-rounded
+            # cumulative prefixes; repeated subtraction changes half-open key
+            # ownership and can hide an invalid incoming sample.
+            selected = not completed and (now < boundary if absolute_intervals else phase < end_duration)
             if selected or index == len(clips)-1:
                 if completed:
                     local = clip['duration']
-                elif absolute_intervals:
+                else:
                     # Rounded absolute boundaries decide interval ownership,
                     # but cannot replace the elapsed/remainder clock inside it.
                     # Subtracting a rounded large-origin cycle start changes
                     # interior key selection and can hide invalid samples.
                     local = max(0., phase-prior_duration)
-                    if now == self.entered+(cycle_offset+prior_duration):
+                    if absolute_intervals and now == self.entered+(cycle_offset+prior_duration):
                         local = 0.
                 # Every interval is half-open except a known completed final
                 # non-looping clip. Equivalent floating-point sums can disagree
@@ -168,7 +171,6 @@ class RigStateRuntime:
                 sampled_root = self._authored_root(clip, min(local, clip['duration']))
                 prior_delta = cycle_delta.copy()
                 break
-            local -= clip['duration']
             cycle_delta += delta
             prior_duration = end_duration
         total_delta = sum((self._authored_root(self.rig.clips[c], self.rig.clips[c]['duration'])
