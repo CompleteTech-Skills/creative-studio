@@ -177,9 +177,61 @@ class SilentMedia(core.SilentContracts):
         self.ffmpeg('-i', silent, '-f', 'lavfi', '-i',
                     'anullsrc=r=48000:cl=mono', '-map', '0:v:0', '-map', '1:a:0',
                     '-c:v', 'copy', '-c:a', 'libopus', '-shortest', output)
-        self.assertEqual(len(self.independent_probe(output)['streams']), 2)
-        with self.assertRaises(ValueError):
+        streams = self.independent_probe(output)['streams']
+        self.assertEqual([(stream['codec_type'], stream['codec_name'])
+                          for stream in streams], [('video', 'vp9'), ('audio', 'opus')])
+        self.assertGreater(int(streams[1]['nb_read_frames']), 0)
+        with self.assertRaisesRegex(ValueError, 'exactly one video stream') as refusal:
             video.verify_export(output, request)
+        self.assertIs(refusal.exception.evidence['verified'], False)
+        self.assertEqual(refusal.exception.evidence['audio_stream_count'], 1)
+
+    def test_subtitle_stream_is_rejected_even_without_audio(self):
+        silent = self.root / 'video.mp4'
+        video.encode(self.request, self.root, silent)
+        subtitles = self.root / 'captions.srt'
+        subtitles.write_text('1\n00:00:00,000 --> 00:00:00,200\nTest caption\n',
+                             encoding='utf-8')
+        output = self.root / 'video-with-captions.mp4'
+        self.ffmpeg('-i', silent, '-i', subtitles, '-map', '0:v:0', '-map', '1:s:0',
+                    '-c:v', 'copy', '-c:s', 'mov_text', output)
+        streams = self.independent_probe(output)['streams']
+        self.assertEqual([(stream['codec_type'], stream['codec_name'])
+                          for stream in streams], [('video', 'h264'), ('subtitle', 'mov_text')])
+        self.independent_decode(output)
+        with self.assertRaisesRegex(ValueError, 'exactly one video stream') as refusal:
+            video.verify_export(output, self.request)
+        evidence = refusal.exception.evidence
+        self.assertIs(evidence['verified'], False)
+        self.assertEqual(evidence['video_stream_count'], 1)
+        self.assertEqual(evidence['audio_stream_count'], 0)
+        self.assertEqual(evidence['other_stream_count'], 1)
+        self.assertEqual(evidence['probe']['exit_status'], 0)
+
+    def test_malformed_probe_metadata_is_rejected_with_evidence(self):
+        output = self.root / 'video.mp4'
+        receipt = video.encode(self.request, self.root, output)
+        for field in ('display_aspect_ratio', 'format_name', 'invalid JSON'):
+            with self.subTest(field=field):
+                inspected = deepcopy(receipt['probe'])
+                if field == 'invalid JSON':
+                    inspected['stdout'] = '{'
+                else:
+                    data = json.loads(inspected['stdout'])
+                    target = data['streams'][0] if field == 'display_aspect_ratio' else data['format']
+                    target[field] = None
+                    inspected['stdout'] = json.dumps(data)
+                with patch.object(video, '_run', return_value=inspected) as run:
+                    with self.assertRaisesRegex(ValueError, 'malformed/incomplete ffprobe evidence') as refusal:
+                        video.verify_export(output, self.request)
+                run.assert_called_once()
+                evidence = refusal.exception.evidence
+                self.assertIs(evidence['verified'], False)
+                if field == 'invalid JSON':
+                    self.assertNotIn('audio_stream_count', evidence)
+                else:
+                    self.assertEqual(evidence['audio_stream_count'], 0)
+                self.assertEqual(evidence['probe'], inspected)
 
     def test_extra_video_stream_is_rejected(self):
         silent = self.root / 'video.mp4'
@@ -286,11 +338,37 @@ class SilentMedia(core.SilentContracts):
         with self.assertRaises(ValueError):
             video.verify_export(output, self.request)
 
-    def test_ffprobe_nonzero_exit_is_rejected(self):
-        output = self.root / 'video.mp4'
-        video.encode(self.request, self.root, output)
-        with self.assertRaises(ValueError):
-            video.verify_export(output, self.request, ffprobe=sys.executable)
+    def test_ffprobe_nonzero_exit_is_rejected_with_cli_evidence(self):
+        output = self.root / 'invalid.mp4'
+        output.write_bytes(b'not a media artifact')
+        request_path = self.root / 'request.json'
+        request_path.write_text(json.dumps(self.request), encoding='utf-8')
+        result = subprocess.run(
+            [sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+             str(output), '--request', str(request_path), '--require-silent'],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, '')
+        evidence = json.loads(result.stdout)
+        self.assertIs(evidence['verified'], False)
+        self.assertNotIn('audio_stream_count', evidence)
+        probe = evidence['probe']
+        self.assertEqual(probe['command'][:-1],
+                         [str(Path(shutil.which('ffprobe')).resolve()), '-v', 'error',
+                          '-count_frames', '-show_streams', '-show_format', '-of', 'json'])
+        self.assertGreater(probe['exit_status'], 0)
+        self.assertIn('media command failed (%s)' % probe['exit_status'], evidence['error'])
+
+        actual = subprocess.run(probe['command'][:-1] + [str(output)], capture_output=True,
+                                text=True, timeout=30)
+        self.assertEqual(probe['exit_status'], actual.returncode)
+        self.assertEqual(probe['stdout'], actual.stdout)
+        self.assertTrue(probe['stderr'].strip())
+        self.assertEqual(
+            probe['stderr'].splitlines()[-1].replace(probe['command'][-1], str(output)),
+            actual.stderr.splitlines()[-1],
+        )
 
     def test_stale_source_is_rejected_without_publishing(self):
         output = self.root / 'stale.mp4'

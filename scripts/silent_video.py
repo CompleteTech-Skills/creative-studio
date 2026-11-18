@@ -273,6 +273,13 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
+class _MediaCommandError(ValueError):
+    def __init__(self, result):
+        self.result = result
+        super().__init__('media command failed (%s): %s' %
+                         (result['exit_status'], result['stderr'][-2000:]))
+
+
 def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     """Bound both process duration and captured evidence, including fast exits."""
     start = time.monotonic()
@@ -299,9 +306,10 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
         stdout.seek(0); stderr.seek(0)
         out = stdout.read().decode('utf-8', 'strict')
         err = stderr.read().decode('utf-8', 'replace')
+    result = {'command': command, 'exit_status': status, 'stdout': out, 'stderr': err}
     if status:
-        raise ValueError('media command failed ('+str(status)+'): '+err[-2000:])
-    return {'command': command, 'exit_status': status, 'stdout': out, 'stderr': err}
+        raise _MediaCommandError(result)
+    return result
 
 
 def capabilities(*, ffmpeg=None, ffprobe=None):
@@ -412,8 +420,15 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     before = file_hash(path)
     profile, source, limits = PROFILES[request['profile']], request['source'], request['limits']
     encoder, probe = _binary('ffmpeg', ffmpeg), _binary('ffprobe', ffprobe)
-    inspected = _run([probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format',
-                      '-of', 'json', str(path.resolve())], limits, cancel=cancel)
+    try:
+        inspected = _run([probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format',
+                          '-of', 'json', str(path.resolve())], limits, cancel=cancel)
+    except _MediaCommandError as exc:
+        if diagnostics is not None:
+            diagnostics['probe'] = exc.result
+        raise
+    if diagnostics is not None:
+        diagnostics['probe'] = inspected
     try:
         data = json.loads(inspected['stdout'])
         streams = data['streams']
@@ -422,9 +437,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         if diagnostics is not None:
             diagnostics.update(video_stream_count=sum(x.get('codec_type') == 'video' for x in streams),
                                audio_stream_count=sum(x.get('codec_type') == 'audio' for x in streams),
-                               other_stream_count=sum(x.get('codec_type') not in ('video', 'audio') for x in streams),
-                               probe=inspected)
-        if not isinstance(streams, list) or len(streams) != 1 or streams[0].get('codec_type') != 'video':
+                               other_stream_count=sum(x.get('codec_type') not in ('video', 'audio') for x in streams))
+        if len(streams) != 1 or streams[0].get('codec_type') != 'video':
             raise ValueError('silent artifact requires exactly one video stream and zero audio/other streams')
         video = streams[0]
         expected_count = len(source['frames'])
@@ -435,15 +449,20 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         if video.get('sample_aspect_ratio') != '1:1':
             raise ValueError('encoded sample aspect ratio mismatch')
         dar = Fraction(source['width'], source['height'])
-        if Fraction(video.get('display_aspect_ratio', '0:1').replace(':', '/')) != dar:
+        display_aspect_ratio = video['display_aspect_ratio']
+        if not isinstance(display_aspect_ratio, str):
+            raise ValueError('malformed/incomplete ffprobe evidence')
+        if Fraction(display_aspect_ratio.replace(':', '/')) != dar:
             raise ValueError('encoded display aspect ratio mismatch')
         if video.get('color_range', 'unknown') not in ('unknown', 'tv'):
             raise ValueError('unexpected color range')
         for key in ('color_space', 'color_transfer', 'color_primaries'):
             if video.get(key, 'unknown') not in ('unknown', 'unspecified'):
                 raise ValueError('unexpected color properties for untagged SDR profile')
-        formats = set(data['format']['format_name'].split(','))
-        if profile['container'] not in formats:
+        format_name = data['format']['format_name']
+        if not isinstance(format_name, str):
+            raise ValueError('malformed/incomplete ffprobe evidence')
+        if profile['container'] not in format_name.split(','):
             raise ValueError('encoded container mismatch')
         fps = fps_fraction(source['fps'])
         if _fraction(video['avg_frame_rate'], 'frame rate') != fps:
