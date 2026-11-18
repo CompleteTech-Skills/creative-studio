@@ -40,3 +40,9 @@ provider execution. This prepared source has not executed in the connector-only
 environment. Required validation is the admission suite, all existing native
 budget regressions, compatibility and operations/archive gates at the integrated
 head. Existing owner-retention and full-owner rollback limitations still apply.
+
+Reservation and claim share `hatch.generation_inputs`, which hashes a detached
+generation view of repaired imported or derived jobs. Reservation keeps the
+current provenance and history intact. Provenance markers are removed only when
+the native claim transitions, after budget admission returns its token. A prior
+import or derivation cannot bind a different input set from the later claim.

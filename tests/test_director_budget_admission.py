@@ -526,6 +526,159 @@ class NativeBudgetAdmissionTests(unittest.TestCase):
         self.assertEqual(self.ledger.snapshot(), before)
         self.assertEqual(hatch.job_for(hatch.manifest(root), 'base')['attempts'], 0)
 
+    def test_repaired_imported_base_reserves_eventual_generation_inputs_without_erasing_provenance(self):
+        from source_interface import import_source
+        source = self.owner / 'synthetic-imported-base.png'
+        fixture_strip({'frames': 1, 'motion': 'quiet'}, (96, 96)).save(source)
+        descriptor = self.owner / 'synthetic-imported-base.json'
+        hatch.atomic(descriptor, {
+            'schema_version': 1, 'kind': 'import', 'layout': 'image',
+            'files': [source.name], 'origin': 'Synthetic offline import admission fixture',
+            'fixture': True})
+        with hatch.ownership(self.root):
+            data = hatch.manifest(self.root)
+            import_source(self.root, data, 'base', descriptor,
+                          'Synthetic import exercises the native owner; no artwork approval')
+            hatch.repair(self.root, data, 'base',
+                         'Synthetic transition from imported base to generation')
+        data = hatch.manifest(self.root)
+        original = deepcopy(hatch.job_for(data, 'base'))
+        run_history = deepcopy(data['history'])
+        self.assertEqual(original['status'], 'pending')
+        self.assertEqual(original['source_origin'], 'import')
+        self.assertIn('import_receipt', original)
+        self.assertTrue(any(e['event'] == 'imported' for e in original['history']))
+        self.assertTrue(any(e['event'] == 'repair' for e in original['history']))
+        generation_job = deepcopy(original)
+        for field in ('derived_from', 'derivation_receipt', 'import_receipt'):
+            generation_job.pop(field, None)
+        expected = hatch.inputs(self.root, generation_job)
+        self.assertIn(original['prompt_file'], expected)
+        self.assertNotEqual(hatch.inputs(self.root, original), expected)
+        self.assertEqual(self.ledger.snapshot()['state']['revision'], 0)
+        reserved = self.reserve()
+        self.descriptor(reserved)
+        reopened = hatch.manifest(self.root)
+        pending = hatch.job_for(reopened, 'base')
+        self.assertEqual({k: v for k, v in pending.items() if k != 'budget_operation'},
+                         original)
+        self.assertEqual(reopened['history'], run_history)
+        self.assertEqual(pending['budget_operation']['input_hashes'], expected)
+        self.assertEqual(pending['budget_operation']['attempts'], [])
+        with hatch.ownership(self.root):
+            budget = NativeBudget.for_run(self.root, reopened)
+            self.assertEqual(self.readonly_verify(budget, pending,
+                reserved['reservation_id'], input_hashes=expected), reserved)
+        self.assertEqual(self.reserve(), reserved)
+        still_pending = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual({k: v for k, v in still_pending.items() if k != 'budget_operation'},
+                         original)
+        claimed = self.claim()
+        self.assertEqual(claimed['budget_reservation_id'], reserved['reservation_id'])
+        self.assertEqual(claimed['budget_operation_id'], reserved['operation_id'])
+        self.assertEqual(claimed['receipt_template']['input_hashes'], expected)
+        generated = hatch.job_for(hatch.manifest(self.root), 'base')
+        self.assertEqual(generated['input_hashes'], expected)
+        self.assertEqual(generated['budget_operation']['input_hashes'], expected)
+        self.assertEqual(generated['history'][:-1], original['history'])
+        self.assertEqual(generated['history'][-1]['event'], 'claim')
+        self.assertEqual(generated['history'][-1]['input_hashes'], expected)
+        self.assertEqual(generated['budget_operation']['attempts'], [claimed['token']])
+        self.assertEqual(generated['attempts'], 1)
+        self.assertEqual(self.ledger.snapshot()['state']['revision'], 1)
+        self.assertEqual(len(self.ledger.snapshot()['state']['reservations']), 1)
+
+    def test_repaired_derived_row_reserves_eventual_generation_inputs_without_erasing_provenance(self):
+        from source_interface import import_source
+        profile = small_profile()
+        profile['states'][1]['allowed_derivations'] = [{
+            'kind': 'horizontal-mirror', 'source': 'rest',
+            'requires_explicit_approval': True}]
+        profile_path = self.owner / 'synthetic-derivation-profile.json'
+        hatch.atomic(profile_path, profile)
+        root = self.owner / 'derived-admission'
+        hatch.prepare(root, argparse.Namespace(replace_inputs=False, fixture_mode=True,
+            profile=str(profile_path), pet_name='Derived admission fixture',
+            pet_notes='Synthetic sources; no provider calls', reference=[], avoid=[],
+            require=[], brand_source=[], style_preset='clay',
+            style_notes='Synthetic accounting fixture'))
+        self.bind(root)
+        base = self.owner / 'synthetic-derivation-base.png'
+        fixture_strip({'frames': 1, 'motion': 'quiet'}, (96, 96)).save(base)
+        strip = self.owner / 'synthetic-derivation-rest.png'
+        fixture_strip(profile['states'][0], (96, 96)).save(strip)
+        with hatch.ownership(root):
+            data = hatch.manifest(root)
+            for name, source, layout in (('base', base, 'image'), ('rest', strip, 'strip')):
+                descriptor = self.owner / ('synthetic-derivation-' + name + '.json')
+                hatch.atomic(descriptor, {
+                    'schema_version': 1, 'kind': 'import', 'layout': layout,
+                    'files': [source.name], 'origin': 'Synthetic offline derivation fixture',
+                    'fixture': True})
+                import_source(root, data, name, descriptor,
+                              'Synthetic imported source for native derivation accounting')
+                if name == 'base':
+                    hatch.record_base_review(root, data,
+                        'Synthetic calibration gate fixture; no production artwork approval',
+                        accept_color_warning=True)
+            hatch.derive(root, data, 'jump',
+                         'Synthetic symmetric fixture permits mirroring to test native provenance',
+                         approved=True)
+            hatch.repair(root, data, 'jump',
+                         'Synthetic transition from derived row to generation')
+        data = hatch.manifest(root)
+        original = deepcopy(hatch.job_for(data, 'jump'))
+        run_history = deepcopy(data['history'])
+        self.assertEqual(original['status'], 'pending')
+        self.assertEqual(original['source_origin'], 'derived')
+        self.assertEqual(original['derived_from'], 'rest')
+        self.assertEqual(original['derivation_receipt']['kind'], 'horizontal-mirror')
+        self.assertTrue(any(e['event'] == 'derived' for e in original['history']))
+        self.assertTrue(any(e['event'] == 'repair' for e in original['history']))
+        self.assertEqual(hatch.digest(root / original['output_path']), original['output_hash'])
+        self.assertTrue(hatch.base_review_current(root, data))
+        generation_job = deepcopy(original)
+        for field in ('derived_from', 'derivation_receipt', 'import_receipt'):
+            generation_job.pop(field, None)
+        expected = hatch.inputs(root, generation_job)
+        self.assertIn(original['prompt_file'], expected)
+        self.assertIn(original['retry_prompt_file'], expected)
+        self.assertNotIn('decoded/rest.png', expected)
+        self.assertIn('decoded/rest.png', hatch.inputs(root, original))
+        self.assertNotEqual(hatch.inputs(root, original), expected)
+        self.assertEqual(self.ledger.snapshot()['state']['revision'], 0)
+        reserved = self.reserve(root, name='jump')
+        self.descriptor(reserved)
+        reopened = hatch.manifest(root)
+        pending = hatch.job_for(reopened, 'jump')
+        self.assertEqual({k: v for k, v in pending.items() if k != 'budget_operation'},
+                         original)
+        self.assertEqual(reopened['history'], run_history)
+        self.assertEqual(pending['budget_operation']['input_hashes'], expected)
+        self.assertEqual(pending['budget_operation']['attempts'], [])
+        with hatch.ownership(root):
+            budget = NativeBudget.for_run(root, reopened)
+            self.assertEqual(self.readonly_verify(budget, pending,
+                reserved['reservation_id'], input_hashes=expected), reserved)
+        self.assertEqual(self.reserve(root, name='jump'), reserved)
+        still_pending = hatch.job_for(hatch.manifest(root), 'jump')
+        self.assertEqual({k: v for k, v in still_pending.items() if k != 'budget_operation'},
+                         original)
+        claimed = self.claim(root, name='jump')
+        self.assertEqual(claimed['budget_reservation_id'], reserved['reservation_id'])
+        self.assertEqual(claimed['budget_operation_id'], reserved['operation_id'])
+        self.assertEqual(claimed['receipt_template']['input_hashes'], expected)
+        generated = hatch.job_for(hatch.manifest(root), 'jump')
+        self.assertEqual(generated['input_hashes'], expected)
+        self.assertEqual(generated['budget_operation']['input_hashes'], expected)
+        self.assertEqual(generated['history'][:-1], original['history'])
+        self.assertEqual(generated['history'][-1]['event'], 'claim')
+        self.assertEqual(generated['history'][-1]['input_hashes'], expected)
+        self.assertEqual(generated['budget_operation']['attempts'], [claimed['token']])
+        self.assertEqual(generated['attempts'], 1)
+        self.assertEqual(self.ledger.snapshot()['state']['revision'], 1)
+        self.assertEqual(len(self.ledger.snapshot()['state']['reservations']), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

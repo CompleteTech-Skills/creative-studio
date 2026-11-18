@@ -219,6 +219,14 @@ def inputs(root, job):
     return hashes
 
 
+def generation_inputs(root, job):
+    """Hash the next generation inputs without changing retained provenance."""
+    projected = dict(job)
+    for key in ('derived_from', 'derivation_receipt', 'import_receipt'):
+        projected.pop(key, None)
+    return inputs(root, projected)
+
+
 def revise_profile(root, data, path):
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running claims before a profile revision')
@@ -485,18 +493,18 @@ def reserve_budget(root, data, name):
     budget = _native_budget(root, data)
     if budget is None:
         raise ValueError('this run has not opted into a Director budget')
-    return budget.reserve_only(job, inputs(root, job))
+    return budget.reserve_only(job, generation_inputs(root, job))
 
 
 def claim(root, data, name):
     reconcile(root, data)
     job = _claim_eligible_job(root, data, name)
-    for key in ('derived_from', 'derivation_receipt', 'import_receipt'):
-        job.pop(key, None)
-    hashes = inputs(root, job)
-    job.pop('stale', None)
+    hashes = generation_inputs(root, job)
     budget = _native_budget(root, data)
     token = budget.before_claim(job, hashes) if budget is not None else uuid.uuid4().hex
+    for key in ('derived_from', 'derivation_receipt', 'import_receipt'):
+        job.pop(key, None)
+    job.pop('stale', None)
     job.update(status='running', token=token, input_hashes=hashes,
                started_at=time.time(), attempts=job.get('attempts', 0) + 1)
     selected_prompt = job.get('retry_prompt_file', job['prompt_file']) if job['attempts'] > 1 else job['prompt_file']
