@@ -166,7 +166,8 @@ class EditorContractTests(unittest.TestCase):
                  ('shots', 'scene3d', 'examples/scene3d-contracts/example-shot.json'),
                  ('color_management', 'lookdev', 'examples/lookdev-contracts/ceramic-look.json'),
                  ('render_presets', 'lookdev', 'examples/lookdev-contracts/draft.json'),
-                 ('render_presets', 'scene3d', 'examples/scene3d-contracts/example-render.json')]
+                 ('render_presets', 'scene3d', 'examples/scene3d-contracts/example-render.json'),
+                 ('render_presets', 'camera3d', 'examples/camera3d/render.json')]
         validator = Draft202012Validator(schemas()['editor3d.schema.json'])
         for field, owner, name in cases:
             payload = (ROOT / name).read_bytes(); native = json.loads(payload)
@@ -755,6 +756,16 @@ class MergedNativeOwnerRegressions(unittest.TestCase):
             native_kind=value['kind'], file=dict(path=relative,
             sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload),
             media_type='application/json'))
+
+    def test_render_presets_reject_a_real_camera_manifest(self):
+        reference = self.reference('camera3d', 'examples/camera3d/main-camera.json')
+        self.assertEqual(verify_native_reference(reference, ROOT)['status'], 'valid-native-contract')
+        project = example('project')
+        project['render_presets'] = [reference]
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        self.assertFalse(validator.is_valid(project))
+        with self.assertRaises(RigError):
+            validate_contract(project)
 
     def test_merged_owners_validate_real_retained_manifests(self):
         for owner, path in (

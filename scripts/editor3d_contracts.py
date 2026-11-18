@@ -90,7 +90,7 @@ def _definitions():
         ('camera3d', ('camera3d-shot',)), ('production2d', ('shot',)))
     color_native = native_role(('lookdev', ('look3d',)))
     render_native = native_role(('scene3d', ('scene3d-render',)),
-        ('lookdev', ('render-quality3d',)))
+        ('lookdev', ('render-quality3d',)), ('camera3d', ('camera3d-render',)))
     scene_native = native_role(('scene3d', ('scene3d-scene',)))
     character_native = native_role(('rig', ('Rig',)), ('model3d', ('model3d-asset',)),
         ('scene3d', ('scene3d-asset',)), ('production2d', ('cast',)))

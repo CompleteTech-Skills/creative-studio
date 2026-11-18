@@ -101,7 +101,7 @@ uses the same definitions. The following roles bind current native documents:
 | `animation.native` | `rig` / `AnimationClip`; `scene3d` / `scene3d-animation`; `production2d` / `clip`; `camera3d` / `camera3d-animation` |
 | `project.shots` | `scene3d` / `scene3d-shot`; `camera3d` / `camera3d-shot`; `production2d` / `shot` |
 | `project.color_management` | `lookdev` / `look3d`, whose native `color_management` settings remain authoritative |
-| `project.render_presets` | `scene3d` / `scene3d-render`; `lookdev` / `render-quality3d` |
+| `project.render_presets` | `scene3d` / `scene3d-render`; `lookdev` / `render-quality3d`; `camera3d` / `camera3d-render` |
 | `project.characters` | `rig` / `Rig`; `model3d` / `model3d-asset`; `scene3d` / `scene3d-asset`; `production2d` / `cast` |
 | `project.source_projects` | `scene3d` / `scene3d-project`; `production2d` / `project` |
 
