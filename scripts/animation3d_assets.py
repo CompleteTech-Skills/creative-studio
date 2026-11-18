@@ -691,7 +691,8 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 for identifier, values in shot.get('actor_overrides', {}).items():
                     actor = next((a for a in scene['actors'] if a['actor_id']==identifier), None)
                     require(actor is not None, 'ANIMATION_REFERENCE', 'Override actor is absent from scene.')
-                    for track in values: track_target(track, rig_for(actor.get('rig')), scene, identifier)
+                    rig = rig_for(actor['rig']) if 'rig' in actor else None
+                    for track in values: track_target(track, rig, scene, identifier)
         if d['kind'] == KINDS['retarget']:
             for field, key in (('source_rig','source_bone'),('target_rig','target_bone')):
                 rig = rig_for(d[field])

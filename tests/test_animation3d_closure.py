@@ -460,6 +460,26 @@ class NativeClosureRegressionTests(unittest.TestCase):
             admit('second-camera', 'second-camera', register_second=False)
         self.assertEqual(unregistered.exception.report['code'], 'ANIMATION_TARGET')
 
+    def test_shot_actor_override_allows_native_node_without_rig(self):
+        scene, native_ref = self.native_scene()
+        scene['actors'] = [dict(actor_id='actor', model={**native_ref, 'kind': 'model'},
+                                initial_transform=dict(position=[0, 0, 0], rotation=[0, 0, 0, 1], scale=[1, 1, 1]),
+                                animation_layers=[], constraints=[])]
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        sequence = self.values['sequence']
+        track = deepcopy(self.values['clip']['tracks'][0])
+        sequence['shots'][0]['actor_overrides'] = {'actor': [track]}
+        skeletal_target = track['target']
+        track['target'] = dict(kind='node', node_id='root', property='translation')
+        self.project['sequences'] = [self.put('sequence.json', sequence, 'sequence')]
+        self.assertTrue(self.check()['source_ready'])
+
+        track['target'] = skeletal_target
+        self.project['sequences'] = [self.put('sequence.json', sequence, 'sequence')]
+        with self.assertRaisesRegex(RigError, 'Skeletal target requires a verified rig binding') as rejected:
+            self.check()
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_TARGET')
+
     def test_actor_retarget_profile_pins_its_actual_target_rig(self):
         from rig_errors import object_hash
 
