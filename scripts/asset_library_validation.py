@@ -11,7 +11,7 @@ from rig_animation import validate_animation
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, object_hash, require
 from rig_gltf import WIDTHS, _index, preflight_gltf, read_gltf, scene_graph
-from rig_import import load_character_model
+from rig_import import load_character_model, skeleton_nodes
 from rig_interop import validate_gltf
 from rig_load_limits import _JSON_FACTOR, effective_limits, image_dimensions
 from rig_models import RigAsset
@@ -125,8 +125,6 @@ def _generated_workspace(document, order, limits):
         if 'skin' in node:
             skin = skins[_index(node['skin'], len(skins), 'skin')]
             joint_matrices = len(skin['joints'])
-            require(joint_matrices <= limits['bones'], 'RIG_LIMIT_BONES',
-                    'Declared skin joints exceed the native bone limit.')
             if 'inverseBindMatrices' in skin:
                 matrix_accessor = _index(skin['inverseBindMatrices'], len(accessors), 'inverse bind accessor')
                 joint_matrices = max(joint_matrices, accessors[matrix_accessor]['count'])
@@ -149,6 +147,7 @@ def _preflight(path, size, limits):
     require(1 <= raw['mesh_instances'] <= 4096, 'RIG_GEOMETRY',
             'Expected 1–4096 active mesh primitives.')
     parents, world, order = scene_graph(document)
+    skeleton_nodes(document, parents, world, order)
     require(all(math.isfinite(value) for i in order for value in world[i].flat),
             'ASSET_TECHNICAL_TRANSFORM', 'Selected-scene transforms must be finite.')
     hierarchy = [dict(node=i, parent=parents.get(i), world_matrix=world[i].tolist()) for i in order]

@@ -13,8 +13,10 @@ from unittest.mock import Mock, patch
 from asset_library import AssetLibrary
 from asset_library_import import ImportPipeline
 from asset_library_validation import _generated_workspace, validate_asset
+from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, object_hash
-from rig_gltf import read_gltf
+from rig_gltf import GltfBuilder, read_gltf
+from rig_import import load_character_model
 from rig_interop import validate_gltf
 import test_asset_library as library_fixture
 import test_rig_asset_library_import as import_fixture
@@ -44,6 +46,41 @@ class VerificationRejectionTests(unittest.TestCase):
         self.assertEqual(normal_only - authored_positions, 4 * 24 * 3)
         description['accessors'][1]['count'] = 2
         self.assertGreater(_generated_workspace(document, [0], limits), authored_positions)
+
+    def test_aggregate_native_bone_budget_precedes_independent_validation(self):
+        builder = GltfBuilder()
+        positions = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', bounds=True)
+        joints = builder.accessor([[0, 0, 0, 0]] * 3, 'VEC4', component=5121)
+        weights = builder.accessor([[1, 0, 0, 0]] * 3, 'VEC4')
+        times = builder.accessor([0, 1], 'SCALAR', bounds=True)
+        translations = builder.accessor([[0, 0, 0], [0, 1, 0]], 'VEC3')
+        builder.json.update(
+            scenes=[dict(nodes=[0, 6])],
+            nodes=[dict(children=[1, 2, 3, 4, 5]), {}, {}, dict(mesh=0, skin=0),
+                   dict(mesh=0, skin=1), {}, dict(mesh=1)],
+            meshes=[dict(primitives=[dict(attributes=dict(POSITION=positions, JOINTS_0=joints,
+                                                         WEIGHTS_0=weights))]),
+                    dict(primitives=[dict(attributes=dict(POSITION=positions))])],
+            skins=[dict(joints=[1]), dict(joints=[2])],
+            animations=[dict(samplers=[dict(input=times, output=translations)],
+                             channels=[dict(sampler=0, target=dict(node=5, path='translation'))])])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'assembled.glb'
+            builder.write(path)
+            library = _stage_record(path.read_bytes())
+            # Two skin joints, a shared ancestor, an animation target, a
+            # rigid mesh joint and a virtual root make six native bones.
+            model = load_character_model(path, limits=dict(DEFAULT_LIMITS, bones=6))
+            self.assertEqual(len(model.skeleton['bones']), 6)
+        with (
+            patch('asset_library_validation.validate_gltf') as independent,
+            patch('asset_library_validation.load_character_model') as native,
+            self.assertRaises(RigError) as error,
+        ):
+            validate_asset(library, {}, limits={'bones': 5})
+        self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_BONES')
+        independent.assert_not_called()
+        native.assert_not_called()
 
     def test_real_obj_registration_is_outside_the_normalized_glb_lane(self):
         fixture = library_fixture.AssetLibraryTests()
