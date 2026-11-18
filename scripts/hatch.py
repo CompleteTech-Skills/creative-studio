@@ -751,6 +751,10 @@ def select_base(root, data, source_origin=None):
 
 def base_review_current(root, data):
     value = data.get('base_review', {})
+    # Resolve only the trusted project root, as reconcile/inputs do, so a
+    # platform-symlinked ancestor (macOS /var -> /private/var) is admitted.
+    # Every project descendant is still read by the no-follow source owner.
+    root = Path(root).resolve()
     try:
         return (value.get('canonical_hash') == input_digest(root / 'references/canonical-base.png') and
                 value.get('settings_hash') == input_digest(root / 'extraction-settings.json'))
