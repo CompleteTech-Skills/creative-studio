@@ -39,13 +39,18 @@ def _run(executable, mode, root, limits, byte_limit, deadline):
     with log.open('xb') as output:
         process = subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                    stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+        owned = True
         try:
             while True:
                 try:
                     pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+                except ChildProcessError as exc:
+                    owned = False
+                    raise RigError('ASSET_BLENDER_RSS', 'Blender child was already reaped.') from exc
                 except OSError as exc:
                     raise RigError('ASSET_BLENDER_RSS', 'Blender child resource accounting failed.') from exc
                 if pid == process.pid:
+                    owned = False
                     process.returncode = os.waitstatus_to_exitcode(status)
                     break
                 if time.monotonic() >= deadline:
@@ -54,10 +59,13 @@ def _run(executable, mode, root, limits, byte_limit, deadline):
                 time.sleep(.02)
         finally:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.wait()
+                if owned:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            finally:
+                process.wait()
     require(time.monotonic() < deadline, 'ASSET_BLENDER_TIMEOUT', 'Blender fixture deadline expired.',
             retryable=True)
     require(usage is not None and usage.ru_maxrss > 0, 'ASSET_BLENDER_RSS',
