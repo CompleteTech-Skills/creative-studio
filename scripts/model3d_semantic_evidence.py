@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import numpy as np
 
-from rig_errors import decode_json, finite_json, object_hash, open_payload, require
+from rig_errors import decode_json, finite_json, normalize_root, object_hash, open_payload, require
 from model3d_semantic import (SemanticAsset, _finish, evaluated_geometry, identifier,
                               create_asset,part_signatures, validate_asset, world_matrices)
 
@@ -21,7 +21,8 @@ def _capture(path,maximum=32*1024**2):
 
 def identity_contract(source_identity,*,required_parts=(),forbidden_parts=(),ratios=(),colors=(),strict=True):
     """Freeze supplied invariants; no anatomy or subjective confidence is inferred."""
-    data=_capture(source_identity);payload=decode_json(data)
+    source_identity=Path(source_identity)
+    data=_capture(normalize_root(source_identity.parent)/source_identity.name);payload=decode_json(data)
     require(isinstance(payload,dict),'MODEL3D_IDENTITY_SOURCE','Expected original identity JSON object.')
     _source_identity(payload)
     require(type(strict) is bool,'MODEL3D_IDENTITY','strict must be an explicit boolean.')
@@ -150,6 +151,7 @@ def bind_identity(asset,contract,source_bytes):
 def map_decomposition(asset,root,mapping):
     """Bind explicit 2D-to-native-part correspondences without asserting 3D recovery."""
     from character_decomposition import load_decomposition
+    root=normalize_root(root)
     manifest=load_decomposition(root,verify=True)
     require(isinstance(mapping,dict) and bool(mapping) and len(mapping)<=4096
             and set(mapping)<=set(asset.parts),'MODEL3D_DECOMPOSITION','Map known native parts explicitly.')
