@@ -126,6 +126,8 @@ def definitions() -> dict:
                         break_force=positive, break_torque=positive))),
                 ['id', 'category', 'mode', 'authority', 'parent', 'asset', 'transform', 'mass',
                  'linear_velocity', 'angular_velocity', 'colliders', 'animation'])
+    body['properties']['sleep'] = obj(dict(enabled={'type': 'boolean'}, initially_sleeping={'type': 'boolean'},
+        linear_threshold=dict(type='number', minimum=0, maximum=100), angular_threshold=dict(type='number', minimum=0, maximum=100)), ['enabled', 'initially_sleeping'])
     joint = obj(dict(id=identifier, type={'enum': ['fixed', 'hinge', 'slider', 'ball', 'spring', 'generic-6dof']},
                      body_a=identifier, body_b=identifier, anchor_a=transform, anchor_b=transform,
                      axis=vector, limits=arr(number, 2, 2), stiffness=nonnegative,
@@ -133,10 +135,11 @@ def definitions() -> dict:
                      break_force=positive, collide_connected={'type': 'boolean'}),
                 ['id', 'type', 'body_a', 'body_b', 'anchor_a', 'anchor_b', 'axis', 'limits',
                  'stiffness', 'damping', 'motor_velocity', 'motor_max_force', 'collide_connected'])
-    force = obj(dict(id=identifier, type={'enum': ['force', 'impulse', 'torque', 'wind', 'drag', 'turbulence', 'vortex']},
+    force = obj(dict(id=identifier, type={'enum': ['force', 'impulse', 'torque', 'angular-impulse', 'wind', 'drag', 'turbulence', 'vortex']},
                      bodies=arr(identifier, 1, 10000), vector=vector, point=vector,
                      frame_range=frame_range, strength=nonnegative, seed=integer,
                      categories=arr({'enum': list(CATEGORIES)}, 1, len(CATEGORIES))))
+    force['properties']['application'] = {'enum': ['center', 'world-point']}
     # Categories needing solvers beyond rigid bodies carry explicit bounded
     # contracts, not fake outputs or claims that their solver already exists.
     deformable = obj(dict(id=identifier, category={'enum': ['cloth', 'soft-body', 'hair']},
@@ -186,6 +189,11 @@ def definitions() -> dict:
                       seed=integer, quality={'enum': ['draft', 'preview', 'production', 'custom']},
                       required_categories=arr({'enum': list(CATEGORIES)}, 1, len(CATEGORIES)),
                       reproducibility={'enum': ['verified-cache-replay', 'pinned-numerical', 'approximate', 'not-guaranteed']}))
+    solver['properties']['stability'] = obj(dict(
+        contact_penetration_tolerance=nonnegative,
+        max_linear_velocity=positive, max_angular_velocity=positive,
+        sleeping_threshold=nonnegative, constraint_iterations=count,
+        continuous_collision_detection=dict(type='boolean')), [])
     world = obj(dict(schema_version={'const': 1}, kind={'const': 'hatch-3d-physics-world'},
                      id=identifier, version=version, coordinate_system={'const': COORDINATES},
                      physical_units={'const': PHYSICAL_UNITS}, scene=asset,
@@ -427,6 +435,11 @@ def _world(world: dict) -> None:
             if body[field] is not None:
                 require(body[field] in assets and assets[body[field]]['kind'] == kind,
                         'PHYSICS_REFERENCE', 'Unknown ' + field + ' reference.', path)
+        if 'sleep' in body:
+            require(mode == 'dynamic', 'PHYSICS_SLEEP', 'Sleep settings apply only to solver-driven dynamic bodies.', path)
+            require(body['sleep']['enabled'] or not body['sleep']['initially_sleeping'], 'PHYSICS_SLEEP', 'Initial sleeping requires sleep to be enabled.', path)
+            require(not body['sleep']['initially_sleeping'] or not any(body['linear_velocity']+body['angular_velocity']), 'PHYSICS_SLEEP', 'Initial sleeping and nonzero initial velocity conflict.', path)
+            require(mode == 'dynamic' or not body['sleep']['initially_sleeping'], 'PHYSICS_SLEEP', 'Only dynamic bodies can start asleep.', path)
         mass = body['mass']
         require((mass['kilograms'] > 0) == (mode == 'dynamic'), 'PHYSICS_MASS',
                 'Dynamic mass must be positive; static/kinematic mass must be zero.', path)

@@ -1,0 +1,44 @@
+{
+  "code_commit": "cbad2c516a07e6eeb71eea54b29e5574953a0d5c",
+  "source_sha256": "32b0d5a8e8504dced770e809b931b00a5b4937e54242344a6124fc2eea39ec6d",
+  "scope": "restricted local intent planner and exact execution-input admission; no production film completion",
+  "tests": {
+    "count": 30,
+    "seconds": 2.814,
+    "result": "PASS",
+    "command": "PYTHONPATH=scripts:tests python -m unittest test_director_planner test_director_capabilities test_rig_director_capabilities test_rig_compatibility -v",
+    "native_queue": "shared native-validation.lock held"
+  },
+  "actual_admission": {
+    "operations": [
+      "blender.cpu",
+      "codec.h264",
+      "importer.glb"
+    ],
+    "result": "PASS",
+    "tampered_story_budget_resources_false_completion": "rejected",
+    "artifact": "capability-evidence/admission.json",
+    "native_queue": "shared native-validation.lock held"
+  },
+  "earlier_test_run": {
+    "count": 44,
+    "seconds": 24.628,
+    "suites": [
+      "test_director_planner",
+      "test_director_contracts",
+      "test_rig_compatibility"
+    ],
+    "result": "PASS"
+  },
+  "files": {
+    "capability-evidence/admission.json": "798169fbe4f3b0cbab7c213338a58e422752b7ab173cb26a2cc284995afd9577",
+    "capability-evidence/payloads/1161c7f15e9c884ad9a5d8563cc7d91111a4b8c4939da30c7e44923046d36d82.mp4": "1161c7f15e9c884ad9a5d8563cc7d91111a4b8c4939da30c7e44923046d36d82",
+    "capability-evidence/payloads/707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913.glb": "707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+    "capability-evidence/payloads/81c2f2495e528252cd7df0874dc61fa2568c2de35953a6001d7cbaeca4db47f8.png": "81c2f2495e528252cd7df0874dc61fa2568c2de35953a6001d7cbaeca4db47f8",
+    "capability-evidence/receipts/1154b82099a0d981b786587b4f3c633e13bca1e9885005598ee68bca5f218dc3.json": "483691842b7574c7c9f538fc18d90cadcc3ae0bade7c362e4e1adde2c5d49273",
+    "capability-evidence/receipts/331a68b1734f9fde0a8c3d845e630f90f89aa4690436e6fae8b810241498bf29.json": "ec8cea256b6ecc7480daaf808751ccaa5ceaff767659d2cbd3b5edb5ddf428fa",
+    "capability-evidence/receipts/d925bfd40fcff60f5f93e68793fcd8b2c0af80c811fc738bfc89189db2fd14d7.json": "c0b5cacc6ca9d42a70b7742ec3a37c28f01a30ac284a01f278c6217ed21e2660",
+    "capability-evidence/result.json": "ddb24c698b73987bccfb1ef3098312f11f48f26a1c6be47115c6acb0d6db965d",
+    "tests.log": "0f15d07766690141927f65c57c2cf7f0c468fb64b6e8aa77642501dcc47bd87b"
+  }
+}
