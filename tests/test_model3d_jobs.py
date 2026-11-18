@@ -19,7 +19,7 @@ from rig_errors import RigError, atomic_json, read_json, sha256
 class JobsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name); self.job = self.root/'job'
+        self.root = Path(self.temp.name).resolve(); self.job = self.root/'job'
         self.request = dict(engine='test', parameters={})
 
     def create(self, **kwargs):
