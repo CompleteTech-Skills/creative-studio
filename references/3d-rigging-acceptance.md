@@ -142,3 +142,57 @@ python -m http.server 8765 --bind 127.0.0.1 \
 ```
 
 Use a new generation destination. Open `http://127.0.0.1:8765/` for the local reviewer. Archives are under `examples/rig-3d/packages`; `rig restore` verifies their contents before promotion. Keep implementation files unchanged during a regression run because acceptance receipts are deliberately bound to implementation hashes.
+
+
+## Issue #53 focused acceptance follow-up
+
+This follow-up was authored against `main` at
+`f9380f30a6163f3166bbdd2d7cc664f9f57b5f8c`. Its new synthetic fixtures
+supplement the historical evidence above; that evidence does not establish a
+result for these new tests. No local executor was available when this note was
+written. The following commands are **NOT RUN locally**, with no exit status
+or generated-artifact hash claimed:
+
+```bash
+python scripts/test_rig_gate.py skinning
+HATCH_RIG_INTEROP_TEST=1 python scripts/test_rig_gate.py interoperability
+python scripts/generate_schemas.py --check
+```
+
+Use the pinned Python rig test requirements and
+`npm ci --ignore-scripts --prefix tools/rig` before the interoperability
+command. Existing workflow jobs remain authoritative for execution: report
+only the exact candidate head, actual job conclusion, logs and optional skips.
+The interoperability gate opts into Khronos/pygltflib; its Blender/browser
+tests remain separately opt-in. A native round-trip or byte decoder is not a
+claim that an external application evaluated eight-influence deformation.
+
+| Parent #11 requirement | New focused test in this follow-up | Exact scope |
+| --- | --- | --- |
+| §11.1, §11.3 inverse binds and actual LBS | `test_weighted_lbs_uses_literal_inverse_binds_in_skin_joint_order` | Literal inverse matrices, reordered skin palette, independently calculated weighted vertex, mismatched-order rejection |
+| §11.2–11.3 pruning and normalization | `test_real_top_four_and_eight_pruning_has_expected_ratios_and_stable_ties` | Ten candidates, unequal 2:1 scores, actual four/eight nonzero retained influences, independent ratios and deterministic cutoff ties |
+| §11.2 deterministic fallback | `test_diffusion_candidate_boundary_and_memory_fallback_are_deterministic` | 64 versus 65 deform candidates; separate geometry-admitted memory fallback; method/reason, repeatability and stored fallback metadata |
+| §11.3 disconnected components | `test_disconnected_islands_and_isolated_vertex_keep_independent_weights` | Disjoint triangulated islands equal their separately processed results; isolated midpoint retains normalized equal weights and bind geometry |
+| §11.2, §11.3, §11.5 smoothing | `test_smoothing_preserves_isolated_vertices_at_full_strength_and_smooths_edges` | Independent triangle-neighbour averaging; isolated-row preservation at strengths .3 and 1; connected manual lock and source preservation |
+| §11.3, §11.5 manual corrections | `test_eight_influence_manual_locks_survive_regeneration_and_missing_joint_fails` | Eight-entry numeric normalization and locked regeneration; removed locked joint fails without mutating prior arrays |
+| §11.1, §11.3 rigid semantic parts | `test_separate_semantic_rigid_parts_keep_materials_and_pivot_motion` | Two separately identified/materialled parts, correct hinge pivot, stationary base, preserved inputs and missing-part skin failure |
+| §11.3 additional export sets | `test_eight_influence_sets_roundtrip_with_actual_second_set_deformation` | GLB/glTF JOINTS_1/WEIGHTS_1 values, four-profile rejection, native reimport, independent GLB byte decoding and last-slot deformation |
+| §11.3, §22 standards/parser gate | `test_khronos_and_pygltflib_accept_eight_influence_export` | Optional real Khronos validation and independent parser recognition of eight-influence GLB; no consumer-rendering claim |
+
+At the audited base, static inspection found that `smooth_weights` clips a
+zero-neighbour vertex's degree to one, then replaces its row with
+`(1-strength)*row`. At `strength=1`, that becomes all zeros and `_prune`
+rejects it as `RIG_UNWEIGHTED`; geometry admission permits vertices unused
+by triangles. The regression above requires preserving that vertex's prior
+valid weights while connected vertices still smooth. This describes the
+base source and the required regression, not an observed local execution.
+
+Remaining #53 scope includes exact-head execution of these tests and applicable
+legacy gates; external eight-influence consumer evaluation where supported;
+arbitrary-model skin quality and visual identity review; broader anatomical
+deformation/diagnostic acceptance in §11.4; and the full import/correction/
+export evidence required by the issue. The no-topology-edges fallback is
+not exercised here: current geometry admission requires at least one triangle,
+and `mesh_edges` retains at least one edge even for degenerate triangles.
+The shipped Three.js four-influence limitation remains unchanged. No issue
+closure, production-art approval or full parent-mission acceptance is implied.

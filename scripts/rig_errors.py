@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import math
@@ -15,6 +17,7 @@ from typing import Any, Iterator
 
 VERSION = '1.0.0'
 MAX_JSON_BYTES = 32 * 1024 * 1024
+_DIRECTORY_CAPABILITIES = ContextVar('rig_internal_directory_capabilities', default=())
 
 
 class RigError(ValueError):
@@ -65,8 +68,27 @@ def finite_json(value: Any, depth: int = 0) -> None:
             finite_json(child, depth + 1)
 
 
-def decode_json(payload: bytes | str) -> Any:
-    require(len(payload) <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds the 32 MiB bound.')
+class RoundedJsonInteger(float):
+    """Mark a parsed float whose spelling has a different value."""
+
+
+def _mark_rounded_integer(token: str) -> float:
+    value = float(token)
+    if value.is_integer():
+        try:
+            if Decimal(token) == Decimal.from_float(value):
+                return value
+        except InvalidOperation:
+            pass
+        return RoundedJsonInteger(value)
+    return value
+
+
+def decode_json(payload: bytes | str, *, max_bytes: int | None = None,
+                mark_rounded_integers: bool = False) -> Any:
+    if max_bytes is None:
+        max_bytes = MAX_JSON_BYTES
+    require(len(payload) <= max_bytes, 'RIG_LIMIT_JSON', f'JSON exceeds the {max_bytes}-byte bound.')
     if isinstance(payload, str):
         # A character count is only a lower bound for UTF-8. Count bounded
         # chunks so admission never materializes a second full encoded input.
@@ -74,7 +96,7 @@ def decode_json(payload: bytes | str) -> Any:
         try:
             for offset in range(0, len(payload), 8192):
                 encoded_size += len(payload[offset:offset+8192].encode('utf-8'))
-                require(encoded_size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds the 32 MiB bound.')
+                require(encoded_size <= max_bytes, 'RIG_LIMIT_JSON', f'JSON exceeds the {max_bytes}-byte bound.')
         except UnicodeError as exc:
             raise RigError('RIG_JSON', 'Invalid JSON: ' + str(exc)) from exc
 
@@ -87,6 +109,7 @@ def decode_json(payload: bytes | str) -> Any:
 
     try:
         value = json.loads(payload, object_pairs_hook=pairs,
+                           parse_float=_mark_rounded_integer if mark_rounded_integers else None,
                            parse_constant=lambda _: (_ for _ in ()).throw(
                                RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
     except RigError:
@@ -125,19 +148,171 @@ def atomic_json(path: str | Path, value: Any) -> None:
     atomic_bytes(path, (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8'))
 
 
-def portable_name(name: str) -> str:
-    # Same portable spelling policy as the existing decomposition transport.
-    from decomposition_package import _relative
+def portable_name(name: str, *, profile: str = 'default') -> str:
+    """Apply the requested built-in portable path profile."""
+    from portable_paths import existing_relative
     try:
-        return _relative(name)
+        return existing_relative(name, profile=profile)
     except ValueError as exc:
         raise RigError('RIG_PATH', str(exc), asset=str(name)) from exc
 
 
-def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
-    root = Path(root).resolve()
-    target = root / portable_name(name)
-    require(target.resolve().is_relative_to(root), 'RIG_PATH', 'Path escapes the asset directory.', asset=name)
+class _DirectoryCapability:
+    """Internal context-owned descriptor; construction never comes from metadata."""
+    def __init__(self, owned_fd, borrowed_fd, identity):
+        self._fd = owned_fd
+        self._borrowed_fd = borrowed_fd
+        self.identity = identity
+        self._closed = False
+
+    def _check(self, alias_fd=None):
+        require(not self._closed, 'RIG_DIRECTORY_CLOSED', 'Directory capability has expired.')
+        try:
+            info = os.fstat(self._fd)
+            require(stat.S_ISDIR(info.st_mode) and (info.st_dev,info.st_ino) == self.identity,
+                    'RIG_DIRECTORY_CHANGED', 'Owned directory descriptor changed.')
+            if alias_fd is not None and alias_fd != self._fd:
+                alias = os.fstat(alias_fd)
+                require(stat.S_ISDIR(alias.st_mode) and (alias.st_dev,alias.st_ino) == self.identity,
+                        'RIG_DIRECTORY_CHANGED', 'Borrowed directory descriptor was reused.')
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_CLOSED', 'Directory descriptor is no longer open.') from exc
+
+    @property
+    def fd(self):
+        self._check()
+        return self._fd
+
+    @property
+    def path(self):
+        self._check()
+        return Path('/proc/self/fd')/str(self._fd)
+
+
+@contextmanager
+def directory_capability(descriptor: int):
+    """Explicitly activate an internal open-directory authority for this context.
+
+    The caller retains ownership of descriptor. This scope owns one duplicate,
+    keeps nested outer capabilities active, and never admits unrelated procfd
+    strings. Workers must explicitly inherit a descriptor and enter a new scope.
+    This additive internal facility is Linux/procfd-only; ordinary paths retain
+    their previous behavior on every platform.
+    """
+    require(type(descriptor) is int and descriptor >= 0, 'RIG_DIRECTORY_FD', 'Expected an open directory descriptor.')
+    require(os.name == 'posix' and os.open in os.supports_dir_fd
+            and hasattr(os,'O_NOFOLLOW') and hasattr(os,'O_DIRECTORY')
+            and Path('/proc/self/fd').is_dir(),
+            'RIG_DIRECTORY_UNAVAILABLE', 'Descriptor capabilities require Linux directory-relative I/O and procfd.')
+    owned = None; cap = None; token = None
+    try:
+        try:
+            original = os.fstat(descriptor)
+            require(stat.S_ISDIR(original.st_mode), 'RIG_DIRECTORY_FD', 'Descriptor is not a directory.')
+            owned = os.dup(descriptor)
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_FD', 'Expected a live directory descriptor.') from exc
+        cap = _DirectoryCapability(owned,descriptor,(original.st_dev,original.st_ino))
+        cap._check(descriptor)
+        token = _DIRECTORY_CAPABILITIES.set((*_DIRECTORY_CAPABILITIES.get(),cap))
+        yield cap
+    finally:
+        if token is not None:_DIRECTORY_CAPABILITIES.reset(token)
+        if cap is not None:cap._closed = True
+        if owned is not None:
+            try:
+                current = os.fstat(owned)
+                # An internal caller must not close cap.fd. If it did and reused
+                # that number for another object, never close the foreign object.
+                # Before registration/yield, this duplicate has never been
+                # exposed to callers: even a rejected borrowed-FD race leaves
+                # it exclusively ours and it must be closed.
+                if token is None or cap is None or (current.st_dev,current.st_ino) == cap.identity:os.close(owned)
+            except OSError:
+                pass
+
+
+def _directory_anchor(root):
+    """Match only explicitly active capabilities, with no ambient proc whitelist."""
+    root = Path(root).absolute()
+    parts = root.parts
+    for cap in reversed(_DIRECTORY_CAPABILITIES.get()):
+        for alias in (cap._fd,cap._borrowed_fd):
+            prefix = (Path('/proc/self/fd')/str(alias)).parts
+            if parts[:len(prefix)] != prefix:continue
+            cap._check(alias)
+            suffix = parts[len(prefix):]
+            require(all(part not in ('.','..') and '\x00' not in part for part in suffix),
+                    'RIG_PATH', 'Directory-capability descendants cannot traverse parents.')
+            return cap, cap.path.joinpath(*suffix), suffix
+    return None, root, ()
+
+
+
+@contextmanager
+def scoped_directory_descriptor(root: str | Path):
+    """Borrow an owned directory FD only from an explicitly active capability.
+
+    Yield None for ordinary or unregistered roots, so callers retain their
+    existing strict path-opening policy. Every descendant is opened nofollow;
+    this context owns and closes all duplicates, not the original capability.
+    """
+    cap,_,suffix = _directory_anchor(root)
+    if cap is None:
+        yield None
+        return
+    opened = []
+    try:
+        try:
+            opened.append(os.dup(cap.fd))
+            for part in suffix:
+                opened.append(os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=opened[-1]))
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_PATH','Capability directory descendant is missing or unsafe.') from exc
+        yield opened[-1]
+    finally:
+        for fd in reversed(opened):os.close(fd)
+
+
+def normalize_root(root: str | Path) -> Path:
+    """Retain explicit scoped directory authority; otherwise use ordinary resolve."""
+    cap,path,suffix = _directory_anchor(root)
+    if cap is None:return path.resolve()
+    opened = []
+    try:
+        opened.append(os.dup(cap.fd))
+        for part in suffix:
+            try:
+                opened.append(os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=opened[-1]))
+            except FileNotFoundError:
+                # Like ordinary Path.resolve(), permit not-yet-created suffixes.
+                # Secure creation/publication remains the caller's FD authority.
+                break
+    except OSError as exc:
+        raise RigError('RIG_DIRECTORY_PATH','Capability root descendant is unsafe.') from exc
+    finally:
+        for fd in reversed(opened):os.close(fd)
+    return path
+
+
+def safe_path(root: str | Path, name: str, *, exists: bool = False, profile: str = 'default') -> Path:
+    cap,anchored,suffix = _directory_anchor(root)
+    root = anchored if cap is not None else Path(root).resolve()
+    target = root / portable_name(name, profile=profile)
+    if cap is None:
+        require(target.resolve().is_relative_to(root), 'RIG_PATH', 'Path escapes the asset directory.', asset=name)
+    else:
+        # Root descendants must also be ordinary directories, not a symlink
+        # smuggled in before the separately validated payload-relative name.
+        opened = []
+        try:
+            opened.append(os.dup(cap.fd))
+            for part in suffix:
+                opened.append(os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=opened[-1]))
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_PATH','Capability root descendant is missing or unsafe.',asset=name) from exc
+        finally:
+            for fd in reversed(opened):os.close(fd)
     cursor = root
     for part in PurePosixPath(name).parts:
         cursor = cursor / part
@@ -149,30 +324,37 @@ def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
 
 
 @contextmanager
-def open_payload(root: str | Path, name: str, *, root_identity=None):
+def open_payload(root: str | Path, name: str, *, root_identity=None, profile: str = 'default'):
     """Open an admitted regular payload without following replaceable parents.
 
     Reads remain the caller's responsibility and must be bounded. Descriptor and
     path identity are rechecked after the caller finishes. POSIX retains each
     directory descriptor; Windows checks the opened handle's canonical path.
     """
-    # The caller selects the trusted root. Canonicalize its platform aliases
-    # once (/var on macOS, DOS short paths on Windows); descendants still
-    # traverse no-follow descriptors and cannot redirect outside that root.
-    root = Path(root).resolve()
-    target = safe_path(root, name, exists=True)
+    capability,anchored,root_parts = _directory_anchor(root)
+    root = anchored if capability is not None else Path(root).absolute()
+    target = safe_path(root, name, exists=True, profile=profile)
     def check_root(info):
-        require(root_identity is None or (info.st_dev, info.st_ino) == root_identity,
-                'RIG_PAYLOAD_CHANGED', 'Selected source directory changed.', asset=name)
-    check_root(root.stat())
+        require(root_identity is None or (info.st_dev,info.st_ino) == root_identity,
+                'RIG_PAYLOAD_CHANGED','Selected source directory changed.',asset=name)
     flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
     descriptors = []
     try:
+        check_root(root.stat())
         if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
-            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-            # Begin at the filesystem root rather than a replaceable ancestor.
-            descriptors.append(os.open(root.anchor, directory_flags))
-            for part in root.parts[1:]:
+            directory_access = os.O_RDONLY
+            if profile == 'scene3d':
+                # Scene3D only searches directories for known dependency names.
+                directory_access = getattr(os, 'O_PATH', getattr(os, 'O_SEARCH', os.O_RDONLY))
+            directory_flags = directory_access | os.O_DIRECTORY | os.O_NOFOLLOW
+            if capability is not None:
+                descriptors.append(os.dup(capability.fd))
+                directory_parts = root_parts
+            else:
+                # Ordinary untrusted path behavior is deliberately unchanged.
+                descriptors.append(os.open(root.anchor, directory_flags))
+                directory_parts = root.parts[1:]
+            for part in directory_parts:
                 descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
             check_root(os.fstat(descriptors[-1]))
             parts = PurePosixPath(name).parts
@@ -203,14 +385,14 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
                     actual = actual[4:]
                 require(os.path.normcase(actual) == os.path.normcase(os.path.abspath(target)),
                         'RIG_PAYLOAD_PATH', 'Opened source was redirected.', asset=name)
+            current = safe_path(root, name, exists=True, profile=profile).stat()
             check_root(root.stat())
-            current = safe_path(root, name, exists=True).stat()
             require((current.st_dev, current.st_ino) == (before.st_dev, before.st_ino),
                     'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
             yield stream, before
             after = os.fstat(stream.fileno())
             check_root(root.stat())
-            current = safe_path(root, name, exists=True).stat()
+            current = safe_path(root, name, exists=True, profile=profile).stat()
             def fingerprint(info):
                 fields = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
                 return fields if os.name == 'nt' else fields + (info.st_ctime_ns,)
@@ -222,6 +404,91 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
         for descriptor in reversed(descriptors):
             os.close(descriptor)
 
+@contextmanager
+def owned_directory_fd(root_fd: int):
+    """Duplicate and validate a caller-held directory descriptor for this scope."""
+    require(type(root_fd) is int and root_fd >= 0, 'RIG_DIRECTORY_FD', 'Expected an open directory descriptor.')
+    try:
+        descriptor = os.dup(root_fd)
+    except (OSError, OverflowError) as exc:
+        raise RigError('RIG_DIRECTORY_FD', 'Cannot duplicate the held directory descriptor.') from exc
+    try:
+        try:
+            directory = os.fstat(descriptor)
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_FD', 'Cannot inspect the held directory descriptor.') from exc
+        require(stat.S_ISDIR(directory.st_mode), 'RIG_DIRECTORY_FD', 'Descriptor must identify a directory.')
+        yield descriptor
+    except BaseException as primary:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            if hasattr(primary, 'add_note'):
+                primary.add_note('Held directory descriptor close also failed: ' + str(exc))
+        raise
+    else:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_FD', 'Cannot close the held directory descriptor.') from exc
+
+
+@contextmanager
+def _payload_parent_fd(root, parts):
+    directory = root
+    try:
+        for part in parts:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            previous, directory = directory, child
+            if previous != root:
+                os.close(previous)
+        yield directory
+    finally:
+        if directory != root:
+            os.close(directory)
+
+
+@contextmanager
+def open_payload_at(root_fd: int, name: str, *, profile: str = 'default'):
+    """Open a regular payload beneath a borrowed directory descriptor."""
+    parts = PurePosixPath(portable_name(name, profile=profile)).parts
+    require(os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
+            and os.stat in os.supports_follow_symlinks
+            and all(hasattr(os, flag) for flag in ('O_DIRECTORY', 'O_NOFOLLOW', 'O_NONBLOCK')),
+            'RIG_DIRECTORY_UNAVAILABLE', 'Descriptor-relative payload reads are unavailable.')
+    parents, leaf = parts[:-1], parts[-1]
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+
+    def fingerprint(info):
+        return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+    try:
+        with owned_directory_fd(root_fd) as root, _payload_parent_fd(root, parents) as parent:
+            selected_parent = os.fstat(parent)
+            fd = os.open(leaf, flags, dir_fd=parent)
+            try:
+                before = os.fstat(fd)
+                require(stat.S_ISREG(before.st_mode), 'RIG_PAYLOAD_TYPE',
+                        'Payload must be a regular file.', asset=name)
+                current = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+                require(fingerprint(before) == fingerprint(current),
+                        'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
+                with os.fdopen(fd, 'rb', closefd=False) as stream:
+                    yield stream, before
+                after = os.fstat(fd)
+                with _payload_parent_fd(root, parents) as reopened:
+                    named_parent = os.fstat(reopened)
+                    require((named_parent.st_dev, named_parent.st_ino) == (selected_parent.st_dev, selected_parent.st_ino),
+                            'RIG_PAYLOAD_CHANGED', 'Payload parent changed during reading.', asset=name)
+                    current = os.stat(leaf, dir_fd=reopened, follow_symlinks=False)
+                    require(fingerprint(before) == fingerprint(after) == fingerprint(current),
+                            'RIG_PAYLOAD_CHANGED', 'Payload changed during reading.', asset=name)
+            finally:
+                os.close(fd)
+    except OSError as exc:
+        raise RigError('RIG_PAYLOAD_IO', 'Cannot safely read the payload: ' + str(exc), asset=name) from exc
+
+
 def slug(text: str) -> str:
     value = re.sub('[^a-z0-9._-]+', '-', str(text).lower()).strip('-._')[:100]
     return value or 'character'
@@ -230,7 +497,11 @@ def slug(text: str) -> str:
 @contextmanager
 def job_lock(root: str | Path) -> Iterator[None]:
     """OS locks release on process exit; the lock inode is never replaced."""
-    root = Path(root).resolve()
+    capability,_,suffix = _directory_anchor(root)
+    require(capability is None or bool(suffix), 'RIG_DIRECTORY_LOCK',
+            'A writer needs a descendant root so its sibling lock stays inside directory authority. '
+            'Activate the parent directory capability when writing an existing rig root.')
+    root = normalize_root(root)
     root.parent.mkdir(parents=True, exist_ok=True)
     lock = root.parent / ('.' + root.name + '.rig.lock')
     require(not lock.is_symlink(), 'RIG_SYMLINK', 'Lock path cannot be a symbolic link.')
@@ -238,8 +509,7 @@ def job_lock(root: str | Path) -> Iterator[None]:
         stream.seek(0)
         if os.name == 'nt':
             import msvcrt
-            if lock.stat().st_size == 0:
-                stream.write(b'0'); stream.flush(); stream.seek(0)
+            # Windows can lock a byte past EOF, so a new sidecar can stay empty.
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:

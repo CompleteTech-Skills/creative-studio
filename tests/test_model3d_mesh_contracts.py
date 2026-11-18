@@ -94,6 +94,21 @@ class MeshContractsTests(unittest.TestCase):
                 self.assertFalse(Draft202012Validator(schemas()[EDITABLE_SCHEMA]).is_valid(record))
                 with self.assertRaises(RigError):validate_editable(record)
 
+    def test_only_source_inventory_can_describe_empty_bytes(self):
+        schema = Draft202012Validator(schemas()[EXPORT_SCHEMA])
+        digest = hashlib.sha256(b'').hexdigest()
+        record = export_record()
+        record['files']['source/library'] = {'bytes': 0, 'sha256': digest}
+        schema.validate(record)
+        self.assertEqual(validate_export(record), record)
+        for path, checksum in [('model.glb', digest), ('source.json', digest), ('source/library', '0'*64)]:
+            with self.subTest(path=path, checksum=checksum):
+                invalid = copy.deepcopy(record)
+                invalid['files'][path] = {'bytes': 0, 'sha256': checksum}
+                self.assertFalse(schema.is_valid(invalid))
+                with self.assertRaises(RigError):
+                    validate_export(invalid)
+
     def test_strict_unknown_missing_fields_every_level(self):
         for path in [(),('files','model.glb'),('mesh_identity',0),('exported_material_slots',0)]:
             record=export_record();target=record

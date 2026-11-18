@@ -5,231 +5,15 @@ import unittest
 import numpy as np
 from rig_test_helpers import fixture
 from rig_demo import create_demo
-from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls,validate_eyelid_bindings
+from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls
 from rig_attachments import socket_world,attach_prop,detach_prop,transfer_prop,prop_world,solve_grasp
 from rig_skeleton import neutral_pose,evaluate_fk,mirror_pose
 from rig_skinning import evaluate_deformation
-from rig_math import decompose,axis_angle
+from rig_math import decompose,axis_angle,compose,qmatrix
 from rig_errors import RigError
 from rig_states import rig_capabilities,map_states
-from rig_models import Geometry,Mesh,RigAsset,SkinWeights
+from rig_models import Geometry,Mesh,RigAsset,SkinWeights,validate_geometry
 from rig_skeleton import skeleton_from_heads,validate_skeleton
-
-
-def eyelid_fixture():
-    skeleton=skeleton_from_heads([
-        dict(id='root',role='root',parent=None,head=[0,0,0],tail=[0,1,0],deform=False),
-        dict(id='head',role='head',parent='root',head=[0,1,0],tail=[0,2,0],deform=False),
-        dict(id='eye.left',role='eye.left',parent='head',head=[-.1,1,0],tail=[-.1,1.1,0],deform=True),
-        dict(id='eye.right',role='eye.right',parent='head',head=[.1,1,0],tail=[.1,1.1,0],deform=True)])
-    meshes=[];skins={};world=evaluate_fk(skeleton)
-    for side,x in (('left',-.1),('right',.1)):
-        name='lid.'+side;positions=np.array([[x-.05,1,.1],[x+.05,1,.1],[x,1.1,.1]])
-        delta=np.zeros_like(positions);delta[:,2]=.04
-        mesh=Mesh(name,positions,np.array([[0,1,2]]),morphs={'lift':{'POSITION':delta}},morph_defaults={'lift':.25})
-        meshes.append(mesh)
-        skins[name]=SkinWeights(name,['head'],np.zeros((3,1),dtype=np.int64),np.ones((3,1)),
-                               np.linalg.inv(world['head'])[None,:,:])
-    manifest={'skeleton':skeleton,'controllers':{'constraints':[]},
-              'facial':{'schema_version':1,'eyes':['eye.left','eye.right'],
-                        'morph_targets':{'lid.left':['lift'],'lid.right':['lift']},
-                        'expressions':{},'eyelids':[
-                            dict(eye='eye.left',mesh='lid.left',morph='lift',up_weight=.8,
-                                 down_weight=-.2,up_radians=.5,down_radians=.4)]}}
-    return RigAsset(manifest,Geometry(meshes),skins)
-
-
-class GazeEyelidTests(unittest.TestCase):
-    def test_authored_lid_follows_real_eye_pitch_and_changes_vertices(self):
-        rig=eyelid_fixture();neutral=neutral_pose(rig.skeleton);before=deepcopy(neutral)
-        target=[0,2,2]
-        result=gaze_at(rig,neutral,target)
-        pitch=np.arctan2(1.,np.sqrt(4.+.1**2))
-        expected=.25+(.8-.25)*(pitch/.5)
-        self.assertAlmostEqual(result['morphs']['lid.left']['lift'],expected,places=12)
-        baseline=evaluate_deformation(rig,neutral);actual=evaluate_deformation(rig,result)
-        np.testing.assert_allclose(actual['lid.left']['positions'][:,2]-baseline['lid.left']['positions'][:,2],
-                                   .04*(expected-.25),atol=1e-12)
-        np.testing.assert_allclose(actual['lid.right']['positions'],baseline['lid.right']['positions'])
-        self.assertEqual(neutral,before)
-
-    def test_pitch_limits_are_applied_before_lid_response_and_release_uses_defaults(self):
-        rig=eyelid_fixture();neutral=neutral_pose(rig.skeleton)
-        rig.manifest['controllers']['constraints']=[dict(schema_version=1,id='left-limit',bone='eye.left',
-            type='hinge',axis=[1,0,0],minimum=-.2,maximum=.2)]
-        posed=gaze_at(rig,neutral,[0,3,2])
-        self.assertAlmostEqual(posed['morphs']['lid.left']['lift'],.25+(.8-.25)*(.2/.5),places=10)
-        posed['morphs']['lid.right']={'lift':.7}
-        released=gaze_at(rig,posed,None)
-        self.assertNotIn('lid.left',released['morphs'])
-        self.assertEqual(released['morphs']['lid.right']['lift'],.7)
-        np.testing.assert_allclose(evaluate_deformation(rig,released)['lid.left']['positions'],
-                                   evaluate_deformation(rig,neutral)['lid.left']['positions'])
-
-    def test_lid_response_excludes_parent_rotation_and_bounds_distant_targets(self):
-        rig=eyelid_fixture();neutral=neutral_pose(rig.skeleton)
-        from rig_skeleton import rotate_bone
-        posed=rotate_bone(rig.skeleton,neutral,'root',axis_angle([1,0,0],.4))
-        matrix=evaluate_fk(rig.skeleton,posed)['root']
-        target=(matrix @ [0.,1.,2.,1.])[:3]
-        result=gaze_at(rig,posed,target)
-        self.assertAlmostEqual(result['morphs']['lid.left']['lift'],.25,places=12)
-        self.assertAlmostEqual(gaze_at(rig,neutral,[0,100,1])['morphs']['lid.left']['lift'],.8,places=12)
-        self.assertAlmostEqual(gaze_at(rig,neutral,[0,-100,1])['morphs']['lid.left']['lift'],-.2,places=12)
-        self.assertAlmostEqual(gaze_at(rig,neutral,[0,1,-2])['morphs']['lid.left']['lift'],.25,places=12)
-
-    def test_binding_admission_rejects_unavailable_inert_and_ambiguous_channels(self):
-        for change in (lambda r:r.manifest['facial']['eyelids'][0].update(eye='missing'),
-                       lambda r:r.manifest['facial']['eyelids'][0].update(mesh='missing'),
-                       lambda r:r.manifest['facial']['eyelids'][0].update(morph='missing'),
-                       lambda r:r.manifest['facial']['eyelids'][0].update(up_radians=0),
-                       lambda r:r.manifest['facial']['eyelids'][0].update(down_weight=3),
-                       lambda r:r.manifest['facial']['eyelids'][0].update(up_weight=.25,down_weight=.25),
-                       lambda r:r.manifest['facial']['eyelids'].append(deepcopy(r.manifest['facial']['eyelids'][0])),
-                       lambda r:r.geometry.meshes[0].morphs['lift']['POSITION'].fill(0)):
-            rig=eyelid_fixture();change(rig)
-            with self.subTest(change=change),self.assertRaises(RigError):gaze_at(rig,neutral_pose(rig.skeleton),[0,2,2])
-        for value in ({},'',0):
-            rig=eyelid_fixture();rig.manifest['facial']['eyelids']=value
-            with self.subTest(value=value),self.assertRaises(RigError):gaze_at(rig,neutral_pose(rig.skeleton),[0,2,2])
-
-    def test_no_binding_preserves_legacy_gaze_without_inventing_morph_controls(self):
-        rig=eyelid_fixture();rig.manifest['facial'].pop('eyelids')
-        pose=gaze_at(rig,neutral_pose(rig.skeleton),[0,2,2])
-        self.assertEqual(pose['morphs'],{})
-
-    def test_binding_survives_native_storage_and_invalid_targets_fail_rig_validation(self):
-        from rig_jobs import save_rig
-        from rig_models import load_rig
-        from rig_validation import validate_rig
-        with tempfile.TemporaryDirectory() as directory:
-            rig,_=create_demo(Path(directory)/'human','humanoid',animate=False)
-            binding=dict(eye='eye.left',mesh='eye-white-left',morph='blink',up_weight=.7,
-                         down_weight=.1,up_radians=.5,down_radians=.5)
-            rig.manifest['facial']['eyelids']=[binding]
-            save_rig(rig,operation='authored-eyelid-binding')
-            loaded=load_rig(rig.root)
-            self.assertEqual(loaded.manifest['facial']['eyelids'],[binding])
-            self.assertTrue(validate_rig(loaded)['ok'])
-            loaded.manifest['facial']['eyelids'][0]['mesh']='missing'
-            report=validate_rig(loaded)
-            self.assertFalse(report['ok'])
-            self.assertEqual(report['checks'][0]['name'],'structure')
-
-
-class EyelidCorrectionTests(unittest.TestCase):
-    def setUp(self):
-        from rig_jobs import save_rig
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.rig,_=create_demo(Path(self.temp.name)/'human','humanoid',animate=False)
-        self.binding=dict(eye='eye.left',mesh='eye-white-left',morph='blink',up_weight=.7,
-                          down_weight=.1,up_radians=.5,down_radians=.5)
-        self.rig.manifest['facial']['eyelids']=[deepcopy(self.binding)]
-        save_rig(self.rig,operation='authored-eyelid-binding')
-
-    def correct(self, edits):
-        from rig_corrections import apply_rig_corrections
-        from rig_models import rig_signature
-        from rig_errors import timestamp
-        rig=self.rig
-        envelope=dict(schema_version=1,kind='hatch-3d-rig-correction',rig_id=rig.manifest['id'],
-            rig_version=rig.manifest['version'],expected_sha256=rig_signature(rig.manifest),
-            author='fixture',reason='Exercise eyelid correction references',created_at=timestamp(),edits=edits)
-        return apply_rig_corrections(rig,envelope)
-
-    def test_eye_rename_persists_remapped_binding_and_gaze_still_evaluates(self):
-        from rig_models import load_rig
-        result,_=self.correct([dict(operation='bone-update',target='eye.left',value={'id':'imported-eye'})])
-        loaded=load_rig(result.root)
-        self.assertEqual(loaded.manifest['facial']['eyelids'][0]['eye'],'imported-eye')
-        pose=gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
-        self.assertIn('imported-eye',pose['bones'])
-        self.assertIn('blink',pose['morphs']['eye-white-left'])
-        self.assertEqual(self.rig.manifest['facial']['eyelids'][0]['eye'],'eye.left')
-
-    def test_eye_removal_prunes_only_its_binding_and_preserves_other_gaze(self):
-        from rig_models import load_rig
-        result,_=self.correct([dict(operation='bone-remove',target='eye.left',value=None)])
-        loaded=load_rig(result.root)
-        self.assertEqual(loaded.manifest['facial']['eyelids'],[])
-        self.assertIn('eye.right',gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])['bones'])
-
-    def test_morph_removal_prunes_exact_binding_and_preserves_same_name_elsewhere(self):
-        from rig_models import load_rig
-        result,_=self.correct([dict(operation='morph',target='eye-white-left',value={'action':'remove','name':'blink'})])
-        loaded=load_rig(result.root)
-        self.assertEqual(loaded.manifest['facial']['eyelids'],[])
-        self.assertIn('blink',loaded.geometry.by_id()['eye-white-right'].morphs)
-        gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
-
-    def test_auto_replacement_prunes_absent_eyes_before_persisting_new_skeleton(self):
-        from rig_operations import mutate
-        from rig_models import load_rig
-        before=(self.rig.root/'rig.json').read_bytes()
-        result=mutate(self.rig.root,'auto',{'template':'robotic','replace':True})
-        self.assertEqual(result['status'],'succeeded')
-        loaded=load_rig(self.rig.root)
-        self.assertEqual(loaded.manifest['archetype'],'robotic')
-        self.assertEqual(loaded.manifest['facial']['eyes'],[])
-        self.assertEqual(loaded.manifest['facial']['eyelids'],[])
-        self.assertEqual(validate_eyelid_bindings(loaded),[])
-        self.assertNotEqual((self.rig.root/'rig.json').read_bytes(),before)
-        self.assertEqual(self.rig.manifest['facial']['eyelids'],[self.binding])
-
-    def test_auto_preserves_compatible_authored_bindings_and_default_no_replace(self):
-        from rig_operations import mutate
-        from rig_models import load_rig
-        original=(self.rig.root/'rig.json').read_bytes()
-        preserved=mutate(self.rig.root,'auto',{'template':'robotic'})
-        self.assertTrue(preserved['preserved_existing_rig'])
-        self.assertEqual((self.rig.root/'rig.json').read_bytes(),original)
-        mutate(self.rig.root,'auto',{'template':'humanoid','replace':True})
-        loaded=load_rig(self.rig.root)
-        self.assertEqual(loaded.manifest['facial']['eyelids'],[self.binding])
-        self.assertEqual(validate_eyelid_bindings(loaded),[self.binding])
-        pose=gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
-        self.assertIn('blink',pose['morphs']['eye-white-left'])
-
-    def test_invalid_facial_replacement_and_inert_morph_edit_reject_before_persistence(self):
-        facial=deepcopy(self.rig.manifest['facial']);facial['eyelids'][0]['mesh']='missing'
-        mesh=self.rig.geometry.by_id()['eye-white-left']
-        changes=[dict(operation='facial',target='face',value=facial),
-                 dict(operation='morph',target=mesh.id,value={'name':'blink','action':'edit',
-                     'assignments':{str(i):[0.,0.,0.] for i in range(len(mesh.positions))}})]
-        before=(self.rig.root/'rig.json').read_bytes()
-        for edit in changes:
-            with self.subTest(operation=edit['operation']),self.assertRaises(RigError):self.correct([edit])
-            self.assertEqual((self.rig.root/'rig.json').read_bytes(),before)
-            self.assertEqual(self.rig.manifest['facial']['eyelids'],[self.binding])
-
-
-class WingSemanticSideTests(unittest.TestCase):
-    def test_imported_ids_preserve_semantic_wing_side_and_deformation(self):
-        positions=np.array([[0.,0.,0.],[1.,0.,0.],[.5,.2,0.]])
-        for side in ('left','right'):
-            role='wing-root.'+side
-            baseline=None
-            for identifier in (role,'imported-wing','misleading.'+('right' if side=='left' else 'left')):
-                skeleton=skeleton_from_heads([dict(id=identifier,role=role,parent=None,
-                    head=[0,0,0],tail=[1,0,0])])
-                skeleton['bones'][0]['rest']['rotation']=[0,0,0,1]
-                validate_skeleton(skeleton)
-                mesh=Mesh('wing',positions.copy(),np.array([[0,1,2]]))
-                skin=SkinWeights('wing',[identifier],np.zeros((3,1),dtype=np.int64),
-                                 np.ones((3,1)),np.eye(4)[None,:,:])
-                rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},Geometry([mesh]),{'wing':skin})
-                outputs=[]
-                for controls in (dict(wing_twist=.7),dict(time=.2,wing_flap=.5,wing_fold=.2,wing_twist=.7)):
-                    pose=appendage_controls(rig,neutral_pose(skeleton),wing_side=side,**controls)
-                    actual=evaluate_deformation(rig,pose)['wing']['positions']
-                    self.assertGreater(np.max(np.abs(actual-positions)),.05)
-                    outputs.append((actual,evaluate_fk(skeleton,pose)[identifier]))
-                if baseline is None:baseline=outputs
-                else:
-                    for expected,actual in zip(baseline,outputs):
-                        with self.subTest(side=side,identifier=identifier):
-                            np.testing.assert_allclose(actual[0],expected[0],atol=1e-12)
-                            np.testing.assert_allclose(actual[1],expected[1],atol=1e-12)
 
 
 class RigSpecializationTests(unittest.TestCase):
@@ -293,6 +77,60 @@ class RigSpecializationTests(unittest.TestCase):
         actual=evaluate_deformation(rig,pose)['wing']['positions']
         np.testing.assert_allclose(actual[:2],positions[:2],atol=1e-12)
         self.assertGreater(abs(actual[2,2]),.05)
+    def test_wing_twist_preserves_length_under_nonuniform_rest_scale_and_parent_transform(self):
+        # Imported frames need not align +Y to the authored length. Parent scale
+        # stays in the world mapping; local scale is applied before the twist.
+        cases=[
+            (None,[0,0,0,1],[2.,1.,1.],[1.,1.,0.]),
+            (None,axis_angle([1,2,3],.4).tolist(),[2.,.7,1.3],[.8,1.1,.4]),
+            (compose([.4,-.3,.2],axis_angle([1,2,3],.6),[1.5,.8,2.]),
+             [0,0,0,1],[2.,.7,1.3],[.8,1.1,.4]),
+            (compose([.4,-.3,.2],axis_angle([1,2,3],.6),[1.4,1.4,1.4]),
+             axis_angle([2,-1,1],.5).tolist(),[2.,.7,1.3],[.8,1.1,.4])]
+        for parent,rotation,scale,direction in cases:
+            with self.subTest(parent=parent is not None,rotation=rotation):
+                parent_world=np.eye(4) if parent is None else parent
+                translation=[0.,0.,0.] if parent is None else [.3,.4,.2]
+                rest=parent_world @ compose(translation,rotation,scale)
+                head=rest[:3,3];frame=parent_world[:3,:3] @ qmatrix(rotation)
+                tail=head+frame @ direction
+                specs=[]
+                if parent is not None:
+                    specs.append(dict(id='body',role='body',parent=None,
+                        head=parent[:3,3].tolist(),tail=(parent[:3,3]+parent[:3,1]).tolist()))
+                specs.append(dict(id='wing-root.left',role='wing-root.left',
+                    parent=None if parent is None else 'body',head=head.tolist(),tail=tail.tolist()))
+                skeleton=skeleton_from_heads(specs)
+                if parent is not None:skeleton['bones'][0]['rest']=decompose(parent)
+                skeleton['bones'][-1]['rest']=dict(translation=translation,rotation=rotation,scale=scale)
+                validate_skeleton(skeleton)
+                positions=np.array([head,tail,head+frame @ [0.,0.,.3]])
+                mesh=Mesh('wing',positions,np.array([[0,1,2]]))
+                weights=SkinWeights('wing',['wing-root.left'],np.zeros((3,1),dtype=np.int64),
+                                    np.ones((3,1)),np.linalg.inv(rest)[None,:,:])
+                rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},
+                             Geometry([mesh]),{'wing':weights})
+                neutral=neutral_pose(skeleton)
+                np.testing.assert_allclose(evaluate_deformation(rig,neutral)['wing']['positions'],
+                                           positions,rtol=0,atol=1e-12)
+                axis=np.asarray(direction)/np.linalg.norm(direction)
+                vectors=np.linalg.solve(frame,(positions-head).T).T
+                for amount in (-1.,0.,.7,1.):
+                    with self.subTest(amount=amount):
+                        pose=appendage_controls(rig,neutral,wing_twist=amount,wing_side='left')
+                        actual=evaluate_deformation(rig,pose)['wing']['positions']
+                        # Independent Rodrigues oracle in the pre-scale rotation
+                        # space, then restore the complete parent world mapping.
+                        angle=-amount*.7
+                        rotated=(vectors*np.cos(angle)+np.cross(axis,vectors)*np.sin(angle)
+                                 +np.outer(vectors @ axis,axis)*(1-np.cos(angle)))
+                        expected=head+rotated @ frame.T
+                        np.testing.assert_allclose(actual,expected,rtol=0,atol=1e-12)
+                        np.testing.assert_allclose(actual[:2],positions[:2],rtol=0,atol=1e-12)
+                        if amount:self.assertGreater(np.linalg.norm(actual[2]-positions[2]),.01)
+                        else:np.testing.assert_allclose(actual,positions,rtol=0,atol=1e-12)
+                self.assertEqual(neutral,neutral_pose(skeleton))
+
     def test_expression_conflicts_and_unavailable_controls_fail(self):
         r=deepcopy(self.humanoid);r.manifest['facial']['expressions']['blink']['incompatible']=['squint']
         r.manifest['facial']['expressions']['squint']=dict(schema_version=1,morphs={'blink':.5},bones={},incompatible=['blink'])
@@ -310,6 +148,41 @@ class RigSpecializationTests(unittest.TestCase):
             for morph in mesh.morphs.values():
                 for values in morph.values():values[:]=0.
         self.assertNotIn('expressive-face',rig_capabilities(r))
+    def test_direction_only_morphs_do_not_admit_expressive_face(self):
+        for semantic in ('NORMAL','TANGENT'):
+            for amount,default in ((1.,0.),(0.,1.)):
+                with self.subTest(semantic=semantic,amount=amount,default=default):
+                    r=deepcopy(self.humanoid)
+                    r.manifest['facial']['expressions']={'blink':dict(
+                        schema_version=1,morphs={'blink':amount},bones={},incompatible=[])}
+                    affected=[mesh for mesh in r.geometry.meshes if 'blink' in mesh.morphs]
+                    self.assertTrue(affected)
+                    for mesh in affected:
+                        mesh.morphs['blink']={
+                            'POSITION':np.zeros_like(mesh.positions),
+                            semantic:np.full_like(mesh.positions,.25)}
+                        mesh.morph_defaults['blink']=default
+                        self.assertTrue(np.any(mesh.morphs['blink'][semantic]))
+                    # Both direction semantics are valid native morph payloads,
+                    # but the native deformation consumer does not apply them.
+                    validate_geometry(r.geometry)
+                    neutral=neutral_pose(r.skeleton)
+                    before=evaluate_deformation(r,neutral,normals=True)
+                    pose=apply_expressions(r,neutral,{'blink':1.})
+                    for mesh in affected:
+                        self.assertEqual(pose['morphs'][mesh.id]['blink'],amount)
+                    after=evaluate_deformation(r,pose,normals=True)
+                    for name,value in before.items():
+                        np.testing.assert_array_equal(after[name]['positions'],value['positions'])
+                        np.testing.assert_array_equal(after[name]['normals'],value['normals'])
+                    self.assertNotIn('expressive-face',rig_capabilities(r))
+                    # brief-frown specifically requires expressive-face in the
+                    # unchanged catalog; this tests capability admission only.
+                    mapped=map_states(r,selected=['brief-frown'])
+                    self.assertEqual(mapped['mapping']['brief-frown']['status'],
+                                     'requires-rig-capability')
+                    self.assertIn('expressive-face',mapped['mapping']['brief-frown']['reason'])
+                    self.assertNotIn('brief-frown',mapped['recipes'])
     def test_expression_on_unweighted_parent_moves_weighted_descendants(self):
         r=deepcopy(self.humanoid);root=r.skeleton['root']
         used={skin.joints[int(j)] for skin in r.weights.values() for j in set(skin.indices[skin.weights>0].tolist())}
@@ -379,3 +252,63 @@ class RigSpecializationTests(unittest.TestCase):
         r=self.humanoid;p=finger_controls(r,neutral_pose(r.skeleton),side='right',curl=.4)
         with self.assertRaises(RigError):mirror_pose(r.skeleton,p)
         mirrored=mirror_pose(r.skeleton,p,approved=True);self.assertIn('index.1.left',mirrored['bones'])
+
+    def test_wing_controls_preserve_fk_and_deformation_when_joint_ids_change(self):
+        specs=[dict(id='body',role='body',parent=None,head=[0,-1,0],tail=[0,0,0])]
+        for side,x in (('left',-1.),('right',1.)):
+            specs.append(dict(id='wing-root.'+side,role='wing-root.'+side,
+                parent='body',head=[x,0,0],tail=[x,1,0]))
+        skeleton=skeleton_from_heads(specs);validate_skeleton(skeleton)
+        rest=evaluate_fk(skeleton);meshes=[];skins={}
+        for side,x in (('left',-1.),('right',1.)):
+            positions=np.array([[x,0.,0.],[x,1.,0.],[x+.2,.5,.2]])
+            meshes.append(Mesh(side,positions,np.array([[0,1,2]])))
+            joint='wing-root.'+side
+            skins[side]=SkinWeights(side,[joint],np.zeros((3,1),dtype=np.int64),
+                                   np.ones((3,1)),np.linalg.inv(rest[joint])[None,:,:])
+        rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},
+                     Geometry(meshes),skins)
+        neutral=neutral_pose(skeleton)
+        before=evaluate_deformation(rig,neutral)
+        renames=[
+            {'wing-root.left':'joint_17','wing-root.right':'joint_29'},
+            {'wing-root.left':'joint.right','wing-root.right':'joint.left'}]
+        controls=[dict(wing_twist=.7),dict(wing_flap=.6,time=.25),
+                  dict(wing_fold=.5),dict(wing_twist=-.4,wing_flap=.3,wing_fold=-.2,time=.25)]
+        for rename in renames:
+            renamed=deepcopy(rig)
+            renamed.skeleton['root']=rename.get(skeleton['root'],skeleton['root'])
+            for bone in renamed.skeleton['bones']:
+                bone['id']=rename.get(bone['id'],bone['id'])
+                bone['parent']=rename.get(bone['parent'],bone['parent'])
+                bone['mirror']=rename.get(bone['mirror'],bone['mirror'])
+            for skin in renamed.weights.values():
+                skin.joints=[rename.get(joint,joint) for joint in skin.joints]
+            validate_skeleton(renamed.skeleton)
+            renamed_neutral=neutral_pose(renamed.skeleton)
+            for side in ('left','right','both'):
+                for control in controls:
+                    with self.subTest(rename=rename,side=side,control=control):
+                        expected_pose=appendage_controls(rig,neutral,wing_side=side,**control)
+                        actual_pose=appendage_controls(renamed,renamed_neutral,wing_side=side,**control)
+                        expected_world=evaluate_fk(skeleton,expected_pose)
+                        actual_world=evaluate_fk(renamed.skeleton,actual_pose)
+                        for joint,world in expected_world.items():
+                            np.testing.assert_allclose(actual_world[rename.get(joint,joint)],
+                                                       world,rtol=0,atol=1e-12)
+                        expected=evaluate_deformation(rig,expected_pose)
+                        actual=evaluate_deformation(renamed,actual_pose)
+                        for mesh in ('left','right'):
+                            np.testing.assert_allclose(actual[mesh]['positions'],
+                                                       expected[mesh]['positions'],rtol=0,atol=1e-12)
+                            if side in (mesh,'both'):
+                                self.assertGreater(np.linalg.norm(actual[mesh]['positions']-
+                                                                 before[mesh]['positions']),.01)
+                            else:
+                                np.testing.assert_allclose(actual[mesh]['positions'],
+                                                           before[mesh]['positions'],rtol=0,atol=1e-12)
+                                joint='wing-root.'+mesh
+                                np.testing.assert_allclose(actual_world[rename[joint]],
+                                                           rest[joint],rtol=0,atol=1e-12)
+            self.assertEqual(renamed_neutral,neutral_pose(renamed.skeleton))
+        self.assertEqual(neutral,neutral_pose(skeleton))

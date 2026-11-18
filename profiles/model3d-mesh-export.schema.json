@@ -52,6 +52,48 @@
         ],
         "additionalProperties": false
       },
+      "patternProperties": {
+        "^source/": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 268435456
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "bytes",
+                "sha256"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "bytes": {
+                  "type": "integer",
+                  "const": 0
+                },
+                "sha256": {
+                  "const": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                }
+              },
+              "required": [
+                "bytes",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
       "minProperties": 1,
       "maxProperties": 4096
     },

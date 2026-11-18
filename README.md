@@ -42,6 +42,10 @@ Deterministic scripts preserve motion, validate provenance, compose the atlas, a
 </tr>
 </table>
 
+## Animation3D foundation
+
+Validate separately versioned animation documents with `python scripts/animation3d.py validate --file FILE`; inspect supported operations with `python scripts/animation3d.py capabilities`. The [foundation guide](references/3d-animation-contracts.md) covers exact rational time, strict contracts and native rig channel sampling. Full timeline, scene evaluation and cinematic rendering remain downstream work.
+
 ## Model3D contract and payload verification
 
 The additive [Model3D foundation](references/model3d-contracts.md) validates strict
@@ -66,6 +70,12 @@ Run `python scripts/model3d.py mesh capabilities` for supported boundaries or
 for eighteen real format roundtrips. Original import bytes remain in exported
 source inventories; fixture checks do not grant production-art approval.
 
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
+
+## Explicit silent video exports
+
+The [silent-video API](references/silent-video.md) encodes exact opaque PNG inventories to independently verified video-only H.264 MP4 or VP9 WebM. It rejects every audio stream, checks actual decoded frames and timestamps, and publishes exclusively after verification. Existing H.264/AAC production review movies retain their audio behavior. This media layer does not claim completed 3D rendering or HDR/EXR delivery.
+
 ## Real 3D rigs and animation
 
 The optional 3D engine imports real GLB/glTF, OBJ or packed Blender models, preserves original assets, constructs editable skeletons, generates normalized skin weights, and evaluates FK, spatial IK, contacts, expressions and animation channels. It includes humanoid, quadruped, six-legged winged, robotic and extensible custom templates; manual corrections, semantic retargeting, local review, animated GLB export and independently reopened Blender files.
@@ -84,7 +94,7 @@ Read the [complete 3D guide](references/3d-rigging.md) for fitting uncertainty, 
 
 The 3D contracts are additive. Existing Codex atlas geometry/timing, 2D profiles/playback, decomposition and the 416-state catalog retain their original contracts. Selected actual clips map to catalog definitions; missing anatomy or animation remains explicit. Blender, WebGL and the optional 3D Python packages are unnecessary for ordinary 2D use.
 
-The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. Scene construction, editing and rendering remain separate unfinished work; the included triangle is an engineering fixture.
+The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. The [Scene3D service](references/scene3d-service.md) adds transactional hierarchy editing, real GLB/glTF import, immutable nested prefabs and complete dependency snapshots through CLI/API. Interactive editing, scene geometry construction and scene rendering remain separate work; included geometry is an engineering fixture.
 
 The [physics integration audit](references/physics-3d-audit.md) records current subsystem ownership, coordinate and timing decisions, and the executed compatibility baseline for future simulation work. No physics solver is implemented by that audit.
 
@@ -152,6 +162,10 @@ python scripts/validate_atlas.py assets/pet/spritesheet.webp
 ```
 
 That check does not recreate generation provenance or prove current app integration. New runs use the review and packaging gates described in [the workflow](references/workflow.md).
+
+## Optional image analysis
+
+[Resumable decomposition analysis](references/decomposition-analysis.md) can run a local OpenCV human face/eye detector or validate externally supplied proposals. It preserves original pixels and pending review. The local detector produces coarse photographic regions, not complete semantic character segmentation; the existing offline manual route remains available.
 
 ## Character state library
 
@@ -416,3 +430,12 @@ The [Director baseline audit](references/director-baseline.md) records the exact
 
 <sub>Imported from <a href="https://github.com/openai/skills">openai/skills</a> · see <a href="LICENSE.txt">LICENSE.txt</a> · art painted by Codex <code>$imagegen</code> · Pip hatched by <code>hatch-pet</code> itself</sub>
 </div>
+
+## Render3D contracts and source snapshots
+
+The additive [Render3D foundation](references/render3d-contracts.md) validates typed
+render requests and freezes native rig or owner-validated Scene3D project source
+closures for later consumption. Scene requests bind the frozen project, scene,
+shot and camera identities. It preserves existing 2D rendering; the planned
+production renderer remains separate unfinished work. See the guide for exact
+commands, ownership boundaries and remaining acceptance gates.

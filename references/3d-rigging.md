@@ -43,7 +43,7 @@ Immutable example fixtures and retained validation evidence preserve their autho
 
 Shared JSON ingestion bounds document size in encoded bytes and nesting, rejects duplicate keys and nonfinite numbers, and reports decoder failures as structured `RIG_JSON` errors. This includes the interpreter's decimal-integer conversion limit; it does not disable or raise that resource limit. String payloads count UTF-8 bytes in bounded chunks before parsing, matching byte-payload admission without allocating a full encoded copy. Invalid raw Unicode encoding produces `RIG_JSON`; JSON escape spelling retains its prior parsing semantics. Existing specific duplicate-key, nonfinite, nesting and size diagnostic codes remain distinct. Invalid input is rejected before a CLI configuration/correction operation persists state.
 
-Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. Its complete version-1 shape and field types are validated independently of its hash; a self-consistent hash cannot make malformed metadata valid. An imported procedural fixture stays a fixture when exported and reimported.
+Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. Its complete version-1 shape and field types are validated independently of its hash. New records store the import scale as a number greater than zero and at most 10,000. Historical records with JSON `true` for unit scale remain readable under their original byte hashes. An imported procedural fixture stays a fixture when exported and reimported.
 
 glTF node admission retains the existing `abs(det(linear)) > 1e-12` admission,
 and additionally admits smaller determinants when the determinant after dividing
@@ -141,7 +141,7 @@ python scripts/rig.py solve-ik --run-dir output/character --chain arm.right --ta
 
 The programmatic facial layer mixes authored morph/bone expressions with explicit intensities and incompatibilities, resets to neutral, and aims existing eye joints with vergence and optional head follow. Finger controls articulate existing segmented finger bones. Tail and wing controls use bounded deterministic parameters; secondary tail motion uses an explicit seed. Missing anatomy raises an unavailable-capability error.
 
-`facial-controls --run-dir RUN` reports availability for neutral, smile, sadness, anger, surprise, fear, squint, blink, independent winks, brows, jaw and mouth-corner controls, plus the 15-symbol viseme vocabulary `sil PP FF TH DD kk CH SS nn RR aa E ih oh ou`. Only existing labelled morphs are mapped; the report explicitly identifies unavailable controls. Author actual targets with `create_morph_target` / `edit_morph_target`, or a `morph` correction containing exact topology-matched deltas/positions. A target-count change invalidates affected weight-animation channels. Qualified expression keys such as `eye-white-left::blink` provide independent left/right control. Resetting expressions clears their controlled morphs/bones; `reset=False` applies a partial overlay. Passing `None` to `gaze_at` releases gaze back to neutral. Optional `facial.eyelids` bindings couple an explicitly named eye joint to an exact mesh/morph channel. Each binding specifies `eye`, `mesh`, `morph`, `up_weight`, `down_weight`, `up_radians` and `down_radians`; gaze interpolates from the authored default toward those endpoint weights using the final constrained eye pitch relative to its parent. The response saturates at the supplied angular limits. Bindings require existing configured eyes and nonzero morph geometry, and two eyes cannot own the same morph channel. Releasing gaze removes only those owned morph overrides and restores their authored defaults. No eyelid anatomy or relationship is inferred; rigs without bindings retain their existing gaze behavior. Hash-bound corrections rename eyelid eye references alongside their eye joints and remove bindings when the referenced eye or exact mesh/morph is removed. Automatic skeleton replacement also removes bindings for eyes absent from the new skeleton and validates all surviving relationships before saving. Final correction admission validates surviving eyelid relationships before saving, so an invalid facial replacement or an edit that makes a bound morph inert rejects without replacing the active rig.
+`facial-controls --run-dir RUN` reports availability for neutral, smile, sadness, anger, surprise, fear, squint, blink, independent winks, brows, jaw and mouth-corner controls, plus the 15-symbol viseme vocabulary `sil PP FF TH DD kk CH SS nn RR aa E ih oh ou`. Only existing labelled morphs are mapped; the report explicitly identifies unavailable controls. Author actual targets with `create_morph_target` / `edit_morph_target`, or a `morph` correction containing exact topology-matched deltas/positions. A target-count change invalidates affected weight-animation channels. Qualified expression keys such as `eye-white-left::blink` provide independent left/right control. Resetting expressions clears their controlled morphs/bones; `reset=False` applies a partial overlay. Passing `None` to `gaze_at` releases gaze back to neutral.
 
 Sockets use actual evaluated bone transforms and local offsets. Object-relative grasping solves both endpoint position and orientation while accounting for the hand socket. Attach/detach can preserve world position. A handoff requires the current owner and measured world-space contact with the destination hand. Ownership is single-valued; a claimed contact never moves an unrelated prop implicitly.
 
@@ -168,7 +168,7 @@ python scripts/rig.py state-map --run-dir output/character --pack PACK_ID
 python scripts/rig.py export --run-dir output/character --format frames --clip walk --destination output/walk-frames
 ```
 
-Mapping calls the actual unchanged catalog resolver and anatomy/prop compatibility rules. Definitions with no implemented channels report `requires-animation`; absent anatomy reports `requires-rig-capability`; executable unreviewed recipes report `needs-review`. Priority, interruption, recovery, cancellation and reduced-motion metadata are retained separately. No 3D clip is generated merely because a catalog definition exists. The optional Python `rig_state_runtime.RigStateRuntime` executes selected recipes using caller-supplied monotonic seconds: construct it with a rig, initial state, `recipes` and `selected`, then call `evaluate(now)`, `request(state, now)` or `cancel(now)`. It validates existing clips, honors legal transitions and incoming priority/interruption policy, coalesces repeats, advances completion edges at exact clip boundaries, and reports unavailable completion targets while holding the last pose. A bounded transition count fails atomically; requests rejected after an automatic completion restore the prior runtime state. Embedded root motion accumulates across clip boundaries and repeated recipes even when clips use different authored origins; in-place clips retain their declared cycle-reset behavior. A transition captures the current evaluated pose so an interrupted crossfade remains continuous, including morphs returning to authored defaults. Cancellation explicitly requires a selected executable `static-neutral` recipe. Returned poses drive the native deformation evaluator. This in-memory runtime does not persist jobs, dispatch events, apply reduced-motion preferences or provide visual approval; reconstruct it after any rig/clip change, which invalidates its hash-bound mapping. The original `running` state still means task processing.
+Mapping calls the actual unchanged catalog resolver and anatomy/prop compatibility rules. Definitions with no implemented channels report `requires-animation`; absent anatomy reports `requires-rig-capability`; executable unreviewed recipes report `needs-review`. Priority, interruption, recovery, cancellation and reduced-motion metadata are retained separately. No 3D clip is generated merely because a catalog definition exists. The original `running` state still means task processing.
 
 The transparent frame exporter renders actual evaluated triangles using a fixed shared camera and scene bounds, retains per-frame seconds/duration/source hashes, and provides an animated WebP preview. CPU evidence rendering shades material base colors; use Three.js or Blender for texture-complete inspection. The `frames.json` bridge declares derived origin and fixture/review status. Feed selected frames through the existing explicit image/frame import workflow and its normal profile, atlas and review gates. The 3D bridge does not change Codex geometry or automatically grant 2D artwork approval.
 
@@ -185,11 +185,9 @@ python scripts/rig.py restore --file output/character.zip --destination output/r
 
 GLB/glTF exports contain actual skins, JOINTS/WEIGHTS attributes, column-major inverse-bind matrices, parented joint nodes, materials/textures/morph targets and executable channels. Both GLB and embedded-buffer `.gltf` are supported. The latter is self-contained for atomic promotion. IK controls, constraint solvers and contact systems remain native authoring information; the portable export carries evaluated results.
 
-Blender export imports the real animated GLB, retains editable armatures/vertex groups/skin modifiers/materials/shape keys and named action slots, adds target/pole controls and socket definitions, saves `.blend`, then reopens it in a separate process. The adapter compares independently evaluated joint and vertex samples and re-exports a GLB. Editable attachment empties preserve the complete native socket transform (translation, XYZW rotation and scale), with explicit canonical-to-Blender conversion and the Blender bone-tail parenting offset. Reopened samples include each expected socket matrix; missing mesh, bone or socket samples fail verification. The optional `max_socket_transform_error` receipt field records the largest absolute matrix-component difference across sampled poses. Baked playback is the default. Enable the armature's `hatch_live_ik` property to edit live target controls. Native limit types and exact socket semantics are retained in the embedded manifest; not every native control has an equivalent Blender authoring constraint. See the explicit limitations before round-tripping authoring controls.
+Blender export imports the real animated GLB, retains editable armatures/vertex groups/skin modifiers/materials/shape keys and named action slots, adds target/pole controls and socket definitions, saves `.blend`, then reopens it in a separate process. The adapter compares independently evaluated joint and vertex samples and re-exports a GLB. Baked playback is the default. Enable the armature's `hatch_live_ik` property to edit live target controls. Native limit types and exact socket semantics are retained in the embedded manifest; not every native control has an equivalent Blender authoring constraint. See the explicit limitations before round-tripping authoring controls.
 
 `render --engine blender` produces an actual Cycles CPU render of the evaluated pose through the fixed worker, with transparent alpha, a fitted camera and the imported materials. The Python API `render_blender_preview(rig, destination, clip='walk', times=[0, .65], blend_path=...)` can render multiple samples from an existing saved project with one camera fitted across all samples. It retains each frame's time/hash and the exact `.blend` hash. Dimensions, sample count, estimated scene buffers and subprocess time are bounded. Saved-project changes should be reviewed against their own recorded hash.
-
-Blender export and preview creation require a new destination. They stage and validate complete files before exclusive publication, preserving existing files and racing destinations. For verified Blender exports, the verified round-trip GLB is published first and the `.blend` file last as the completion point; a failed final publication or a process killed between the two publications can leave an independently verified sidecar without a `.blend`. It is retained as evidence, and retry uses a new destination. No rollback unlinks a public path that another writer might have replaced. When passing `blend_path` to `render_blender_preview`, also pass `blend_sha256` from the successful export receipt; changed or unbound bytes are rejected before Blender starts. Supplied Blender projects are read through the shared descriptor-bound payload reader into a bounded private snapshot; the embedded native rig signature must match before rendering. The preview receipt hashes exactly that snapshot. Preview directories publish with one exclusive rename. PNG previews are decoded and checked for the requested dimensions and RGBA format before publication.
 
 The independent checks have separate scopes: Khronos validates glTF semantics; Blender verifies editability and independently evaluated deformation; Three.js loads the file and evaluates real skinned vertices while browser automation exercises playback/overlays. A successful self-import alone is not independent evidence.
 
@@ -370,6 +368,62 @@ and its requested orientation is within `1e-5` radians. A reachable position can
 therefore have `reachable: true` and `converged: false` when a joint limit prevents
 the orientation. Contact and grasp reports retain this angular residual.
 
+FK-to-IK matching accepts fully folded chains whose endpoint coincides with
+their root, using the already evaluated first joint position as its matching pole.
+A matching pole preserves an already closed authoritative seed and its evaluated
+joint transforms and bound geometry. Ordinary matches retain their original
+reach-based pole distance. Closure is tested within `1e-9` meters, the matched
+endpoint must also meet the chain's residual tolerance, and normalized pole/first
+segment directions must differ by at most eight machine epsilons in unit-vector
+distance. Comparing the vector difference avoids a dot product rounding a
+measurable small pole change to an apparent exact match. A finite pole
+direction must exceed `1e-9` meters. An explicitly changed pole reorients a closed
+seed's existing shape, including backfolded multisegment chains with degenerate
+neighbor axes. At the equal-length two-segment fold, either solver can also
+construct the elbow along that pole from an open seed.
+Runtime segment-length checks, joint limits, endpoint orientation, actual
+residuals and bounded convergence reporting remain authoritative.
+
+Twelve independent boundary tests exercise ordinary near-folded matching,
+small segments at large world translations, both explicit backfolded pole
+directions, actual blended skinning, length limits and the native orientation/
+constraint pass. They produced four failing methods on the previous candidate
+and passed all twelve after the correction on Linux/Python 3.12.14 (1.845s,
+exit 0, zero skips). The original thirteen #348 test methods remain unchanged.
+This is local numerical evidence; independent review and exact published-head
+checks are required before integration.
+
+The shared quaternion-between-directions helper preserves measurable small
+angles instead of snapping near-parallel directions to identity. Near opposite
+directions it uses the cross-product magnitude and `atan2`, avoiding cancellation
+in `1 + dot`; exactly opposite directions retain a stable perpendicular axis.
+Both the folded rotation and its ordinary chain-orientation pass use this same
+native helper. Four additional independently authored methods cover small pole
+changes, near-opposite changes, exact matches and controls at unit and 1,000 m
+segment scales, including translated roots. Six subtests failed on published
+`f19906ea` despite its 81-test gate passing. The corrected helper passed these
+four methods together with the twelve folded boundaries and fourteen native
+math tests: 30 tests in 1.165 seconds, exit 0, zero skips. This is synthetic
+numerical evidence, not an artistic or production acceptance claim.
+
+Independent re-review of that correction identified cancellation in oblique
+near-opposite cross products, including a valid scaled-pole control that had
+worked on the earlier source. The negative-dot hemisphere now computes its axis
+as `cross(a, a + b)` to avoid subtracting nearly equal products, with a stable
+perpendicular fallback only at machine-roundoff scale. Two further independent
+methods retain the exact oblique-opposite case and genuine angular differences
+of `1e-8` and `1e-12` radians, with a `1e-5` control. All six pole-precision
+methods, twelve folded boundaries and fourteen native math tests passed after
+this correction: 32 tests in 1.211 seconds, exit 0, zero skips. Earlier failed
+cases remain in the gate and in source history.
+
+Ten further independent methods cover explicit positive and negative pole changes
+of 1e-6 and 1e-7 radians through both declared and override inputs at 1 m and
+1000 m segment lengths. Cartesian joint and actual blended-skin oracles detect
+changes hidden by a normalized dot product. Four methods failed on 5e8d6df2
+(16 failing subcases); all ten pass with the direct unit-vector comparison,
+including exact-match, orientation, joint-limit and runtime-length controls.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
@@ -377,6 +431,24 @@ silently pinned. These numerical checks do not establish visual or anatomical
 approval. Likewise, a neutral-only or zero-effect expression catalog does not
 admit states requiring an expressive face: a nonzero authored morph deformation
 or a changed weighted-bone transform must exist.
+
+## Ordered IK orientation evaluation
+
+Native IK evaluates constraints in the canonical parent/target dependency order.
+When an explicit or chain-inherited endpoint orientation is required, each
+analytical pass or bounded FABRIK iteration applies the prefix before endpoint
+consumers, converts the world goal in the finalized parent frame, then applies
+the complete remaining ordered suffix. Endpoint limits and direct, transitive,
+hierarchy and aim consumers therefore observe the same finalized pose. Each
+constraint runs once per solver pass; unrelated fractional constraints are not
+replayed. Position-only solving retains its ordered constraint pass.
+
+`tests/test_rig_controls.py` covers explicit and inherited goals, both solvers,
+endpoint limits and final residuals, dependent consumers, constrained parents,
+multiple iterations, invalid dependency graphs and fractional controls. These
+are synthetic numerical regressions; their source does not establish an
+executed pass, visual approval or complete rig acceptance. Broader contact
+validation must also assess required orientation outcomes (tracked in #496).
 
 Morph retargeting preserves a matching source/target mesh ID before considering a
 unique name match. Use `mesh-id::morph-name` keys and values in `morph_mapping` to
@@ -390,9 +462,15 @@ around each wing bone's local length axis) and `wing_side` (`both`, `left` or
 `right`). Existing joint constraints still apply. They are available through
 `rig_facial.appendage_controls` and the `appendages` object in a pose-operation
 request. An unsupported requested side fails rather than inventing a wing. A
-one-sided pose does not automatically mirror to the other side. Wing selection and rotation direction use anatomical roles, so imported joint IDs do not need side suffixes and renaming an ID does not change the motion. Finger spread and
+one-sided pose does not automatically mirror to the other side. Finger spread and
 tail phase follow parent-to-child hierarchy, so reordering the serialized bone
 array does not change those authored motions.
+
+For imported wing joints, the twist axis follows the authored head-to-tail
+direction in the space where rotation acts after local rest scale. The full
+parent transform is removed before restoring that local scale. Pure twist
+therefore preserves the authored endpoints under nonuniform local rest scale;
+numerical regression cases also cover imported rotations and transformed parents.
 
 State-map discovery includes a `work_estimate` for one export cycle of each unique
 existing clip used by the selected executable recipes. It reports clip duration,

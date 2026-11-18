@@ -18,7 +18,8 @@ from pathlib import Path
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, finite_json
+from portable_paths import existing_relative
+from rig_errors import RigError, RoundedJsonInteger, decode_json, finite_json, normalize_root, open_payload, open_payload_at, owned_directory_fd
 
 MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_FILES = 4096
@@ -120,10 +121,13 @@ def definitions():
                           influence={'type': 'number', 'minimum': 0, 'maximum': 1}))
     attachment = obj(dict(owner=ID, socket=ID, offset=ref('transform')))
     override = obj(dict(slot=ID, material=material_ref))
-    node_override = obj(dict(node=ID, transform=ref('transform'), visible=BOOL), ['node'])
+    node_override = obj(dict(node=ID, transform=ref('transform'), visible=BOOL,
+                             material_overrides=arr(override, maximum=128)), ['node'])
     instance_overrides = obj(dict(parameters=mapping({'type': ['number', 'string', 'boolean'], 'maxLength': 4096}),
                                  materials=mapping(material_ref),
-                                 nodes=arr(node_override, maximum=256)))
+                                 nodes=arr(node_override, maximum=256),
+                                 children=arr(ref('node'), maximum=256)),
+                             ['parameters', 'materials', 'nodes'])
     node = obj(dict(id=ID, name=TEXT,
         type=enum('root', 'group', 'mesh_instance', 'skinned_character', 'static_prop',
                   'animated_prop', 'terrain', 'procedural_geometry', 'camera', 'light',
@@ -133,7 +137,8 @@ def definitions():
         prefab=typed_ref('scene3d-prefab'), prefab_overrides=instance_overrides, material_overrides=arr(override, maximum=128),
         animation_bindings=arr(ref('binding'), maximum=256), constraints=arr(constraint, maximum=256),
         attachment=attachment, bounds=nullable(ref('bounds')), locked=BOOL, selectable=BOOL,
-        render=obj(dict(visible=BOOL, cast_shadow=BOOL, receive_shadow=BOOL)),
+        render=obj(dict(visible=BOOL, cast_shadow=BOOL, receive_shadow=BOOL, camera_visible=BOOL),
+                   ['visible', 'cast_shadow', 'receive_shadow']),
         source=nullable(ref('file')), metadata=meta, billboard=BOOL,
         camera=obj(dict(projection=enum('perspective', 'orthographic'), near=POS, far=POS,
                         vertical_fov=POS, orthographic_height=POS)),
@@ -154,18 +159,26 @@ def definitions():
     world = obj(dict(coordinate_system={'const': COORDINATES},
                      background=vec, exposure=NUM, environment=nullable(typed_ref('texture', 'scene3d-asset')),
                      metadata=meta))
-    collection = obj(dict(id=ID, name=TEXT, visible=BOOL))
+    collection = obj(dict(id=ID, name=TEXT, visible=BOOL, editor_visible=BOOL,
+                          render_visible=BOOL, locked=BOOL), ['id', 'name', 'visible'])
     scene = base('scene', dict(name=TEXT, description=TEXT, revision=integer(),
         coordinate_system={'const': COORDINATES}, roots=ids, nodes=arr(ref('node'), 1, MAX_NODES),
         world=world, collections=arr(collection, maximum=256), layers=arr(collection, maximum=64),
         cameras=ids, lights=ids, recipes=arr(ref('file'), maximum=256),
         dependencies=arr(ref('reference')), bounds=nullable(ref('bounds')), shots=ids,
         continuity=arr(ref('file'), maximum=256), metadata=meta, provenance=ref('provenance')))
-    prefab = base('prefab', dict(name=TEXT, roots=ids, nodes=arr(ref('node'), 1, MAX_NODES),
+    prefab_fields = dict(name=TEXT, roots=ids, nodes=arr(ref('node'), 1, MAX_NODES),
         parameters=mapping({'type': ['number', 'string', 'boolean'], 'maxLength': 4096}),
         material_slots=ids, sockets=ids,
         overrides=arr(node_override, maximum=256), dependencies=arr(ref('reference')),
-        provenance=ref('provenance')))
+        provenance=ref('provenance'))
+    prefab_required = ['schema_version', 'kind', 'id', 'version', *prefab_fields]
+    prefab_fields.update(parameter_bindings=arr(obj(dict(parameter=ID, node=ID,
+        property=enum('translation', 'rotation', 'scale', 'visible'), component=integer(0, 3)),
+        ['parameter', 'node', 'property']), maximum=256),
+        collections=arr(collection, maximum=256), layers=arr(collection, maximum=64))
+    prefab = base('prefab', prefab_fields)
+    prefab['required'] = prefab_required
     asset = base('asset', dict(name=TEXT,
         asset_type=enum('mesh', 'character', 'prop', 'terrain', 'material', 'texture', 'environment'),
         content=ref('file'), source=ref('file'), provenance=ref('provenance'),
@@ -173,11 +186,21 @@ def definitions():
         pivot=vec, meshes=arr(ref('file')), materials=arr(material_ref),
         bounds=nullable(ref('bounds')), collision=nullable(ref('file')),
         sockets=arr(obj(dict(id=ID, transform=ref('transform'))), maximum=256),
-        components=mapping(ids), skeleton=nullable(typed_ref('hatch-3d-rig')),
+        components=mapping(arr(reference['properties']['id'], maximum=MAX_NODES, unique=True)),
+        skeleton=nullable(typed_ref('hatch-3d-rig')),
         animations=arr(clip_ref), lods=arr(typed_ref('scene3d-asset'), maximum=16),
         dependencies=arr(ref('reference')), resources=obj(dict(vertices=integer(0, 1000000),
         triangles=integer(0, 2000000), bytes=integer(1, MAX_TOTAL_BYTES))),
         validation=arr(ref('file')), review=ref('review')))
+    # Optional canonical mapping preserves compatibility with authored assets that
+    # predate native primitive projection. Original and normalized indexes differ.
+    material_primitive = obj(dict(mesh=reference['properties']['id'], encoding=enum('normalized-glb', 'obj'),
+        source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
+        source_material_index=nullable(integer(0, 65535)),
+        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'type': 'integer', 'const': 0})))
+    asset['properties']['material_bindings'] = arr(obj(dict(
+        slot=ID, material_index=nullable(integer(0, 65535)),
+        primitives=arr(material_primitive, minimum=1, maximum=10000))), minimum=1, maximum=65536)
     animation = base('animation', dict(duration_frames=integer(1, 1_000_000), fps=ref('rate'),
         tracks=arr(ref('track'), maximum=4096), bindings=arr(ref('binding'), maximum=256),
         dependencies=arr(ref('reference')), provenance=ref('provenance')))
@@ -240,16 +263,10 @@ def validator(kind):
 
 def portable_path(value):
     """Canonical portable spelling; no aliases, traversal, drive or device paths."""
-    require(isinstance(value, str) and 0 < len(value) <= 1024, 'Invalid path.')
-    _unicode_scalars(value)
-    require(unicodedata.normalize('NFC', value) == value, 'Paths must use NFC Unicode.')
-    require(not re.search(r'[\\:\x00-\x1f<>"|?*]', value), 'Path contains a nonportable character.')
-    parts = value.split('/')
-    for part in parts:
-        require(part not in ('', '.', '..') and not part.startswith(' ') and not part.endswith((' ', '.')), 'Noncanonical path component.')
-        require(not re.match(r'^(CON|CONIN[$]|CONOUT[$]|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(?:\.|$)', part, re.I),
-                'Windows device path is unsupported.')
-    return value
+    try:
+        return existing_relative(value, profile='scene3d')
+    except ValueError as exc:
+        raise RigError('SCENE3D_CONTRACT', str(exc), stage='scene3d') from exc
 
 
 def _typed_values(value, schema):
@@ -504,6 +521,10 @@ def _schema_shape(value, schema):
 
 def _normalize_integers(value, schema, path='$'):
     """Normalize declared local integer positions in an already copied tree."""
+    if isinstance(value, RoundedJsonInteger):
+        # Only shot FPS uses its original wire precision. Other numeric fields
+        # retain the decoder's ordinary float behavior and type.
+        value = float(value)
     if '$ref' in schema:
         schema = definitions()[schema['$ref'].rsplit('/', 1)[-1]]
     if schema.get('type') == 'integer':
@@ -533,6 +554,11 @@ def validate_document(value, kind=None):
         require(isinstance(value, dict) and value.get('kind') in MANIFEST_KINDS, 'Unknown scene3d document kind.')
         kind = value['kind'][8:]
     checker = validator(kind)
+    rate = value.get('fps') if kind == 'shot' and isinstance(value, dict) else None
+    if isinstance(rate, dict):
+        for name in ('numerator', 'denominator'):
+            require(not isinstance(rate.get(name), RoundedJsonInteger),
+                    '$.fps.' + name + ': expected an exact integer-valued JSON number.')
     value = _normalize_integers(deepcopy(value), ref(kind))
     error = next(checker.iter_errors(value), None)
     require(error is None, '' if error is None else '.'.join(map(str, error.absolute_path)) + ': ' + error.message)
@@ -567,6 +593,26 @@ def validate_document(value, kind=None):
                     'Prefab sockets must reference socket nodes.')
             _unique(value['overrides'], 'prefab override', lambda x: x['node'])
             require(all(o['node'] in nodes for o in value['overrides']), 'Dangling prefab override.')
+            bindings = value.get('parameter_bindings', [])
+            _unique(bindings, 'prefab parameter/property binding',
+                    lambda b: (b['node'], b['property'], b.get('component')))
+            for binding in bindings:
+                require(binding['parameter'] in value['parameters'] and binding['node'] in nodes,
+                        'Prefab parameter binding references a missing parameter or node.')
+                parameter = value['parameters'][binding['parameter']]
+                if binding['property'] == 'visible':
+                    require('component' not in binding and type(parameter) is bool,
+                            'Visibility parameter bindings need a boolean and no component.')
+                else:
+                    size = 4 if binding['property'] == 'rotation' else 3
+                    require(type(parameter) in (int, float) and 'component' in binding
+                            and binding['component'] < size,
+                            'Transform parameter bindings need numeric values and a valid explicit component.')
+            for field in ('collections', 'layers'):
+                if field in value:
+                    declared = _unique(value[field], 'prefab ' + field, lambda item: item['id'])
+                    require(all(set(n[field]) <= declared for n in value['nodes']),
+                            'Prefab membership is absent from its declared inventory.')
     elif kind in ('shot', 'animation'):
         _timing(value)
         if kind == 'shot' and 'camera' in value['camera_overrides']:
@@ -578,6 +624,26 @@ def validate_document(value, kind=None):
             require(c['start_frame'] < c['end_frame'] <= value['duration_frames'], 'Invalid temporal constraint interval.')
             require(c['target'] != c['constraint']['target'], 'Self-referential temporal constraint.')
     elif kind == 'asset':
+        bindings = value.get('material_bindings', [])
+        _unique(bindings, 'native material slot', lambda x: x['slot'])
+        _unique(bindings, 'native material index', lambda x: x['material_index'])
+        primitives = [p for b in bindings for p in b['primitives']]
+        _unique(primitives, 'native material mesh', lambda x: x['mesh'])
+        _unique([p for p in primitives if p['encoding'] == 'normalized-glb'],
+                'normalized material primitive', lambda x: x['normalized_mesh'])
+        for binding in bindings:
+            for p in binding['primitives']:
+                require((p['encoding'] == 'normalized-glb' and p['source_mesh'] is not None and
+                         p['normalized_mesh'] is not None and p['normalized_primitive'] == 0 and
+                         binding['material_index'] is not None) or
+                        (p['encoding'] == 'obj' and p['source_mesh'] is None and
+                         p['normalized_mesh'] is None and p['normalized_primitive'] is None and
+                         p['source_material_index'] is None and binding['material_index'] is None),
+                        'Material projection indexes disagree with its geometry encoding.')
+        require(all(b['primitives'] for b in bindings), 'Material slots need actual primitive bindings.')
+        component_meshes = {m for meshes in value['components'].values() for m in meshes}
+        require(not bindings or {p['mesh'] for p in primitives} == (component_meshes or {value['id']}),
+                'Material bindings must cover exactly the native component meshes.')
         _unique(value['sockets'], 'asset socket', lambda x: x['id'])
         require(value['review']['status'] == 'unreviewed' or bool(value['review']['receipts']),
                 'A review status needs retained evidence receipts.')
@@ -632,7 +698,7 @@ def read_document(path):
     with Path(path).open('rb') as stream:
         data = stream.read(MAX_DOCUMENT_BYTES + 1)
     require(len(data) <= MAX_DOCUMENT_BYTES, 'Document exceeds 16 MiB.')
-    return validate_document(decode_json(data))
+    return validate_document(decode_json(data, mark_rounded_integers=True))
 
 
 def load_project(root, name='project.json'):
@@ -640,9 +706,34 @@ def load_project(root, name='project.json'):
 
     This is not a transaction or a sandbox against a malicious concurrent writer.
     Later workers must revalidate input hashes at their own admission boundary.
+    Explicit internal directory capabilities retain their descriptor authority;
+    dependency reads never resolve that authority into a replaceable pathname.
     """
-    root = Path(root).resolve(strict=True)
+    root = normalize_root(root)
     require(root.is_dir(), 'Project root must be a directory.')
+
+    def file_size(path):
+        target = root
+        for part in path.split('/'):
+            target = target / part
+            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
+            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
+            # Resolve only this containment comparison, never the authority used
+            # for opening files below. Registered descriptor roots stay pinned.
+            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
+        require(target.is_file(), 'Missing regular dependency: ' + path)
+        return target.stat().st_size
+
+    return _load_project(name, lambda path: open_payload(root, path, profile='scene3d'), file_size)
+
+
+def load_project_at(root_fd, name='project.json'):
+    """Verify the project and its closure relative to a caller-held directory."""
+    with owned_directory_fd(root_fd) as descriptor:
+        return _load_project(name, lambda path: open_payload_at(descriptor, path, profile='scene3d'))
+
+
+def _load_project(name, open_file, file_size=None):
     documents, inventory, identities, edges, aliases, payloads = {}, {}, {}, {}, {}, {}
     total = 0
     budgets = dict(max_files=MAX_FILES, max_bytes=MAX_TOTAL_BYTES, max_nodes=MAX_NODES, max_frames=1_000_000)
@@ -653,20 +744,19 @@ def load_project(root, name='project.json'):
         folded = unicodedata.normalize('NFC', path).casefold()
         require(folded not in aliases or aliases[folded] == path, 'Portable path alias collision.')
         aliases[folded] = path
-        target = root
-        for part in path.split('/'):
-            target = target / part
-            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
-            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
-            require(target.resolve().is_relative_to(root), 'Dependency resolves outside the project root.')
-        require(target.is_file(), 'Missing regular dependency: ' + path)
-        size = target.stat().st_size
-        require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+        size = file_size(path) if file_size is not None else None
+        if size is not None:
+            require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
         require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
         digest = hashlib.sha256()
         observed = 0
         chunks = []
-        with target.open('rb') as stream:
+        with open_file(path) as (stream, opened):
+            if size is None:
+                size = opened.st_size
+                require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+            else:
+                require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
             while True:
                 chunk = stream.read(min(1024*1024, budgets['max_bytes'] - total + 1))
                 if not chunk:
@@ -706,7 +796,8 @@ def load_project(root, name='project.json'):
                     _legacy_reference(payload, expected)
                 return
         require(path.endswith('.json'), 'Scene3D manifests must use .json filenames.')
-        document = validate_document(decode_json(payload))
+        is_shot = expected is not None and expected.get('kind') == 'scene3d-shot'
+        document = validate_document(decode_json(payload, mark_rounded_integers=is_shot))
         if expected and expected.get('kind') in MANIFEST_KINDS:
             _reference_identity(document, expected)
         require(depth == 0 or document['kind'] != 'scene3d-project', 'Nested Scene3D project manifests are unsupported.')
@@ -737,20 +828,25 @@ def load_project(root, name='project.json'):
         require((reference['id'], reference['version'], reference['path'], reference['sha256']) in registered_assets,
                 'Project character must be registered in project assets.')
         require(documents[reference['path']]['asset_type'] == 'character', 'Project character reference must identify a character asset.')
+    def effective_node_context(graph):
+        # Distinct effective variants have independent local ID scopes.
+        local_context = dict(seen=set(),checks=binding_context['checks'])
+        for node in graph['nodes']:
+            for binding in node['animation_bindings']:
+                require(binding['end_frame'] <= budgets['max_frames'], 'Node binding exceeds project frame budget.')
+                _binding_context(binding,graph,documents,local_context)
+            if 'asset' in node:
+                asset = documents[node['asset']['path']]
+                require(asset['asset_type'] not in ('material','texture'), 'Geometry node references a non-geometric asset.')
+                require(node['type'] != 'skinned_character' or asset['asset_type'] == 'character',
+                        'Skinned character must reference a character asset.')
+        binding_context['checks'] = local_context['checks']
     for d in documents.values():
         if d['kind'] in ('scene3d-scene', 'scene3d-prefab'):
-            require(len(d['nodes']) <= budgets['max_nodes'], 'Scene/prefab exceeds project node budget.')
-            for node in d['nodes']:
-                for binding in node['animation_bindings']:
-                    require(binding['end_frame'] <= budgets['max_frames'], 'Node binding exceeds project frame budget.')
-                    _binding_context(binding, d, documents, binding_context)
-                if 'prefab_overrides' in node:
-                    _prefab_overrides(node['prefab_overrides'], documents[node['prefab']['path']])
-                if 'asset' in node:
-                    asset = documents[node['asset']['path']]
-                    require(asset['asset_type'] not in ('material', 'texture'), 'Geometry node references a non-geometric asset.')
-                    require(node['type'] != 'skinned_character' or asset['asset_type'] == 'character',
-                            'Skinned character must reference a character asset.')
+            evidence = validate_prefab_instances(d,lambda r:documents[r['path']],
+                max_nodes=budgets['max_nodes'],node_context=effective_node_context)
+            require(d['kind'] != 'scene3d-scene' or not evidence['fixture'] or d['provenance']['fixture'],
+                    'Nested fixture prefab provenance must propagate to its consuming graph.')
         elif d['kind'] in ('scene3d-shot', 'scene3d-animation'):
             require(d['duration_frames'] <= budgets['max_frames'], 'Timeline exceeds project frame budget.')
         if d['kind'] == 'scene3d-scene' and d['world']['environment'] is not None:
@@ -844,6 +940,13 @@ def _prefab_overrides(overrides, prefab):
     require(set(overrides['materials']) <= set(prefab['material_slots']), 'Unknown prefab instance material slot.')
     ids = {n['id'] for n in prefab['nodes']}
     require(all(o['node'] in ids for o in overrides['nodes']), 'Unknown prefab instance node override.')
+    children = overrides.get('children', [])
+    child_ids = _unique(children, 'optional prefab child ID', lambda n: n['id'])
+    require(not child_ids & ids, 'Optional prefab child collides with a source node ID.')
+    if children:
+        combined = prefab['nodes'] + children
+        roots = [n['id'] for n in combined if n['parent'] is None]
+        _graph(combined, roots)
 
 
 def _legacy_reference(payload, expected):
@@ -859,6 +962,135 @@ def _legacy_reference(payload, expected):
 def _reference_identity(document, expected):
     require(all(document[k] == expected[k] for k in ('id', 'version', 'kind')),
             'Reference kind/identity/version does not match actual manifest.')
+
+
+def effective_prefab(source, overrides):
+    """Compose validated defaults and overrides without changing source bytes."""
+    source = validate_document(source, 'prefab')
+    from jsonschema import Draft202012Validator
+    finite_json(overrides)
+    overrides = _normalize_integers(deepcopy(overrides), definitions()['node']['properties']['prefab_overrides'])
+    errors = Draft202012Validator({'$defs': definitions(),
+        '$ref': '#/$defs/node/properties/prefab_overrides'}).iter_errors(overrides)
+    require(next(errors, None) is None, 'Invalid typed prefab override.', 'SCENE3D_PREFAB_OVERRIDE')
+    _prefab_overrides(overrides, source)
+    result = deepcopy(source)
+    nodes = {n['id']: n for n in result['nodes']}
+    for override in result['overrides']:
+        for key, value in override.items():
+            if key != 'node':
+                nodes[override['node']][key] = deepcopy(value)
+    parameters = {**result['parameters'], **overrides['parameters']}
+    for binding in result.get('parameter_bindings', []):
+        value = parameters[binding['parameter']]
+        target = nodes[binding['node']]
+        if binding['property'] == 'visible':
+            target['visible'] = value
+        else:
+            target['transform'][binding['property']][int(binding['component'])] = value
+    covered = set()
+    for target in nodes.values():
+        for material in target['material_overrides']:
+            if material['slot'] in overrides['materials']:
+                material['material'] = deepcopy(overrides['materials'][material['slot']])
+                covered.add(material['slot'])
+    require(covered == set(overrides['materials']), 'An exposed material slot has no authored node binding.',
+            'SCENE3D_PREFAB_OVERRIDE')
+    for override in overrides['nodes']:
+        for key, value in override.items():
+            if key != 'node':
+                nodes[override['node']][key] = deepcopy(value)
+    result['nodes'].extend(deepcopy(overrides.get('children', [])))
+    result['roots'] = [n['id'] for n in result['nodes'] if n['parent'] is None]
+    result['parameters'] = parameters
+    # All simultaneous quaternion/scale bindings are validated as a whole.
+    return validate_document(result, 'prefab')
+
+
+def prefab_scoped_id(instance, source, namespace='node'):
+    return 'p-'+hashlib.sha256((namespace+'\0'+instance+'\0'+source).encode('utf-8')).hexdigest()[:48]
+
+
+def validate_prefab_instances(document, resolve, *, max_nodes=MAX_NODES, node_context=None):
+    """Validate effective nested instances without importing any 3D dependencies.
+
+    Every logical copy consumes node/work budgets, including memo hits. Source
+    bytes stay with the resolving owner; this function only composes copies.
+    """
+    require(type(max_nodes) is int and 1 <= max_nodes <= MAX_NODES, 'Invalid effective prefab node budget.')
+    require(callable(resolve) and (node_context is None or callable(node_context)), 'Invalid prefab validation context.')
+    document = validate_document(document)
+    require(document['kind'] in ('scene3d-scene','scene3d-prefab'), 'Expected a scene or prefab.')
+    defaults = dict(parameters={},materials={},nodes=[])
+    if document['kind'] == 'scene3d-prefab':
+        document = effective_prefab(document,defaults)
+    cache, cached_bytes, processed_bytes, work = {}, 0, 0, 0
+    output, identifiers, active = [], set(), set()
+    fixture = document['provenance']['fixture']
+    memberships = {field:{c['id'] for c in document.get(field,[])} for field in ('collections','layers')}
+    if node_context is not None:
+        node_context(document)
+    def visit(graph, mapping, anchor, context, depth):
+        nonlocal cached_bytes, processed_bytes, work, fixture
+        require(depth <= MAX_DEPTH, 'Prefab nesting exceeds 128 levels.')
+        work += len(graph['nodes'])
+        require(work <= MAX_NODES*4, 'Effective prefab operation budget exceeded.')
+        for source_node in graph['nodes']:
+            node = deepcopy(source_node)
+            node['id'] = mapping.get(node['id'],node['id'])
+            node['parent'] = mapping.get(node['parent'],node['parent']) if node['parent'] is not None else anchor
+            for constraint in node['constraints']:
+                constraint['target'] = mapping.get(constraint['target'],constraint['target'])
+            for binding in node['animation_bindings']:
+                binding['target'] = mapping.get(binding['target'],binding['target'])
+            if 'attachment' in node:
+                for key in ('owner','socket'):
+                    node['attachment'][key] = mapping.get(node['attachment'][key],node['attachment'][key])
+            require(node['id'] not in identifiers, 'Expanded prefab node identity collision.')
+            identifiers.add(node['id'])
+            require(len(identifiers) <= min(max_nodes,MAX_NODES), 'Expanded prefab exceeds node budget.')
+            output.append(node)
+            if node['type'] != 'prefab_instance':
+                continue
+            reference = source_node['prefab']
+            identity = tuple(reference[key] for key in ('kind','id','version','path','sha256'))
+            require(identity not in active, 'Recursive prefab instance.', 'SCENE3D_PREFAB_CYCLE')
+            overrides = source_node.get('prefab_overrides',defaults)
+            fingerprint = json.dumps(overrides,sort_keys=True,ensure_ascii=False,
+                                     separators=(',',':'),allow_nan=False).encode('utf-8')
+            key = (identity,hashlib.sha256(fingerprint).hexdigest())
+            if key in cache:
+                effective = cache[key]
+            else:
+                effective = effective_prefab(resolve(reference),overrides)
+                size = len(canonical_bytes(effective))
+                processed_bytes += size
+                require(processed_bytes <= MAX_TOTAL_BYTES, 'Effective prefab processing byte budget exceeded.')
+                if node_context is not None:
+                    node_context(effective)
+                if cached_bytes+size <= 16*1024*1024:
+                    cache[key] = effective
+                    cached_bytes += size
+            fixture |= effective['provenance']['fixture']
+            instance_context = context+'/'+node['id']
+            for field, table in memberships.items():
+                declared = {c['id'] for c in effective.get(field,[])}
+                require(all(set(n[field]) <= declared|table for n in effective['nodes']),
+                        'Prefab membership needs an explicit source or destination collection.')
+                for old in declared:
+                    scoped = prefab_scoped_id(instance_context,old,field)
+                    require(scoped not in table, 'Scoped prefab collection collision.')
+                    table.add(scoped)
+            node['type'] = 'group'
+            node.pop('prefab')
+            node.pop('prefab_overrides',None)
+            child_mapping = {n['id']:prefab_scoped_id(instance_context,n['id']) for n in effective['nodes']}
+            active.add(identity)
+            visit(effective,child_mapping,node['id'],instance_context,depth+1)
+            active.remove(identity)
+    visit(document,{},None,'',0)
+    _graph(output,[n['id'] for n in output if n['parent'] is None])
+    return dict(fixture=fixture,expanded_nodes=len(output),work_nodes=work)
 
 
 def main():

@@ -1,0 +1,7 @@
+test_new_import_detects_face_and_eyes_without_masks_and_resumes (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_new_import_detects_face_and_eyes_without_masks_and_resumes) ... ok
+test_unsupported_source_is_explicit_and_does_not_claim_semantics (test_decomposition_analysis_backend.RealAnalysisBackendTests.test_unsupported_source_is_explicit_and_does_not_claim_semantics) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 8.160s
+
+OK

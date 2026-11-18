@@ -13,8 +13,19 @@ def validate_gltf(path,*,timeout=120):
     try:result=subprocess.run(command,capture_output=True,text=True,timeout=timeout,check=False)
     except subprocess.TimeoutExpired as exc:raise RigError('RIG_VALIDATOR_TIMEOUT','Independent glTF validation exceeded its timeout.',retryable=True) from exc
     require(bool(result.stdout.strip()),'RIG_VALIDATOR_MISSING','Install optional tools/rig dependencies before independent validation.',observed=result.stderr[-4096:])
-    report=decode_json(result.stdout);report['asset_sha256']=sha256(path)
-    report['ok']=result.returncode==0 and report['issues']['numErrors']==0
+    report = decode_json(result.stdout)
+    require(isinstance(report, dict), 'RIG_VALIDATOR_REPORT', 'Independent glTF validation returned a non-object report.')
+    issues = report.get('issues')
+    require(isinstance(issues, dict), 'RIG_VALIDATOR_REPORT', 'Independent glTF validation returned a missing or invalid issues object.')
+    report['asset_sha256'] = sha256(path)
+    errors = issues.get('numErrors')
+    warnings = issues.get('numWarnings')
+    report['ok'] = (
+        result.returncode == 0
+        and issues.get('truncated') is False
+        and type(errors) is int and errors == 0
+        and type(warnings) is int and warnings >= 0
+    )
     return report
 
 

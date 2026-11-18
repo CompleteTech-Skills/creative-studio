@@ -19,9 +19,9 @@ from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
-from rig_errors import RigError, decode_json
+from rig_errors import RigError, decode_json, open_payload_at
 from scene3d_contracts import (canonical_bytes, definitions, document_hash, frame_time,
-    load_project, portable_path, read_document, schemas, validate_document)
+    load_project, load_project_at, portable_path, read_document, schemas, validate_document)
 from scene3d_example import build_example, node
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +33,58 @@ def fixture(name):
 
 
 class SceneContractTests(unittest.TestCase):
+    def test_descriptor_project_verifies_deep_dependency_under_low_descriptor_limit(self):
+        descriptor_reads = os.open in os.supports_dir_fd
+        if sys.platform == 'darwin':
+            self.assertTrue(descriptor_reads, 'macOS must execute the descriptor-budget test')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'example'
+            build_example(root)
+            project = load_project(root)['project']
+            original = project['animations'][0]['path']
+            # Keep the ordinary path fixture within Windows path limits.
+            depth = 160 if descriptor_reads else 2
+            nested = 'animations/' + 'd/' * depth + 'original.json'
+            (root / nested).parent.mkdir(parents=True)
+            (root / original).rename(root / nested)
+            for reference in project['animations'] + project['dependency_lock']:
+                if reference['path'] == original:
+                    reference['path'] = nested
+            (root / 'project.json').write_bytes(canonical_bytes(project))
+            if descriptor_reads:
+                import resource
+
+                with ExitStack() as stack:
+                    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+                    stack.callback(os.close, fd)
+                    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+                    stack.callback(resource.setrlimit, resource.RLIMIT_NOFILE, (soft, hard))
+                    resource.setrlimit(resource.RLIMIT_NOFILE, (64 if soft < 0 else min(soft, 64), hard))
+                    bundle = load_project_at(fd)
+                    self.assertEqual(os.fstat(fd).st_ino, root.stat().st_ino)
+            else:
+                bundle = load_project(root)
+            data = (root / nested).read_bytes()
+            self.assertEqual(bundle['inventory'][nested], {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            self.assertEqual(bundle['project'], project)
+
+    def test_descriptor_apis_report_invalid_handles_consistently(self):
+        from production_contracts import load_project_at as load_legacy_at
+
+        def open_project(fd):
+            with open_payload_at(fd, 'project.json'):
+                self.fail('invalid descriptor accepted')
+
+        with tempfile.TemporaryFile() as regular:
+            readers = [(load_project_at, 'RIG_DIRECTORY_FD'), (load_legacy_at, 'RIG_DIRECTORY_FD')]
+            payload_error = 'RIG_DIRECTORY_FD' if os.open in os.supports_dir_fd else 'RIG_DIRECTORY_UNAVAILABLE'
+            readers.append((open_project, payload_error))
+            for reader, code in readers:
+                for fd in (False, -1, 1 << 128, regular.fileno()):
+                    with self.subTest(reader=reader.__name__, fd=fd), self.assertRaises(RigError) as error:
+                        reader(fd)
+                    self.assertEqual(error.exception.report['code'], code)
+
     def test_hash_bound_example_files_disable_checkout_newline_conversion(self):
         result = subprocess.run(['git', 'check-attr', 'text', '--',
                                  'examples/scene3d-contracts/project.json',
@@ -449,7 +501,7 @@ class SceneClosureTests(unittest.TestCase):
         self.root = Path(self.temp.name) / 'project'
         shutil.copytree(EXAMPLE, self.root)
 
-    def rehash(self):
+    def rehash(self, *, rewrite_payload=None):
         # Rebind genuine changes bottom-up, preserving exact raw-byte hashes.
         documents = {p.name: json.loads(p.read_text()) for p in self.root.glob('*.json')}
         from scene3d_contracts import all_refs
@@ -462,6 +514,8 @@ class SceneClosureTests(unittest.TestCase):
                 for r in all_refs(doc):
                     r['sha256'] = visit(r['path'])
                 payload = canonical_bytes(doc)
+                if rewrite_payload is not None:
+                    payload = rewrite_payload(name, payload)
                 (self.root / name).write_bytes(payload)
             else:
                 payload = (self.root / name).read_bytes()
@@ -732,9 +786,9 @@ class SceneClosureTests(unittest.TestCase):
             prefab = fixture('example-prefab')
             prefab.update(id=identifier, nodes=[node('nested-root')], roots=['nested-root'], dependencies=[])
             if pointers:
-                child = node('child', 'prefab_instance', 'nested-root')
-                child['prefab'] = deepcopy(pointers[-1])
-                prefab['nodes'].append(child)
+                # Isolate manifest closure depth from the independently bounded
+                # expanded transform hierarchy tested by the scene service.
+                prefab['dependencies'] = [deepcopy(pointers[-1])]
             payload = canonical_bytes(prefab)
             path = identifier + '.json'
             (self.root / path).write_bytes(payload)
@@ -956,6 +1010,48 @@ class SceneClosureTests(unittest.TestCase):
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
         self.assertTrue(all(inventory[name]['sha256'] == hashlib.sha256(payload).hexdigest()
                             for name, payload in before.items()))
+
+    def test_native_read_and_closure_require_exact_wire_shot_rates(self):
+        shot_path = self.root / 'example-shot.json'
+        shot = json.loads(shot_path.read_bytes())
+        shot['metadata']['measurement'] = 1.0
+        shot_path.write_bytes(canonical_bytes(shot))
+
+        for field, integer, token in (
+            ('numerator', 24, '24.000000000000001'),
+            ('denominator', 1, '1.0000000000000000001'),
+            ('numerator', 24, '24.0'),
+            ('denominator', 1, '1.0'),
+        ):
+            with self.subTest(field=field, token=token):
+                def rewrite(name, payload):
+                    if name != shot_path.name:
+                        return payload
+                    return (payload
+                            .replace(f'"{field}":{integer}'.encode(), f'"{field}":{token}'.encode())
+                            .replace(b'"measurement":1.0', b'"measurement":1.0000000000000000001'))
+
+                self.rehash(rewrite_payload=rewrite)
+                shot_bytes = shot_path.read_bytes()
+                shot_sha256 = hashlib.sha256(shot_bytes).hexdigest()
+                root_bytes = (self.root / 'project.json').read_bytes()
+                self.assertIn(f'"{field}":{token}'.encode(), shot_bytes)
+                self.assertIn(shot_sha256.encode(), root_bytes)
+                loaders = [lambda: read_document(shot_path),
+                           lambda: load_project(self.root)['documents'][shot_path.name]]
+                for load in loaders:
+                    if token.endswith('.0'):
+                        document = load()
+                        self.assertEqual(document['fps'], {'numerator': 24, 'denominator': 1})
+                        self.assertIs(type(document['fps'][field]), int)
+                        self.assertEqual(frame_time(1, document['fps']), Fraction(1, 24))
+                        self.assertIs(type(document['metadata']['measurement']), float)
+                        self.assertEqual(document['metadata']['measurement'], 1.0)
+                    else:
+                        with self.assertRaisesRegex(RigError, rf'fps\.{field}: expected an exact integer'):
+                            load()
+                self.assertEqual(shot_path.read_bytes(), shot_bytes)
+                self.assertEqual((self.root / 'project.json').read_bytes(), root_bytes)
 
     def test_real_cli_rejects_invalid_integer_fields_without_mutating_files(self):
         for label, value in [('boolean', True), ('fraction', 24.5), ('nonfinite', float('inf')),

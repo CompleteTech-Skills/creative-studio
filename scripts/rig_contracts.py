@@ -14,6 +14,10 @@ DEFAULT_LIMITS = dict(source_bytes=256*1024**2, dependency_bytes=1024**3, vertic
                       archive_bytes=1024**3, attempts=3)
 
 
+def valid_import_scale(scale: Any) -> bool:
+    return isinstance(scale, (int, float)) and not isinstance(scale, bool) and 0 < scale <= 10000
+
+
 def obj(properties: dict, required=None) -> dict:
     return dict(type='object', additionalProperties=False, properties=properties,
                 required=list(properties if required is None else required))
@@ -97,15 +101,9 @@ def definitions() -> dict:
                       role=text, owner=identifier))
     expression = obj(dict(schema_version={'const': 1}, morphs=mapping(num, 128),
                           bones=mapping(pose_transform, 256), incompatible=arr(identifier, 0, 128)))
-    eyelid = obj(dict(eye=identifier, mesh=identifier, morph=identifier,
-                     up_weight=dict(type='number', minimum=-2, maximum=2),
-                     down_weight=dict(type='number', minimum=-2, maximum=2),
-                     up_radians=dict(type='number', exclusiveMinimum=0, maximum=1.5707963267948966),
-                     down_radians=dict(type='number', exclusiveMinimum=0, maximum=1.5707963267948966)))
     facial = obj(dict(schema_version={'const': 1}, eyes=arr(identifier, 0, 32),
                      morph_targets=mapping(arr(identifier, 0, 128), 4096),
-                     expressions=mapping(expression, 128), eyelids=arr(eyelid, 0, 128)),
-                 ['schema_version', 'eyes', 'morph_targets', 'expressions'])
+                     expressions=mapping(expression, 128)))
     skin = obj(dict(schema_version={'const': 1}, id=identifier, version=version,
                     mesh=identifier, joints=arr(identifier, 1, 256), data=file_ref,
                     method={'enum': ['distance', 'diffusion', 'segmented', 'rigid', 'imported', 'manual']},
@@ -189,8 +187,7 @@ def definitions() -> dict:
                            skins=count, joints=count, animations=arr(identifier, 0, 64),
                            keyframes=integer, independently_verified={'const': False}))
     blender_sample = obj(dict(clip=identifier, time=dict(type='number', minimum=0, maximum=120),
-                              matched=arr(text), meshes=mapping(arr(vec)), bones=mapping(vec),
-                              sockets=mapping(arr(arr(num,4,4),4,4))), ['clip','time','matched','meshes','bones'])
+                              matched=arr(text), meshes=mapping(arr(vec)), bones=mapping(vec)))
     blender_fields = dict(schema_version={'const': 1}, format={'const': 'blend'},
                           blender_version=text, meshes=count, vertices=count, armatures=count,
                           bones=count, armature_modifiers=count, vertex_groups=count,
@@ -202,13 +199,12 @@ def definitions() -> dict:
                           reader={'const': 'Blender'}, reopened=boolean,
                           rig_sha256=digest, source_glb_sha256=digest)
     verification_fields = dict(max_vertex_error_m=error_distance, max_joint_error_m=error_distance,
-                               max_socket_transform_error=error_distance,
                                compared_vertices=count, tolerance_m=positive,
                                roundtrip_path=text, roundtrip_sha256=digest)
     blender_export = obj({**blender_fields, **verification_fields}, list(blender_fields))
     blender_export['allOf'] = [{
         'if': {'properties': {'reopened': {'const': True}}},
-        'then': {'required': [field for field in verification_fields if field != 'max_socket_transform_error']},
+        'then': {'required': list(verification_fields)},
         'else': {'not': {'anyOf': [{'required': [field]} for field in verification_fields]}}
     }]
     export_receipt = {'oneOf': [ref('RigGltfExportReceipt'), ref('RigBlenderExportReceipt')]}

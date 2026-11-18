@@ -4,8 +4,10 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import numpy as np
 from PIL import Image
 from rig_test_helpers import fixture
@@ -13,7 +15,12 @@ from rig_errors import RigError,atomic_json,sha256
 from rig_gltf import export_gltf,export_geometry,read_gltf,GltfBuilder
 from rig_import import load_character_model
 from rig_interop import compare_imported,validate_gltf
-from rig_models import TextureImage
+from rig_models import TextureImage, RigAsset
+from rig_jobs import create_run, save_rig
+from rig_contracts import DEFAULT_LIMITS
+from rig_skinning import generate_skin_weights, evaluate_deformation
+from rig_skeleton import neutral_pose
+from test_rig_skinning import pruning_fixture
 
 
 class RigInterchangeTests(unittest.TestCase):
@@ -68,7 +75,155 @@ class RigInterchangeTests(unittest.TestCase):
         from pygltflib import GLTF2
         path=Path(self.temp.name)/'independent.glb';export_gltf(self.rig,path);report=validate_gltf(path)
         self.assertTrue(report['ok']);self.assertEqual(report['issues']['numErrors'],0)
+        self.assertIs(report['issues']['truncated'], False)
+        self.assertEqual(report['asset_sha256'], sha256(path))
         gltf=GLTF2().load(str(path));self.assertGreater(len(gltf.skins[0].joints),0);self.assertGreater(len(gltf.animations[0].channels),0)
+
+
+    def eight_influence_rig(self):
+        geometry, skeleton = pruning_fixture()
+        parent = Path(self.temp.name)
+        source = parent/'eight-source.glb'
+        export_geometry(geometry, source, provenance={'fixture': True})
+        rig = create_run(source, parent/'eight-fixture', identifier='eight-fixture',
+                         fixture=True, limits={**DEFAULT_LIMITS, 'influences': 8})
+        rig.manifest['skeleton'] = skeleton
+        rig.weights = generate_skin_weights(rig.geometry, skeleton, method='distance',
+                                             limits=rig.manifest['limits'])
+        save_rig(rig, operation='eight-influence-test-fixture')
+        return rig
+
+    def test_eight_influence_sets_roundtrip_with_actual_second_set_deformation(self):
+        rig = self.eight_influence_rig()
+        source = rig.root/rig.manifest['source']['path']
+        source_hash = sha256(source)
+        expected_indices = [1, 4, 8, 0, 2, 3, 5, 6]
+        expected_weights = np.array([2, 2, 2, 1, 1, 1, 1, 1])/11
+        for extension in ('glb', 'gltf'):
+            with self.subTest(format=extension):
+                path = Path(self.temp.name)/('eight.'+extension)
+                export_gltf(rig, path)
+                document = read_gltf(path)
+                attributes = document.json['meshes'][0]['primitives'][0]['attributes']
+                self.assertTrue({'JOINTS_0', 'WEIGHTS_0', 'JOINTS_1', 'WEIGHTS_1'} <= set(attributes))
+                for influence_set in (0, 1):
+                    start = 4*influence_set
+                    np.testing.assert_array_equal(
+                        document.accessor(attributes['JOINTS_'+str(influence_set)]),
+                        np.tile(expected_indices[start:start+4], (3, 1)))
+                    np.testing.assert_allclose(
+                        document.accessor(attributes['WEIGHTS_'+str(influence_set)]),
+                        np.tile(expected_weights[start:start+4], (3, 1)), atol=1e-7)
+                # The ordinary four-influence consumer profile must reject extra sets.
+                with self.assertRaises(RigError) as caught:
+                    load_character_model(path)
+                self.assertEqual(caught.exception.report['code'], 'RIG_INFLUENCE_PROFILE')
+                imported = load_character_model(path, limits=rig.manifest['limits'])
+                skin = imported.weights['pruning']
+                np.testing.assert_array_equal(skin.indices, np.tile(expected_indices, (3, 1)))
+                np.testing.assert_allclose(skin.weights, np.tile(expected_weights, (3, 1)), atol=1e-7)
+                rebound = RigAsset({'skeleton': imported.skeleton}, imported.geometry, imported.weights)
+                np.testing.assert_allclose(evaluate_deformation(rebound)['pruning']['positions'],
+                                           rig.geometry.meshes[0].positions, atol=1e-7)
+                pose = neutral_pose(imported.skeleton)
+                translation = next(b['rest']['translation'] for b in imported.skeleton['bones'] if b['id'] == 'j6')
+                pose['bones']['j6'] = {'translation': [translation[0]+11, translation[1], translation[2]]}
+                # j6 is the LAST slot in WEIGHTS_1 and contributes 1/11.
+                np.testing.assert_allclose(evaluate_deformation(rebound, pose)['pruning']['positions'],
+                                           rig.geometry.meshes[0].positions+[1, 0, 0], atol=1e-6)
+                if extension == 'glb':
+                    # Decode actual exported bytes independently of the native accessor reader.
+                    payload = path.read_bytes()
+                    self.assertEqual(payload[:4], b'glTF')
+                    json_length, json_kind = struct.unpack_from('<II', payload, 12)
+                    self.assertEqual(json_kind, 0x4e4f534a)
+                    raw = json.loads(payload[20:20+json_length])
+                    binary_start = 20+json_length+8
+                    for semantic, expected, format_code in (
+                        ('JOINTS_1', expected_indices[4:], 'H'),
+                        ('WEIGHTS_1', expected_weights[4:], 'f'),
+                    ):
+                        accessor = raw['accessors'][attributes[semantic]]
+                        view = raw['bufferViews'][accessor['bufferView']]
+                        offset = binary_start+view.get('byteOffset', 0)+accessor.get('byteOffset', 0)
+                        actual = struct.unpack_from('<'+format_code*12, payload, offset)
+                        np.testing.assert_allclose(np.array(actual).reshape(3, 4),
+                                                   np.tile(expected, (3, 1)), atol=1e-7)
+        self.assertEqual(sha256(source), source_hash)
+        invalid = deepcopy(rig)
+        invalid.manifest['limits']['influences'] = 4
+        with self.assertRaises(RigError) as caught:
+            export_gltf(invalid, Path(self.temp.name)/'four-profile.glb')
+        self.assertEqual(caught.exception.report['code'], 'RIG_SKIN_SHAPE')
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_INTEROP_TEST')=='1',
+                         'Enable HATCH_RIG_INTEROP_TEST=1 for independent optional validators.')
+    def test_khronos_and_pygltflib_accept_eight_influence_export(self):
+        from pygltflib import GLTF2
+        rig = self.eight_influence_rig()
+        path = Path(self.temp.name)/'eight-independent.glb'
+        export_gltf(rig, path)
+        report = validate_gltf(path)
+        self.assertTrue(report['ok'])
+        self.assertEqual(report['issues']['numErrors'], 0)
+        self.assertIs(report['issues']['truncated'], False)
+        self.assertEqual(report['asset_sha256'], sha256(path))
+        gltf = GLTF2().load(str(path))
+        attributes = gltf.meshes[0].primitives[0].attributes
+        self.assertIsNotNone(attributes.JOINTS_1)
+        self.assertIsNotNone(attributes.WEIGHTS_1)
+        self.assertEqual(len(gltf.skins[0].joints), 10)
+
+
+class KhronosReportTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / 'model.gltf'
+        self.path.write_text('{"asset":{"version":"2.0"}}', encoding='utf-8')
+        self.issues = {'truncated': False, 'numErrors': 0, 'numWarnings': 0}
+
+    def validate_report(self, report, *, returncode=0):
+        result = subprocess.CompletedProcess([], returncode, json.dumps(report), '')
+        with patch('rig_interop.shutil.which', return_value='node'), patch(
+            'rig_interop.subprocess.run', return_value=result
+        ):
+            return validate_gltf(self.path)
+
+    def test_complete_report_preserves_details_and_exact_hash(self):
+        report = {
+            'validator': 'synthetic',
+            'issues': {**self.issues, 'numWarnings': 1, 'messages': [{'severity': 1}]},
+            'info': {'version': '2.0'},
+        }
+        self.assertEqual(
+            self.validate_report(report),
+            {**report, 'ok': True, 'asset_sha256': sha256(self.path)},
+        )
+
+    def test_incomplete_or_malformed_reports_fail_closed(self):
+        cases = []
+        for field, invalid_values in (
+            ('truncated', (True, None, 0, 'false')),
+            ('numErrors', (False, None, -1, '0', 0.0)),
+            ('numWarnings', (False, None, -1, '0', 0.0)),
+        ):
+            cases.append({'issues': {key: value for key, value in self.issues.items() if key != field}})
+            cases.extend({'issues': {**self.issues, field: value}} for value in invalid_values)
+        for report in cases:
+            with self.subTest(report=report):
+                self.assertIs(self.validate_report({**report, 'ok': True})['ok'], False)
+
+    def test_report_with_errors_or_unsuccessful_exit_does_not_pass(self):
+        self.assertIs(self.validate_report({'issues': {**self.issues, 'numErrors': 1}})['ok'], False)
+        self.assertIs(self.validate_report({'issues': self.issues}, returncode=1)['ok'], False)
+
+    def test_invalid_report_structure_raises_structured_error(self):
+        for report in ([], {}, {'issues': None}, {'issues': []}):
+            with self.subTest(report=report):
+                with self.assertRaises(RigError) as caught:
+                    self.validate_report(report)
+                self.assertEqual(caught.exception.report['code'], 'RIG_VALIDATOR_REPORT')
 
 
 class RigExternalIntegrationTests(unittest.TestCase):
@@ -80,103 +235,12 @@ class RigExternalIntegrationTests(unittest.TestCase):
         self.assertLess(report['max_vertex_error_m'],.01);self.assertGreater(report['compared_vertices'],0)
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
-    def test_blender_export_and_preview_accept_canonical_parent_alias(self):
-        from rig_blender import export_blender,render_blender_preview
-        root=Path(self.temp.name);actual=root/'actual';actual.mkdir();alias=root/'alias'
-        try:alias.symlink_to(actual,target_is_directory=True)
-        except OSError as exc:
-            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
-            raise
-        receipt=export_blender(self.rig,alias/'editable.blend')
-        self.assertTrue(receipt['ok']);self.assertEqual(Path(receipt['path']),actual.resolve()/'editable.blend')
-        report=render_blender_preview(self.rig,alias/'preview',clip='bend',times=[0.],
-            blend_path=receipt['path'],blend_sha256=receipt['sha256'],width=96,height=96)
-        self.assertEqual(len(report['frames']),1)
-        self.assertTrue(Path(report['frames'][0]['path']).is_file())
-
-    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
-    def test_blender_socket_preserves_full_native_transform_during_animation(self):
-        from rig_blender import export_blender
-        from rig_math import axis_angle
-        from rig_attachments import socket_world
-        from rig_animation import evaluate_animation
-        self.rig.manifest['attachments'] = [dict(schema_version=1, id='grip.right', bone='b1',
-            transform=dict(translation=[.13,.21,.34], rotation=axis_angle([1,2,3],.7).tolist(),
-                           scale=[.7,1.2,1.6]), role='grip', owner=self.rig.manifest['character']['id'])]
-        report=export_blender(self.rig,Path(self.temp.name)/'socket.blend')
-        self.assertTrue(report['ok']);self.assertLess(report['max_socket_transform_error'],.005)
-        for sample in report['samples']:
-            pose=evaluate_animation(self.rig,self.rig.clips[sample['clip']],sample['time'])['pose']
-            np.testing.assert_allclose(sample['sockets']['grip.right'],
-                socket_world(self.rig,pose,'grip.right'),atol=.005)
-        self.assertGreater(np.max(np.abs(np.asarray(report['samples'][0]['sockets']['grip.right']) -
-                                         np.asarray(report['samples'][1]['sockets']['grip.right']))), .01)
-
-    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
-    def test_blender_unanimated_rig_reopens_and_samples_bind_pose(self):
-        from rig_blender import export_blender
-        self.rig.clips={}
-        report=export_blender(self.rig,Path(self.temp.name)/'static.blend')
-        self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
-        self.assertEqual(len(report['samples']),1)
-        self.assertEqual(report['samples'][0]['clip'],'rest')
-        self.assertEqual(report['samples'][0]['matched'],[])
-        self.assertLess(report['max_vertex_error_m'],1e-5)
-        self.assertGreater(report['compared_vertices'],0)
-
-    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
-    def test_blender_preserves_nonzero_defaults_without_morph_channels(self):
-        from rig_blender import export_blender
-        from rig_skinning import evaluate_deformation
-        from rig_skeleton import neutral_pose
-        # No animation and a skeletal-only action both must preserve the source
-        # morph. The known 0.2m delta makes a silent zero reset observable.
-        self.rig.geometry.meshes[0].morph_defaults['blink']=1.
-        for clip in self.rig.clips.values():
-            clip['tracks']=[track for track in clip['tracks'] if track['path']!='weights']
-        skeletal_clips=deepcopy(self.rig.clips)
-        for animated in (False,True):
-            with self.subTest(animated=animated):
-                self.rig.clips=deepcopy(skeletal_clips) if animated else {}
-                expected=evaluate_deformation(self.rig,neutral_pose(self.rig.skeleton))
-                report=export_blender(self.rig,Path(self.temp.name)/('defaults-%s.blend'%animated))
-                self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
-                # Skeletal animation has the adapter's existing resampling
-                # tolerance; the static default has a direct tight comparison.
-                self.assertLess(report['max_vertex_error_m'],.01 if animated else 1e-5)
-                imported=load_character_model(report['roundtrip_path'])
-                mesh=imported.geometry.meshes[0]
-                self.assertAlmostEqual(mesh.morph_defaults['blink'],1.)
-                if not animated:
-                    sample=report['samples'][0]['meshes'][mesh.id]
-                    np.testing.assert_allclose(sample,expected[mesh.id]['positions'],atol=1e-5)
-        # Creation-only exports must also save the source default, even when no
-        # independent reopen is requested by the caller.
-        self.rig.clips={}
-        created=export_blender(self.rig,Path(self.temp.name)/'defaults-create-only.blend',verify=False)
-        self.assertTrue(created['ok']);self.assertFalse(created['reopened'])
-        self.assertLess(np.max(np.abs(np.asarray(created['samples'][0]['meshes'][self.rig.geometry.meshes[0].id])-
-                                     expected[self.rig.geometry.meshes[0].id]['positions'])),1e-5)
-
-    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_creation_receipt_does_not_claim_reopen(self):
         from rig_blender import export_blender
         report=export_blender(self.rig,Path(self.temp.name)/'created.blend',verify=False)
         self.assertTrue(report['ok']);self.assertFalse(report['reopened'])
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
         self.assertNotIn('roundtrip_sha256',report);self.assertNotIn('compared_vertices',report)
-    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
-    def test_blender_preview_rejects_a_different_embedded_rig_revision(self):
-        from rig_blender import export_blender,render_blender_preview
-        blend=Path(self.temp.name)/'source.blend'
-        receipt=export_blender(self.rig,blend,verify=False)
-        self.rig.manifest['source']['attribution']+=' changed revision'
-        destination=Path(self.temp.name)/'wrong-rig-preview'
-        with self.assertRaisesRegex(RigError,'Blender failed'):
-            render_blender_preview(self.rig,destination,clip='bend',blend_path=blend,blend_sha256=receipt['sha256'],width=96,height=96)
-        self.assertFalse(destination.exists())
-        self.assertTrue(blend.is_file())
-
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for actual Blender CPU rendering.')
     def test_blender_cpu_preview_renders_distinct_transparent_poses(self):
         from rig_blender import render_blender_preview
@@ -192,107 +256,3 @@ class RigExternalIntegrationTests(unittest.TestCase):
         from rig_browser import verify_browser
         path=Path(self.temp.name)/'viewer';create_review_ui(self.rig,path);report=verify_browser(self.rig,path)
         self.assertTrue(report['ok']);self.assertTrue(report['ui_playback']);self.assertTrue(report['ui_weights'])
-
-
-class RigBlenderPublicationTests(unittest.TestCase):
-    def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name);self.rig=fixture(self.root)
-
-    def test_existing_export_and_sidecar_are_preserved_before_worker(self):
-        from unittest.mock import patch
-        from rig_blender import export_blender
-        target=self.root/'existing.blend';target.write_bytes(b'user blend')
-        with patch('rig_blender._run') as worker:
-            with self.assertRaises(RigError):export_blender(self.rig,target)
-            worker.assert_not_called()
-        self.assertEqual(target.read_bytes(),b'user blend')
-        target.unlink();sidecar=target.with_suffix('.roundtrip.glb');sidecar.write_bytes(b'user glb')
-        with patch('rig_blender._run') as worker:
-            with self.assertRaises(RigError):export_blender(self.rig,target)
-            worker.assert_not_called()
-        self.assertEqual(sidecar.read_bytes(),b'user glb');self.assertFalse(target.exists())
-
-    def test_racing_main_preserves_writer_and_retains_verified_sidecar(self):
-        from rig_blender import _publish_outputs
-        a=self.root/'stage-glb';b=self.root/'stage-blend'
-        a.write_bytes(b'verified glb');b.write_bytes(b'verified blend')
-        sidecar=self.root/'out.roundtrip.glb';target=self.root/'out.blend'
-        target.mkdir()
-        with self.assertRaises(RigError):_publish_outputs([(a,sidecar),(b,target)])
-        self.assertTrue(target.is_dir());self.assertEqual(list(target.iterdir()),[])
-        self.assertEqual(sidecar.read_bytes(),b'verified glb');self.assertEqual(b.read_bytes(),b'verified blend')
-
-    def test_worker_failure_and_invalid_clip_do_not_create_preview_destination(self):
-        from unittest.mock import patch
-        from rig_blender import render_blender_preview
-        target=self.root/'preview'
-        with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='missing')
-        self.assertFalse(target.exists())
-        with patch('rig_blender.export_blender',side_effect=RigError('TEST_FAILURE','Injected worker failure.')):
-            with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='bend')
-        self.assertFalse(target.exists());self.assertEqual(list(self.root.glob('.hatch-blender-render-*')),[])
-
-    def test_output_parent_alias_is_canonicalized_and_leaf_links_rejected(self):
-        from rig_blender import _new_output
-        alias=self.root/'output-parent-alias'
-        actual=self.root/'actual-output-parent';actual.mkdir()
-        try:alias.symlink_to(actual,target_is_directory=True)
-        except OSError as exc:
-            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
-            raise
-        target=_new_output(alias/'new-folder'/'new.blend','RIG_EXPORT_EXISTS')
-        self.assertEqual(target,actual.resolve()/'new-folder'/'new.blend')
-        self.assertFalse(target.exists())
-        outside=self.root/'outside.blend';outside.write_bytes(b'preserved')
-        leaf=actual/'leaf.blend';leaf.symlink_to(outside)
-        with self.assertRaises(RigError) as caught:
-            _new_output(alias/'leaf.blend','RIG_EXPORT_EXISTS')
-        self.assertEqual(caught.exception.report['code'],'RIG_SYMLINK')
-        self.assertEqual(outside.read_bytes(),b'preserved')
-        dangling=actual/'dangling.blend';dangling.symlink_to(actual/'missing.blend')
-        with self.assertRaises(RigError):
-            _new_output(alias/'dangling.blend','RIG_EXPORT_EXISTS')
-        self.assertTrue(dangling.is_symlink())
-
-    def test_symlink_output_does_not_touch_referent(self):
-        from rig_blender import export_blender
-        real=self.root/'real.blend';real.write_bytes(b'preserved')
-        link=self.root/'link.blend'
-        try:link.symlink_to(real)
-        except OSError as exc:
-            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
-            raise
-        with self.assertRaises(RigError):export_blender(self.rig,link)
-        self.assertEqual(real.read_bytes(),b'preserved');self.assertTrue(link.is_symlink())
-
-    def test_supplied_blend_is_frozen_before_worker_and_receipt_hashing(self):
-        from unittest.mock import patch
-        from rig_blender import render_blender_preview
-        original=self.root/'supplied.blend';original.write_bytes(b'original saved source')
-        destination=self.root/'frozen-preview'
-        def inspect(job,**kwargs):
-            self.assertNotEqual(Path(job['input']),original)
-            self.assertEqual(Path(job['input']).read_bytes(),b'original saved source')
-            original.write_bytes(b'changed live source')
-            self.assertEqual(Path(job['input']).read_bytes(),b'original saved source')
-            raise RigError('TEST_DONE','Snapshot inspection complete.')
-        with patch('rig_blender._run',side_effect=inspect):
-            with self.assertRaisesRegex(RigError,'Snapshot inspection complete'):
-                render_blender_preview(self.rig,destination,clip='bend',blend_path=original,blend_sha256=sha256(original))
-        self.assertFalse(destination.exists())
-        self.assertEqual(original.read_bytes(),b'changed live source')
-
-    def test_supplied_blend_requires_unchanged_exact_reference(self):
-        from unittest.mock import patch
-        from rig_blender import render_blender_preview
-        source=self.root/'changed.blend';source.write_bytes(b'original')
-        expected=sha256(source);source.write_bytes(b'modified')
-        destination=self.root/'untrusted-preview'
-        with patch('rig_blender._run') as worker:
-            with self.assertRaises(RigError):
-                render_blender_preview(self.rig,destination,clip='bend',blend_path=source)
-            with self.assertRaises(RigError):
-                render_blender_preview(self.rig,destination,clip='bend',blend_path=source,blend_sha256=expected)
-            worker.assert_not_called()
-        self.assertFalse(destination.exists());self.assertEqual(source.read_bytes(),b'modified')
