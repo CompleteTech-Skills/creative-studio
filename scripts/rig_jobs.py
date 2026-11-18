@@ -9,9 +9,9 @@ import uuid
 
 from atomic_publish import _rename_no_replace
 
-from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
+from rig_contracts import COORDINATES, DEFAULT_LIMITS, valid_import_scale, validate_contract
 from rig_errors import (VERSION, RigError, atomic_bytes, atomic_json, job_lock,
-                        object_hash, read_json, require, safe_path, sha256, slug, timestamp)
+                        object_hash, read_json, require, safe_path, sha256, slug, timestamp, normalize_root)
 from rig_models import RigAsset, load_rig, rig_signature, save_geometry, save_weights
 
 
@@ -73,8 +73,14 @@ def create_run(model, root, *, identifier=None, scale=1., limits=None, fixture=F
                origin='import', attribution='User-supplied model; see original source files.', blender=None) -> RigAsset:
     """Publish a validated run whose geometry and provenance share frozen bytes."""
     from rig_source_snapshot import import_snapshot
+    if scale is True:
+        # Existing callers may supply True for unit scale. Persist it as a JSON number.
+        scale = 1
+    require(valid_import_scale(scale), 'RIG_SCALE', 'Import scale must be finite and in (0, 10000].')
     root = Path(root).absolute();model = Path(model).absolute()
     require(not root.is_symlink(), 'RIG_RUN_PATH', 'Run directories cannot be symbolic links.')
+    root = normalize_root(root)
+    model = normalize_root(model.parent)/model.name
     limits = {**DEFAULT_LIMITS, **(limits or {})};validate_contract(limits, 'Limits')
     require(limits['influences'] in (4, 8), 'RIG_INFLUENCES', 'Choose four or eight influences.')
     with job_lock(root):

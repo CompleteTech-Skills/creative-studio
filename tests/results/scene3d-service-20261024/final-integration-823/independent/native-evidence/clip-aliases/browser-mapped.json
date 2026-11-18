@@ -1,0 +1,52 @@
+{
+  "asset_sha256": "f0b9788ba2f48190ece777980d0190205a81c448576a73f24c155942d29ffa70",
+  "browser": "140.0.7339.16",
+  "clips": [
+    {
+      "clip": "a-8cc309100b21b0ff0ef92ccfa64f579e5068d82edf887493",
+      "max_vertex_error_m": 0.0,
+      "time": 0.0
+    },
+    {
+      "clip": "a-8cc309100b21b0ff0ef92ccfa64f579e5068d82edf887493",
+      "max_vertex_error_m": 6.9884171931019664e-09,
+      "time": 0.37
+    },
+    {
+      "clip": "a-8cc309100b21b0ff0ef92ccfa64f579e5068d82edf887493",
+      "max_vertex_error_m": 3.913230424223532e-09,
+      "time": 0.73
+    },
+    {
+      "clip": "a-b7fcf8642e71bdd0df11274c1c2c64ad869727169801205e",
+      "max_vertex_error_m": 0.0,
+      "time": 0.0
+    },
+    {
+      "clip": "a-b7fcf8642e71bdd0df11274c1c2c64ad869727169801205e",
+      "max_vertex_error_m": 0.0,
+      "time": 0.37
+    },
+    {
+      "clip": "a-b7fcf8642e71bdd0df11274c1c2c64ad869727169801205e",
+      "max_vertex_error_m": 0.0,
+      "time": 0.73
+    }
+  ],
+  "compared_vertices": 24,
+  "errors": [],
+  "independent": true,
+  "max_vertex_error_m": 6.9884171931019664e-09,
+  "ok": true,
+  "reader": "Three.js",
+  "rig_sha256": "3dc64b1a8af72f48baeb9734a553ff1b36021aeb7f242e921b382f896c4c2454",
+  "tolerance_m": 0.01,
+  "ui_expressions": false,
+  "ui_frame_step": true,
+  "ui_ik": false,
+  "ui_playback": true,
+  "ui_reduced_motion": true,
+  "ui_skeleton": true,
+  "ui_weights": true,
+  "version": "0.180.0"
+}

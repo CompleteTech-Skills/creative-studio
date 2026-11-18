@@ -1,0 +1,28 @@
+{
+  "dependencies": {
+    "probe_source": "9fb20f454d3a87030089c211be04a8f11f79ebd85d23276220fb428d719322ef"
+  },
+  "dependency_fingerprint": "5580d90223892beff229cffcea36ce551f677295a11a20bfcd60debb6ad79ac9",
+  "discovered": false,
+  "execution_verified": false,
+  "fallback": "structured-local-plan",
+  "fixture": true,
+  "initialized": false,
+  "operation": "planning.provider",
+  "payloads": [],
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "price_availability": "unknown",
+  "reason": "missing-planning-credentials",
+  "schema_version": 1,
+  "status": "unavailable",
+  "version": null
+}
