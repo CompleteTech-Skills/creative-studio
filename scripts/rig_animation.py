@@ -77,6 +77,10 @@ def evaluate_track(track: dict, time: float) -> np.ndarray:
     return values[left]*(1-u)+values[right]*u
 
 
+def contact_is_active(contact: dict, time: float, duration: float) -> bool:
+    return contact['start'] <= time < contact['end'] or (time == duration and contact['end'] == duration)
+
+
 def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=False,
                        contacts=True, constraints=True, _validated=False) -> dict:
     clip = rig.clips[clip] if isinstance(clip, str) else clip
@@ -105,14 +109,14 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
     if contacts:
         chains = {c['id']: c for c in controller_data['ik']}
         for contact in clip['contacts']:
-            active = contact['start'] <= local_time < contact['end'] or (local_time == duration and contact['end'] == duration)
-            if not active:continue
+            if not contact_is_active(contact, local_time, duration):continue
             target = np.array(contact['target'])+cycles*root_cycle
             result = solve_ik(rig.skeleton, pose, chains[contact['chain']], target,
                               constraints=ordered, orientation=contact.get('orientation'))
             pose = result.pose
             reports.append(dict(id=contact['id'], chain=contact['chain'], target=target.tolist(),
-                                residual_m=result.residual_m, reachable=result.reachable, converged=result.converged))
+                                residual_m=result.residual_m, orientation_residual_rad=result.orientation_residual_rad,
+                                reachable=result.reachable, converged=result.converged))
     root_delta = np.array(pose['bones'].get(root_id, {}).get('translation', root_rest))-root_rest
     return dict(pose=pose, time=local_time, cycle=cycles, root_motion=root_delta.tolist(), contacts=reports,
                 constraints_applied=changes, events=[deepcopy(e) for e in clip['events'] if abs(e['time']-local_time) < 1e-7])

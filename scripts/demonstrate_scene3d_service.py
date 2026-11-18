@@ -70,7 +70,8 @@ def demonstrate(destination):
     derived.update(expanded['derived_documents'])
     derived[imported.asset_reference['path']] = imported.asset
     portable = snapshot_project(source_project, destination/'portable', expanded_graph,
-        scene_path='example-scene.json', derived_documents=derived, extra_payloads=payloads)
+        scene_path='example-scene.json', derived_documents=derived, extra_payloads=payloads,
+        expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     reopened = load_project(destination/'portable')
     receipt = dict(schema_version=1, fixture=True, source='procedural-engineering-geometry',
         original_source_sha256=original_hash, source_unchanged=hashlib.sha256(source.read_bytes()).hexdigest() == original_hash,

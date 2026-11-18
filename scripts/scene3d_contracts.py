@@ -18,7 +18,8 @@ from pathlib import Path
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, finite_json
+from portable_paths import existing_relative
+from rig_errors import RigError, RoundedJsonInteger, decode_json, finite_json, normalize_root, open_payload, open_payload_at, owned_directory_fd
 
 MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_FILES = 4096
@@ -191,6 +192,15 @@ def definitions():
         dependencies=arr(ref('reference')), resources=obj(dict(vertices=integer(0, 1000000),
         triangles=integer(0, 2000000), bytes=integer(1, MAX_TOTAL_BYTES))),
         validation=arr(ref('file')), review=ref('review')))
+    # Optional canonical mapping preserves compatibility with authored assets that
+    # predate native primitive projection. Original and normalized indexes differ.
+    material_primitive = obj(dict(mesh=reference['properties']['id'], encoding=enum('normalized-glb', 'obj'),
+        source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
+        source_material_index=nullable(integer(0, 65535)),
+        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'type': 'integer', 'const': 0})))
+    asset['properties']['material_bindings'] = arr(obj(dict(
+        slot=ID, material_index=nullable(integer(0, 65535)),
+        primitives=arr(material_primitive, minimum=1, maximum=10000))), minimum=1, maximum=65536)
     animation = base('animation', dict(duration_frames=integer(1, 1_000_000), fps=ref('rate'),
         tracks=arr(ref('track'), maximum=4096), bindings=arr(ref('binding'), maximum=256),
         dependencies=arr(ref('reference')), provenance=ref('provenance')))
@@ -253,16 +263,10 @@ def validator(kind):
 
 def portable_path(value):
     """Canonical portable spelling; no aliases, traversal, drive or device paths."""
-    require(isinstance(value, str) and 0 < len(value) <= 1024, 'Invalid path.')
-    _unicode_scalars(value)
-    require(unicodedata.normalize('NFC', value) == value, 'Paths must use NFC Unicode.')
-    require(not re.search(r'[\\:\x00-\x1f<>"|?*]', value), 'Path contains a nonportable character.')
-    parts = value.split('/')
-    for part in parts:
-        require(part not in ('', '.', '..') and not part.startswith(' ') and not part.endswith((' ', '.')), 'Noncanonical path component.')
-        require(not re.match(r'^(CON|CONIN[$]|CONOUT[$]|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(?:\.|$)', part, re.I),
-                'Windows device path is unsupported.')
-    return value
+    try:
+        return existing_relative(value, profile='scene3d')
+    except ValueError as exc:
+        raise RigError('SCENE3D_CONTRACT', str(exc), stage='scene3d') from exc
 
 
 def _typed_values(value, schema):
@@ -517,6 +521,10 @@ def _schema_shape(value, schema):
 
 def _normalize_integers(value, schema, path='$'):
     """Normalize declared local integer positions in an already copied tree."""
+    if isinstance(value, RoundedJsonInteger):
+        # Only shot FPS uses its original wire precision. Other numeric fields
+        # retain the decoder's ordinary float behavior and type.
+        value = float(value)
     if '$ref' in schema:
         schema = definitions()[schema['$ref'].rsplit('/', 1)[-1]]
     if schema.get('type') == 'integer':
@@ -546,6 +554,11 @@ def validate_document(value, kind=None):
         require(isinstance(value, dict) and value.get('kind') in MANIFEST_KINDS, 'Unknown scene3d document kind.')
         kind = value['kind'][8:]
     checker = validator(kind)
+    rate = value.get('fps') if kind == 'shot' and isinstance(value, dict) else None
+    if isinstance(rate, dict):
+        for name in ('numerator', 'denominator'):
+            require(not isinstance(rate.get(name), RoundedJsonInteger),
+                    '$.fps.' + name + ': expected an exact integer-valued JSON number.')
     value = _normalize_integers(deepcopy(value), ref(kind))
     error = next(checker.iter_errors(value), None)
     require(error is None, '' if error is None else '.'.join(map(str, error.absolute_path)) + ': ' + error.message)
@@ -611,6 +624,26 @@ def validate_document(value, kind=None):
             require(c['start_frame'] < c['end_frame'] <= value['duration_frames'], 'Invalid temporal constraint interval.')
             require(c['target'] != c['constraint']['target'], 'Self-referential temporal constraint.')
     elif kind == 'asset':
+        bindings = value.get('material_bindings', [])
+        _unique(bindings, 'native material slot', lambda x: x['slot'])
+        _unique(bindings, 'native material index', lambda x: x['material_index'])
+        primitives = [p for b in bindings for p in b['primitives']]
+        _unique(primitives, 'native material mesh', lambda x: x['mesh'])
+        _unique([p for p in primitives if p['encoding'] == 'normalized-glb'],
+                'normalized material primitive', lambda x: x['normalized_mesh'])
+        for binding in bindings:
+            for p in binding['primitives']:
+                require((p['encoding'] == 'normalized-glb' and p['source_mesh'] is not None and
+                         p['normalized_mesh'] is not None and p['normalized_primitive'] == 0 and
+                         binding['material_index'] is not None) or
+                        (p['encoding'] == 'obj' and p['source_mesh'] is None and
+                         p['normalized_mesh'] is None and p['normalized_primitive'] is None and
+                         p['source_material_index'] is None and binding['material_index'] is None),
+                        'Material projection indexes disagree with its geometry encoding.')
+        require(all(b['primitives'] for b in bindings), 'Material slots need actual primitive bindings.')
+        component_meshes = {m for meshes in value['components'].values() for m in meshes}
+        require(not bindings or {p['mesh'] for p in primitives} == (component_meshes or {value['id']}),
+                'Material bindings must cover exactly the native component meshes.')
         _unique(value['sockets'], 'asset socket', lambda x: x['id'])
         require(value['review']['status'] == 'unreviewed' or bool(value['review']['receipts']),
                 'A review status needs retained evidence receipts.')
@@ -665,7 +698,7 @@ def read_document(path):
     with Path(path).open('rb') as stream:
         data = stream.read(MAX_DOCUMENT_BYTES + 1)
     require(len(data) <= MAX_DOCUMENT_BYTES, 'Document exceeds 16 MiB.')
-    return validate_document(decode_json(data))
+    return validate_document(decode_json(data, mark_rounded_integers=True))
 
 
 def load_project(root, name='project.json'):
@@ -673,9 +706,34 @@ def load_project(root, name='project.json'):
 
     This is not a transaction or a sandbox against a malicious concurrent writer.
     Later workers must revalidate input hashes at their own admission boundary.
+    Explicit internal directory capabilities retain their descriptor authority;
+    dependency reads never resolve that authority into a replaceable pathname.
     """
-    root = Path(root).resolve(strict=True)
+    root = normalize_root(root)
     require(root.is_dir(), 'Project root must be a directory.')
+
+    def file_size(path):
+        target = root
+        for part in path.split('/'):
+            target = target / part
+            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
+            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
+            # Resolve only this containment comparison, never the authority used
+            # for opening files below. Registered descriptor roots stay pinned.
+            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
+        require(target.is_file(), 'Missing regular dependency: ' + path)
+        return target.stat().st_size
+
+    return _load_project(name, lambda path: open_payload(root, path, profile='scene3d'), file_size)
+
+
+def load_project_at(root_fd, name='project.json'):
+    """Verify the project and its closure relative to a caller-held directory."""
+    with owned_directory_fd(root_fd) as descriptor:
+        return _load_project(name, lambda path: open_payload_at(descriptor, path, profile='scene3d'))
+
+
+def _load_project(name, open_file, file_size=None):
     documents, inventory, identities, edges, aliases, payloads = {}, {}, {}, {}, {}, {}
     total = 0
     budgets = dict(max_files=MAX_FILES, max_bytes=MAX_TOTAL_BYTES, max_nodes=MAX_NODES, max_frames=1_000_000)
@@ -686,20 +744,19 @@ def load_project(root, name='project.json'):
         folded = unicodedata.normalize('NFC', path).casefold()
         require(folded not in aliases or aliases[folded] == path, 'Portable path alias collision.')
         aliases[folded] = path
-        target = root
-        for part in path.split('/'):
-            target = target / part
-            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
-            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
-            require(target.resolve().is_relative_to(root), 'Dependency resolves outside the project root.')
-        require(target.is_file(), 'Missing regular dependency: ' + path)
-        size = target.stat().st_size
-        require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+        size = file_size(path) if file_size is not None else None
+        if size is not None:
+            require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
         require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
         digest = hashlib.sha256()
         observed = 0
         chunks = []
-        with target.open('rb') as stream:
+        with open_file(path) as (stream, opened):
+            if size is None:
+                size = opened.st_size
+                require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+            else:
+                require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
             while True:
                 chunk = stream.read(min(1024*1024, budgets['max_bytes'] - total + 1))
                 if not chunk:
@@ -739,7 +796,8 @@ def load_project(root, name='project.json'):
                     _legacy_reference(payload, expected)
                 return
         require(path.endswith('.json'), 'Scene3D manifests must use .json filenames.')
-        document = validate_document(decode_json(payload))
+        is_shot = expected is not None and expected.get('kind') == 'scene3d-shot'
+        document = validate_document(decode_json(payload, mark_rounded_integers=is_shot))
         if expected and expected.get('kind') in MANIFEST_KINDS:
             _reference_identity(document, expected)
         require(depth == 0 or document['kind'] != 'scene3d-project', 'Nested Scene3D project manifests are unsupported.')
