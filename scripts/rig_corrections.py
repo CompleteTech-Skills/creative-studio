@@ -11,6 +11,15 @@ from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
 
 
+def _bone_field_changed(field, before, after):
+    if field in ('head', 'tail'):
+        try:
+            return not np.array_equal(np.asarray(before, dtype=float), np.asarray(after, dtype=float))
+        except (TypeError, ValueError, OverflowError):
+            return True  # The rebuilt skeleton validates the final endpoint values.
+    return before != after
+
+
 def apply_rig_corrections(rig, correction, *, persist=True):
     validate_contract(correction, 'RigCorrection')
     require(correction['rig_id']==rig.manifest['id'] and correction['rig_version']==rig.manifest['version']
@@ -52,7 +61,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                             'RIG_BONE_EDIT', 'Unsupported bone correction field.')
                     renamed=value.get('id',target)
                     require(renamed==target or renamed not in index, 'RIG_BONE_EDIT', 'Renamed bone ID already exists.')
-                    authored=any(index[target][field]!=updated for field, updated in value.items() if field!='id')
+                    authored=any(_bone_field_changed(field, index[target][field], updated)
+                                 for field, updated in value.items() if field!='id')
                     index[target].update(value)
                     if renamed!=target:
                         for bone in specs:

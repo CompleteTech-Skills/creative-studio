@@ -151,7 +151,7 @@ class RigCorrectionValidationTests(unittest.TestCase):
         self.assertEqual((issue['element'], issue['resolution']), (renamed, 'pending'))
         self.assertEqual(bone['evidence'], issue['evidence'])
         self.assertEqual(bone['evidence']['confidence'], .5)
-        for value in ({}, {'id': renamed, 'tail': bone['tail']}):
+        for value in ({}, {'id': renamed, 'tail': bone['tail']}, {'tail': list(map(str, bone['tail']))}):
             apply(dict(operation='bone-update', target=renamed, value=value))
             self.assertEqual(self.rig.manifest['uncertainties'], [issue])
             self.assertEqual(next(b['evidence'] for b in self.rig.skeleton['bones'] if b['id']==renamed),
