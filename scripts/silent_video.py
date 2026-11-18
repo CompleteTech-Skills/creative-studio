@@ -27,7 +27,7 @@ from PIL import Image
 from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
                             private_stage_supported)
 from production_contracts import _structural, read_json
-from rig_errors import directory_capability, normalize_root, open_payload, safe_path
+from rig_errors import RigError, directory_capability, normalize_root, open_payload, safe_path
 from production_render import fps_fraction, file_hash
 
 MAX_FRAMES = 18000
@@ -147,12 +147,16 @@ def _open_source(root, relative):
         yield stream
 
 
-def _read_frame(root, relative):
+def _read_frame(root, relative, *, index=None):
     try:
         with _open_source(root, relative) as stream:
             data = stream.read(MAX_FRAME_BYTES+1)
-    except OSError as exc:
-        raise ValueError('frame cannot be safely read: '+str(relative)) from exc
+    except (ValueError, OSError):
+        # Descriptor errors can carry the caller's path in both their text and
+        # structured report. Export a new verifier-owned error, never that
+        # path-bearing exception. Inventory indices are safe identities.
+        suffix = '' if index is None else ' at index '+str(index)
+        raise ValueError('source frame cannot be safely read'+suffix) from None
     if not 0 < len(data) <= MAX_FRAME_BYTES:
         raise ValueError('frame exceeds encoded byte limit')
     return data
@@ -229,7 +233,7 @@ def build_source(root, frame_paths, fps, origin='synthetic'):
         raise ValueError('bounded ordered frame paths required')
     frames, size, total = [], None, 0
     for index, relative in enumerate(frame_paths):
-        data = _read_frame(root, relative)
+        data = _read_frame(root, relative, index=index)
         total += len(data)
         if total > MAX_SOURCE_BYTES:
             raise ValueError('source inventory exceeds byte budget')
@@ -353,6 +357,7 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     """Bound process duration and retain bounded observed failure transcripts."""
     start = time.monotonic()
     failure = None
+    termination_requested = False
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
             process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
@@ -385,6 +390,7 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
             failure = exc
         finally:
             if process.poll() is None:
+                termination_requested = True
                 process.kill()
             process.wait()
         record = {'command': list(command), 'exit_status': process.returncode}
@@ -412,8 +418,11 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     if failure is None and record['exit_status']:
         failure = ValueError('media command failed ('+str(record['exit_status'])+')')
     if failure is not None:
+        record['termination_requested'] = termination_requested
         if str(failure) == 'media command exceeded timeout':
             record['timed_out'] = True
+        if str(failure) == 'media command exceeded evidence byte budget':
+            record['evidence_limit_exceeded'] = True
         evidence, message = _failure_diagnostics({'command_failure': record}, str(failure), limits['max_log_bytes'])
         failure.args = (message,)
         failure.evidence = evidence
@@ -459,7 +468,7 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
 def _snapshot(request, root, directory):
     source = request['source']
     for frame in source['frames']:
-        data = _read_frame(root, frame['path'])
+        data = _read_frame(root, frame['path'], index=frame['index'])
         if len(data) != frame['bytes'] or hashlib.sha256(data).hexdigest() != frame['sha256']:
             raise ValueError('source frame missing/stale at index '+str(frame['index']))
         im = _image(data, (source['width'], source['height']))
@@ -645,7 +654,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
                       *VERIFY_INPUT_OPTIONS, '-i', str(path.resolve()), '-map', '0:v:0', '-an', '-sn', '-dn',
                       '-vf', 'select=eq(n\\,%d)' % index, '-frames:v', '1', '-threads', '1',
                       str(output)], output=output)
-                expected = _image(_read_frame(root, source['frames'][index]['path']),
+                expected = _image(_read_frame(root, source['frames'][index]['path'], index=index),
                                   (source['width'], source['height']))
                 with Image.open(output) as decoded_frame:
                     actual = decoded_frame.convert('RGB')
@@ -677,25 +686,31 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
     subprocesses. The receipt identifies bytes, never mutable pathname identity.
     """
     validate_request(request)
-    path = Path(path).absolute()
-    if path.is_symlink() or not path.is_file():
-        raise ValueError('artifact is missing or a symlink')
-    limit = request['limits']['max_output_bytes']
-    with tempfile.TemporaryDirectory(prefix='silent-verify-') as tmp:
-        snapshot = Path(tmp)/('artifact'+PROFILES[request['profile']]['extension'])
-        digest = hashlib.sha256()
-        count = 0
-        with _open_source(path.parent, path.name) as source, snapshot.open('xb') as output:
-            for chunk in iter(lambda: source.read(1024*1024), b''):
-                count += len(chunk)
-                if count > limit:
-                    raise ValueError('artifact exceeds byte budget')
-                output.write(chunk)
-                digest.update(chunk)
-        diagnostics = {'schema_version': 1, 'verified': False, 'artifact_sha256': digest.hexdigest(),
-                       'artifact_sha256_scope': 'verification-snapshot', 'artifact_bytes': count,
-                       'request_sha256': _digest(request), 'source_manifest_sha256': _digest(request['source'])}
-        try:
+    diagnostics = {'schema_version': 1, 'verified': False,
+                   'request_sha256': _digest(request), 'source_manifest_sha256': _digest(request['source'])}
+    try:
+        path = Path(path).absolute()
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('artifact is missing or a symlink')
+        limit = request['limits']['max_output_bytes']
+        with tempfile.TemporaryDirectory(prefix='silent-verify-') as tmp:
+            snapshot = Path(tmp)/('artifact'+PROFILES[request['profile']]['extension'])
+            digest = hashlib.sha256()
+            count = 0
+            try:
+                with _open_source(path.parent, path.name) as source, snapshot.open('xb') as output:
+                    for chunk in iter(lambda: source.read(1024*1024), b''):
+                        count += len(chunk)
+                        if count > limit:
+                            raise ValueError('artifact exceeds byte budget')
+                        output.write(chunk)
+                        digest.update(chunk)
+            except (RigError, OSError):
+                raise ValueError('artifact could not be safely read for verification') from None
+            # A partial or refused read cannot establish the artifact identity.
+            # Publish this digest only after descriptor validation and close.
+            diagnostics.update(artifact_sha256=digest.hexdigest(),
+                               artifact_sha256_scope='verification-snapshot', artifact_bytes=count)
             result = _verify_snapshot(snapshot, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
                                       cancel=cancel, diagnostics=diagnostics)
             checked = hashlib.sha256()
@@ -711,15 +726,17 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
                 raise ValueError('artifact could not be safely reread after independent verification') from None
             if digest.hexdigest() != result['artifact_sha256'] or checked.hexdigest() != result['artifact_sha256']:
                 raise ValueError('artifact changed during independent verification')
-        except (ValueError, OSError) as exc:
-            if isinstance(exc, OSError):
-                exc = ValueError('media verification filesystem operation failed (OS error '+str(exc.errno)+')')
-            evidence, message = _failure_diagnostics(
-                {**getattr(exc, 'evidence', {}), **diagnostics}, str(exc), request['limits']['max_log_bytes'])
-            exc.evidence = evidence
-            exc.args = (message,)
-            raise exc from None
         return result
+    except (ValueError, OSError) as exc:
+        if isinstance(exc, RigError):
+            exc = ValueError('media verification descriptor validation failed')
+        elif isinstance(exc, OSError):
+            exc = ValueError('media verification filesystem operation failed (OS error '+str(exc.errno)+')')
+        evidence, message = _failure_diagnostics(
+            {**getattr(exc, 'evidence', {}), **diagnostics}, str(exc), request['limits']['max_log_bytes'])
+        exc.evidence = evidence
+        exc.args = (message,)
+        raise exc from None
 
 
 def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=None):

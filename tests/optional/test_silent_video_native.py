@@ -628,7 +628,21 @@ class SilentMedia(core.SilentContracts):
                 with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
                     video.verify_export(artifact, request)
                 self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
-                self.assertEqual(failed.exception.evidence['probe']['exit_status'], 1)
+                record = failed.exception.evidence['probe']
+                if long_path:
+                    self.assertTrue(record['evidence_limit_exceeded'])
+                    self.assertIn('evidence byte budget', str(failed.exception))
+                    self.assertIs(type(record['termination_requested']), bool)
+                    # POSIX kill is -SIGKILL; Windows TerminateProcess uses 1.
+                    # A process already finished at the limit retains exit 1.
+                    if os.name == 'posix' and record['termination_requested']:
+                        # The process can finish naturally between poll/kill.
+                        self.assertIn(record['exit_status'], (-9, 1))
+                    else:
+                        self.assertEqual(record['exit_status'], 1)
+                    self.assertLessEqual(len(record['stderr'].encode()), 1024)
+                else:
+                    self.assertEqual(record['exit_status'], 1)
                 self.assertEqual(bool(failed.exception.evidence['probe'].get('stderr_truncated')), long_path)
                 self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
                 result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
@@ -639,7 +653,19 @@ class SilentMedia(core.SilentContracts):
                 self.assertNotIn(marker, result.stdout + result.stderr)
                 report = json.loads(result.stdout)
                 self.assertFalse(report['verified'])
-                self.assertEqual(report['probe']['exit_status'], 1)
+                record = report['probe']
+                if long_path:
+                    self.assertTrue(record['evidence_limit_exceeded'])
+                    self.assertIn('evidence byte budget', report['error'])
+                    self.assertIs(type(record['termination_requested']), bool)
+                    if os.name == 'posix' and record['termination_requested']:
+                        self.assertIn(record['exit_status'], (-9, 1))
+                    else:
+                        self.assertEqual(record['exit_status'], 1)
+                    self.assertTrue(record['stderr_truncated'])
+                    self.assertLessEqual(len(record['stderr'].encode()), 1024)
+                else:
+                    self.assertEqual(record['exit_status'], 1)
                 self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
 
     def test_historical_full_probe_receipt_accepts_only_matching_authoritative_facts(self):

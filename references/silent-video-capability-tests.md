@@ -112,3 +112,32 @@ The original 17 core and 30 native test method bodies remain unchanged. The new
 regressions failed on the preceding source before the correction. Independent
 review and required hosted checks must identify the final integrated head;
 these local results do not grant production-art or full-film acceptance.
+
+## Read refusals and observed termination
+
+Filesystem refusal errors use verifier-owned text rather than forwarding the
+descriptor reader's path-bearing exception or structured asset field. A source
+failure identifies its inventory index and retains completed probe/timeline/decode
+records and the verified snapshot identity. An artifact refused before snapshot
+creation retains the valid request/source hashes, without inventing an artifact
+hash, byte count, stream inventory or started media process. Two independent
+portable cases and two actual mode-000 cases reproduce the earlier API/CLI leak
+using only synthetic filenames; the native cases first complete real H.264
+encoding and measure that read permission is actually denied.
+
+An over-limit transcript records `evidence_limit_exceeded` and whether termination
+was requested. The exit status remains the status returned by the process; a kill
+request can race with a natural exit. The ordinary corrupt-file exit-1 assertions
+remain. Long-path cases additionally require limit/redaction/hash evidence and a
+platform-consistent observed exit. A real deliberately running process establishes
+the requested-termination result, and separately labeled simulated process
+fixtures cover natural completion before or during the request. This replaces
+the incorrect assumption behind the previously retained intermittent test failure.
+
+The dedicated workflow includes every portable silent-video module and both
+native media modules. Current local completed unittest logs report 51 portable
+tests and 76 tests in the native discovery, all passed with zero skips. The latter
+includes inherited portable methods; it is not 76 independent codec exercises.
+The new actual permission module separately completed two tests with exit 0,
+and portable discovery completed with exit 0. Final exact-head review and hosted
+checks remain mandatory; the original 17 core and 30 native methods are unchanged.
