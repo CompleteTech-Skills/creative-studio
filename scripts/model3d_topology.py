@@ -322,19 +322,25 @@ def _closed_volume_sign(positions, triangles):
     # helper already translates to the first vertex and applies a positive scale.
     with np.errstate(under='ignore'):
         p = _scaled_positions(positions)
-        volume6 = np.einsum('ij,ij->', p[triangles[:, 0]],
-                            np.cross(p[triangles[:, 1]], p[triangles[:, 2]]))
-    finite = np.isfinite(volume6)
-    if len(triangles) <= 32:
-        # Normalized coordinates have magnitude at most one. Allow for
-        # rounding in the determinant and sum, and resolve uncertain signs
-        # exactly for small components without imposing that cost on large ones.
-        tolerance = np.finfo(p.dtype).eps * 128 * len(triangles)
-        if not finite or abs(volume6) <= tolerance:
-            exact = _exact_closed_volume6(positions, triangles)
-            return (exact > 0) - (exact < 0)
-    if finite and volume6 != 0:
+        a, b, c = (p[triangles[:, i]] for i in range(3))
+        forward = a * (b[:, [1, 2, 0]] * c[:, [2, 0, 1]])
+        reverse = a * (b[:, [2, 0, 1]] * c[:, [1, 2, 0]])
+        volume6 = np.sum(forward - reverse)
+        term_magnitude = np.sum(np.abs(forward)) + np.sum(np.abs(reverse))
+        precision = np.finfo(p.dtype)
+        # Bound rounding against the terms before cancellation. The summation
+        # allowance grows with the number of terms, with a separate floor for
+        # arithmetic that may have rounded to a subnormal or to zero.
+        term_count = forward.size
+        tolerance = ((16 + 4 * term_count) * precision.eps * term_magnitude
+                     + 16 * term_count * precision.smallest_subnormal)
+    if np.isfinite(volume6) and abs(volume6) > tolerance:
         return 1 if volume6 > 0 else -1
+    # Resolve uncertain signs exactly for small components. Larger ambiguous
+    # components fail without allocating an exact representation of their mesh.
+    if len(triangles) <= 32:
+        exact = _exact_closed_volume6(positions, triangles)
+        return (exact > 0) - (exact < 0)
     return 0
 
 

@@ -116,6 +116,30 @@ class TopologyTests(unittest.TestCase):
         self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
         self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
 
+    def test_outward_rejects_large_coplanar_shell_with_rounding_residual(self):
+        mesh = tetra()
+        mesh.positions[:] = [[0, 0, 0], [2, 0, 6], [0, 3, -6], [1, 1, 1]]
+        mesh = subdivide_mesh(mesh, levels=2)
+        report = topology_report(mesh)
+        self.assertEqual(len(mesh.triangles), 64)
+        self.assertEqual(report['degenerate_faces'], [])
+        self.assertEqual(report['boundary_edges'], [])
+        self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
+
+    def test_outward_accepts_large_anisotropic_shell_with_clear_sign(self):
+        import model3d_topology as topology
+
+        mesh = tetra()
+        mesh.positions[2, 1] = mesh.positions[3, 2] = 1e-100
+        mesh = subdivide_mesh(mesh, levels=2)
+        outward = mesh.triangles.copy()
+        mesh.triangles = outward[:, [0, 2, 1]]
+        self.assertEqual(len(mesh.triangles), 64)
+        scaling = topology._scaled_positions
+        with mock.patch.object(topology, '_scaled_positions',
+                               side_effect=lambda p: scaling(p).astype(np.float64)):
+            np.testing.assert_array_equal(orient_mesh(mesh, outward=True).triangles, outward)
+
     def test_open_or_nonmanifold_orientation_rejected(self):
         mesh=tetra();mesh.triangles=mesh.triangles[:3]
         self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh,outward=True))
