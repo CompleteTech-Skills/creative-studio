@@ -62,8 +62,18 @@ class NativeBudgetAdmissionTests(unittest.TestCase):
             return hatch.claim(root, hatch.manifest(root), name)
 
     def files(self):
-        return {path.relative_to(self.owner).as_posix(): path.read_bytes()
-                for path in self.owner.rglob('*') if path.is_file()}
+        result = {}
+        for path in self.owner.rglob('*'):
+            if not path.is_file():
+                continue
+            name = path.relative_to(self.owner).as_posix()
+            if path.name.endswith('.hatch.lock'):
+                # An active Windows owner holds a mandatory lock on byte zero.
+                info = path.stat()
+                result[name] = (info.st_size, info.st_mtime_ns)
+            else:
+                result[name] = path.read_bytes()
+        return result
 
     def readonly_verify(self, budget, job, reservation_id, *, input_hashes=None,
                         rejects=False):

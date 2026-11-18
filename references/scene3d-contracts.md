@@ -166,6 +166,10 @@ Frame rates are positive reduced `{numerator, denominator}` rationals, limited t
 240 fps. Schema-declared integer fields accept finite numerically integral JSON floats
 such as `1.0` and `24.0`, matching JSON Schema. Admission bounds-checks those
 values before converting only the declared local fields in a validated copy.
+Standalone shot reads and project closure verification check the serialized
+FPS terms before normalization. An exactly integral spelling such as `24.0`
+is accepted, and a fraction such as `24.000000000000001` is rejected even when
+the default floating-point conversion would round it to `24.0`.
 Booleans, fractions, nonfinite values and out-of-range values fail. Metadata and
 foreign 2D owner documents are not normalized. Original source bytes and raw-file
 hashes remain unchanged; canonical serialization uses the normalized copy. Frame
