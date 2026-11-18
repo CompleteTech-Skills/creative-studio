@@ -1,0 +1,38 @@
+{
+  "captured_at": "2026-10-24T04:26:09.369258+00:00",
+  "source_kind": "official-pinned-native-source",
+  "records": [
+    {
+      "url": "https://raw.githubusercontent.com/blender/blender/v4.5.3/source/blender/blenkernel/intern/rigidbody.cc",
+      "blender_build": "67807e1800cc",
+      "source_tag": "v4.5.3",
+      "sha256": "cecfef906ee05302e62f393c50c7925394c18fff48434aba8f45f8154535fbbe",
+      "bytes": 86565,
+      "line_ranges": [
+        [
+          2011,
+          2025
+        ],
+        [
+          2055,
+          2069
+        ]
+      ],
+      "interpretation": "An absent runtime marks outdated; exact baked reads precede simulation."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/blender/blender/v4.5.3/source/blender/blenkernel/intern/pointcache.cc",
+      "blender_build": "67807e1800cc",
+      "source_tag": "v4.5.3",
+      "sha256": "7b6e6b41ec839a9208a91ec6144aca5182e5589c2b72b981a9ab5e646086bf73",
+      "bytes": 111487,
+      "line_ranges": [
+        [
+          2718,
+          2723
+        ]
+      ],
+      "interpretation": "Outdated reset does not clear a baked cache."
+    }
+  ]
+}

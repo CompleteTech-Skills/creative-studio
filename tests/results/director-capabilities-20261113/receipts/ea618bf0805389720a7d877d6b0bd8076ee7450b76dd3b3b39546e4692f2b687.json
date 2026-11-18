@@ -1,0 +1,53 @@
+{
+  "dependencies": {
+    "executable": "ba5be4f60d2ec3ab668e3d60a1092f65ad2697957c2319dcbfb056ae58202c46",
+    "ffprobe": "b9170e6e9da249120590cb6c76064d38295b3beb65615b73db7c1d9148884f99",
+    "probe_source": "9fb20f454d3a87030089c211be04a8f11f79ebd85d23276220fb428d719322ef"
+  },
+  "dependency_fingerprint": "adacb42f2ef9f85c99804fe5c977823655494eb4c5e89255c4bb9de89149d500",
+  "discovered": true,
+  "execution": {
+    "audio_streams": 0,
+    "codec": "libx264",
+    "decoded_frames": 1,
+    "exit_code": 0,
+    "output_sha256": "1161c7f15e9c884ad9a5d8563cc7d91111a4b8c4939da30c7e44923046d36d82",
+    "reason": null,
+    "success": true,
+    "version": "n9.0.2"
+  },
+  "execution_verified": true,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "codec.h264",
+  "payloads": [
+    {
+      "artifact_id": "probe-1161c7f15e9c884ad9a5d8563cc7d91111a4b8c4939da30c7e44923046d36d82",
+      "byte_size": 1550,
+      "dependencies": [],
+      "fixture": true,
+      "kind": "capability-probe-evidence",
+      "media_type": "video/mp4",
+      "path": "payloads/1161c7f15e9c884ad9a5d8563cc7d91111a4b8c4939da30c7e44923046d36d82.mp4",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "1161c7f15e9c884ad9a5d8563cc7d91111a4b8c4939da30c7e44923046d36d82"
+    }
+  ],
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "executed",
+  "schema_version": 1,
+  "status": "available",
+  "version": "n9.0.2"
+}

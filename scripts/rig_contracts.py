@@ -14,6 +14,10 @@ DEFAULT_LIMITS = dict(source_bytes=256*1024**2, dependency_bytes=1024**3, vertic
                       archive_bytes=1024**3, attempts=3)
 
 
+def valid_import_scale(scale: Any) -> bool:
+    return isinstance(scale, (int, float)) and not isinstance(scale, bool) and 0 < scale <= 10000
+
+
 def obj(properties: dict, required=None) -> dict:
     return dict(type='object', additionalProperties=False, properties=properties,
                 required=list(properties if required is None else required))
