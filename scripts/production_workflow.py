@@ -782,11 +782,13 @@ def verify_project_archive(path):
     return receipt
 
 
-def _active_acquisitions(root):
+def _active_acquisitions(root, *, restoring=False):
     active = []
     for manifest_path in sorted(Path(root).rglob('imagegen-jobs.json')):
         safe_path(root, manifest_path.relative_to(root).as_posix())
         data = hatch.manifest(manifest_path.parent)
+        if restoring and ('director_budget' in data or any('budget_operation' in job for job in data['jobs'])):
+            raise ValueError('budgeted acquisitions cannot be restored without an explicit accounting reconciliation transaction')
         for job in data['jobs']:
             if job['status'] == 'running':
                 active.append({'run_path': manifest_path.parent.relative_to(root).as_posix(),
@@ -938,9 +940,11 @@ def restore_project(archive_path, destination):
         if bundle['project']['id'] != receipt['project_id'] or bundle['project']['fixture'] is not receipt['fixture']:
             raise ValueError('restored project identity or fixture differs from the verified receipt')
         state = _state(stage, bundle)
-        _bound_runs(stage, state)
-        if _active_acquisitions(stage):
+        if 'director_budget' in state or (stage / 'director-budget-owner.json').exists():
+            raise ValueError('budgeted projects cannot be restored without an explicit accounting reconciliation transaction')
+        if _active_acquisitions(stage, restoring=True):
             raise ValueError('archive contains active acquisition tokens; preserve and reconcile the original run')
+        _bound_runs(stage, state)
         renderer_changed = receipt.get('renderer') != _renderer_identity()
         render_freshness = _cached_render_freshness(stage, bundle)
         rerender_required = renderer_changed or bool(render_freshness['affected_renders'])
