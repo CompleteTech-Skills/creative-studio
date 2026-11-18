@@ -1,7 +1,6 @@
 """Hash-bound manual corrections; geometry and original sources remain immutable."""
 from __future__ import annotations
 from copy import deepcopy
-import numpy as np
 from rig_contracts import validate_contract
 from rig_errors import atomic_json, object_hash, require, safe_path, sha256
 from rig_jobs import next_version, save_rig
@@ -9,15 +8,6 @@ from rig_models import rig_signature
 from rig_skeleton import skeleton_from_heads, validate_skeleton
 from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
-
-
-def _bone_field_changed(field, before, after):
-    if field in ('head', 'tail'):
-        try:
-            return not np.array_equal(np.asarray(before, dtype=float), np.asarray(after, dtype=float))
-        except (TypeError, ValueError, OverflowError):
-            return True  # The rebuilt skeleton validates the final endpoint values.
-    return before != after
 
 
 def apply_rig_corrections(rig, correction, *, persist=True):
@@ -31,12 +21,12 @@ def apply_rig_corrections(rig, correction, *, persist=True):
         for bone in result.skeleton['bones']:
             specs.append({k:deepcopy(bone[k]) for k in ('id','role','parent','head','tail','deform','mirror','roll')})
             evidence[bone['id']]=deepcopy(bone['evidence'])
+    baseline={bone['id']:bone.copy() for bone in specs}
     for edit in correction['edits']:
         operation,target,value=edit['operation'],edit['target'],deepcopy(edit['value'])
         index={b['id']:b for b in specs}
         if operation in ('bone-add','bone-update','bone-remove'):
             uncertainties=result.manifest['uncertainties']
-            authored=operation=='bone-add'
             if operation=='bone-add':
                 require(target not in index and isinstance(value,dict), 'RIG_BONE_EDIT', 'New bone ID must be unique.')
                 require(set(value) <= {'id','role','parent','head','tail','deform','mirror','roll'} and
@@ -48,8 +38,9 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                 if operation=='bone-remove':
                     require(not any(b['parent']==target for b in specs), 'RIG_BONE_CHILDREN', 'Reparent or remove children before deleting a bone.')
                     specs=[b for b in specs if b['id']!=target]
-                    evidence.pop(target)
-                    for b in specs:
+                    evidence.pop(target,None)
+                    baseline.pop(target,None)
+                    for b in (*specs, *baseline.values()):
                         if b.get('mirror')==target:b['mirror']=None
                     result.manifest['controllers']['ik']=[c for c in result.manifest['controllers']['ik'] if target not in c['bones']]
                     result.manifest['controllers']['constraints']=[c for c in result.manifest['controllers']['constraints'] if c['bone']!=target and c.get('target')!=target]
@@ -61,11 +52,10 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                             'RIG_BONE_EDIT', 'Unsupported bone correction field.')
                     renamed=value.get('id',target)
                     require(renamed==target or renamed not in index, 'RIG_BONE_EDIT', 'Renamed bone ID already exists.')
-                    authored=any(_bone_field_changed(field, index[target][field], updated)
-                                 for field, updated in value.items() if field!='id')
                     index[target].update(value)
                     if renamed!=target:
-                        for bone in specs:
+                        # Keep automatic reference rewrites out of the anatomy comparison.
+                        for bone in (*specs, *baseline.values()):
                             for field in ('parent','mirror'):
                                 if bone.get(field)==target:bone[field]=renamed
                         for c in result.manifest['controllers']['ik']:c['bones']=[renamed if x==target else x for x in c['bones']]
@@ -77,18 +67,15 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                         result.manifest['facial']['eyes']=[renamed if x==target else x for x in result.manifest['facial']['eyes']]
                         for expression in result.manifest['facial']['expressions'].values():
                             if target in expression['bones']:expression['bones'][renamed]=expression['bones'].pop(target)
-                        evidence[renamed]=evidence.pop(target)
+                        if target in baseline:
+                            baseline[renamed]=baseline.pop(target)
+                            evidence[renamed]=evidence.pop(target)
                         for issue in uncertainties:
                             if issue['code']=='RIG_ANATOMY_UNCERTAIN' and issue['element']==target:
                                 issue['element']=renamed
-                        target=renamed
             if operation in ('bone-add','bone-remove'):
                 uncertainties[:]=[u for u in uncertainties
                                   if u['code']!='RIG_ANATOMY_UNCERTAIN' or u['element']!=target]
-            if authored:
-                evidence[target]=dict(source='human-landmark',reference='Correction by '+correction['author']+': '+correction['reason'],confidence=1.)
-                for issue in uncertainties:
-                    if issue['element']==target:issue['resolution']='corrected'
             skeleton_changed=True
         elif operation=='weights':
             require(not skeleton_changed, 'RIG_CORRECTION_ORDER', 'Regenerate binding after skeletal edits before editing weights.')
@@ -156,9 +143,20 @@ def apply_rig_corrections(rig, correction, *, persist=True):
             for key in ('skeleton','controllers','attachments','uncertainties'):result.manifest[key]=fitted[key]
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True
+            baseline={bone['id']:bone.copy() for bone in specs}
     if skeleton_changed:
         skeleton=skeleton_from_heads(specs,identifier=result.skeleton['id'],version=next_version(result.skeleton['version']))
-        for b in skeleton['bones']:b['evidence']=evidence[b['id']]
+        corrected=set()
+        for bone in skeleton['bones']:
+            target=bone['id']
+            original=baseline.get(target)
+            if original is None or any(bone[field]!=value for field,value in original.items() if field!='id'):
+                bone['evidence']=dict(source='human-landmark',reference='Correction by '+correction['author']+': '+correction['reason'],confidence=1.)
+                corrected.add(target)
+            else:
+                bone['evidence']=evidence[target]
+        for issue in result.manifest['uncertainties']:
+            if issue['element'] in corrected:issue['resolution']='corrected'
         result.manifest['skeleton']=skeleton
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
     validate_skeleton(result.skeleton,result.manifest['limits'])

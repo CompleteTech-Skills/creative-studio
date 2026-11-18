@@ -159,7 +159,13 @@ class RigCorrectionValidationTests(unittest.TestCase):
 
         tail = list(bone['tail'])
         tail[2] += .01
-        apply(dict(operation='bone-update', target=renamed, value={'tail': tail}))
+        update = dict(operation='bone-update', target=renamed, value={'tail': tail})
+        restore = dict(operation='bone-update', target=renamed, value={'tail': list(map(str, bone['tail']))})
+        apply(update, restore)
+        self.assertEqual(next(b for b in self.rig.skeleton['bones'] if b['id']==renamed), bone)
+        self.assertEqual(self.rig.manifest['uncertainties'], [issue])
+
+        apply(update)
         self.assertEqual(self.rig.manifest['uncertainties'], [dict(issue, resolution='corrected')])
 
         remove = dict(operation='bone-remove', target=renamed, value=None)
