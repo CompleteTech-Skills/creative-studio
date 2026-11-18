@@ -135,6 +135,18 @@ def _gltf_sources(inventory, provenance, report):
     return primary, sources
 
 
+def _check_blender_triangle(model):
+    """Compare decoded world-space geometry with the fixed producer fixture."""
+    meshes = model.geometry.meshes
+    require(len(meshes) == 1 and meshes[0].triangles.shape == (1, 3)
+            and len(meshes[0].positions) == 3,
+            'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has a different triangle topology.')
+    vertices = [tuple(meshes[0].positions[index]) for index in meshes[0].triangles[0]]
+    expected = [(0, 0, 0), (1, 0, 0), (0, 1, -2)]
+    require(any(vertices == expected[index:] + expected[:index] for index in range(3)),
+            'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has different coordinates or winding.')
+
+
 def _verify_normalized(root, manifest, inventory, limits, *, blender):
     """Reproduce GLB packing from the retained glTF input and verify the exact output."""
     from asset_library_import import (BLENDER_VALIDATOR, TOOL, VERSION,
@@ -313,6 +325,8 @@ def import_canonical(library, ref, *, entry=None, limits=None):
         if verify_native:
             require(actual == {_NORMALIZED} and model.report['source_sha256'] == normalized['sha256'],
                     'MODEL3D_INVENTORY', 'Native import must decode the verified standalone GLB.')
+        if blender:
+            _check_blender_triangle(model)
         return MeshImport(model, records, dict(authority='AssetLibrary.resolve/read_file',
                           canonical_ref=copy.deepcopy(ref), manifest=copy.deepcopy(manifest),
                           source_entry=entry, normalization=normalization, **evidence),

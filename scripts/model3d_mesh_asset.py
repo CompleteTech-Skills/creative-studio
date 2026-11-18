@@ -29,6 +29,28 @@ def _fragment(value, name):
     require(error is None, 'MODEL3D_SCHEMA', 'Invalid supplied ' + name + ': ' + (error.message[:512] if error else ''))
 
 
+def _check_original_filenames(inventory, registered, supplied):
+    """Verify caller-supplied names against retained acquisition evidence."""
+    names_by_path = {}
+    for record in registered.get('source_records', []):
+        names_by_path.setdefault(record['file']['path'], set()).add(record['original_filename'])
+    for source in supplied:
+        file = source['file']
+        candidates = [item for item in registered['sources']
+                      if (item['sha256'], item['bytes']) == (file['sha256'], file['bytes'])]
+        # An exact inventory path identifies the retained item, even when
+        # another original or a derived payload happens to have identical bytes.
+        item = inventory.get(file['path'])
+        if item and (item['sha256'], item['bytes']) == (file['sha256'], file['bytes']):
+            candidates = [candidate for candidate in candidates if candidate['path'] == file['path']]
+        names = set()
+        for candidate in candidates:
+            names.update(names_by_path.get(candidate['path'], {None}))
+        if names - {None}:
+            require(names == {source['original_filename']},
+                    'MODEL3D_PROVENANCE', 'Original filename must agree with unambiguous registered source evidence.')
+
+
 def _normalized_evidence(manifest):
     from asset_library_contracts import canonical_bytes, load_manifest
     from asset_library_import import TOOL, VERSION
@@ -54,11 +76,10 @@ def _normalized_evidence(manifest):
             and conversions[0]['operation'] == 'Pack and normalize GLB'
             and conversions[0]['inputs'] == sources and conversions[0]['outputs'] == [normalized, report],
             'MODEL3D_REFERENCE', 'Canonical evidence requires the native glTF conversion and inventoried normalized GLB.')
-    fixture_inputs = [normalized, *sources] if provenance['fixture'] else []
-    return normalized, {(record['sha256'], record['bytes']) for record in fixture_inputs}
+    return normalized, inventory, provenance
 
 
-def _canonical_binding(payload, geometry_record):
+def _canonical_binding(payload, geometry_record, sources, provenance):
     require(isinstance(payload, dict) and set(payload) == {'canonical_ref', 'manifest'},
             'MODEL3D_REFERENCE', 'Canonical evidence must retain exact reference and original manifest.')
     ref, manifest = payload['canonical_ref'], payload['manifest']
@@ -105,9 +126,9 @@ def _canonical_binding(payload, geometry_record):
         require(total <= 256*1024**2, 'MODEL3D_REFERENCE', 'Canonical version inventory exceeds its byte limit.')
         if name == 'runtime/asset.glb': runtime = item
         if name == 'normalized.glb': has_normalized = True
-    fixture_inputs = set()
+    registered = None
     if runtime is None and has_normalized:
-        runtime, fixture_inputs = _normalized_evidence(manifest)
+        runtime, registered_files, registered = _normalized_evidence(manifest)
         require(geometry_record['media_type'] == runtime['mime_type'],
                 'MODEL3D_REFERENCE', 'Canonical normalized entry media type differs from the geometry record.')
     else:
@@ -116,7 +137,14 @@ def _canonical_binding(payload, geometry_record):
     require(runtime is not None and runtime['sha256'] == geometry_record['sha256']
             and runtime['bytes'] == geometry_record['bytes'],
             'MODEL3D_REFERENCE', 'Canonical geometry inventory does not bind these geometry bytes.')
-    return fixture_inputs
+    if registered is not None:
+        if registered['fixture']:
+            require(provenance['fixture'], 'MODEL3D_PROVENANCE', 'Canonical fixture provenance must be preserved.')
+            fixture_bytes = {(item['sha256'], item['bytes']) for item in [runtime, *registered['sources']]}
+            require(all(source['provenance']['fixture'] for source in sources
+                        if (source['file']['sha256'], source['file']['bytes']) in fixture_bytes),
+                    'MODEL3D_PROVENANCE', 'Canonical fixture sources must remain fixtures.')
+        _check_original_filenames(registered_files, registered, sources)
 
 
 def build_asset(root, geometry, *, asset_id, version, category, sources, provenance,
@@ -174,12 +202,7 @@ def build_asset(root, geometry, *, asset_id, version, category, sources, provena
         if canonical_evidence is not None:
             require(canonical_evidence['media_type']=='application/json', 'MODEL3D_REFERENCE', 'Canonical evidence must be JSON.')
             path = snapshot.capture(canonical_evidence)
-            fixture_inputs = _canonical_binding(decode_json(path.read_bytes()), geometry)
-            require(not fixture_inputs or provenance['fixture'],
-                    'MODEL3D_PROVENANCE', 'Canonical fixture provenance must be preserved.')
-            require(all(source['provenance']['fixture'] for source in sources
-                        if (source['file']['sha256'], source['file']['bytes']) in fixture_inputs),
-                    'MODEL3D_PROVENANCE', 'Canonical fixture sources must remain fixtures.')
+            _canonical_binding(decode_json(path.read_bytes()), geometry, sources, provenance)
         native_limits = dict(DEFAULT_LIMITS,source_bytes=selected_limits['file_bytes'],
                              dependency_bytes=selected_limits['total_bytes'],vertices=selected_limits['vertices'],
                              triangles=selected_limits['triangles'],memory_bytes=selected_limits['memory_bytes'],influences=8)

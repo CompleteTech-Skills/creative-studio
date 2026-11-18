@@ -139,7 +139,7 @@ class MeshAsset(unittest.TestCase):
             geometry = record(root, imported.provenance['source_entry'], 'model/gltf-binary')
             texture = record(root, 'source/resources/paint.png', 'image/png')
             source_mesh = record(root, 'source/model.gltf', 'model/gltf+json')
-            retained_source = source(source_mesh)
+            retained_source = dict(source(source_mesh), original_filename=original.name)
 
             def evidence_for(reference, registry_manifest):
                 (root/'canonical.json').write_text(json.dumps(
