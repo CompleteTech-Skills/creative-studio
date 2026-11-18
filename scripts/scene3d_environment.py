@@ -8,9 +8,11 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import tempfile
 
-from scene3d_contracts import COORDINATES, canonical_bytes, load_project, validate_document
+from asset_library import read_source_bytes
+from scene3d_contracts import COORDINATES, ID, MAX_DOCUMENT_BYTES, canonical_bytes, load_project, validate_document
 from rig_errors import RigError, decode_json
 from scene3d_example import node, build_example
 from scene3d_geometry import primitive, wall, count, positive
@@ -18,6 +20,10 @@ from scene3d_graph import SceneGraph, require, _inventories
 from scene3d_snapshot import snapshot_project
 from scene3d_terrain import Heightfield, scatter
 from scene3d_materials import obj_material_bindings
+
+
+_OMITTED = object()
+_RECIPE_FIELDS = {'id','version','seed','generator','parameters','budget'}
 
 
 def encode(value):
@@ -38,7 +44,7 @@ def fingerprint(value):
 
 def plan(recipe):
     """Validate a complete recipe and compute actual geometry before touching a scene."""
-    require(isinstance(recipe,dict) and set(recipe)=={'id','version','seed','generator','parameters','budget'},'Invalid recipe fields.')
+    require(isinstance(recipe,dict) and set(recipe)==_RECIPE_FIELDS,'Invalid recipe fields.')
     identifier=recipe['id']
     require(isinstance(identifier,str) and identifier.isascii() and identifier.replace('-','').isalnum() and len(identifier)<=48,'Invalid recipe ID.')
     require(recipe['version']==1 and type(recipe['version']) is int,'Unsupported generator version.')
@@ -148,15 +154,61 @@ def _generator_history(scene,key):
     return entries
 
 
-def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=None):
+def _placement(offset,parent,code='SCENE3D_EDIT'):
+    offset=[0,0,0] if offset is None else offset
+    require(isinstance(offset,(list,tuple)) and len(offset)==3 and
+            all(type(x) in (int,float) and abs(x)<=1000000 and math.isfinite(x) for x in offset),
+            'Offset must be a bounded finite vector.',code)
+    require(parent is None or isinstance(parent,str) and re.fullmatch(ID['pattern'],parent),
+            'Parent must be a node ID or null.',code)
+    return list(offset),parent
+
+
+def _stored_placement(source,bundle,scene,rid):
+    key='generator_recipe_'+rid
+    if key not in scene['metadata']:
+        return [0,0,0],None
+    code='SCENE3D_GENERATOR_HISTORY'
+    path=scene['metadata'][key]
+    require(isinstance(path,str) and re.fullmatch(r'generated/recipe-[0-9a-f]{64}\.json',path),
+            'Generator recipe metadata must name a generated recipe.',code)
+    reference=next((r for r in scene['recipes'] if r['path']==path),None)
+    require(reference is not None and path=='generated/recipe-'+reference['sha256']+'.json',
+            'Generator recipe metadata must select a hash-bound scene recipe.',code)
+    record=bundle['inventory'][path]
+    require(0<record['bytes']<=MAX_DOCUMENT_BYTES,'Stored generator recipe exceeds its byte budget.',code)
+    try:
+        raw=read_source_bytes(source/path,record['bytes'])
+        require(len(raw)==record['bytes'] and hashlib.sha256(raw).hexdigest()==reference['sha256'],
+                'Stored generator recipe changed after validation.',code)
+        stored=decode_json(raw,max_bytes=MAX_DOCUMENT_BYTES)
+    except RigError as exc:
+        raise RigError(code,'Cannot read stored generator recipe: '+str(exc),stage='scene3d-generator') from exc
+    require(isinstance(stored,dict),'Stored generator recipe must be an object.',code)
+    recipe=stored
+    offset,parent=[0,0,0],None
+    if set(stored)=={'recipe','placement'}:
+        recipe=stored['recipe'];placement=stored['placement']
+        require(isinstance(placement,dict) and set(placement)=={'offset','parent'} and
+                isinstance(placement['offset'],list),'Invalid stored generator placement.',code)
+        offset,parent=_placement(placement['offset'],placement['parent'],code)
+    require(isinstance(recipe,dict) and set(recipe)==_RECIPE_FIELDS and recipe['id']==rid and
+            type(recipe['version']) is int and recipe['version']==1,'Invalid stored generator recipe identity.',code)
+    return offset,parent
+
+
+def _prepare_recipe(source,bundle,scene,recipe,*,policy='preserve',offset=_OMITTED,parent=_OMITTED):
     """Prepare one recipe entirely in memory; publication is owned by apply_recipes."""
     require(policy in ('preserve','reject'),'Regeneration policy must be preserve or reject.')
     objects=plan(recipe);scene=deepcopy(scene)
-    offset=[0,0,0] if offset is None else offset
-    require(isinstance(offset,(list,tuple)) and len(offset)==3 and all(type(x) in (int,float) and abs(x)<=1000000 and math.isfinite(x) for x in offset),'Offset must be a bounded finite vector.')
-    require(parent is None or isinstance(parent,str),'Parent must be a node ID or null.')
     require(scene['kind']=='scene3d-scene','Select a scene manifest.')
-    rid=recipe['id'];old={n['id']:n for n in scene['nodes'] if n['metadata'].get('generator_id')==rid}
+    rid=recipe['id']
+    if offset is _OMITTED or parent is _OMITTED:
+        stored_offset,stored_parent=_stored_placement(source,bundle,scene,rid)
+        offset=stored_offset if offset is _OMITTED else offset
+        parent=stored_parent if parent is _OMITTED else parent
+    offset,parent=_placement(offset,parent)
+    old={n['id']:n for n in scene['nodes'] if n['metadata'].get('generator_id')==rid}
     previous=_generator_history(scene,'generator_nodes_'+rid)
     modified={i for i,n in old.items() if fingerprint(n)!=n['metadata'].get('generated_fingerprint')}
     tombstones=_generator_history(scene,'generator_deleted_'+rid)
@@ -179,9 +231,12 @@ def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=N
         n['bounds']=mesh.bounds;n['metadata']={'generator_id':rid,'generator_version':1}
         n['metadata']['generated_fingerprint']=fingerprint(n);scene['nodes'].append(n)
     persisted=deepcopy(recipe) if offset==[0,0,0] and parent is None else dict(recipe=recipe,placement=dict(offset=list(offset),parent=parent))
-    recipe_raw=encode(persisted);recipe_path='generated/recipe-'+digest(persisted)+'.json';payloads[recipe_path]=recipe_raw
+    recipe_raw=encode(persisted)
+    require(len(recipe_raw)<=MAX_DOCUMENT_BYTES,'Generator recipe exceeds its byte budget.')
+    recipe_sha=hashlib.sha256(recipe_raw).hexdigest()
+    recipe_path='generated/recipe-'+recipe_sha+'.json';payloads[recipe_path]=recipe_raw
     old_recipe=scene['metadata'].get('generator_recipe_'+rid)
-    scene['recipes']=[r for r in scene['recipes'] if r['path']!=old_recipe]+[dict(path=recipe_path,sha256=digest(persisted))]
+    scene['recipes']=[r for r in scene['recipes'] if r['path']!=old_recipe]+[dict(path=recipe_path,sha256=recipe_sha)]
     scene['metadata']['generator_recipe_'+rid]=recipe_path
     scene['metadata']['generator_deleted_'+rid]=json.dumps(sorted(deleted),separators=(',',':'))
     require(len(scene['metadata']['generator_deleted_'+rid])<=4096,'Generator deletion history exceeds metadata budget.')
@@ -199,7 +254,8 @@ def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offs
     """Prepare up to 16 named recipes, validate together, and publish one snapshot.
 
     Offsets are local translations and parents are exact node IDs. Both are
-    recorded beside each recipe; existing SceneGraph owns hierarchy evaluation.
+    stored beside each recipe. Omitted map entries keep the stored value. A
+    None entry resets the offset to the origin or the parent to the scene root.
     A failure in any recipe leaves the source and destination unchanged.
     """
     require(isinstance(recipes,(list,tuple)) and 1<=len(recipes)<=16,'A batch contains one to sixteen recipes.')
@@ -207,12 +263,14 @@ def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offs
     ids=[r['id'] for r in recipes];require(len(set(ids))==len(ids),'Duplicate recipe IDs in one batch.')
     offsets={} if offsets is None else offsets;parents={} if parents is None else parents
     require(isinstance(offsets,dict) and isinstance(parents,dict) and not (set(offsets)|set(parents))-set(ids),'Placement maps must select batch recipe IDs.')
+    source=Path(source).resolve(strict=True)
     bundle=load_project(source)
     require(scene_path in bundle['documents'],'Unknown selected scene.')
     scene=deepcopy(bundle['documents'][scene_path]);documents={};payloads={};conflicts=[];generated=0;triangles=0
     context=dict(bundle);context['documents']=dict(bundle['documents'])
     for recipe in recipes:
-        prepared=_prepare_recipe(context,scene,recipe,policy=policy,offset=offsets.get(recipe['id']),parent=parents.get(recipe['id']))
+        prepared=_prepare_recipe(source,context,scene,recipe,policy=policy,
+                                 offset=offsets.get(recipe['id'],_OMITTED),parent=parents.get(recipe['id'],_OMITTED))
         scene=prepared['scene'];generated+=prepared['generated'];triangles+=prepared['triangles']
         require(len(scene['nodes'])<=10000 and triangles<=200000,'Aggregate generator batch budget exceeded.')
         for path,raw in prepared['payloads'].items():
@@ -225,12 +283,12 @@ def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offs
     return dict(snapshot=result,conflicts=sorted(set(conflicts)),generated=generated)
 
 
-def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve',offset=None,parent=None):
-    """Publish one recipe; preserve changed nodes and persistent deleted-node tombstones."""
+def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve',offset=_OMITTED,parent=_OMITTED):
+    """Publish one recipe with the same placement and conflict rules as apply_recipes."""
     identifier=recipe.get('id') if isinstance(recipe,dict) else None
     return apply_recipes(source,destination,scene_path,[recipe],policy=policy,
-                         offsets=None if offset is None else {identifier:offset},
-                         parents=None if parent is None else {identifier:parent})
+                         offsets=None if offset is _OMITTED else {identifier:offset},
+                         parents=None if parent is _OMITTED else {identifier:parent})
 
 
 def create_environments(destination,recipes,*,offsets=None,parents=None):
@@ -255,7 +313,6 @@ def load_meshes(root, scene_path):
     General imported assets remain owned by the import/evaluation adapter. This
     adapter accepts only the exact bounded triangular OBJ grammar emitted here.
     """
-    from asset_library import read_source_bytes
     from scene3d_geometry import Mesh
     root=Path(root);bundle=load_project(root)
     scene=bundle['documents'][scene_path];require(scene['kind']=='scene3d-scene','Select a scene.')

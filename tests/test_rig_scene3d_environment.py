@@ -10,7 +10,7 @@ import numpy as np
 from rig_errors import RigError
 from scene3d_geometry import Mesh, primitive, wall, extrude, curve, polygon
 from scene3d_terrain import Heightfield, scatter
-from scene3d_environment import plan, create_environment, apply_recipe, apply_recipes, load_meshes, fingerprint
+from scene3d_environment import plan, create_environment, create_environments, apply_recipe, apply_recipes, load_meshes, fingerprint
 from scene3d_contracts import load_project, canonical_bytes
 from scene3d_graph import SceneGraph
 from scene3d_snapshot import snapshot_project
@@ -289,6 +289,84 @@ class EnvironmentTests(unittest.TestCase):
             self.assertFalse((root/'failed').exists())
             self.assertEqual(load_project(first)['documents'][path],original)
             with self.assertRaises(RigError):apply_recipes(first,root/'duplicate',path,[left,left])
+
+    def test_regeneration_preserves_each_omitted_placement_and_accepts_explicit_reset(self):
+        left=dict(recipe('primitive',kind='box',dimensions={}),id='left')
+        right=dict(recipe('primitive',kind='sphere',dimensions={}),id='right')
+        changed=dict(right,parameters={'kind':'sphere','dimensions':{'radius':2}})
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            source=root/'initial'
+            create_environments(source,[left,right],offsets={'left':(3,0,0),'right':(0,2,0)},
+                                parents={'right':'left-mesh'})
+            path=load_project(source)['project']['scenes'][-1]['path']
+            steps=[
+                ('omitted',{},'left-mesh',[0,2,0],[3,2,0]),
+                ('new-offset',{'offsets':{'right':[0,4,0]}},'left-mesh',[0,4,0],[3,4,0]),
+                ('new-parent',{'parents':{'right':'root'}},'root',[0,4,0],[0,4,0]),
+                ('reset-parent',{'parents':{'right':None}},None,[0,4,0],[0,4,0]),
+                ('reset-offset',{'offsets':{'right':None}},None,[0,0,0],[0,0,0]),
+                ('reopen-defaults',{},None,[0,0,0],[0,0,0]),
+            ]
+            for name,kwargs,parent,local,world in steps:
+                with self.subTest(name=name):
+                    target=root/name
+                    result=apply_recipes(source,target,path,[left,changed],**kwargs)
+                    self.assertEqual(result['conflicts'],[])
+                    self.assertEqual(result['generated'],2)
+                    bundle=load_project(target)
+                    path=bundle['project']['scenes'][-1]['path']
+                    scene=bundle['documents'][path]
+                    child=next(n for n in scene['nodes'] if n['id']=='right-mesh')
+                    self.assertEqual(child['parent'],parent)
+                    self.assertEqual(child['transform']['translation'],local)
+                    matrix=SceneGraph(scene).evaluate_base('right-mesh')['world_matrix']
+                    np.testing.assert_allclose(np.asarray(matrix)[:3,3],world)
+                    stored=json.loads((target/scene['metadata']['generator_recipe_right']).read_text())
+                    expected=changed if parent is None and local==[0,0,0] else {
+                        'recipe':changed,'placement':{'offset':local,'parent':parent}
+                    }
+                    self.assertEqual(stored,expected)
+                    source=target
+            placed=root/'placed'
+            apply_recipe(source,placed,path,changed,offset=(1,2,3),parent='left-mesh')
+            path=load_project(placed)['project']['scenes'][-1]['path']
+            reopened=root/'singular-reopen'
+            apply_recipe(placed,reopened,path,changed)
+            bundle=load_project(reopened);path=bundle['project']['scenes'][-1]['path']
+            scene=bundle['documents'][path]
+            child=next(n for n in scene['nodes'] if n['id']=='right-mesh')
+            self.assertEqual(child['parent'],'left-mesh')
+            self.assertEqual(child['transform']['translation'],[1,2,3])
+            reset=root/'singular-reset'
+            apply_recipe(reopened,reset,path,changed,offset=None,parent=None)
+            bundle=load_project(reset)
+            scene=bundle['documents'][bundle['project']['scenes'][-1]['path']]
+            child=next(n for n in scene['nodes'] if n['id']=='right-mesh')
+            self.assertIsNone(child['parent'])
+            self.assertEqual(child['transform']['translation'],[0,0,0])
+
+    def test_hash_verified_invalid_stored_placement_fails_atomically(self):
+        r=recipe('primitive',kind='box',dimensions={})
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'initial'
+            create_environment(source,r)
+            bundle=load_project(source);path=bundle['project']['scenes'][-1]['path']
+            scene=deepcopy(bundle['documents'][path])
+            raw=json.dumps({'recipe':r,'placement':{'offset':[0,False,0],'parent':None}}).encode()
+            sha=hashlib.sha256(raw).hexdigest()
+            stored=f'generated/recipe-{sha}.json'
+            scene['metadata']['generator_recipe_test']=stored
+            scene['recipes']=[dict(path=stored,sha256=sha)]
+            staged=root/'staged'
+            snapshot_project(source,staged,SceneGraph(scene),scene_path=path,extra_payloads={stored:raw})
+            reopened=load_project(staged);path=reopened['project']['scenes'][-1]['path']
+            output=root/'output'
+            with self.assertRaises(RigError) as failure:
+                apply_recipe(staged,output,path,r)
+            self.assertEqual(failure.exception.report['code'],'SCENE3D_GENERATOR_HISTORY')
+            self.assertFalse(output.exists())
+            self.assertEqual(load_project(staged)['inventory'],reopened['inventory'])
 
     def test_deleted_nodes_stay_deleted_across_generator_switch(self):
         with tempfile.TemporaryDirectory() as temp:
