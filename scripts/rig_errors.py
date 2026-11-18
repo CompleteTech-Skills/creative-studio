@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import math
@@ -67,7 +68,24 @@ def finite_json(value: Any, depth: int = 0) -> None:
             finite_json(child, depth + 1)
 
 
-def decode_json(payload: bytes | str, *, max_bytes: int | None = None) -> Any:
+class RoundedJsonInteger(float):
+    """Mark a parsed float whose spelling has a different value."""
+
+
+def _mark_rounded_integer(token: str) -> float:
+    value = float(token)
+    if value.is_integer():
+        try:
+            if Decimal(token) == Decimal.from_float(value):
+                return value
+        except InvalidOperation:
+            pass
+        return RoundedJsonInteger(value)
+    return value
+
+
+def decode_json(payload: bytes | str, *, max_bytes: int | None = None,
+                mark_rounded_integers: bool = False) -> Any:
     if max_bytes is None:
         max_bytes = MAX_JSON_BYTES
     require(len(payload) <= max_bytes, 'RIG_LIMIT_JSON', f'JSON exceeds the {max_bytes}-byte bound.')
@@ -91,6 +109,7 @@ def decode_json(payload: bytes | str, *, max_bytes: int | None = None) -> Any:
 
     try:
         value = json.loads(payload, object_pairs_hook=pairs,
+                           parse_float=_mark_rounded_integer if mark_rounded_integers else None,
                            parse_constant=lambda _: (_ for _ in ()).throw(
                                RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
     except RigError:
@@ -129,11 +148,11 @@ def atomic_json(path: str | Path, value: Any) -> None:
     atomic_bytes(path, (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8'))
 
 
-def portable_name(name: str) -> str:
-    # Same portable spelling policy as the existing decomposition transport.
+def portable_name(name: str, *, profile: str = 'default') -> str:
+    """Apply the requested built-in portable path profile."""
     from portable_paths import existing_relative
     try:
-        return existing_relative(name)
+        return existing_relative(name, profile=profile)
     except ValueError as exc:
         raise RigError('RIG_PATH', str(exc), asset=str(name)) from exc
 
@@ -276,10 +295,10 @@ def normalize_root(root: str | Path) -> Path:
     return path
 
 
-def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
+def safe_path(root: str | Path, name: str, *, exists: bool = False, profile: str = 'default') -> Path:
     cap,anchored,suffix = _directory_anchor(root)
     root = anchored if cap is not None else Path(root).resolve()
-    target = root / portable_name(name)
+    target = root / portable_name(name, profile=profile)
     if cap is None:
         require(target.resolve().is_relative_to(root), 'RIG_PATH', 'Path escapes the asset directory.', asset=name)
     else:
@@ -305,7 +324,7 @@ def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
 
 
 @contextmanager
-def open_payload(root: str | Path, name: str, *, root_identity=None):
+def open_payload(root: str | Path, name: str, *, root_identity=None, profile: str = 'default'):
     """Open an admitted regular payload without following replaceable parents.
 
     Reads remain the caller's responsibility and must be bounded. Descriptor and
@@ -314,7 +333,7 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
     """
     capability,anchored,root_parts = _directory_anchor(root)
     root = anchored if capability is not None else Path(root).absolute()
-    target = safe_path(root, name, exists=True)
+    target = safe_path(root, name, exists=True, profile=profile)
     def check_root(info):
         require(root_identity is None or (info.st_dev,info.st_ino) == root_identity,
                 'RIG_PAYLOAD_CHANGED','Selected source directory changed.',asset=name)
@@ -323,7 +342,11 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
     try:
         check_root(root.stat())
         if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
-            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            directory_access = os.O_RDONLY
+            if profile == 'scene3d':
+                # Scene3D only searches directories for known dependency names.
+                directory_access = getattr(os, 'O_PATH', getattr(os, 'O_SEARCH', os.O_RDONLY))
+            directory_flags = directory_access | os.O_DIRECTORY | os.O_NOFOLLOW
             if capability is not None:
                 descriptors.append(os.dup(capability.fd))
                 directory_parts = root_parts
@@ -362,14 +385,14 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
                     actual = actual[4:]
                 require(os.path.normcase(actual) == os.path.normcase(os.path.abspath(target)),
                         'RIG_PAYLOAD_PATH', 'Opened source was redirected.', asset=name)
-            current = safe_path(root, name, exists=True).stat()
+            current = safe_path(root, name, exists=True, profile=profile).stat()
             check_root(root.stat())
             require((current.st_dev, current.st_ino) == (before.st_dev, before.st_ino),
                     'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
             yield stream, before
             after = os.fstat(stream.fileno())
             check_root(root.stat())
-            current = safe_path(root, name, exists=True).stat()
+            current = safe_path(root, name, exists=True, profile=profile).stat()
             def fingerprint(info):
                 fields = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
                 return fields if os.name == 'nt' else fields + (info.st_ctime_ns,)
@@ -401,8 +424,7 @@ def job_lock(root: str | Path) -> Iterator[None]:
         stream.seek(0)
         if os.name == 'nt':
             import msvcrt
-            if lock.stat().st_size == 0:
-                stream.write(b'0'); stream.flush(); stream.seek(0)
+            # Windows can lock a byte past EOF, so a new sidecar can stay empty.
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:

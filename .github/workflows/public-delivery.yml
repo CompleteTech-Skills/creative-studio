@@ -59,8 +59,23 @@ jobs:
         shell: pwsh
         run: |
           if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg --no-progress -y
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # FFmpeg links to Gyan's Windows builds. Pin the release archive and its asset SHA-256.
+            $release = 'ffmpeg-9.0.2-essentials_build'
+            $uri = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/$release.zip"
+            $sha256 = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
+            $archive = Join-Path $env:RUNNER_TEMP "$release.zip"
+            Invoke-WebRequest -Uri $uri -OutFile $archive -TimeoutSec 120 -MaximumRetryCount 2 -RetryIntervalSec 2
+            if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha256) {
+              throw 'FFmpeg release archive failed SHA-256 verification.'
+            }
+            Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
+            $bin = Join-Path $env:RUNNER_TEMP "$release/bin"
+            foreach ($tool in 'ffmpeg.exe', 'ffprobe.exe') {
+              if (!(Test-Path -LiteralPath (Join-Path $bin $tool) -PathType Leaf)) {
+                throw "FFmpeg archive is missing $tool."
+              }
+            }
+            $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
       - name: Required runtime versions
         run: |
