@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import shutil
 import stat
@@ -23,22 +23,8 @@ MAX_PACKAGE_BYTES = 1024 * 1024 * 1024
 MAX_PACKAGE_FILES = 10000
 MAX_RECEIPT_BYTES = 8 * 1024 * 1024
 _HASH = re.compile(r'[0-9a-f]{64}')
-_RESERVED = {'con', 'prn', 'aux', 'nul', 'conin$', 'conout$',
-             *(prefix + str(index) for prefix in ('com', 'lpt') for index in range(1, 10))}
-
-
-def _relative(name):
-    """Require one portable spelling; reject traversal, aliases and Windows ADS."""
-    if not isinstance(name, str) or not name or '\\' in name or ':' in name or '\x00' in name:
-        raise ValueError('unsafe decomposition package path: ' + str(name))
-    path = PurePosixPath(name)
-    if path.is_absolute() or '..' in path.parts or path.as_posix() != name or name == '.':
-        raise ValueError('unsafe decomposition package path: ' + name)
-    if any(part != part.rstrip(' .') or part.split('.', 1)[0].casefold() in _RESERVED or
-           any(character in '<>"|?*' or ord(character) < 32 or ord(character) == 127 or 0xD800 <= ord(character) <= 0xDFFF for character in part)
-           for part in path.parts):
-        raise ValueError('unsafe or nonportable decomposition package path: ' + name)
-    return name
+# Preserve the established transport helper import/API.
+from portable_paths import _RESERVED, existing_relative as _relative
 
 
 def _inside(root, name):
