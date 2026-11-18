@@ -29,3 +29,19 @@ selects existing filenames explicitly; it does not directly select this file.
 Current-head targeted, compatibility/Delivery and real silent-media/legacy checks
 remain required. This lane does not complete #223, #97 or #16; genuine Blender
 provenance, EXR and renderer-owned adapter acceptance remain separate.
+
+
+## Exact-name implementation
+
+The source correction parses the name column of each flag/name/description row
+instead of searching the entire transcript. It requires video encoder rows,
+output muxer rows and output-convertible pixel formats; comma-separated advertised
+aliases are treated as separate exact names. Suffixes and description text do not
+grant capabilities. Unavailable binary/probe handling, evidence and fixed profiles
+remain unchanged.
+
+Table layouts were checked against the primary FFmpeg n6.1.1 source:
+https://github.com/FFmpeg/FFmpeg/blob/n6.1.1/fftools/opt_common.c .
+The tests were authored independently before this implementation. Their mocked
+probe results are contract fixtures; actual codec evidence comes from the separate
+native silent-media workflow. Current-head execution remains pending at authoring.
