@@ -311,6 +311,56 @@ class SilentMedia(core.SilentContracts):
             for field in ('video_stream_count','audio_stream_count','other_stream_count'):
                 self.assertNotIn(field,value)
 
+    def test_failed_probe_excludes_unneeded_editorial_metadata(self):
+        artifact=self.root/'tagged-audio.mp4'
+        marker='SYNTHETIC_EDITORIAL_MARKER'
+        stream_marker='SYNTHETIC_STREAM_MARKER'
+        self.ffmpeg('-f','lavfi','-i','anullsrc=r=48000:cl=mono','-t','0.25','-c:a','aac',
+                    '-metadata','title='+marker,'-metadata:s:a:0','handler_name='+stream_marker,artifact)
+        before=hashlib.sha256(artifact.read_bytes()).hexdigest()
+        self.assertIn(marker,json.dumps(self.independent_probe(artifact)))
+        self.assertIn(stream_marker,json.dumps(self.independent_probe(artifact)))
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact,self.request)
+        evidence=failed.exception.evidence
+        self.assertNotIn(marker,evidence['probe']['stdout'])
+        self.assertNotIn(stream_marker,evidence['probe']['stdout'])
+        self.assertEqual(evidence['video_stream_count'],0)
+        self.assertEqual(evidence['audio_stream_count'],1)
+        self.assertEqual(evidence['other_stream_count'],0)
+        request_path=self.root/'metadata-request.json';request_path.write_text(json.dumps(self.request))
+        result=subprocess.run([sys.executable,str(Path(video.__file__).resolve()),'verify-export',str(artifact),'--request',str(request_path),'--require-silent'],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,1)
+        report=json.loads(result.stdout)
+        self.assertFalse(report['verified'])
+        self.assertNotIn(marker,result.stdout)
+        self.assertNotIn(stream_marker,result.stdout)
+        self.assertEqual(report['audio_stream_count'],1)
+        self.assertEqual(report['artifact_sha256'],before)
+        self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(),before)
+
+    def test_historical_full_probe_receipt_accepts_only_matching_authoritative_facts(self):
+        artifact=self.root/'historical-receipt.mp4'
+        receipt=video.encode(self.request,self.root,artifact)
+        command=[shutil.which('ffprobe'),'-v','error','-count_frames','-show_streams','-show_format','-of','json',str(artifact)]
+        full=subprocess.run(command,capture_output=True,text=True,timeout=30)
+        self.assertEqual(full.returncode,0)
+        historical=deepcopy(receipt)
+        historical['probe']=dict(command=command,exit_status=full.returncode,stdout=full.stdout,stderr=full.stderr)
+        self.assertIn('tags',json.loads(full.stdout)['format'])
+        self.assertNotEqual(historical['probe']['stdout'],receipt['probe']['stdout'])
+        accepted=video.validate_receipt(historical,artifact,self.request,root=self.root)
+        self.assertTrue(accepted['verified'])
+        for change in ('codec','missing-width','float-width','extra-stream'):
+            tampered=deepcopy(historical);raw=json.loads(tampered['probe']['stdout'])
+            if change=='codec':raw['streams'][0]['codec_name']='vp9'
+            elif change=='missing-width':del raw['streams'][0]['width']
+            elif change=='float-width':raw['streams'][0]['width']=float(raw['streams'][0]['width'])
+            else:raw['streams'].append({'codec_type':'audio'})
+            tampered['probe']['stdout']=json.dumps(raw)
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                video.validate_receipt(tampered,artifact,self.request,root=self.root)
+
     def test_ffprobe_nonzero_exit_is_rejected(self):
         output = self.root / 'video.mp4'
         video.encode(self.request, self.root, output)

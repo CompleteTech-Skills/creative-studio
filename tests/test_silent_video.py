@@ -144,6 +144,41 @@ class SilentContracts(unittest.TestCase):
                     self.assertIn('invalid UTF-8',str(failed.exception))
 
 
+    def test_unknown_probe_stream_types_never_invent_stream_counts(self):
+        import contextlib,io
+        artifact=self.root/'unknown-type.mp4';artifact.write_bytes(b'synthetic fixture')
+        request_path=self.root/'request.json';request_path.write_text(json.dumps(self.request))
+        for stream in ({},{'codec_type':None},{'codec_type':[]},{'codec_type':'unknown'},{'codec_type':'invented'}):
+            raw=dict(command=['fixture-ffprobe'],exit_status=0,stdout=json.dumps({'streams':[stream]}),stderr='')
+            with self.subTest(stream=stream),patch.object(video,'_binary',return_value=sys.executable),patch.object(video,'_run',return_value=raw):
+                with self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact,self.request)
+                evidence=failed.exception.evidence
+                self.assertEqual(evidence['probe'],raw)
+                for field in ('video_stream_count','audio_stream_count','other_stream_count'):
+                    self.assertNotIn(field,evidence)
+                transcript=io.StringIO()
+                with patch.object(sys,'argv',['silent_video','verify-export',str(artifact),'--request',str(request_path),'--require-silent']),contextlib.redirect_stdout(transcript),self.assertRaises(SystemExit) as exit_result:
+                    video.main()
+                self.assertEqual(exit_result.exception.code,1)
+                report=json.loads(transcript.getvalue())
+                self.assertEqual(report['probe'],raw)
+                self.assertFalse(report['verified'])
+                for field in ('video_stream_count','audio_stream_count','other_stream_count'):
+                    self.assertNotIn(field,report)
+
+    def test_recognized_unwanted_stream_types_remain_counted_and_rejected(self):
+        artifact=self.root/'extra-stream.mp4';artifact.write_bytes(b'synthetic fixture')
+        for codec_type in ('subtitle','data','attachment'):
+            raw=dict(command=['fixture-ffprobe'],exit_status=0,stdout=json.dumps({'streams':[{'codec_type':'video'},{'codec_type':codec_type}]}),stderr='')
+            with self.subTest(codec_type=codec_type),patch.object(video,'_binary',return_value=sys.executable),patch.object(video,'_run',return_value=raw):
+                with self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact,self.request)
+                self.assertEqual(failed.exception.evidence['video_stream_count'],1)
+                self.assertEqual(failed.exception.evidence['audio_stream_count'],0)
+                self.assertEqual(failed.exception.evidence['other_stream_count'],1)
+                self.assertEqual(failed.exception.evidence['probe'],raw)
+
     def test_committed_schema_parity(self):
         root = Path(__file__).resolve().parents[1] / 'schemas' / 'silent-video-v1'
         actual = video.schemas()

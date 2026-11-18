@@ -49,7 +49,7 @@ native silent-media workflow. Current-head execution remains pending at authorin
 ## Later failure-evidence correction (#525 / #227)
 
 The correction based on main `69304deb3e55a35aa3717e1e6fcd949502c8bb99`
-passed 37 portable tests and 53 tests in the optional native suite locally on
+passed 39 portable tests and 57 tests in the optional native suite locally on
 Linux, with no skips. The native suite includes inherited portable contract
 tests and actual FFmpeg/ffprobe 7.1.5 checks on synthetic media. An actual
 corrupt MP4 produced ffprobe exit 1; Python and CLI failures retained the raw
@@ -60,6 +60,13 @@ aspect-ratio and integral-count fields fail with retained raw probe evidence
 through both Python and CLI paths. UTF-8 replacement expansion also sets the
 truncation flag when its encoded transcript exceeds the byte limit; invalid
 UTF-8 stdout remains an invalid command result.
+
+The later security correction limits ffprobe to the fields actually used by the
+verifier while retaining every stream. An actual tagged audio-only MP4 fails
+without echoing its arbitrary editorial metadata. Missing or unknown stream
+types reject before measured counts are reported. Historical full-probe receipts
+remain valid through a shared projection onto the same authoritative fields;
+codec, missing-field, numeric-type and extra-stream tampering still reject.
 
 The original 17 core and 30 native test method bodies remain unchanged. The new
 regressions failed on the preceding source before the correction. Independent

@@ -286,6 +286,14 @@ Truncated streams carry an explicit truncation flag; timeout failures carry
 Successful raw command results are retained before JSON or stream interpretation.
 Malformed ffprobe output therefore leaves inspectable raw evidence. If probing
 cannot establish stream counts, the failure does not invent video/audio counts.
+The ffprobe query inventories all streams but requests only fields consumed by
+the verifier; arbitrary tags and unrelated container metadata are not requested.
+Missing or unknown stream types reject before any counts are reported. Receipt
+comparison projects both historical full-probe output and current output onto
+those same fields, preserving field presence, types, values and every stream.
+This preserves historical receipts without weakening authoritative metadata or
+file-identity checks. Bounded process diagnostics do not promise general
+sanitization of arbitrary output from a substituted tool executable.
 Python exceptions expose this evidence, and the existing
 `verify-export --require-silent` CLI includes it in its JSON failure response.
 These records are failure diagnostics, never successful export receipts.

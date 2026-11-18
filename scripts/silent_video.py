@@ -45,6 +45,26 @@ PROFILES = {
 }
 
 
+# Query only verifier-owned facts, without selecting away any stream types.
+PROBE_STREAM_FIELDS = ('codec_type', 'codec_name', 'pix_fmt', 'width', 'height',
+                       'nb_read_frames', 'sample_aspect_ratio', 'display_aspect_ratio',
+                       'color_range', 'color_space', 'color_transfer', 'color_primaries',
+                       'avg_frame_rate', 'time_base')
+PROBE_FORMAT_FIELDS = ('format_name', 'duration')
+PROBE_STREAM_TYPES = frozenset(('video', 'audio', 'subtitle', 'data', 'attachment'))
+
+
+def _probe_projection(data):
+    """Compare historical/current probes on queried facts, retaining presence."""
+    if (not isinstance(data, dict) or not isinstance(data.get('streams'), list) or
+            any(not isinstance(stream, dict) for stream in data['streams']) or
+            not isinstance(data.get('format'), dict)):
+        raise ValueError('malformed receipt probe inventory')
+    return {'streams': [{name: stream[name] for name in PROBE_STREAM_FIELDS if name in stream}
+                        for stream in data['streams']],
+            'format': {name: data['format'][name] for name in PROBE_FORMAT_FIELDS if name in data['format']}}
+
+
 def _obj(properties):
     return {'type': 'object', 'additionalProperties': False,
             'properties': properties, 'required': list(properties)}
@@ -469,13 +489,17 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             diagnostics[stage] = observed
         return observed
 
-    inspected = execute('probe', [probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format',
+    entries = 'stream='+','.join(PROBE_STREAM_FIELDS)+':format='+','.join(PROBE_FORMAT_FIELDS)
+    inspected = execute('probe', [probe, '-v', 'error', '-count_frames', '-show_entries', entries,
                       '-of', 'json', str(path.resolve())])
     try:
         data = json.loads(inspected['stdout'])
         streams = data['streams']
         if not isinstance(streams, list) or any(not isinstance(x, dict) for x in streams):
             raise ValueError('malformed stream list')
+        if any(not isinstance(stream.get('codec_type'), str) or
+               stream['codec_type'] not in PROBE_STREAM_TYPES for stream in streams):
+            raise ValueError('unknown or malformed stream type in probe')
         if diagnostics is not None:
             diagnostics.update(video_stream_count=sum(x.get('codec_type') == 'video' for x in streams),
                                audio_stream_count=sum(x.get('codec_type') == 'audio' for x in streams),
@@ -627,9 +651,11 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
         if receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
     old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
-    for data in (old_probe, new_probe):
-        data['format'].pop('filename', None)
-    if old_probe != new_probe or receipt['timeline']['stdout'] != actual['timeline']['stdout']:
+    # Older receipts retain a full probe, including unneeded tags/filenames.
+    # Compare both representations on the same queried fields; canonical JSON
+    # preserves value types and missing fields as well as the whole stream list.
+    if (_digest(_probe_projection(old_probe)) != _digest(_probe_projection(new_probe)) or
+            receipt['timeline']['stdout'] != actual['timeline']['stdout']):
         raise ValueError('corrupt silent verification evidence')
     if any(receipt[key]['exit_status'] != 0 or receipt[key]['stderr'] for key in ('probe', 'timeline', 'decode')):
         raise ValueError('failed command evidence cannot verify a receipt')
