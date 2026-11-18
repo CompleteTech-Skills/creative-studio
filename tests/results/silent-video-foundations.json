@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "kind": "silent-video-foundation-acceptance",
+  "fixture": true,
+  "base_main": "f8e6ff6",
+  "source_commit": "3d43e745136643e3b06e0a8bb48cd518d3886d46",
+  "source_hashes": {
+    "scripts/silent_video.py": "2365faf97ed06e4a1b467ca1dc396a9bd78b012e163131446cf1e6d2a2d04638",
+    "scripts/atomic_publish.py": "310fcf5f43cabab4e79fcd3f1dfc420af9cd5b27385ac5c47524d155ca47c6e3",
+    "scripts/demonstrate_silent_video.py": "256691cfa71e83a01332ae11009c642c4a4810f5bd5e4ed1550d64748e77f537",
+    "tests/test_silent_video.py": "b703f85e2a013a04f87f5ae086594c0c9d37526fbc5f9fb9af29d7a4d7b95cb8",
+    ".github/workflows/silent-video.yml": "38e95303d7fb777dad455c8db1ddb361ecfe1c30e0bdc576b79116c990864a08"
+  },
+  "python": "3.12.15 (main, Oct 21 2026, 17:47:06) [Clang 23.1.3 ]",
+  "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+  "ffmpeg_version": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "ffprobe_version": "ffprobe version n9.0.2 Copyright (c) 2007-2026 the FFmpeg developers",
+  "tests": [
+    {
+      "command": "HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests -p test_silent_video.py -v",
+      "tests": 50,
+      "seconds": 23.737,
+      "result": "pass",
+      "skips": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/descriptor-final.log",
+      "log_sha256": "a2baa23029425da525c6b8e9e3d19b6f05d5a79f429bd121dc6641d6be568116"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_render.py -v",
+      "tests": 20,
+      "seconds": 11.398,
+      "result": "pass",
+      "skips": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/legacy-render.log",
+      "log_sha256": "e4ddaf1f1edd0c76d043a4f9e351e5e45371aa41549981d9afc09e7ac01c2aa9"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_contracts.py -v",
+      "tests": 31,
+      "seconds": 4.295,
+      "result": "pass",
+      "skips": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/legacy-contracts.log",
+      "log_sha256": "200da78afe45617808568b1f96957ef4056dab14c8db94d92f675394f7f8551e"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_adapter.py -v",
+      "tests": 13,
+      "seconds": 3.152,
+      "result": "pass",
+      "skips": 1,
+      "skip_reason": "optional native Krita unavailable",
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/legacy-adapter.log",
+      "log_sha256": "c156cb034c5ffd0a7509ed93f70dbf55ab9f79c52eee82d88d17e62a9336b570"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_sources.py -v",
+      "tests": 18,
+      "seconds": 1.209,
+      "result": "pass",
+      "skips": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/atomic-legacy-sources.log",
+      "log_sha256": "ea182c1ea616477ea6dbd277d3e05ee8120a77225edac69de59077412b4639e0"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_bundle.py -v",
+      "tests": 15,
+      "seconds": 1.767,
+      "result": "pass",
+      "skips": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/atomic-legacy-bundle.log",
+      "log_sha256": "8d75174ee0ad9364781d4d92bb3cc7ee159c1a8e8101735e4b0f6e9f96cfa23c"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-24-1.mp4",
+      "artifact_sha256": "2a21b3eeb32c68e163973f7df677f39657c03f4c36351cb425d0a4e8b7696daa",
+      "fps": {
+        "numerator": 24,
+        "denominator": 1
+      },
+      "frame_count": 12,
+      "audio_stream_count": 0,
+      "video_stream_count": 1,
+      "receipt": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-24-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-25-1.mp4",
+      "artifact_sha256": "e4934049fd3f3569a620b3891c48168179a4c87f4321c19eed1d7c32a4bfae03",
+      "fps": {
+        "numerator": 25,
+        "denominator": 1
+      },
+      "frame_count": 12,
+      "audio_stream_count": 0,
+      "video_stream_count": 1,
+      "receipt": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-25-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-30-1.mp4",
+      "artifact_sha256": "bd343aaf58c37469e8a12c3870839d9f7e425fd86a43288ddac457a60c56c2fc",
+      "fps": {
+        "numerator": 30,
+        "denominator": 1
+      },
+      "frame_count": 12,
+      "audio_stream_count": 0,
+      "video_stream_count": 1,
+      "receipt": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-30-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-60-1.mp4",
+      "artifact_sha256": "bebd9367d327a5222c85422057fe9717e7017700d1a42cc8fc8ad820fdb82d2f",
+      "fps": {
+        "numerator": 60,
+        "denominator": 1
+      },
+      "frame_count": 12,
+      "audio_stream_count": 0,
+      "video_stream_count": 1,
+      "receipt": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-60-1-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-30000-1001.mp4",
+      "artifact_sha256": "d79b38f1675256c1ac21aabd4050761c54895896e208f580c7f8b1796e0562f9",
+      "fps": {
+        "numerator": 30000,
+        "denominator": 1001
+      },
+      "frame_count": 12,
+      "audio_stream_count": 0,
+      "video_stream_count": 1,
+      "receipt": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/h264-30000-1001-receipt.json"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/vp9.webm",
+      "artifact_sha256": "ef085daa135dbd81f5ad15afbe3d3df04ce3a10c4b7bdc0c6f46681f37887361",
+      "fps": {
+        "numerator": 24,
+        "denominator": 1
+      },
+      "frame_count": 12,
+      "audio_stream_count": 0,
+      "video_stream_count": 1,
+      "receipt": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/media/vp9-receipt.json"
+    }
+  ],
+  "history": [
+    {
+      "result": "failed",
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-evidence/tests-parent.log",
+      "reason": "Initial malformed PNG raised PIL exception; normalized to explicit ValueError and regression passes."
+    },
+    {
+      "result": "unavailable",
+      "reason": "System Python lacked Pillow; all reported passing runs use the named Pillow13 venv."
+    }
+  ],
+  "limitations": [
+    "Linux secure encode adapter only; verifier and contracts portable but other encoding platforms explicitly unsupported.",
+    "Opaque 8-bit untagged SDR PNG only; EXR/HDR/alpha and full native multi-shot render integration remain later issues.",
+    "No production art, human visual approval, complete scheduler recovery or hosted CI success claimed.",
+    "Native Krita optional application integration not exercised."
+  ],
+  "independent_review": "pending",
+  "hosted_ci": "pending",
+  "artifact_generation_note": "Retained six-film fixture was generated before descriptor-publication hardening. The final 50-test run separately exercises final encoder publication and independent verification. A current-source artifact rerun is pending."
+}

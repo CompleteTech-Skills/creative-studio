@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "animation_sequence_3d",
+  "id": "sequence",
+  "version": "1.0.0",
+  "fps": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "shots": [
+    {
+      "id": "shot",
+      "scene_id": "scene",
+      "start_frame": 0,
+      "duration_frames": 24,
+      "active_camera_id": "camera",
+      "clip_placements": []
+    }
+  ],
+  "markers": [],
+  "total_frames": 24
+}
