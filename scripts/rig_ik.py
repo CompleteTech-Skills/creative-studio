@@ -3,12 +3,14 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from itertools import permutations, product
 import math
 import numpy as np
 from rig_contracts import validate_contract
 from rig_constraints import apply_constraints, constraint_order
-from rig_errors import require
-from rig_math import (decompose, qangle, qbetween, qinverse, qmatrix, qmul, quaternion, unit, vector)
+from rig_errors import RigError, require
+from rig_math import (decompose, matrix_quaternion, qangle, qbetween, qinverse, qmatrix,
+                      qmul, quaternion, unit, vector)
 from rig_skeleton import evaluate_fk
 
 
@@ -27,6 +29,177 @@ class IKResult:
                     converged=self.converged, iterations=self.iterations,
                     constraints_applied=self.constraints_applied,
                     orientation_residual_rad=self.orientation_residual_rad)
+
+
+def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_tolerance):
+    """Lift rotations that commute with the parent's stretch to the seed TRS."""
+    left, scales, right_t = parent_axes
+    # The orthogonal complement of a repeated pair is a distinguished axis.
+    # A proper rotation can preserve or reverse that axis. Both map the
+    # transverse part of the seed direction onto that of the pole.
+    axis_index = 0 if scales[0] - scales[1] > scales[1] - scales[2] else 2
+    transverse = np.delete(scales, axis_index)
+    axis = np.eye(3)[axis_index]
+
+    def frame(direction):
+        radial = left.T @ direction
+        radial[axis_index] = 0.
+        length = math.hypot(*radial)
+        radial = radial / length if length else np.eye(3)[(axis_index + 1) % 3]
+        return np.column_stack((axis, radial, np.cross(axis, radial)))
+
+    if abs(transverse[0] - transverse[1]) <= 32 * np.finfo(float).eps * scales[0]:
+        before, after = frame(source), frame(target)
+        symmetries = [(after * [sign, 1., sign]) @ before.T for sign in (1., -1.)]
+    else:
+        # Distinct singular values permit half turns about each principal axis.
+        symmetries = [np.diag(2 * basis - 1) for basis in np.eye(3)]
+    for symmetry in symmetries:
+        # Conjugating by the right singular basis gives a local rotation
+        # without an inverse scale magnifying errors in the world matrices.
+        world_turn = left @ symmetry @ left.T
+        if np.max(np.abs(world_turn @ source - target)) <= direction_tolerance:
+            turn = right_t.T @ symmetry @ right_t
+            rotation = quaternion(qmul(matrix_quaternion(turn), seed['rotation']))
+            yield dict(rotation=rotation.tolist(), scale=seed['scale'])
+
+
+def _fold_axis_permutations(root, seed, source):
+    """Permute local axes when their world directions retain all pairwise angles."""
+    lengths = np.linalg.norm(root, axis=0)
+    axes = root / lengths
+    gram = axes.T @ axes
+    coordinates = np.linalg.solve(axes, source)
+    scales = np.asarray(seed['scale'])
+    for order in permutations(range(3)):
+        indices = list(order)
+        for signs in product((1., -1.), repeat=3):
+            permutation = np.eye(3)[:, indices] * signs
+            if np.array_equal(permutation, np.eye(3)) or np.linalg.det(permutation) < 0:
+                continue
+            if np.max(np.abs(permutation.T @ gram @ permutation - gram)) > 32 * np.finfo(float).eps:
+                continue
+            # Match the original world column lengths with local scales. The
+            # resulting rigid turn can still be followed by a parent symmetry.
+            rotation = quaternion(qmul(seed['rotation'], matrix_quaternion(permutation)))
+            reoriented = dict(rotation=rotation.tolist(),
+                              scale=(scales[indices] * (lengths / lengths[indices])).tolist())
+            yield reoriented, axes @ (permutation @ coordinates)
+
+
+def _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance):
+    yield from _fold_parent_axis_turns(parent_axes, seed, source, direction, direction_tolerance)
+    for permuted, axis in _fold_axis_permutations(root, seed, source):
+        if np.max(np.abs(axis - direction)) <= direction_tolerance:
+            yield permuted
+        yield from _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance)
+
+
+def _fold_root_transform(parent, root, seed, source, target, direction_resolution):
+    """Choose a rigid pole turn that is representable as local TRS.
+
+    Pole direction fixes the swing, but leaves a twist about that direction.
+    Under a scaled parent the shortest swing can require local shear even when
+    another twist preserves the entire closed seed with an ordinary local TRS.
+    Orthogonality of each pair of local columns is a degree-two trigonometric
+    polynomial in that twist. Its half-angle substitution is a quartic, so
+    checking the three finite root sets is bounded and needs no pose iteration.
+    """
+    swing = qmatrix(qbetween(source, target))
+    source, direction = unit(source), unit(target)
+    identity = np.eye(3)
+    # Cancel root column magnitudes before solving for the world turn. Local
+    # bone scales can span many orders even when the parent is well-conditioned.
+    column_scales = np.max(np.abs(root), axis=0)
+    require(np.all(column_scales > 0), 'RIG_SINGULAR_TRANSFORM',
+            'Closed-chain pole steering needs an invertible root transform.')
+    scaled_root = root / column_scales
+    # The measured turn uses a linear solve. Allow its conditioning to amplify
+    # arithmetic roundoff, but cap the error even for poorly resolved frames.
+    eps = np.finfo(float).eps
+    parent_axes = np.linalg.svd(parent)
+    stretches = parent_axes[1]
+    require(stretches[-1] > 0, 'RIG_SINGULAR_TRANSFORM',
+            'Closed-chain pole steering needs an invertible parent transform.')
+    root_condition = np.linalg.cond(scaled_root)
+    conditioning = max(stretches[0] / stretches[-1], root_condition)
+    roundoff = min(16 * conditioning, 65536) * eps
+    # Pole positions arrive after world-space rounding and subtraction. Their
+    # directional resolution is separate from the matrix rigidity guarantee.
+    direction_tolerance = max(roundoff, direction_resolution)
+
+    def pole_error(oriented):
+        local_frame = qmatrix(oriented['rotation']) * oriented['scale']
+        world = parent @ local_frame
+        turn = np.linalg.solve(scaled_root.T, (world / column_scales).T).T
+        if np.linalg.det(turn) > 0 and np.max(np.abs(turn.T @ turn - identity)) <= roundoff:
+            return np.max(np.abs(turn @ source - direction))
+        return math.inf
+
+    def try_world_turn(rotation):
+        value = np.eye(4)
+        try:
+            value[:3, :3] = np.linalg.solve(parent, rotation @ root)
+            oriented = decompose(value)
+        except RigError as exc:
+            if exc.report['code'] == 'RIG_SHEAR':
+                return None
+            raise
+        columns = value[:3, :3] / oriented['scale']
+        if np.max(np.abs(columns.T @ columns - identity)) > 128 * eps:
+            return None
+        return oriented if pole_error(oriented) <= direction_tolerance else None
+
+    oriented = try_world_turn(swing)
+    if oriented is not None:
+        return oriented
+    # Different sign choices can represent the same pole with different
+    # rounding after FK. Prefer a well-resolved fit whenever one is available.
+    closest, best_error = None, direction_tolerance
+    for oriented in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance):
+        error = pole_error(oriented)
+        if error <= 16 * eps:
+            return oriented
+        if error <= best_error:
+            closest, best_error = oriented, error
+    if closest is not None:
+        return closest
+
+    parallel = np.outer(direction, direction)
+    perpendicular = np.eye(3) - parallel
+    x, y, z = direction
+    cross = np.array([[0., -z, y], [z, 0., -x], [-y, x, 0.]])
+    constant, cosine, sine = (np.linalg.solve(parent, part @ swing @ root)
+                              for part in (parallel, perpendicular, cross))
+    # Uniform rescaling leaves all zero dot-product conditions unchanged and
+    # avoids overflow while forming polynomial coefficients.
+    bound = max(float(np.max(np.abs(part))) for part in (constant, cosine, sine))
+    require(math.isfinite(bound) and bound > 0, 'RIG_SHEAR',
+            'Cannot resolve a rigid closed-chain pole turn.')
+    constant, cosine, sine = (part / bound for part in (constant, cosine, sine))
+    candidates = [math.pi]  # The half-angle substitution omits this point.
+    for i, j in ((0, 1), (0, 2), (1, 2)):
+        c0 = constant[:, i] @ constant[:, j] + .5 * (
+            cosine[:, i] @ cosine[:, j] + sine[:, i] @ sine[:, j])
+        c1 = constant[:, i] @ cosine[:, j] + cosine[:, i] @ constant[:, j]
+        s1 = constant[:, i] @ sine[:, j] + sine[:, i] @ constant[:, j]
+        c2 = .5 * (cosine[:, i] @ cosine[:, j] - sine[:, i] @ sine[:, j])
+        s2 = .5 * (cosine[:, i] @ sine[:, j] + sine[:, i] @ cosine[:, j])
+        coefficients = np.array([c0-c1+c2, 2*s1-4*s2, 2*c0-6*c2, 2*s1+4*s2, c0+c1+c2])
+        magnitude = float(np.max(np.abs(coefficients)))
+        if magnitude:
+            # Multiple real roots can acquire small imaginary parts in a
+            # polynomial solve. Every candidate is checked in the original
+            # matrices, so retaining its real part cannot admit local shear.
+            for value in np.roots(coefficients / magnitude):
+                if math.isfinite(float(value.real)):
+                    candidates.append(2 * math.atan(float(value.real)))
+    for angle in sorted(candidates, key=abs):
+        rotation = (parallel + math.cos(angle) * perpendicular + math.sin(angle) * cross) @ swing
+        oriented = try_world_turn(rotation)
+        if oriented is not None:
+            return oriented
+    raise RigError('RIG_SHEAR', 'Closed-chain pole turn is not representable as local TRS.')
 
 
 def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
@@ -157,12 +330,29 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     elif (distance <= 1e-9 and np.linalg.norm(points[-1]-origin) <= 1e-9
           and np.linalg.norm(points[-1]-target) <= tolerance
           and np.linalg.norm(pole_delta) > 1e-9):
-        # A closed seed can have no usable neighbouring-joint axes at all.
-        # Reorient its existing shape toward the explicit pole before the
-        # ordinary native orientation/constraint pass, retaining its lengths.
-        rotation = qmatrix(qbetween(points[1]-origin, pole_delta))
-        points = origin + (points-origin) @ rotation.T
-        result = _orient_chain(skeleton, result, names, points)
+        # Rotate the closed seed coherently at its root. Reconstructing every
+        # joint from translated world points loses small segments at large
+        # origins and changes the seed's internal frames and blended geometry.
+        world = evaluate_fk(skeleton, result)
+        root = names[0]
+        bone = next(bone for bone in skeleton['bones'] if bone['id'] == root)
+        parent = bone['parent']
+        seed = {**bone['rest'], **result['bones'].get(root, {})}
+        # Each world point has its own representable coordinate spacing.
+        # Bound the subtraction uncertainty before normalizing either vector;
+        # do not relax the independent reconstructed-world rigidity check.
+        position_resolution = math.hypot(*(math.ulp(float(origin[i])) +
+            math.ulp(float(points[1, i])) + math.ulp(float(pole[i])) for i in range(3)))
+        direction_resolution = position_resolution / min(math.dist(points[1], origin), math.dist(pole, origin))
+        try:
+            oriented = _fold_root_transform(world[parent][:3, :3] if parent else np.eye(3),
+                                            world[root][:3, :3], seed, points[1]-origin, pole_delta,
+                                            direction_resolution)
+        except np.linalg.LinAlgError as exc:
+            raise RigError('RIG_SINGULAR_TRANSFORM',
+                           'Closed-chain pole steering needs a numerically invertible transform.') from exc
+        result['bones'].setdefault(root, {}).update(
+            rotation=oriented['rotation'], scale=oriented['scale'])
         result, changes = apply_pass(result)
         iterations = 1
     elif (len(names) == 3 and distance <= 1e-9
