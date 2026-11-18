@@ -18,6 +18,7 @@ def main():
     if mode == 'create':
         bpy.ops.wm.read_factory_settings(use_empty=True)
         scene = bpy.context.scene
+        scene.render.filepath = '//'
         scene.unit_settings.system = 'METRIC'
         scene.unit_settings.scale_length = 1
         mesh = bpy.data.meshes.new('Triangle')
@@ -25,7 +26,8 @@ def main():
         mesh.update()
         scene.collection.objects.link(bpy.data.objects.new('Triangle', mesh))
         bpy.ops.file.pack_all()
-        bpy.ops.wm.save_as_mainfile(filepath=source, compress=False)
+        # Write scene data without the workspace's file-browser state.
+        bpy.data.libraries.write(source, {scene}, path_remap='NONE', compress=False)
     elif mode == 'reopen':
         bpy.ops.wm.open_mainfile(filepath=source, load_ui=False, use_scripts=False)
         scene = bpy.context.scene
