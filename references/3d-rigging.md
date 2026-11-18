@@ -404,6 +404,17 @@ four methods together with the twelve folded boundaries and fourteen native
 math tests: 30 tests in 1.165 seconds, exit 0, zero skips. This is synthetic
 numerical evidence, not an artistic or production acceptance claim.
 
+Independent re-review of that correction identified cancellation in oblique
+near-opposite cross products, including a valid scaled-pole control that had
+worked on the earlier source. The negative-dot hemisphere now computes its axis
+as `cross(a, a + b)` to avoid subtracting nearly equal products, with a stable
+perpendicular fallback only at machine-roundoff scale. Two further independent
+methods retain the exact oblique-opposite case and genuine angular differences
+of `1e-8` and `1e-12` radians, with a `1e-5` control. All six pole-precision
+methods, twelve folded boundaries and fourteen native math tests passed after
+this correction: 32 tests in 1.211 seconds, exit 0, zero skips. Earlier failed
+cases remain in the gate and in source history.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not

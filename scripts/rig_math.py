@@ -87,8 +87,13 @@ def qbetween(source: Sequence[float], target: Sequence[float]) -> np.ndarray:
         # Retain small but measurable rotations rather than snapping their
         # cosine to identity. This form is stable throughout this hemisphere.
         return quaternion(np.r_[cross, 1 + dot])
+    # Near the opposite direction, multiply by the small sum rather than
+    # subtracting two nearly equal products to construct the rotation axis.
+    cross = np.cross(a, a + b)
     sine = math.hypot(*cross)
-    if sine == 0:
+    if sine <= 4 * np.finfo(float).eps:
+        # Independently normalized antiparallel vectors can leave a cross
+        # product at roundoff scale whose direction is numerical noise.
         basis = np.eye(3)[int(np.argmin(np.abs(a)))]
         return axis_angle(np.cross(a, basis), math.pi)
     # Near the opposite direction, 1+dot loses the small angular difference.
