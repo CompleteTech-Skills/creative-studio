@@ -30,6 +30,52 @@ class DirectoryCapabilityTests(unittest.TestCase):
     def read(self,root,name='data.bin',**kwargs):
         with open_payload(root,name,**kwargs) as (stream,info):return stream.read(),info
 
+    def test_scene_project_loader_retains_registered_root_after_path_replacement(self):
+        from scene3d_example import build_example
+        import scene3d_contracts
+        source=self.stage/'scene';expected=build_example(source)
+        descriptor=os.open(source,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(descriptor) as cap:
+                normalize=scene3d_contracts.normalize_root
+                admitted=[]
+                def replace_after_admission(value):
+                    result=normalize(value);admitted.append(result)
+                    source.rename(self.stage/'kept-scene')
+                    source.mkdir();(source/'project.json').write_bytes(b'FOREIGN')
+                    return result
+                with patch.object(scene3d_contracts,'normalize_root',side_effect=replace_after_admission):
+                    actual=scene3d_contracts.load_project(cap.path)
+                self.assertEqual(admitted,[cap.path])
+                self.assertEqual(actual['inventory'],expected['inventory'])
+                self.assertEqual((source/'project.json').read_bytes(),b'FOREIGN')
+        finally:os.close(descriptor)
+
+    def test_scene_project_loader_rejects_link_and_fifo_in_registered_root(self):
+        from scene3d_example import build_example
+        from scene3d_contracts import load_project
+        source=self.stage/'scene';build_example(source)
+        descriptor=os.open(source,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(descriptor) as cap:
+                payload=source/'triangle.obj';original=payload.read_bytes();payload.unlink()
+                os.mkfifo(payload)
+                with self.assertRaises(RigError):load_project(cap.path)
+                payload.unlink();outside=self.root/'outside.obj';outside.write_bytes(original)
+                payload.symlink_to(outside)
+                with self.assertRaises(RigError):load_project(cap.path)
+        finally:os.close(descriptor)
+
+    def test_scene_project_loader_closed_capability_fails_structurally(self):
+        from scene3d_example import build_example
+        from scene3d_contracts import load_project
+        source=self.stage/'scene';build_example(source)
+        descriptor=os.open(source,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(descriptor) as cap:expired=cap.path
+            with self.assertRaises(RigError):load_project(expired)
+        finally:os.close(descriptor)
+
     def test_scoped_root_normalizer_and_borrowed_worker_alias(self):
         raw=Path('/proc/self/fd')/str(self.fd)
         self.assertEqual(normalize_root(raw),self.stage)

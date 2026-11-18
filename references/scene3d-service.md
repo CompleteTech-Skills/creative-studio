@@ -135,6 +135,9 @@ versions and exact references. The result explicitly selects `active_scene`.
 Old project bytes are retained as history evidence. No machine-local library path
 or mutable `latest` binding is needed to reopen a snapshot. Imported assets and
 derived prefab clips can be supplied as exact additional payloads/documents.
+When publishing a graph edit through the API, pass the exact source
+`project.json` digest from the bundle used to prepare the graph as
+`expected_project_sha256`. An unedited snapshot can omit this argument.
 
 Publication uses the shared exclusive native rename. A racing file, symlink or
 empty directory remains intact. Unsupported exclusive filesystems fail closed.
@@ -197,3 +200,21 @@ Animated editing retains exact source bytes through `source_root` or an explicit
 Prefab admission and reopening share the dependency-free `effective_prefab` and `validate_prefab_instances` contract helpers. They validate private effective copies, including nested optional instances, parameter types, unit quaternions, positive scales, authored material slots and scoped identities. The loader retains exact original files and returns their validated source definitions. Source default bindings must themselves be valid; invalid defaults fail immutable registration before changing the catalog. Logical copies, including memo hits, consume expanded node/work budgets, and composed transform ancestry retains the 128-level limit. A consuming scene inherits fixture classification from effective optional children.
 
 Display-name changes use `rename` and retain stable node identity. `configure-node` replaces only explicitly supplied name, camera, light, material-overrides or metadata fields through the same complete document validation; `configure-world` accepts only background, exposure, environment and metadata. Both support expected revisions, and a malformed later command rolls back earlier commands in the batch. These operations are shared by the CLI and editor adapters.
+
+### Snapshot publication ownership
+
+On Linux, snapshot staging and the destination parent remain pinned through
+shared directory descriptors. Files are written and validated through explicitly
+registered directory capabilities, then every exact payload is hash checked
+again after validation callbacks. An altered inner project entry fails closed;
+replacing the public temporary wrapper cannot redirect publication or cleanup.
+Failed attempts retain their private diagnostic contents, and the shared owner
+leaves the empty outer wrapper for explicit maintenance. Linux publication
+requires protected staging and reports `SCENE3D_STAGING_UNAVAILABLE` when the
+shared adapter is unavailable.
+
+Other platforms retain their existing exclusive publication adapter. Descriptor
+ownership against temporary-wrapper replacement has not been implemented or
+verified there; Linux race-test results do not establish that guarantee on those
+platforms. The explicit Linux CI gate runs
+`tests/optional/test_scene3d_snapshot_publication_linux.py`.
