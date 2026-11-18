@@ -81,11 +81,52 @@ metadata. Image admission adds aggregate decoded texture capacity using
 native image framing before the importer decodes pixels. Animation admission then
 adds retained track/container costs and decoded working arrays across all clips,
 including a separate times/value/tangent copy for every morph primitive destination.
-The combined estimate is checked before native model import and is retained as
-`native_animation_admission`; source keyframe limits keep their channel-counted
-meaning while memory admission accounts for instantiated copies. Limits only tighten
-the inspector's caps. These are conservative loader estimates, with no process
-RSS or renderer guarantee. The canonical reader applies its declared buffer
+That subtotal remains in `native_animation_admission`; source keyframe limits
+keep their channel-counted meaning while memory admission accounts for instantiated
+copies. A final `native_analysis_admission` adds native geometry analysis working
+arrays to that complete subtotal through the same `LoadBudget`, before entering
+the canonical importer. This covers the importer's analysis and the inspector's
+subsequent analysis; these execute sequentially and reuse the reserved capacity.
+It does not subtract prior geometry, image, animation or I/O reservations.
+
+Analysis admission uses the selected scene's instantiated primitive counts,
+including repeated instances sharing one source accessor. It reproduces the
+native analyzer's two sampling strides and largest `array_split` batch size.
+The first stride can retain more than 512 vertices per primitive, and the
+concatenated backing array remains live even after the final 2048-sample slice.
+The native batch can exceed 128 rows: 255 samples use one 255-row batch.
+
+The receipt exposes these conservative numerical reservations:
+
+- For sample count `N` and largest batch `B`, difference and square arrays
+  each reserve `B*N*3*8` bytes; the reduction reserves `B*N*8`.
+- For pre-slice concatenation count `C`, sample/PCA/reflection/nearest work
+  reserves `24*C + 144*N + 24*B` bytes. This includes both centered PCA
+  copies, reflected samples, nearest scalars/conversion and batch outputs.
+- Topology work reserves `1024*triangles + 64*vertices + 512*mesh_instances
+  + 4096` bytes. This covers numerical triangle gathers/cross/norm/volume,
+  both edge/unique passes and their sorting/index/mask/count arrays,
+  component parent/output arrays, bounds and small PCA/eigensolver work.
+  Summing over all instances also covers the last mesh's arrays still live
+  during symmetry calculation.
+
+These amounts are added, including arrays whose lifetimes may not overlap;
+`analysis_working_bytes` is the full increment and `estimated_memory_bytes`
+is the final combined admission. Four 512-vertex instances with one triangle
+each reserve 6,291,456 bytes for the difference array alone, the same amount
+for its square, and 2,097,152 bytes for reduction. Total additional analysis
+capacity is 15,168,512 bytes. The regression uses actual shared-accessor GLB
+geometry: a 5 MiB limit rejects before import/accessor decoding/analysis;
+one byte below combined admission also rejects, and exact combined admission
+executes the real importer and analyzer. Separate real-source cases cover
+uneven batches and retained concatenation. The existing small-animation
+positive test retains its 12 KiB animation allowance and adds exactly the
+new analysis reserve; all original animation assertions and rejection cases
+remain, with additional final combined-capacity assertions.
+
+Limits only tighten the inspector's caps. These are conservative numerical
+working-set admission estimates, not process RSS, interpreter/allocator overhead,
+later evaluation, renderer or visual-acceptance guarantees. The canonical reader applies its declared buffer
 limits. The inspection estimate does not separately meter cumulative work
 from repeated buffer URI references.
 
