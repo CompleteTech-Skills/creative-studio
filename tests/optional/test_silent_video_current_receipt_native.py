@@ -61,9 +61,26 @@ class CurrentReceiptNative(unittest.TestCase):
 
     def test_current_receipt_rejects_changed_observed_stream_groups(self):
         artifact, receipt, raw = self.current_receipt()
-        self.assertEqual(raw['stream_groups'], [])
+        # ffprobe versions differ in whether this empty top-level field is
+        # emitted. Preserve the original empty-field assertion when present;
+        # inserting a group must reject even when the tool omitted the field.
+        if 'stream_groups' in raw:
+            self.assertEqual(raw['stream_groups'], [])
         forged = deepcopy(receipt)
         raw['stream_groups'] = [{'index': 0}]
+        forged['probe']['stdout'] = json.dumps(raw)
+        self.assert_only_probe_stdout_changed(receipt, forged)
+        with self.assertRaises(ValueError):
+            video.validate_receipt(forged, artifact, self.request, root=self.root)
+
+    def test_current_receipt_binds_empty_stream_group_field_presence(self):
+        artifact, receipt, raw = self.current_receipt()
+        if 'stream_groups' in raw:
+            self.assertEqual(raw['stream_groups'], [])
+            del raw['stream_groups']
+        else:
+            raw['stream_groups'] = []
+        forged = deepcopy(receipt)
         forged['probe']['stdout'] = json.dumps(raw)
         self.assert_only_probe_stdout_changed(receipt, forged)
         with self.assertRaises(ValueError):
