@@ -806,10 +806,15 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
         if receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
     old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
-    # Older receipts retain a full probe, including unneeded tags/filenames.
-    # Compare both representations on the same queried fields; canonical JSON
-    # preserves value types and missing fields as well as the whole stream list.
-    if (_digest(_probe_projection(old_probe)) != _digest(_probe_projection(new_probe)) or
+    # Only the recorded historical full-query protocol needs the compatibility
+    # projection. Current field-limited observations retain every queried fact,
+    # including extra top-level records such as an observed empty stream group.
+    command = receipt['probe']['command']
+    historical_full_probe = ('-show_entries' not in command and
+                             '-show_streams' in command and '-show_format' in command)
+    if historical_full_probe:
+        old_probe, new_probe = _probe_projection(old_probe), _probe_projection(new_probe)
+    if (_digest(old_probe) != _digest(new_probe) or
             receipt['timeline']['stdout'] != actual['timeline']['stdout']):
         raise ValueError('corrupt silent verification evidence')
     if any(receipt[key]['exit_status'] != 0 or receipt[key]['stderr'] for key in ('probe', 'timeline', 'decode')):

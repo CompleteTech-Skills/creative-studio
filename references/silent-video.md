@@ -339,10 +339,14 @@ cannot establish stream counts, the failure does not invent video/audio counts.
 The ffprobe query inventories all streams but requests only fields consumed by
 the verifier; arbitrary tags and unrelated container metadata are not requested.
 Missing or unknown stream types reject before any counts are reported. Receipt
-comparison projects both historical full-probe output and current output onto
-those same fields, preserving field presence, types, values and every stream.
-This preserves historical receipts without weakening authoritative metadata or
-file-identity checks. Bounded process diagnostics do not promise general
+comparison checks the entire parsed current raw probe result. Only a recorded
+historical query using both `-show_streams` and `-show_format`, without
+`-show_entries`, uses a projection onto the verifier-owned fields. That
+compatibility projection preserves their presence, types, values and every
+stream. Four installed-tool regressions retain unchanged current evidence and
+an actually executed full-probe format, while rejecting altered current stream
+bitrate and stream-group evidence. File-identity checks remain mandatory.
+Bounded process diagnostics do not promise general
 sanitization of arbitrary output from a substituted tool executable.
 Python exceptions expose this evidence, and the existing
 `verify-export --require-silent` CLI includes it in its JSON failure response.
