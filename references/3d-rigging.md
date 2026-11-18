@@ -132,6 +132,8 @@ Animation clips contain real translation/rotation/scale/morph channels, ordered 
 
 The Python API supports masked pose layers, additive rest-relative deltas, morph mixing and aligned crossfades. Embedded root motion can accumulate between loops. World-space foot/paw contacts re-solve IK through stance intervals; contact and release events remain in the native clip. An exported GLB contains the resulting baked motion, not live contact solvers.
 
+Contact targets repeat at their authored world locations for in-place clips. Embedded root-motion loops translate each repeated contact target by the same complete-cycle root displacement as the pose. Non-looping evaluation keeps contact targets at their authored world locations.
+
 ```bash
 python scripts/rig.py retarget --source output/source-character --run-dir output/target-character --clip walk
 python scripts/rig.py render --run-dir output/target-character --clip walk-retargeted --time 0.7 --destination output/retarget.png
@@ -402,3 +404,10 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+
+### Bounded state execution
+
+The optional Python `rig_state_runtime.RigStateRuntime` executes selected validated clip recipes with caller-supplied monotonic seconds. Use `evaluate(now)`, `request(state, now)` and `cancel(now)` for bounded transitions, incoming priority/interruption policy, completion edges and cancellation into selected executable `static-neutral`. Interrupted crossfades preserve the evaluated source pose; sparse target morphs return to authored defaults. Embedded root motion accumulates across recipes while in-place clips retain their cycle reset. Rejected requests and exhausted completion chains restore prior runtime state. Reconstruct the runtime after rig or clip changes.
+
+Event dispatch, explicit catalog recovery, reduced-motion execution and detailed dependency discovery remain deferred. See [bounded runtime preservation](rig-state-runtime-preservation.md) for exact source boundaries, retained tests and remaining verification gates.
