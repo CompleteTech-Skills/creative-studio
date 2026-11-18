@@ -391,6 +391,19 @@ exit 0, zero skips). The original thirteen #348 test methods remain unchanged.
 This is local numerical evidence; independent review and exact published-head
 checks are required before integration.
 
+The shared quaternion-between-directions helper preserves measurable small
+angles instead of snapping near-parallel directions to identity. Near opposite
+directions it uses the cross-product magnitude and `atan2`, avoiding cancellation
+in `1 + dot`; exactly opposite directions retain a stable perpendicular axis.
+Both the folded rotation and its ordinary chain-orientation pass use this same
+native helper. Four additional independently authored methods cover small pole
+changes, near-opposite changes, exact matches and controls at unit and 1,000 m
+segment scales, including translated roots. Six subtests failed on published
+`f19906ea` despite its 81-test gate passing. The corrected helper passed these
+four methods together with the twelve folded boundaries and fourteen native
+math tests: 30 tests in 1.165 seconds, exit 0, zero skips. This is synthetic
+numerical evidence, not an artistic or production acceptance claim.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
