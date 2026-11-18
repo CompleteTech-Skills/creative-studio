@@ -135,6 +135,9 @@ versions and exact references. The result explicitly selects `active_scene`.
 Old project bytes are retained as history evidence. No machine-local library path
 or mutable `latest` binding is needed to reopen a snapshot. Imported assets and
 derived prefab clips can be supplied as exact additional payloads/documents.
+When publishing a graph edit through the API, pass the exact source
+`project.json` digest from the bundle used to prepare the graph as
+`expected_project_sha256`. An unedited snapshot can omit this argument.
 
 Publication uses the shared exclusive native rename. A racing file, symlink or
 empty directory remains intact. Unsupported exclusive filesystems fail closed.
@@ -160,6 +163,27 @@ Operations include `create`, `delete`, `reparent`, `duplicate`, `reorder`,
 `prefab-detach`. Unknown fields/commands fail. A failed CLI batch returns structured
 status 2, preserves original bytes, and publishes no destination. Exact prefab
 references must already be known; planned hashes are never invented.
+
+## Evaluating a shot
+
+`scene3d_evaluate.evaluate_scene(project, scene, shot, frame)` opens a verified
+project directory and selects exact scene and shot paths or unique IDs. Pass an
+integer or `Fraction` frame in the half-open shot interval. Scene3D tracks,
+published native rig clips and imported component transforms are evaluated
+through their existing owners. Graph constraints and visibility apply to the
+evaluated scene. Each evaluation preserves the authored input.
+
+Pass `sample_geometry=True` to obtain world-space vertices and bounds for
+active native bindings. The evaluator checks exact native manifest and clip
+digests and captures each selected source once after project verification.
+The result reports the sampling status and which nodes have evaluated geometry.
+Camera matrices and exact material pins are available separately through
+`camera_matrices()` and `resolve_materials()`. Pose bindings, path bindings,
+physical-light extensions and automatic camera framing return a typed refusal.
+
+The interoperability gate includes the [shot evaluator tests](../tests/test_rig_scene3d_evaluate.py).
+They cover a hash-locked project reopen, fractional native clip replay, imported
+component projection, binding collisions, limits and source preservation.
 
 ## Acceptance map
 
@@ -197,3 +221,21 @@ Animated editing retains exact source bytes through `source_root` or an explicit
 Prefab admission and reopening share the dependency-free `effective_prefab` and `validate_prefab_instances` contract helpers. They validate private effective copies, including nested optional instances, parameter types, unit quaternions, positive scales, authored material slots and scoped identities. The loader retains exact original files and returns their validated source definitions. Source default bindings must themselves be valid; invalid defaults fail immutable registration before changing the catalog. Logical copies, including memo hits, consume expanded node/work budgets, and composed transform ancestry retains the 128-level limit. A consuming scene inherits fixture classification from effective optional children.
 
 Display-name changes use `rename` and retain stable node identity. `configure-node` replaces only explicitly supplied name, camera, light, material-overrides or metadata fields through the same complete document validation; `configure-world` accepts only background, exposure, environment and metadata. Both support expected revisions, and a malformed later command rolls back earlier commands in the batch. These operations are shared by the CLI and editor adapters.
+
+### Snapshot publication ownership
+
+On Linux, snapshot staging and the destination parent remain pinned through
+shared directory descriptors. Files are written and validated through explicitly
+registered directory capabilities, then every exact payload is hash checked
+again after validation callbacks. An altered inner project entry fails closed;
+replacing the public temporary wrapper cannot redirect publication or cleanup.
+Failed attempts retain their private diagnostic contents, and the shared owner
+leaves the empty outer wrapper for explicit maintenance. Linux publication
+requires protected staging and reports `SCENE3D_STAGING_UNAVAILABLE` when the
+shared adapter is unavailable.
+
+Other platforms retain their existing exclusive publication adapter. Descriptor
+ownership against temporary-wrapper replacement has not been implemented or
+verified there; Linux race-test results do not establish that guarantee on those
+platforms. The explicit Linux CI gate runs
+`tests/optional/test_scene3d_snapshot_publication_linux.py`.
