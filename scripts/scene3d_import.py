@@ -33,6 +33,7 @@ from scene3d_example import node as make_node
 from scene3d_graph import SceneGraph, _inventories, _inverse, fail, require, transform_for_matrix
 from scene3d_prefabs import _refs, scoped_id
 from scene3d_snapshot import _new_destination
+from scene3d_materials import native_material_bindings
 from atomic_publish import _rename_no_replace
 
 
@@ -73,11 +74,13 @@ def _local_uri(uri):
     return path
 
 
-def source_snapshot(source, destination):
-    """Safely read explicit source dependencies once into an owned private tree."""
+def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None):
+    """Safely capture local dependencies under the active Scene3D limits."""
+    file_limit = MAX_FILE_BYTES if maximum_file_bytes is None else min(MAX_FILE_BYTES, maximum_file_bytes)
+    total_limit = MAX_SOURCE_BYTES if maximum_total_bytes is None else min(MAX_SOURCE_BYTES, maximum_total_bytes)
     source = Path(source).absolute()
     require(source.suffix.lower() in ('.glb', '.gltf'), 'Import accepts GLB or glTF.', 'SCENE3D_IMPORT_FORMAT')
-    payload = read_source_bytes(source, MAX_FILE_BYTES)
+    payload = read_source_bytes(source, min(file_limit, total_limit))
     document = _json(payload, source.suffix.lower())
     require(isinstance(document, dict), 'glTF root must be an object.', 'SCENE3D_IMPORT_FORMAT')
     primary = 'model'+source.suffix.lower()
@@ -105,11 +108,11 @@ def source_snapshot(source, destination):
             require('/'.join(parts[:index]) not in {n.casefold() for n in names},
                     'File/directory resource alias.', 'SCENE3D_IMPORT_URI')
     files, total = {primary: payload}, len(payload)
-    require(total <= MAX_SOURCE_BYTES, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+    require(total <= total_limit, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
     for path, target in sorted(resources.items()):
-        data = read_source_bytes(target, min(MAX_FILE_BYTES, MAX_SOURCE_BYTES-total))
+        data = read_source_bytes(target, min(file_limit, total_limit-total))
         total += len(data)
-        require(total <= MAX_SOURCE_BYTES, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+        require(total <= total_limit, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
         files[path] = data
     destination = Path(destination)
     destination.mkdir(mode=0o700)
@@ -140,10 +143,13 @@ def _preview(rig, destination):
         render_rig_preview(rig, destination, width=256, height=256, bounds=bounds)
         return dict(backend='hatch-native-cpu-triangle-zbuffer', textures='base-color-only',
                     animation='native-rest-pose', depth_test=True, bounds=bounds)
-    # Static imports have no fabricated source skeleton. A wireframe projection
-    # of genuine triangles is sufficient for their explicit geometry inspector.
-    from PIL import Image, ImageDraw
-    points = np.concatenate([mesh.positions for mesh in rig.geometry.meshes])
+    return _wireframe_preview(rig.geometry, destination)
+
+
+def _wireframe_preview(geometry, destination):
+    """Project the imported triangle positions directly into a diagnostic image."""
+    from PIL import ImageDraw
+    points = np.concatenate([mesh.positions for mesh in geometry.meshes])
     center = (points.min(axis=0)+points.max(axis=0))*.5
     forward = np.array([2.3, 1.1, 3.8]); forward /= np.linalg.norm(forward)
     right = np.cross([0, 1, 0], forward); right /= np.linalg.norm(right)
@@ -153,7 +159,7 @@ def _preview(rig, destination):
     scale = 200/max(float(np.ptp(view[:, :2], axis=0).max()), 1e-8)
     image = Image.new('RGB', (256, 256), (20, 28, 40))
     draw = ImageDraw.Draw(image)
-    for mesh in rig.geometry.meshes:
+    for mesh in geometry.meshes:
         p = (mesh.positions-center)@basis
         p = np.column_stack([128+p[:, 0]*scale, 128-p[:, 1]*scale])
         for tri in mesh.triangles:
@@ -367,6 +373,7 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
             source=file('native/source/'+source_info['path'].name), provenance=provenance,
             coordinate_system=COORDINATES, original_coordinate_system='glTF 2.0 right-handed Y-up meters',
             pivot=[0, 0, 0], meshes=[file('normalized.glb')], materials=[],
+            material_bindings=native_material_bindings(document.json, rig.geometry),
             bounds=dict(minimum=points.min(axis=0).tolist(), maximum=points.max(axis=0).tolist()),
             collision=None, sockets=[], components=components, skeleton=rig_ref if rig.manifest.get('skeleton') else None,
             animations=animations, lods=[], dependencies=[],
@@ -583,45 +590,37 @@ def _load_verified_native(imported, native_root):
     require(len(manifests) == 1, 'Imported asset needs one exact native manifest.')
     prefix = manifests[0]['path'][:-len('rig.json')]
     records = [r for r in imported.asset['dependencies'] if r['path'].startswith(prefix)]
-    require(0 < len(records) <= DEFAULT_LIMITS['archive_files'], 'Native dependency count exceeds its bound.')
-    seen, total = set(), 0
-    # The private closure remains alive until every legacy loader has finished;
-    # no later read can return to a mutable caller-owned package.
-    with tempfile.TemporaryDirectory(prefix='scene3d-native-admission-') as temporary:
-        admitted = Path(temporary)
-        for record in records:
-            relative = record['path'][len(prefix):]
-            portable_path(relative)
-            require(relative not in seen, 'Native dependency inventory repeats a path.')
-            seen.add(relative)
-            remaining = DEFAULT_LIMITS['dependency_bytes'] - total
-            require(remaining > 0, 'Native dependency bytes exceed their aggregate bound.')
-            payload = read_source_bytes(Path(native_root)/relative, min(MAX_FILE_BYTES, remaining))
-            require(hashlib.sha256(payload).hexdigest() == record['sha256'],
-                    'Native dependency differs from registered exact bytes.', 'SCENE3D_SOURCE_CHANGED')
-            total += len(payload)
-            target = admitted/relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(payload)
+    from scene3d_capture import capture_verified_native
+    relative_inventory = [dict(record, path=record['path'][len(prefix):]) for record in records]
+    with capture_verified_native(native_root, 'rig.json', relative_inventory) as admitted:
         return load_rig(admitted)
 
 
-def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0.):
+def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0., loop=False):
     """Evaluate actual native deformation then each scene component's edit delta."""
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
-    from rig_math import transform_points
     rig = _load_verified_native(imported, native_root)
     require(rig.manifest['source']['sha256'] == imported.report['source_sha256'],
             'Native run does not match the imported source.', 'SCENE3D_SOURCE_CHANGED')
     if clip is not None:
         clip = imported.report['native_clip_map'].get(clip, clip)
         require(clip in rig.clips, 'Unknown imported native clip.')
-        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time)['pose'])
+        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time, loop=loop)['pose'])
     elif rig.manifest.get('skeleton') and rig.weights:
         evaluated = evaluate_deformation(rig)
     else:
         evaluated = {m.id: dict(positions=m.positions) for m in rig.geometry.meshes}
+    projected = project_imported_vertices(graph, imported, rig, evaluated)
+    return dict(**projected, native_clip=clip, time=time, actual_deformation=True, production_approved=False)
+
+
+def project_imported_vertices(graph, imported, rig, evaluated):
+    """Project admitted deformation through the canonical imported component mapping."""
+    from rig_math import transform_points
+    require(rig.manifest['source']['sha256'] == imported.report['source_sha256'],
+            'Native run does not match the imported source.', 'SCENE3D_SOURCE_CHANGED')
+    require(set(evaluated) == set(rig.geometry.by_id()), 'Native deformation mesh set differs from admitted rig.')
     source_world = {h['source_node']: np.asarray(h['world_matrix']) for h in imported.hierarchy}
     by_id = rig.geometry.by_id()
     result = {}
@@ -640,4 +639,4 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
         for mesh in imported.asset['components'][component]:
             require(mesh in by_id and by_id[mesh].source_node == index, 'Mesh component/source node mismatch.')
             result[node['id']][mesh] = transform_points(delta, evaluated[mesh]['positions']).tolist()
-    return dict(nodes=result, native_clip=clip, time=time, actual_deformation=True, production_approved=False)
+    return dict(nodes=result)

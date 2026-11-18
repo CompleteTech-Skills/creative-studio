@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "repository": "CompleteTech-Skills/creative-studio",
+  "main": "62dc9f9a9cae319933c9f0bc8c39fcde9d26663a",
+  "protection_observed_at": "2026-11-17T19:38:02+00:00",
+  "branch_protection": {
+    "required_status_checks": {
+      "strict": true,
+      "checks": [
+        {
+          "context": "3D contracts and mathematical expectations",
+          "app_id": 15368
+        },
+        {
+          "context": "Animation, constraints, contacts and IK",
+          "app_id": 15368
+        },
+        {
+          "context": "Blender headless save/reopen and deformation",
+          "app_id": 15368
+        },
+        {
+          "context": "Delivery (macos-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Delivery (ubuntu-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Delivery (windows-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Existing 2D compatibility",
+          "app_id": 15368
+        },
+        {
+          "context": "Import/export and Khronos interoperability",
+          "app_id": 15368
+        },
+        {
+          "context": "Model3D real payloads (macos-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Model3D real payloads (ubuntu-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Model3D real payloads (windows-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Operations, local API and archive restoration",
+          "app_id": 15368
+        },
+        {
+          "context": "Rig generation and real skinning",
+          "app_id": 15368
+        },
+        {
+          "context": "Three-character and mechanical demonstrations",
+          "app_id": 15368
+        },
+        {
+          "context": "Three.js browser playback and vertex comparison",
+          "app_id": 15368
+        }
+      ]
+    },
+    "enforce_admins": true,
+    "required_pull_request_reviews": {
+      "dismiss_stale_reviews": true,
+      "require_code_owner_reviews": false,
+      "require_last_push_approval": false,
+      "required_approving_review_count": 0
+    },
+    "required_conversation_resolution": true,
+    "allow_force_pushes": false,
+    "allow_deletions": false
+  },
+  "successful_main_run_count": 35,
+  "required_contexts_successful_on_main": 15,
+  "security_settings": {
+    "private_vulnerability_reporting": true,
+    "vulnerability_alerts": true,
+    "secret_scanning": "enabled",
+    "secret_scanning_push_protection": "enabled"
+  },
+  "workflow_registrations": [
+    {
+      "id": 394350696,
+      "state": "disabled_manually",
+      "path": ".github/workflows/model3d-source-transfer.yml"
+    },
+    {
+      "id": 394394294,
+      "state": "disabled_manually",
+      "path": ".github/workflows/model3d-stat-transfer.yml"
+    },
+    {
+      "id": 394370612,
+      "state": "disabled_manually",
+      "path": ".github/workflows/model3d-test-fixture-transfer.yml"
+    },
+    {
+      "id": 394264892,
+      "state": "disabled_manually",
+      "path": ".github/workflows/roadmap-capture.yml"
+    },
+    {
+      "id": 394275719,
+      "state": "disabled_manually",
+      "path": ".github/workflows/roadmap-test-tools.yml"
+    }
+  ],
+  "rule_evaluation": {
+    "observed_at": "2026-11-17T19:37:13+00:00",
+    "pull_request": 274,
+    "headRefOid": "8060dd7aba0f442327ce76b935a9c557108fd336",
+    "baseRefOid": "62dc9f9a9cae319933c9f0bc8c39fcde9d26663a",
+    "isDraft": false,
+    "mergeStateStatus": "BLOCKED",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": null,
+    "required_checks_not_completed": [
+      {
+        "app_id": 15368,
+        "conclusion": null,
+        "name": "Delivery (windows-latest)",
+        "status": "in_progress"
+      },
+      {
+        "app_id": 15368,
+        "conclusion": null,
+        "name": "Delivery (ubuntu-latest)",
+        "status": "in_progress"
+      },
+      {
+        "app_id": 15368,
+        "conclusion": null,
+        "name": "Delivery (macos-latest)",
+        "status": "in_progress"
+      }
+    ],
+    "interpretation": "GitHub reported BLOCKED for a non-draft, conflict-free PR containing current main while the listed required checks were incomplete."
+  },
+  "activation_archive_recovery": {
+    "audit_utc": "2026-11-13T16:35:48.112777+00:00",
+    "source_file_sha256": {
+      "governance216-full-leaf-audit.json": "7ca69f0f53d3e431ab9ab161ad1fafc177c422f0c007b77c653745f30911b6e6",
+      "before-recovery-manifest.json": "104c4ee87dac0f9f0ad36b0814f2672e1bce17146b151990d968f8754ebe7f7d",
+      "protection-readback.json": "eab432279113d9e6e57fd96ff6312253e48188b06e07f4bd5e85130d56645828",
+      "security-readback.json": "5a1bb4872acc69c843ffe208af6bace5a239b13826bbe2fb686dba6fb342dade",
+      "private-reporting-readback.json": "26b3426b2593763c96d0890b4a77a0bbf66d13fc512b0c6b138a23c290f30a2a",
+      "effective-rule-evaluation.json": "913dfd726dcecb8f15df6d051fccd0bd5aab8ace25a4f3a61277a092b10d30b5"
+    },
+    "before_setting_values_recovered": {
+      "main_protected": false,
+      "rulesets": [],
+      "private_vulnerability_reporting": false,
+      "vulnerability_alerts": false,
+      "secret_scanning": "disabled",
+      "secret_scanning_push_protection": "disabled"
+    },
+    "activation_after_readbacks_corroborate": {
+      "strict_main_protection": true,
+      "required_actions_contexts": 15,
+      "admin_enforcement": true,
+      "private_vulnerability_reporting": true,
+      "secret_scanning": "enabled",
+      "secret_scanning_push_protection": "enabled"
+    },
+    "historical_workflow_disposition": "The previous audit verified exact preserved source digests, completed run inventories, and the owner-authorized retirement disposition for all five registrations.",
+    "unrecovered_original_before_response_envelopes": [
+      "The original repository security request emitted a settings projection.",
+      "The original vulnerability-alerts request retained the disabled message and an HTTP header prefix."
+    ]
+  }
+}
