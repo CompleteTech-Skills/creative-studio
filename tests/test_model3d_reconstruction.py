@@ -65,6 +65,38 @@ class ReconstructionTests(unittest.TestCase):
         with self.assertRaises(RigError):extrude_mask(np.eye(3,dtype=bool),pixel_size=.1,thickness=.2)
         with self.assertRaises(RigError):extrude_mask(np.ones((2,2),dtype=int),pixel_size=.1,thickness=.2)
 
+    def test_mask_boolean_sequences_match_array_geometry(self):
+        array = np.array([[True, True], [True, False]], dtype=bool)
+        expected = extrude_mask(array, pixel_size=.2, thickness=.4)
+        for mask in ([[True, True], [True, False]], ((True, np.bool_(True)), array[1])):
+            with self.subTest(mask=mask):
+                result = extrude_mask(mask, pixel_size=.2, thickness=.4)
+                self.assertEqual(result.report['parameters'], expected.report['parameters'])
+                np.testing.assert_array_equal(result.geometry.meshes[0].positions,
+                                              expected.geometry.meshes[0].positions)
+                np.testing.assert_array_equal(result.geometry.meshes[0].triangles,
+                                              expected.geometry.meshes[0].triangles)
+
+    def test_mask_preflights_shape_type_and_pixel_count(self):
+        cases = (
+            [[True], [False], [True], [False], [True]],
+            [[True, True, False], [True, False, False]],
+            [[True], [False, True]],
+            [[[True]], [[False]]],
+            [[True, 1]],
+            [[True, False], np.array([[True, False]])],
+            np.ones((2, 3), dtype=bool),
+        )
+        with patch('model3d_reconstruction_solids.MAX_MASK_PIXELS', 4):
+            result = extrude_mask([[True, True], [True, False]], pixel_size=.2, thickness=.4)
+            self.assertEqual(result.report['parameters']['mask_shape'], [2, 2])
+            with patch('model3d_reconstruction_solids.np.asarray',
+                       side_effect=AssertionError('Mask converted before preflight')):
+                for mask in cases:
+                    with self.subTest(mask=mask), self.assertRaises(RigError) as caught:
+                        extrude_mask(mask, pixel_size=.2, thickness=.4)
+                    self.assertEqual(caught.exception.report['code'], 'RECON_MASK')
+
     def test_revolution_independent_prism_volume_uv_seam_and_axis_tips(self):
         n=32;result=revolve_profile([[1,0],[1,2]],segments=n)
         self.assert_closed(result)
