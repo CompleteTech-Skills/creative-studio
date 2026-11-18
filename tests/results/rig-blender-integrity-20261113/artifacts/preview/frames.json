@@ -15,12 +15,12 @@
   "review_status": "pending",
   "frames": [
     {
-      "path": "/home/complete/.cache/hatch-coordination-20261112/rig-program/retained-export/preview/frame-0000.png",
+      "path": "<local-work-dir>/frame-0000.png",
       "time": 0.0,
       "sha256": "32e95c066592e60b2baa9f90e0a6fdba55058a87efdde6b66f7d8cb332c28a60"
     },
     {
-      "path": "/home/complete/.cache/hatch-coordination-20261112/rig-program/retained-export/preview/frame-0001.png",
+      "path": "<local-work-dir>/frame-0001.png",
       "time": 0.5,
       "sha256": "40359abeccb7bcab76329a555f3e11d8c5946bdbb5d3aad21ee54ca32f4ec124"
     }

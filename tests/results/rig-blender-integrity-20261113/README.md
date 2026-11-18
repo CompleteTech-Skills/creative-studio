@@ -7,3 +7,5 @@ The verification record distinguishes current source tests from the retained art
 The two PNGs are real Cycles CPU frames at 96×96. Raw receipts retain their original local paths; use `artifacts/artifact-index.json` for the repository-relative exact-byte inventory. File hashes identify the artifacts independently of those historical paths.
 
 The first socket threshold failure is retained separately. No browser, Khronos, human review or full rig mission completion is inferred from these tests.
+
+The published JSON reports replace machine-local paths with portable placeholders. The artifact index pins these redacted copies. The original reports remain in commit `2fcdbd9f`, and their measurements and source revision are retained.
