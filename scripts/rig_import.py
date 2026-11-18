@@ -302,7 +302,8 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
     return clips
 
 
-def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedModel:
+def _gltf_model(path, *, scale=1., limits=None, source_reader=None,
+                _animation_targets=None) -> ImportedModel:
     document = read_gltf(path, limits, source_reader=source_reader)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
     parents, world, order = scene_graph(document, import_scale=scale)
@@ -417,10 +418,14 @@ def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedM
                   source_sha256=document.source_sha256, warnings=document.warnings)
     extra = document.json.get('asset', {}).get('extras', {})
     report['fixture'] = bool(extra.get('hatchSource', {}).get('fixture', False) or extra.get('hatchRig', {}).get('fixture', False))
+    if _animation_targets is not None:
+        _animation_targets.update(bones=ids, meshes=node_meshes)
     return ImportedModel(geometry, document.dependencies, skeleton, weights, clips, report)
 
 
-def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None, source_reader=None) -> ImportedModel:
+def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None,
+                         source_reader=None, _animation_targets=None) -> ImportedModel:
+    """Load a model, optionally exposing the glTF target ID maps to the verifier."""
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Choose a regular model file.')
     suffix = path.suffix.lower()
@@ -432,4 +437,5 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
         from rig_blender import import_blend
         return import_blend(path, scale=scale, limits=limits, executable=blender)
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
-    return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader)
+    return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader,
+                       _animation_targets=_animation_targets)
