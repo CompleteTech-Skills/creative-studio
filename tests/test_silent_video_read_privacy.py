@@ -101,7 +101,7 @@ class PortableReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
         descriptor_reader = video.open_payload
 
         def refuse(root, relative, **options):
-            if Path(root) == self.root and relative == self.paths[2]:
+            if Path(root) == self.root.resolve() and relative == self.paths[2]:
                 raise RigError('RIG_PAYLOAD_IO',
                     'Cannot safely read payload: ' + str(self.root / relative), asset=relative)
             return descriptor_reader(root, relative, **options)
@@ -121,7 +121,7 @@ class PortableReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
         descriptor_reader = video.open_payload
 
         def refuse(root, relative, **options):
-            if Path(root) == self.root and relative == self.artifact.name:
+            if Path(root) == self.root.resolve() and relative == self.artifact.name:
                 raise RigError('RIG_PAYLOAD_IO',
                     'Cannot safely read payload: ' + str(self.artifact), asset=relative)
             return descriptor_reader(root, relative, **options)
@@ -133,6 +133,47 @@ class PortableReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
                 evidence = interface()
                 self.assert_before_snapshot(evidence)
                 run.assert_not_called()
+
+
+class HistoricalProbeReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
+    def assert_historical_refusal(self, recorded, observed, *, digest_error=None):
+        original = b'portable historical receipt fixture; no native media claim'
+        self.artifact.write_bytes(original)
+        records = core.SilentContracts._simulated_verification_records(self)
+        records.append(dict(command=['simulated-private-historical-probe'], exit_status=0,
+                            stdout=observed, stderr=''))
+        digest = video._digest
+
+        def guarded_digest(value):
+            if digest_error is not None and value == {'format': {'private_metadata': str(self.root)}}:
+                raise digest_error(str(self.root))
+            return digest(value)
+
+        with patch.object(video, '_binary', return_value=sys.executable), \
+                patch.object(video, '_run', side_effect=records) as run, \
+                patch.object(video, '_digest', side_effect=guarded_digest), \
+                self.assertRaisesRegex(ValueError, '^historical silent probe could not be independently verified$') as failed:
+            video.verify_export(self.artifact, self.request, _historical_probe=recorded)
+        self.assertEqual(run.call_count, 4)
+        self.assert_completed_snapshot(failed.exception.evidence, original)
+        self.assert_private(str(failed.exception), failed.exception.evidence)
+        self.assertNotIn('private_metadata', json.dumps(failed.exception.evidence))
+
+    def test_actual_historical_json_nesting_refusal_retains_primary_evidence(self):
+        nested = '[' * max(10000, 4 * sys.getrecursionlimit()) + '0'
+        nested += ']' * max(10000, 4 * sys.getrecursionlimit())
+        with self.assertRaises(RecursionError):
+            json.loads(nested)
+        ordinary = json.dumps({'format': {'private_metadata': str(self.root)}})
+        for recorded, observed in ((nested, ordinary), (ordinary, nested)):
+            with self.subTest(nested_recorded=recorded == nested):
+                self.assert_historical_refusal(recorded, observed)
+
+    def test_simulated_historical_digest_limits_retain_primary_evidence(self):
+        ordinary = json.dumps({'format': {'private_metadata': str(self.root)}})
+        for error in (RecursionError, OverflowError):
+            with self.subTest(error=error.__name__):
+                self.assert_historical_refusal(ordinary, ordinary, digest_error=error)
 
 
 if __name__ == '__main__':

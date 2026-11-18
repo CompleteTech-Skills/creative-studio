@@ -65,8 +65,11 @@ The later security correction limits ffprobe to the fields actually used by the
 verifier while retaining every stream. An actual tagged audio-only MP4 fails
 without echoing its arbitrary editorial metadata. Missing or unknown stream
 types reject before measured counts are reported. Historical full-probe receipts
-remain valid through a shared projection onto the same authoritative fields;
-codec, missing-field, numeric-type and extra-stream tampering still reject.
+remain valid through an additional full native probe on the same private
+exact-byte snapshot. Every parsed observation remains bound except the snapshot
+dependent `format.filename`; codec, metadata, missing-field, numeric-type and
+extra-stream tampering reject. Accepted results retain fresh field-limited
+evidence, and historical metadata is not exported in failure diagnostics.
 Actual corrupt-media tests also verify that exported failure JSON and errors
 replace command-owned absolute directory paths with stable aliases. Byte limits
 are reapplied after replacement. A separate contract fixture proves that a
@@ -200,3 +203,58 @@ refusals, the installed probe named `video`, and inherited report/color controls
 ran without skips using synthetic temporary media. These are local execution
 results, not independent review or production acceptance. Final published-head
 checks and fresh independent review remain required.
+
+## Historical receipt integrity and caller aliases
+
+The six-method optional
+[`test_silent_video_historical_receipt_native.py`](../tests/optional/test_silent_video_historical_receipt_native.py)
+module executes the installed full-probe protocol on six synthetic H.264 frames.
+It checks unchanged receipts and the filename exception, then changes every
+other observed leaf, removes recorded metadata and adds unobserved metadata.
+It exercises the historical command format with the current installed tools;
+it does not emulate an older implementation.
+
+The original independent reviewer oracle is preserved byte-for-byte at
+[`tests/independent/test_historical_receipt_integrity.py`](../tests/independent/test_historical_receipt_integrity.py),
+SHA-256 `c69bcd5fca2d4060014fd8a70f3c31112f08c38f2f653e13933cca7a3a14ede7`.
+It imports a separately checked-out implementation pinned to
+`094e4c5f04c255178be6a09cb10d25280201fe92`, creates its receipt using that
+implementation's actual encode/probe/decode workflow, and compares acceptance
+with the current implementation. No process result or older implementation is
+simulated. Keep `tests/independent` without a package `__init__.py`: this manual
+two-checkout oracle must stay outside ordinary automatic unittest discovery.
+From the current checkout, run it explicitly after preparing the pinned base:
+
+```bash
+git worktree add --detach ../silent-receipt-base 094e4c5f04c255178be6a09cb10d25280201fe92
+PYTHONPATH=scripts:tests SILENT_RECEIPT_BASE=../silent-receipt-base python tests/independent/test_historical_receipt_integrity.py
+```
+
+Portable read-refusal checks also run through an actual caller-directory alias
+(a POSIX symlink or Windows junction). Injected descriptor refusals compare the
+normalized physical root, so they occur for both caller spellings; evidence must
+omit both aliases and physical private paths. These simulated media records
+establish diagnostic contracts, not native encode/probe/decode behavior.
+Separate portable cases exercise the installed JSON parser's actual nesting
+refusal for historical JSON and simulated digest recursion/overflow errors.
+Their fixed refusal retains completed field-limited command records and snapshot
+hashes without exporting private historical metadata.
+
+Fresh local verification used Linux, Python 3.12.14 and FFmpeg/ffprobe 7.1.5.
+The source SHA-256 before and after execution was
+`41e345055359afbd9de281d48d60c53ca0749fcf312721a86d553ce41ce7a304`.
+The three discovery commands in the
+[dedicated workflow](../.github/workflows/silent-video.yml), with
+`PYTHONPATH=scripts:tests` and `HATCH_SILENT_MEDIA_TEST=1` for native discovery,
+completed with actual exit 0: 72 portable methods in 20.835 seconds, 98 optional
+native-suite methods in 243.057 seconds, and 20 unchanged legacy renderer
+methods in 3.043 seconds. The explicit original oracle command against the
+separate pinned base completed one method in 14.580 seconds, also exit 0.
+Every run had zero skips. The oracle observed base encode/probe/timeline/decode
+exit 0, accepted the unchanged receipt in both implementations and rejected a
+copied changed bitrate in both. The optional native count includes inherited
+portable and simulated contract methods; it is not 98 separate codec exercises.
+The POSIX alias branch ran here; the Windows junction branch was not run.
+These are local synthetic-media and contract results. Final integrated-head
+review and hosted gates remain required, and no production-art acceptance is
+claimed.

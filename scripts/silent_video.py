@@ -56,17 +56,6 @@ PROBE_FORMAT_FIELDS = ('format_name', 'duration')
 PROBE_STREAM_TYPES = frozenset(('video', 'audio', 'subtitle', 'data', 'attachment'))
 
 
-def _probe_projection(data):
-    """Compare historical/current probes on queried facts, retaining presence."""
-    if (not isinstance(data, dict) or not isinstance(data.get('streams'), list) or
-            any(not isinstance(stream, dict) for stream in data['streams']) or
-            not isinstance(data.get('format'), dict)):
-        raise ValueError('malformed receipt probe inventory')
-    return {'streams': [{name: stream[name] for name in PROBE_STREAM_FIELDS if name in stream}
-                        for stream in data['streams']],
-            'format': {name: data['format'][name] for name in PROBE_FORMAT_FIELDS if name in data['format']}}
-
-
 def _obj(properties):
     return {'type': 'object', 'additionalProperties': False,
             'properties': properties, 'required': list(properties)}
@@ -731,7 +720,31 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             'visual_review': 'not-performed'}
 
 
-def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None):
+def _check_historical_probe(path, request, recorded, *, ffprobe=None):
+    """Compare the full historical protocol privately on the verified snapshot."""
+    try:
+        observed = _run([_binary('ffprobe', ffprobe), *VERIFY_INPUT_OPTIONS,
+                         '-v', 'error', '-count_frames', '-show_streams', '-show_format',
+                         '-of', 'json', str(path.resolve())], request['limits'], tool_role='ffprobe')
+        if (observed['exit_status'] != 0 or observed['stderr'] or
+                observed.get('stdout_truncated') or observed.get('stderr_truncated')):
+            raise ValueError('incomplete historical probe')
+        original, actual = json.loads(recorded), json.loads(observed['stdout'])
+        for data in (original, actual):
+            if not isinstance(data, dict) or not isinstance(data.get('format'), dict):
+                raise ValueError('malformed historical probe')
+            data['format'].pop('filename', None)
+        matches = _digest(original) == _digest(actual)
+    except (ValueError, OSError, TypeError, KeyError, RecursionError, OverflowError):
+        # Historical metadata is not an exported diagnostic transcript. Keep
+        # the primary field-limited verification evidence and a fixed refusal.
+        raise ValueError('historical silent probe could not be independently verified') from None
+    if not matches:
+        raise ValueError('corrupt silent verification evidence')
+
+
+def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None,
+                  _historical_probe=None):
     """Verify a private exact-byte snapshot, then recheck the caller's artifact.
 
     This prevents an untrusted producer switching a path between probe/decode
@@ -768,6 +781,8 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
                                artifact_sha256_scope='verification-snapshot', artifact_bytes=count)
             result = _verify_snapshot(snapshot, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
                                       cancel=cancel, diagnostics=diagnostics)
+            if _historical_probe is not None:
+                _check_historical_probe(snapshot, request, _historical_probe, ffprobe=ffprobe)
             checked = hashlib.sha256()
             checked_bytes = 0
             try:
@@ -800,22 +815,20 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
     contract['properties']['encode'] = contract['properties']['probe']
     contract['properties']['path'] = {'type': 'string', 'minLength': 1, 'maxLength': 1024}
     _structural(receipt, contract, 'silent receipt')
-    actual = verify_export(path, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe)
+    command = receipt['probe']['command']
+    historical_full_probe = ('-show_entries' not in command and
+                             '-show_streams' in command and '-show_format' in command)
+    actual = verify_export(path, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
+                           _historical_probe=receipt['probe']['stdout'] if historical_full_probe else None)
     for key in ('artifact_sha256', 'artifact_bytes', 'source_manifest_sha256', 'request_sha256',
                 'video_stream_count', 'audio_stream_count', 'other_stream_count', 'frame_count',
                 'fps', 'duration', 'timebase_tolerance', 'profile'):
         if receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
     old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
-    # Only the recorded historical full-query protocol needs the compatibility
-    # projection. Current field-limited observations retain every queried fact,
-    # including extra top-level records such as an observed empty stream group.
-    command = receipt['probe']['command']
-    historical_full_probe = ('-show_entries' not in command and
-                             '-show_streams' in command and '-show_format' in command)
-    if historical_full_probe:
-        old_probe, new_probe = _probe_projection(old_probe), _probe_projection(new_probe)
-    if (_digest(old_probe) != _digest(new_probe) or
+    # Full historical observations were compared privately against the same
+    # exact-byte snapshot. Current observations bind every queried field.
+    if ((not historical_full_probe and _digest(old_probe) != _digest(new_probe)) or
             receipt['timeline']['stdout'] != actual['timeline']['stdout']):
         raise ValueError('corrupt silent verification evidence')
     if any(receipt[key]['exit_status'] != 0 or receipt[key]['stderr'] for key in ('probe', 'timeline', 'decode')):

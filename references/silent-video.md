@@ -344,13 +344,18 @@ cannot establish stream counts, the failure does not invent video/audio counts.
 The ffprobe query inventories all streams but requests only fields consumed by
 the verifier; arbitrary tags and unrelated container metadata are not requested.
 Missing or unknown stream types reject before any counts are reported. Receipt
-comparison checks the entire parsed current raw probe result. Only a recorded
+comparison checks the entire parsed current raw probe result. A recorded
 historical query using both `-show_streams` and `-show_format`, without
-`-show_entries`, uses a projection onto the verifier-owned fields. That
-compatibility projection preserves their presence, types, values and every
-stream. Four installed-tool regressions retain unchanged current evidence and
-an actually executed full-probe format, while rejecting altered current stream
-bitrate and stream-group evidence. File-identity checks remain mandatory.
+`-show_entries`, triggers an additional full native probe of the same private
+exact-byte snapshot. Comparison binds every parsed historical observation,
+including tags, disposition, bitrate and empty-container presence. Only
+`format.filename` is excluded because the verifier uses a new snapshot path.
+Historical full-probe output stays private; accepted receipts return fresh
+field-limited evidence. JSON nesting and digest numeric/nesting refusals retain
+the primary verification evidence and fixed error text, without exporting
+historical metadata. Current and historical installed-tool regressions retain
+unchanged evidence and reject changed, missing or added observations.
+File-identity checks remain mandatory.
 Bounded process diagnostics do not promise general
 sanitization of arbitrary output from a substituted tool executable.
 Python exceptions expose this evidence, and the existing
