@@ -29,25 +29,25 @@ This verdict applies to this exact candidate, not a future repaired/integrated h
 
 ## Executed verification and retained evidence
 
-All reviewer executions used `/home/complete/.cache/hatch-fleet/rig-py312/bin/python` and did not spawn children. Actual environment: Python 3.12.15; NumPy 2.3.5; Pillow 12.3.0; jsonschema metadata 4.25.1. The imported NumPy/Pillow versions and module paths were separately confirmed.
+All reviewer executions used `<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python` and did not spawn children. Actual environment: Python 3.12.15; NumPy 2.3.5; Pillow 12.3.0; jsonschema metadata 4.25.1. The imported NumPy/Pillow versions and module paths were separately confirmed.
 
 From `/tmp/hatch-continuity115`:
 
 ```text
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
 29 tests, 11.031 seconds, OK; no skips/failures/errors.
-Log: /home/complete/.cache/hatch-fleet/review115/focused53a4.log
+Log: <local-work-dir>/.cache/hatch-fleet/review115/focused53a4.log
 ```
 
 Independent adversarial commands (exit 0 means the reproduction script completed, not that the candidate met the requirement):
 
 ```text
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python /home/complete/.cache/hatch-fleet/review115/adversarial115.py
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python /home/complete/.cache/hatch-fleet/review115/resource115.py
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python /home/complete/.cache/hatch-fleet/review115/expiry115.py
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python <local-work-dir>/.cache/hatch-fleet/review115/adversarial115.py
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python <local-work-dir>/.cache/hatch-fleet/review115/resource115.py
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python <local-work-dir>/.cache/hatch-fleet/review115/expiry115.py
 ```
 
-Exact observed outputs are the adjacent `.json` files. Source and evidence SHA-256 values, actual versions and module paths are retained in `/home/complete/.cache/hatch-fleet/review115/evidence53a4.json`.
+Exact observed outputs are the adjacent `.json` files. Source and evidence SHA-256 values, actual versions and module paths are retained in `<local-work-dir>/.cache/hatch-fleet/review115/evidence53a4.json`.
 
 Key SHA-256 values:
 

@@ -28,6 +28,8 @@ Turn a single existing character image into observed visual components, source-s
 
 The installed local pipeline does **not** contain a general-purpose semantic vision model. Running `decompose` without annotations creates a faithful, reviewable foreground with unassigned semantic regions. It never labels connected regions as heads, limbs or accessories merely because of their position. `analysis-request.json` records the actual normalized reference and expected annotation contract for optional external assistance; it does not represent a completed model call.
 
+An optional [resumable image-analysis controller](decomposition-analysis.md) can now execute the real local OpenCV human face/eye detector or ingest attributed external proposals. Its coarse photographic-region support is not a general-purpose anatomy model; it preserves pending review and unassigned pixels.
+
 The complete manual route is available offline and requires Pillow only. A separate analyzer may inspect the source and return the documented annotations. Treat its output as proposed annotations with real author/tool attribution, confidence and rationale. Do not fabricate a provider, API, model call or semantic success receipt. Semantic labels remain flexible: humanoids, quadrupeds, wings, robot housings, masks, symbols and abstract designs all use the same data-driven schema.
 
 ## Start a decomposition

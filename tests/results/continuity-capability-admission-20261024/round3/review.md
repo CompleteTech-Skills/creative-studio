@@ -16,21 +16,21 @@ Whole-admission CPU and wall accounting now includes validation, hashing and fin
 
 Deterministic clock-boundary reproductions cover both new probe verification and native reservation. Each consumes two simulated CPU units against one reserved before the native execute call; the execute call is nevertheless observed at two units. The final result correctly becomes `failed` with `resource-admission`, but the avoidable operation has already started after known exhaustion. These are explicitly clock simulations, not claims of actual large-asset runtime or CPU performance. Check the shared complete budget after probe verification/before reservation and again immediately before execution after reservation. Add regressions proving that the native execute call count stays zero in both cases. This does not demand hard preemption of a synchronous native call that began within its budget.
 
-Evidence: `/home/complete/.cache/hatch-fleet/review115/adversarial6b2c.py` and adjacent `.json`.
+Evidence: `<local-work-dir>/.cache/hatch-fleet/review115/adversarial6b2c.py` and adjacent `.json`.
 
 ## Actual validation
 
 ```text
 cwd: /tmp/hatch-continuity115
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
 45 tests in 12.440 seconds: OK, no failures/errors/skips.
-/home/complete/.cache/hatch-fleet/rig-py312/bin/python /home/complete/.cache/hatch-fleet/review115/adversarial6b2c.py
+<local-work-dir>/.cache/hatch-fleet/rig-py312/bin/python <local-work-dir>/.cache/hatch-fleet/review115/adversarial6b2c.py
 Exit 0: both deterministic boundary reproductions completed and observed the finding.
 ```
 
 The reviewer used Python 3.12.15 and the same pinned in-process environment as prior rounds. No backend child processes, CLI subprocess tests, network/GitHub writes, implementation edits or native application probes were performed. The known unresolved native memory issue was not rerun.
 
-Exact source/artifact hashes are in `/home/complete/.cache/hatch-fleet/review115/evidence6b2c.json`:
+Exact source/artifact hashes are in `<local-work-dir>/.cache/hatch-fleet/review115/evidence6b2c.json`:
 
 - admission source: `fc5e062138d4c4fb832871327f769c1041809da7574d66547d3bb30d13ed9360`
 - native owners: `de856c591bb97f33774767d3ce7c6089db1be5c16c2839f1eef7fb0f98d43433`
