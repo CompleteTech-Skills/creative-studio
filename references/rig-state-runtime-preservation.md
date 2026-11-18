@@ -391,3 +391,12 @@ ownership while native channel sampling uses the reported elapsed clock inside
 that interval; collapsed starts retain the shortest repeating recipe period.
 The earlier 26-method result describes the earlier correction, not this combined
 source. All new and existing modules remain enrolled for integrated execution.
+
+## Representable bent-chain distances
+
+Native FABRIK pole radii and FK-to-IK matching reach use scaled Euclidean
+distance arithmetic. A finite distance such as `2**518` must not overflow merely
+because an intermediate square exceeds binary64. Six unchanged independent
+cases retain direct, animation and runtime contact checks, strict JSON pole
+serialization, and contact-free and two-bone positive controls. These exercise
+synthetic native geometry and skinning; they do not establish visual acceptance.

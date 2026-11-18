@@ -222,7 +222,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
                     if np.linalg.norm(axis) < 1e-8:continue
                     axis = unit(axis);delta = points[i]-points[i-1]
                     projection = axis*np.dot(delta, axis)
-                    radius = np.linalg.norm(delta-projection)
+                    radius = math.dist(delta, projection)
                     points[i] = points[i-1]+projection+_pole_perpendicular(axis, points[i-1], pole)*radius
             result = _orient_chain(skeleton, result, names, points)
             result, current = apply_pass(result)
@@ -244,7 +244,7 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     validate_chain(skeleton, chain)
     points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
     world = evaluate_fk(skeleton, pose)
-    reach = float(np.linalg.norm(points[-1]-points[0]))
+    reach = math.dist(points[-1], points[0])
     if reach <= 1e-9:
         # A valid fully folded chain has a measurable first segment even
         # though its endpoint coincides with its root.
