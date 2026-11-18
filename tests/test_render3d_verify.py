@@ -8,6 +8,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import zlib
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -38,11 +39,11 @@ class ImageVerification(unittest.TestCase):
         row=[value,0,value,value//2] * 3 if alpha else [value,0,value]*3
         with path.open('wb') as stream:writer.write(stream,[row,row])
 
-    def exr(self,path,depth=32,channels=None):
+    def exr(self,path,depth=32,channels=None,header=None):
         dtype=np.float16 if depth==16 else np.float32
         data=np.array([[0,2,10],[.25,.5,1]],dtype=dtype)
         values=channels or dict(R=data,G=data,B=data,A=np.ones((2,3),dtype=dtype))
-        OpenEXR.File({},values).write(str(path))
+        OpenEXR.File(header or {},values).write(str(path))
 
     def test_png8_and_png16_decode_true_precision(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -53,6 +54,83 @@ class ImageVerification(unittest.TestCase):
                 self.assertEqual(report['channels']['R']['maximum'],1)
                 self.assertAlmostEqual(report['channels']['A']['minimum'],((1<<depth)-1)//2/((1<<depth)-1))
                 self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+
+
+    def test_empty_idat_after_eof_accepts_but_trailing_compressed_data_rejects(self):
+        def chunk(kind,payload):
+            return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (8,16):
+                path=Path(temporary)/f'{depth}.png';self.png(path,depth)
+                original=path.read_bytes()
+                self.assertEqual(original[-8:-4],b'IEND')
+                for payloads in ((b'',),(b'',b''),(b'garbage',),(b'',b'garbage'),(zlib.compress(b''),)):
+                    with self.subTest(depth=depth,payloads=payloads):
+                        path.write_bytes(original[:-12]+b''.join(chunk(b'IDAT',data) for data in payloads)+original[-12:])
+                        for decode in (verify_image,decode_image):
+                            if any(payloads):
+                                with self.assertRaisesRegex(Render3DError,'Trailing compressed PNG stream'):
+                                    decode(path,output=output(depth=depth),resolution=[3,2])
+                            else:
+                                decoded=decode(path,output=output(depth=depth),resolution=[3,2])
+                                report=decoded[0] if decode is decode_image else decoded
+                                self.assertEqual(report['channels']['R']['maximum'],1)
+                                self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+
+    def test_png_color_key_transparency_rejects_before_opaque_or_preview_acceptance(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (8,16):
+                path=Path(temporary)/f'{depth}.png';self.png(path,depth,alpha=False)
+                original=path.read_bytes()
+                # Normal RGB remains supported as opaque output and preview input.
+                for decode in (verify_image,decode_image):
+                    decoded=decode(path,output=output(depth=depth,alpha='opaque'),resolution=[3,2])
+                    report=decoded[0] if decode is decode_image else decoded
+                    self.assertEqual(set(report['channels']),set('RGB'))
+                key=struct.pack('>HHH',(1<<depth)-1,0,(1<<depth)-1)
+                payload=b'tRNS'+key
+                path.write_bytes(original[:33]+struct.pack('>I',len(key))+payload+
+                                 struct.pack('>I',zlib.crc32(payload)&0xffffffff)+original[33:])
+                # The fixture really displays transparent pixels in a PNG decoder.
+                _,_,rows,metadata=png.Reader(filename=str(path)).asRGBA()
+                self.assertEqual(metadata['planes'],4)
+                self.assertTrue(all(sample == 0 for row in rows for sample in row[3::4]))
+                for alpha in ('opaque','straight'):
+                    for decode in (verify_image,decode_image):
+                        with self.subTest(depth=depth,alpha=alpha,decode=decode.__name__):
+                            with self.assertRaisesRegex(Render3DError,'PNG color-key transparency is unsupported'):
+                                decode(path,output=output(depth=depth,alpha=alpha),resolution=[3,2])
+
+    def test_exr_requires_matching_zero_origin_data_and_display_windows(self):
+        def window(x,y,width=3,height=2):
+            return (np.array([x,y],dtype=np.int32),np.array([x+width-1,y+height-1],dtype=np.int32))
+        full=window(0,0)
+        cases=(
+            ('full',full,full,True),
+            ('larger-canvas',full,window(0,0,4,3),False),
+            ('shifted-data',window(1,1),full,False),
+            ('shifted-display',full,window(1,1),False),
+            ('negative-origin',window(-1,-1),window(-1,-1),False),
+            ('shifted-both',window(1,1),window(1,1),False),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (16,32):
+                for label,data,display,accepted in cases:
+                    with self.subTest(depth=depth,case=label):
+                        path=Path(temporary)/f'{depth}-{label}.exr'
+                        self.exr(path,depth,header={'dataWindow':data,'displayWindow':display})
+                        for decode in (verify_image,decode_image):
+                            if accepted:
+                                decoded=decode(path,output=output('exr',depth),resolution=[3,2])
+                                report=decoded[0] if decode is decode_image else decoded
+                                self.assertEqual(report['resolution'],[3,2])
+                                self.assertEqual(report['channels']['R']['maximum'],10)
+                                if decode is decode_image:
+                                    self.assertEqual(decoded[1]['R'].shape,(2,3))
+                                    self.assertEqual(float(decoded[1]['R'][0,2]),10)
+                            else:
+                                with self.assertRaisesRegex(Render3DError,'zero-origin requested full frame'):
+                                    decode(path,output=output('exr',depth),resolution=[3,2])
 
     def test_half_full_exr_decode_hdr_values(self):
         with tempfile.TemporaryDirectory() as temporary:
