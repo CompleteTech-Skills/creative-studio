@@ -17,7 +17,22 @@ import tempfile
 import zlib
 
 from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational
-from rig_errors import RigError, object_hash, safe_path
+from rig_errors import RigError, object_hash, open_payload, safe_path, scoped_directory_descriptor
+
+
+@contextmanager
+def _image_source(path):
+    """Use scoped capture for directory capabilities and standalone capture for paths."""
+    with scoped_directory_descriptor(path.parent) as directory:
+        if directory is not None:
+            with open_payload(path.parent, path.name) as (source, _):
+                yield source
+            return
+    require(not path.is_symlink(), 'corrupt-output', 'Image may not be a symlink.', path=path)
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
+    with os.fdopen(os.open(path, flags), 'rb') as source:
+        require(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'corrupt-output', 'Image is not a regular file.', path=path)
+        yield source
 
 
 @contextmanager
@@ -25,21 +40,20 @@ def _captured(path, max_bytes):
     """Hash and decode the same privately captured bytes, not a mutable path."""
     path = Path(path)
     try:
-        require(not path.is_symlink(), 'corrupt-output', 'Image may not be a symlink.', path=path)
-        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
-        with os.fdopen(os.open(path, flags), 'rb') as source, tempfile.TemporaryFile() as frozen:
-            require(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'corrupt-output', 'Image is not a regular file.', path=path)
+        with tempfile.TemporaryFile() as frozen:
             digest, size = hashlib.sha256(), 0
-            while chunk := source.read(min(1024*1024, max_bytes-size+1)):
-                size += len(chunk)
-                require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=path)
-                digest.update(chunk); frozen.write(chunk)
+            with _image_source(path) as source:
+                while chunk := source.read(min(1024*1024, max_bytes-size+1)):
+                    size += len(chunk)
+                    require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=path)
+                    digest.update(chunk)
+                    frozen.write(chunk)
             require(size > 0, 'corrupt-output', 'Image is empty.', path=path)
             frozen.seek(0)
             yield frozen, dict(bytes=size, sha256=digest.hexdigest())
     except Render3DError:
         raise
-    except (OSError, ValueError) as exc:
+    except (RigError, OSError, ValueError) as exc:
         raise Render3DError('corrupt-output', str(exc), path=path) from exc
 
 
@@ -114,7 +128,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     return result
 
 
-def _exr_envelope(stream, memory_bytes):
+def _exr_envelope(stream, resolution, memory_bytes):
     """Admit only a bounded single-part, non-deep scanline EXR header."""
     # OpenEXR v3.5.4 ImfVersion.h and OpenEXRFileLayout.rst define these
     # little-endian fields. LONG_NAMES (0x400) changes names, not storage.
@@ -149,6 +163,8 @@ def _exr_envelope(stream, memory_bytes):
         raise Render3DError('corrupt-output', 'EXR header name exceeds its declared limit.')
 
     seen = set()
+    compression = None
+    expected_window = (0, 0, resolution[0]-1, resolution[1]-1)
     while True:
         attribute = name()
         if not attribute:
@@ -166,13 +182,43 @@ def _exr_envelope(stream, memory_bytes):
                     'Only EXR scanlineimage storage is supported.')
             require(read(size) == b'scanlineimage', 'unsupported-feature',
                     'Only EXR scanlineimage storage is supported.')
+        elif attribute == b'compression':
+            require(kind == b'compression' and size == 1, 'corrupt-output', 'Malformed EXR compression attribute.')
+            compression = read(1)[0]
+        elif attribute in (b'dataWindow', b'displayWindow'):
+            require(kind == b'box2i' and size == 16 and struct.unpack('<4i', read(16)) == expected_window,
+                    'corrupt-output', f'EXR {attribute.decode()} must match the zero-origin requested full frame.')
         else:
             stream.seek(size, 1)
+    require({b'compression', b'dataWindow', b'displayWindow'} <= seen,
+            'corrupt-output', 'EXR is missing its compression or full-frame window attributes.')
+    block_rows = {0: 1, 1: 1, 2: 1, 3: 16, 4: 32, 5: 16, 6: 32, 7: 32, 8: 32, 9: 256}
+    if compression in block_rows:
+        rows = block_rows[compression]
+        height = int(resolution[1])  # Both encoded windows matched the requested dimensions above.
+        chunks = (height+rows-1)//rows
+        require(chunks*8 <= memory_bytes, 'system-memory', 'EXR scanline table exceeds verification memory budget.')
+        table = stream.read(chunks*8)
+        require(len(table) == chunks*8, 'corrupt-output', 'Truncated EXR scanline table.')
+        boundary = stream.tell()
+        scanlines = set()
+        for offset in sorted(value for (value,) in struct.iter_unpack('<Q', table)):
+            require(offset == boundary, 'corrupt-output', 'EXR chunk table contains gaps, aliases or unreferenced bytes.')
+            stream.seek(offset)
+            chunk = stream.read(8)
+            require(len(chunk) == 8, 'corrupt-output', 'Truncated EXR chunk.')
+            line, length = struct.unpack('<iI', chunk)
+            require(0 <= line < height and line % rows == 0 and line not in scanlines,
+                    'corrupt-output', 'Invalid EXR scanline chunk.')
+            scanlines.add(line)
+            boundary = offset+8+length
+            require(boundary <= end, 'corrupt-output', 'Truncated EXR pixel payload.')
+        require(boundary == end, 'corrupt-output', 'Unexpected bytes after EXR chunks.')
     stream.seek(0)
 
 
 def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
-    _exr_envelope(stream, memory_bytes)
+    _exr_envelope(stream, resolution, memory_bytes)
     try:
         import OpenEXR, Imath
         import numpy as np
@@ -255,9 +301,10 @@ def decode_image(path, **options):
 
 
 class RenderArtifactVerifier:
-    def __init__(self,snapshot_root,expected_backend):
+    def __init__(self,snapshot_root,expected_backend,*,max_total_bytes=None):
         self.snapshot_root=Path(snapshot_root)
         self.expected_backend=deepcopy(expected_backend)
+        self.max_total_bytes = max_total_bytes
 
     def verify(self,request,result,root):
         """Verify all expected frames, including a provisional unverified result.
@@ -265,7 +312,7 @@ class RenderArtifactVerifier:
         Result publication and evidence-file writing belong to the caller. The
         returned report must be committed before setting final status complete.
         """
-        from render3d_snapshot import verify_snapshot,Scene3DAdapter,NativeRigAdapter
+        import render3d_snapshot as snapshot_owner
         validate(request,'RenderRequest')
         require(isinstance(result,dict) and result.get('status') in ('partial','complete'),
                 'incomplete-output','Only a complete candidate sequence can be verified.')
@@ -274,18 +321,30 @@ class RenderArtifactVerifier:
         pending['verification']=dict(status='not-run',verifier=None,evidence=None)
         validate(pending,'RenderResult')
         root=Path(root)
-        require(not root.is_symlink(),'corrupt-output','Output root may not be a symlink.')
+        with scoped_directory_descriptor(root) as root_fd:
+            require(root_fd is not None or not root.is_symlink(),'corrupt-output','Output root may not be a symlink.')
         require(root.is_dir(),'missing-asset','Output root is unavailable.')
         # The request authenticates the snapshot file before the owner rechecks
         # its closure. Decode and hash one captured snapshot byte buffer.
         snapshot_path=self.snapshot_root/'snapshot.json'
+        with scoped_directory_descriptor(self.snapshot_root) as snapshot_fd:
+            bounded_snapshot_owner = hasattr(snapshot_owner, 'native_memory_budget')
+            require(bounded_snapshot_owner or (self.max_total_bytes is None and snapshot_fd is None),
+                    'unsupported-feature', 'Scoped or byte-capped source verification requires the bounded snapshot owner.')
         with _captured(snapshot_path,32*1024**2) as (stream,reference):
             from rig_errors import decode_json
             snapshot=validate(decode_json(stream.read()),'RenderSnapshot')
         require(reference == {key:request['snapshot'][key] for key in ('bytes','sha256')},'stale-asset','Snapshot differs from request-bound bytes.')
-        adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
-        require(verify_snapshot(self.snapshot_root,adapter)==snapshot,'stale-asset','Snapshot changed during independent verification.')
-        if isinstance(adapter,Scene3DAdapter):
+        options = {} if self.max_total_bytes is None else {'max_total_bytes': self.max_total_bytes}
+        if snapshot['scope'] == 'scene3d':
+            adapter = snapshot_owner.Scene3DAdapter()
+        elif bounded_snapshot_owner:
+            adapter = snapshot_owner.NativeRigAdapter(memory_bytes=snapshot_owner.native_memory_budget(request))
+        else:
+            adapter = snapshot_owner.NativeRigAdapter()
+        require(snapshot_owner.verify_snapshot(self.snapshot_root,adapter,**options)==snapshot,
+                'stale-asset','Snapshot changed during independent verification.')
+        if isinstance(adapter,snapshot_owner.Scene3DAdapter):
             adapter.validate_request(self.snapshot_root,request,snapshot)
         require(result['snapshot_sha256']==snapshot['snapshot_sha256'] and result['request_sha256']==object_hash(request),
                 'stale-asset','Result request or snapshot identity differs.')
@@ -342,5 +401,5 @@ class RenderArtifactVerifier:
                     limitation='Decoded integrity and input binding do not establish semantic scene correctness or visual approval.')
 
 
-def verify_result(request,result,root,*,snapshot_root,expected_backend):
-    return RenderArtifactVerifier(snapshot_root,expected_backend).verify(request,result,root)
+def verify_result(request,result,root,*,snapshot_root,expected_backend,max_total_bytes=None):
+    return RenderArtifactVerifier(snapshot_root,expected_backend,max_total_bytes=max_total_bytes).verify(request,result,root)

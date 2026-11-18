@@ -54,6 +54,43 @@ def gltf(root,name='source.glb',*,color=(20,40,60),width=1.,external=False, skin
     return root/name,b
 
 
+
+def animated_gltf(root, *, primitives=1, clips=1, interpolation='LINEAR', target_path='weights'):
+    """Two-key synthetic source; shared accessors exercise retained destinations."""
+    path, builder = gltf(root)
+    primitive = builder.json['meshes'][0]['primitives'][0]
+    builder.json['meshes'][0]['primitives'] = [primitive.copy() for _ in range(primitives)]
+    times = builder.accessor([0., 1.], 'SCALAR', bounds=True)
+    width = 1 if target_path == 'weights' else 4 if target_path == 'rotation' else 3
+    value = [0., 0., 0., 1.] if target_path == 'rotation' else [1.] * width
+    values = ([row for _ in range(2) for row in ([0.] * width, value, [0.] * width)]
+              if interpolation == 'CUBICSPLINE' else [value, value])
+    output = builder.accessor(values, {1: 'SCALAR', 3: 'VEC3', 4: 'VEC4'}[width])
+    builder.json['animations'] = [
+        dict(name=f'clip-{i}', samplers=[dict(input=times, output=output, interpolation=interpolation)],
+             channels=[dict(sampler=0, target=dict(node=1, path=target_path))])
+        for i in range(clips)]
+    builder.write(path)
+    return path
+
+
+def instanced_gltf(root, *, vertices=512, instances=4):
+    """Small real indexed mesh; each active instance shares source accessors."""
+    builder = GltfBuilder()
+    points = np.zeros((vertices, 3), dtype=np.float32)
+    points[:, 0] = np.arange(vertices) / max(1, vertices - 1)
+    points[2, 1] = 1.
+    primitive = dict(attributes=dict(POSITION=builder.accessor(points, 'VEC3', bounds=True)),
+                     indices=builder.accessor([0, 1, 2], 'SCALAR', component=5123))
+    builder.json.update(meshes=[dict(primitives=[primitive])],
+                        nodes=[dict(mesh=0, translation=[0, 0, i]) for i in range(instances)],
+                        scenes=[dict(nodes=list(range(instances)))])
+    builder.json['asset']['extras'] = dict(hatchSource=dict(fixture=True))
+    path = root / 'instances.glb'
+    builder.write(path)
+    return path
+
+
 class ContinuityInspectionTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
@@ -311,6 +348,172 @@ class ContinuityInspectionTests(unittest.TestCase):
         with self.assertRaises(RigError) as caught:
             inspect_asset(self.root,pointer(self.root,path),limits=dict(vertices=4))
         self.assertEqual(caught.exception.report['code'],'RIG_LIMIT_VERTICES')
+
+
+
+    def test_analysis_capacity_precedes_import_and_allocation_for_shared_instances(self):
+        from unittest.mock import patch
+        from continuity_inspection import (_analysis_admission, _animation_admission,
+                                           _image_admission, _limits, _public_failure)
+        from rig_errors import RigError
+        from rig_gltf import preflight_gltf, scene_graph
+
+        path = instanced_gltf(self.root)
+        source = pointer(self.root, path)
+        limits = _limits(None)
+        document = read_gltf(path, limits)
+        geometry = preflight_gltf(document, encoded_bytes=path.stat().st_size, limits=limits)
+        images = _image_admission(document, geometry, limits)
+        order = scene_graph(document)[2]
+        animations = _animation_admission(document, images, limits, order)
+        analysis = _analysis_admission(document, geometry, animations, limits, order)
+        cap = 5 * 1024**2
+        self.assertLess(animations['estimated_memory_bytes'], cap)
+        self.assertEqual(geometry['mesh_instances'], 4)
+        self.assertEqual(geometry['vertices'], 2048)
+        self.assertEqual(analysis['concatenated_samples'], 2048)
+        self.assertEqual(analysis['symmetry_samples'], 2048)
+        self.assertEqual(analysis['symmetry_batch_rows'], 128)
+        self.assertEqual(analysis['symmetry_difference_bytes'], 6291456)
+        self.assertEqual(analysis['symmetry_square_bytes'], 6291456)
+        self.assertEqual(analysis['symmetry_reduction_bytes'], 2097152)
+        self.assertEqual(analysis['sample_working_bytes'], 347136)
+        self.assertEqual(analysis['topology_working_bytes'], 141312)
+        self.assertEqual(analysis['analysis_working_bytes'], 15168512)
+        combined = analysis['estimated_memory_bytes']
+        self.assertEqual(combined, animations['estimated_memory_bytes'] + analysis['analysis_working_bytes'])
+        self.assertEqual(analysis['array_bytes'],
+                         animations['array_bytes'] + analysis['analysis_working_bytes'])
+        self.assertEqual(analysis['scope'],
+                         'combined geometry/images/animations and native geometry analysis working arrays; '
+                         'not process RSS, later evaluation or rendering')
+        # Reject both the reported low ceiling and one byte below exact
+        # combined admission, before entering native import or array decoding.
+        for ceiling in (cap, combined - 1):
+            with self.subTest(ceiling=ceiling), patch('rig_import.load_character_model') as importer, patch(
+                    'rig_import.analyze_geometry') as importer_analysis, patch(
+                    'rig_geometry.analyze_geometry') as projector_analysis, patch(
+                    'rig_gltf.GltfDocument.accessor',
+                    side_effect=AssertionError('array decoding must follow analysis admission')):
+                with self.assertRaises(RigError) as caught:
+                    inspect_asset(self.root, source, limits=dict(memory_bytes=ceiling))
+                importer.assert_not_called()
+                importer_analysis.assert_not_called()
+                projector_analysis.assert_not_called()
+            self.assertEqual(_public_failure(caught.exception)['native_diagnostic'],
+                             dict(code='RIG_LIMIT_MEMORY', expected=ceiling, observed=combined))
+
+        # Actual importer, analyzer and projector run at exactly the admitted
+        # combined capacity; no mocked positive geometry or execution result.
+        receipt = inspect_asset(self.root, source, limits=dict(memory_bytes=combined))
+        report = receipt['inspection']
+        self.assertEqual(receipt['sha256'], digest(report))
+        self.assertEqual(report['native_analysis_admission'], analysis)
+        self.assertEqual(report['analysis']['vertices'], 2048)
+        self.assertEqual(report['analysis']['triangles'], 4)
+        self.assertEqual(len(report['meshes']), 4)
+        self.assertTrue(np.isfinite(report['analysis']['symmetry_mean_error_m']))
+        self.assertEqual(pointer(self.root, path), source)
+
+    def test_analysis_capacity_matches_native_sampling_and_uneven_batches(self):
+        # The first slice may retain >512 per instance; the final slice keeps
+        # its entire concatenated base. array_split can make >128-row batches.
+        for vertices, instances, concatenated, samples, batch in (
+                (255, 1, 255, 255, 255), (1023, 4, 4092, 2048, 128)):
+            with self.subTest(vertices=vertices, instances=instances):
+                path = instanced_gltf(self.root, vertices=vertices, instances=instances)
+                receipt = inspect_asset(self.root, pointer(self.root, path))
+                report = receipt['inspection']
+                admission = report['native_analysis_admission']
+                self.assertEqual(receipt['sha256'], digest(report))
+                self.assertEqual(admission['concatenated_samples'], concatenated)
+                self.assertEqual(admission['symmetry_samples'], samples)
+                self.assertEqual(admission['symmetry_batch_rows'], batch)
+                self.assertEqual(admission['symmetry_difference_bytes'], batch * samples * 3 * 8)
+                self.assertEqual(report['analysis']['vertices'], vertices * instances)
+
+    def test_animation_destination_budget_precedes_native_import_and_accessor_decode(self):
+        from unittest.mock import patch
+        from continuity_inspection import _image_admission, _limits, _public_failure
+        from rig_errors import RigError
+        from rig_gltf import preflight_gltf
+
+        for interpolation in ('STEP', 'LINEAR', 'CUBICSPLINE'):
+            # Exercise primitive multiplication and accumulation across clips
+            # separately; each source has only two samples per channel.
+            for primitives, clips in ((2, 1), (1, 2)):
+                with self.subTest(interpolation=interpolation, primitives=primitives, clips=clips):
+                    path = animated_gltf(self.root, primitives=primitives, clips=clips,
+                                         interpolation=interpolation)
+                    limits = _limits(None)
+                    document = read_gltf(path, limits)
+                    geometry = preflight_gltf(document, encoded_bytes=path.stat().st_size, limits=limits)
+                    images = _image_admission(document, geometry, limits)
+                    # The old geometry+image admission fits; one tiny track
+                    # fits this allowance, but retained copies must not.
+                    cap = images['estimated_memory_bytes'] + 12 * 1024
+                    with patch('rig_import.load_character_model') as importer, patch(
+                            'rig_gltf.GltfDocument.accessor',
+                            side_effect=AssertionError('accessor decoding must follow capacity admission')):
+                        with self.assertRaises(RigError) as caught:
+                            inspect_asset(self.root, pointer(self.root, path), limits=dict(memory_bytes=cap))
+                        importer.assert_not_called()
+                    report = caught.exception.report
+                    self.assertEqual(report['code'], 'RIG_LIMIT_MEMORY')
+                    self.assertEqual(report['expected'], cap)
+                    self.assertGreater(report['observed'], cap)
+                    self.assertEqual(_public_failure(caught.exception)['native_diagnostic'],
+                                     dict(code='RIG_LIMIT_MEMORY', expected=cap, observed=report['observed']))
+
+    def test_small_animated_sources_remain_admitted_by_real_importer(self):
+        from continuity_inspection import (_analysis_admission, _animation_admission,
+                                           _image_admission, _limits)
+        from rig_gltf import preflight_gltf, scene_graph
+
+        for interpolation in ('STEP', 'LINEAR', 'CUBICSPLINE'):
+            for target_path in ('weights', 'translation', 'rotation', 'scale'):
+                with self.subTest(interpolation=interpolation, target_path=target_path):
+                    path = animated_gltf(self.root, interpolation=interpolation, target_path=target_path)
+                    limits = _limits(None)
+                    document = read_gltf(path, limits)
+                    geometry = preflight_gltf(document, encoded_bytes=path.stat().st_size, limits=limits)
+                    images = _image_admission(document, geometry, limits)
+                    order = scene_graph(document)[2]
+                    animations = _animation_admission(document, images, limits, order)
+                    analysis = _analysis_admission(document, geometry, animations, limits, order)
+                    # Preserve the original restrictive animation allowance;
+                    # add only the newly required, independently reported native
+                    # analysis reserve. No importer mock or blanket cap increase.
+                    animation_cap = images['estimated_memory_bytes'] + 12 * 1024
+                    cap = animation_cap + analysis['analysis_working_bytes']
+                    receipt = inspect_asset(self.root, pointer(self.root, path), limits=dict(memory_bytes=cap))
+                    report = receipt['inspection']
+                    self.assertEqual(receipt['sha256'], digest(report))
+                    admission = report['native_animation_admission']
+                    self.assertEqual(admission['channels'], 1)
+                    self.assertEqual(admission['destinations'], 1)
+                    self.assertEqual(admission['source_keyframes'], 2)
+                    self.assertEqual(admission['instantiated_keyframes'], 2)
+                    self.assertGreater(admission['estimated_memory_bytes'], images['estimated_memory_bytes'])
+                    self.assertLessEqual(admission['estimated_memory_bytes'], cap)
+                    self.assertLessEqual(admission['estimated_memory_bytes'], animation_cap)
+                    self.assertEqual(report['native_analysis_admission'], analysis)
+                    self.assertLessEqual(report['native_analysis_admission']['estimated_memory_bytes'], cap)
+                    self.assertEqual(report['source_features']['animation_channels'],
+                                     [dict(animation=0, target_node=1, path=target_path)])
+
+    def test_animation_capacity_receipt_counts_shared_accessor_destinations(self):
+        path = animated_gltf(self.root, primitives=2, clips=2, interpolation='CUBICSPLINE')
+        report = inspect_asset(self.root, pointer(self.root, path))['inspection']
+        admission = report['native_animation_admission']
+        self.assertEqual(admission['channels'], 2)
+        self.assertEqual(admission['destinations'], 4)
+        self.assertEqual(admission['source_keyframes'], 4)
+        self.assertEqual(admission['instantiated_keyframes'], 8)
+        self.assertGreater(admission['animation_retained_bytes'], 0)
+        self.assertGreater(admission['animation_working_bytes'], 0)
+        self.assertGreater(admission['estimated_memory_bytes'],
+                           report['native_image_admission']['estimated_memory_bytes'])
 
     def test_optional_unhandled_extensions_remain_explicitly_partial(self):
         path,b=gltf(self.root)

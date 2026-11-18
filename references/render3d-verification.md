@@ -52,3 +52,15 @@ available. The focused hosted workflow is
 Only a retained hosted result on the corrected commit can establish that run's
 outcome. This change does not close issue #93, establish broader rendering or
 semantic acceptance, or replace controller-enforced native memory limits.
+
+Image capture accepts active directory capabilities through the existing
+no-follow payload reader. PNG empty trailing IDAT support is preserved. The EXR
+envelope checks both full-frame windows before decoding and checks the scanline
+chunk inventory for the established compression modes in the Render3D verifier.
+Later decoder-supported compressions retain the decoder's existing behavior.
+
+`verify_result` and `RenderArtifactVerifier` accept an optional `max_total_bytes`
+for source closure verification. Supplying it or a scoped snapshot requires the
+bounded snapshot owner. If unavailable, the verifier returns `unsupported-feature`
+instead of accepting a limit it cannot enforce. Ordinary source verification and
+the independent encoded image budget remain available on the foundation base.

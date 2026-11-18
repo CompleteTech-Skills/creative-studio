@@ -364,6 +364,51 @@ class ImageVerification(unittest.TestCase):
             bad=deepcopy(result);bad['status']='invented'
             with self.assertRaises(Render3DError):verify_result(request,bad,root,snapshot_root=snapshot,expected_backend=backend)
 
+    def test_result_decodes_from_a_scoped_output_directory(self):
+        from atomic_publish import pinned_directory, private_stage_supported
+        from rig_errors import directory_capability
+
+        if not private_stage_supported():
+            self.skipTest('Scoped output requires the Linux descriptor adapter.')
+        with tempfile.TemporaryDirectory() as temporary:
+            request, result, root, snapshot, backend = self.scene_result(Path(temporary))
+            with pinned_directory(root) as descriptor, directory_capability(descriptor) as capability:
+                report = verify_result(request, result, capability.path, snapshot_root=snapshot,
+                                       expected_backend=backend)
+            self.assertEqual(report['decoded_frames'], 2)
+            self.assertEqual([image['sha256'] for image in report['images']],
+                             [image['file']['sha256'] for image in result['images']])
+
+    def test_optional_source_budget_fails_closed(self):
+        import render3d_snapshot
+
+        with tempfile.TemporaryDirectory() as temporary:
+            request, result, root, snapshot, backend = self.scene_result(Path(temporary))
+            with self.assertRaises(Render3DError) as caught:
+                verify_result(request, result, root, snapshot_root=snapshot,
+                              expected_backend=backend, max_total_bytes=1)
+            category = ('storage-exhaustion' if hasattr(render3d_snapshot, 'native_memory_budget')
+                        else 'unsupported-feature')
+            self.assertEqual(caught.exception.report['category'], category)
+
+    def test_scoped_source_requires_the_bounded_snapshot_owner(self):
+        from atomic_publish import pinned_directory, private_stage_supported
+        from rig_errors import directory_capability
+
+        if not private_stage_supported():
+            self.skipTest('Scoped source requires the Linux descriptor adapter.')
+        with tempfile.TemporaryDirectory() as temporary:
+            request, result, root, snapshot, backend = self.scene_result(Path(temporary))
+            legacy_owner = mock.Mock(spec=['verify_snapshot'])
+            with (pinned_directory(snapshot) as descriptor,
+                  directory_capability(descriptor) as capability,
+                  mock.patch.dict(sys.modules, {'render3d_snapshot': legacy_owner}),
+                  self.assertRaises(Render3DError) as caught):
+                verify_result(request, result, root, snapshot_root=capability.path,
+                              expected_backend=backend)
+            self.assertEqual(caught.exception.report['category'], 'unsupported-feature')
+            legacy_owner.verify_snapshot.assert_not_called()
+
     def test_result_rejects_missing_corrupt_extra_and_wrong_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             request,result,root,snapshot,backend=self.scene_result(Path(temporary))
