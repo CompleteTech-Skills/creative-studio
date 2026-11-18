@@ -113,6 +113,12 @@ compatibility discovery. The focused workflow also executes portable contracts
 on Linux, Windows and macOS without claiming private staging works off Linux.
 # Descriptor-only POSIX staging
 
+`pinned_directory_fd(existing_path)` pins an ordinary parent directory using the
+canonical no-follow component walk on supported POSIX systems, without requiring
+procfs. Callers then use its borrowed descriptor with `private_stage_fd` and keep
+all I/O descriptor-relative. It supplies no mutable-path alias on macOS. The
+existing Linux `pinned_directory` entry point retains its platform contract.
+
 `private_stage_fd_supported()` reports the separate descriptor-only capability.
 `private_stage_fd(parent_fd, prefix='.publish-', cleanup=True,
 cleanup_on_error=True)` yields a directory descriptor without requiring procfs.
@@ -131,3 +137,84 @@ adapter or claim protection from hostile processes running as the same user.
 owned descriptor, including for safe descendants of a registered root. Ordinary
 paths still use the strict no-follow component walk; an unregistered procfs
 alias or expired capability receives no exception to that policy.
+
+# Verified regular-file publication
+
+`publish_verified_file(source_fd, destination, expected_sha256=...,
+expected_size=..., max_bytes=...)` creates an exclusive exact copy of one
+already opened binary regular file. Counts are nonnegative integers bounded by
+an explicit `max_bytes` of at most one TiB. Copies and verification use bounded
+64 KiB blocks; no payload-sized allocation occurs. It rejects pipes, directories,
+incorrect sizes/digests and source mutation, handles short writes, fsyncs and
+re-reads the actual held private payload before publication. Its return value is
+`{'sha256': expected_sha256, 'byte_size': expected_size}` for admitted copied
+bytes; it never hashes an arbitrary public destination to construct success.
+
+The caller owns source path admission and format validation: open without unsafe
+symlink traversal, validate the archive or other format through that same open
+file, then pass its descriptor and independently expected digest/byte count.
+The borrowed descriptor remains open and its cursor is restored; concurrent
+operations using that same open-file description are unsupported. Replacing
+its former pathname does not replace the open source. This helper does not
+validate ZIP members or supply an archive verifier.
+
+POSIX publication uses the existing `pinned_directory_fd`, `private_stage_fd`
+and `rename_no_replace_at` authority, without a procfs requirement. Parent
+namespace replacement cannot redirect the copy or destination: a moved pinned
+parent receives publication in its original inode, while replacement paths are
+preserved. The source private payload is checked against the held file identity.
+Windows uses a true FILE HANDLE created exclusively beneath the existing
+protected-DACL private directory. That handle denies write/delete sharing,
+remains open throughout copy/verification, and is renamed exclusively by handle
+with destination ancestors pinned. It does not rename a directory as a ZIP.
+No callback is accepted between verification and publication. Existing
+private-stage ownership boundaries and retained empty wrapper policy apply.
+
+Linux tests establish Linux execution only. The cross-platform file cases and
+new actual Windows sharing/junction cases require native CI before claiming
+macOS/Windows execution or downstream editor acceptance. No directory-inventory
+copier or general stream/generator API is provided.
+
+If owned cleanup or descriptor closing fails after the exclusive rename,
+`VerifiedFileCleanupError` carries `committed=True` and the exact verified
+`receipt`. Callers must report successful committed publication with
+`cleanup_pending` diagnostics, rather than reporting failed/absent output or
+retrying publication. Its chained exception retains the cleanup failure. Before
+commit, errors preserve their ordinary type and no success receipt is returned.
+
+Descriptor-only staging propagates final owned-descriptor close failures. If
+body validation or cleanup already failed, that primary exception is preserved
+and secondary close failures are attached as notes. Closing is attempted only
+once and only for descriptors whose directory identity still matches; a closed
+or reused descriptor is never retried or closed as a foreign object.
+
+## Separate mutable staging and destination admission
+
+`publish_verified_file` additionally accepts `staging_parent=None` and
+`expected_parent_identity=None`. Defaults retain existing staging placement.
+An explicit `staging_parent` must be an existing physical directory on the same
+filesystem as the destination parent. The retained empty wrappers live there,
+so an immutable destination directory receives only its published file and
+retains an exact hash inventory. The helper pins the destination before private
+staging or copying, separately pins the staging parent and uses the same
+exclusive rename authority across those directories. POSIX rejects differing
+devices before creating any private wrapper; Windows native by-handle rename
+fails closed across volumes without copying as a fallback. Unsupported,
+missing, traversal, symlink or reparse staging paths fail closed.
+
+`expected_parent_identity=(st_dev, st_ino)` is an optional tuple of two
+nonnegative integers captured by a configured parent owner. The canonical
+publisher checks it after pinning the destination and before any staging write:
+`fstat` on POSIX, or a no-follow `stat` of the Windows held/pinned physical path.
+A mismatch raises `OSError(ESTALE)` and creates no wrapper or payload. This
+compares the admitted directory object; it does not prove that its original
+public pathname stays selected on POSIX. Consumers returning a reference rooted
+in a configured project must independently enforce their root locator contract.
+
+After POSIX exclusive rename, the publisher fsyncs the held destination parent
+for directory-entry durability. The commit flag is already set: a directory
+fsync error produces `VerifiedFileCleanupError(committed=True, receipt=...)`
+rather than falsely reporting absent output. The retained class name supports
+existing callers; its message covers completion or cleanup pending. Native
+Windows still fsyncs the held file before by-handle rename; no POSIX directory
+fsync claim or new Windows directory durability claim is implied.

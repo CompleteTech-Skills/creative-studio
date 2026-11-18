@@ -62,10 +62,27 @@ def rename_no_replace_at(source_fd, source_name, destination_fd, destination_nam
                               source_dir_fd=source_fd, destination_dir_fd=destination_fd)
 
 
+def windows_private_stage_supported():
+    """Whether the separate native Windows handle-pinning adapter exists."""
+    from atomic_windows import supported
+    return supported()
+
+
+def windows_private_stage(parent, **policies):
+    """Context yielding ``stage.path`` and exact ``stage.publish_to(path)``.
+
+    Windows writers and verifiers use the ordinary path only while the context
+    is active, finish all I/O, then publish the held payload through its method.
+    This additive platform adapter does not alter the POSIX staging defaults.
+    """
+    from atomic_windows import private_stage
+    return private_stage(parent, **policies)
+
+
 # New staging capabilities intentionally have a narrower platform contract than
 # the legacy path-based exclusive rename above. Never silently fall back to an
 # unpinned temporary pathname on an unsupported host.
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from pathlib import Path
 import re
 import shutil
@@ -83,14 +100,31 @@ def private_stage_fd_supported():
             and bool(getattr(shutil.rmtree, 'avoids_symlink_attacks', False)))
 
 
+@contextmanager
+def _owned_fd(descriptor, label):
+    """Close once, keeping an exception from this scope primary."""
+    error = None
+    try:
+        yield descriptor
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        try:
+            os.close(descriptor)
+        except BaseException as close_error:
+            if error is None:
+                raise
+            if hasattr(error, 'add_note'):
+                error.add_note(label + ' close also failed: ' + str(close_error))
+
+
 def _clear_private_directory_fd(descriptor):
     # Open a fresh directory stream: dup() alone shares its directory offset.
     stream = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                      dir_fd=descriptor)
-    try:
+    with _owned_fd(stream, 'Pinned staging directory stream'):
         names = os.listdir(stream)
-    finally:
-        os.close(stream)
     for child in names:
         try:
             mode = os.stat(child, dir_fd=descriptor, follow_symlinks=False).st_mode
@@ -125,6 +159,8 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
     descriptor = None
     identity = None
     body_error = None
+    borrowed = None
+    operation_error = None
     try:
         borrowed = os.fstat(parent)
         if (borrowed.st_dev, borrowed.st_ino) != (parent_identity.st_dev, parent_identity.st_ino):
@@ -162,15 +198,35 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
                         raise
                     if hasattr(body_error, 'add_note'):
                         body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
+    except BaseException as exc:
+        operation_error = exc
+        raise
     finally:
-        if descriptor is not None:
+        # An ambient caller ``except`` also appears in sys.exc_info() on a
+        # normal generator exit. Only this invocation's error is primary.
+        primary = operation_error
+        closing_errors = []
+        # Never retry close(): an error may be reported after the OS has already
+        # released the descriptor, and retrying could close a reused foreign FD.
+        # Close the owned parent even if closing the stage itself fails.
+        for owned, expected in ((descriptor, identity), (parent, borrowed)):
+            if owned is None:
+                continue
             try:
-                current = os.fstat(descriptor)
-                if identity is None or (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
-                    os.close(descriptor)
-            except OSError:
-                pass
-        os.close(parent)
+                current = os.fstat(owned)
+                if expected is not None and (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+                    raise OSError(errno.ESTALE, 'private stage owned descriptor was closed and reused')
+                os.close(owned)
+            except BaseException as closing_error:
+                closing_errors.append(closing_error)
+        if closing_errors:
+            first = primary if primary is not None else closing_errors[0]
+            if hasattr(first, 'add_note'):
+                for closing_error in closing_errors:
+                    if closing_error is not first:
+                        first.add_note('Pinned staging descriptor close also failed: ' + str(closing_error))
+            if primary is None:
+                raise first
 
 
 def private_stage_supported():
@@ -207,14 +263,13 @@ def _registered_directory(path):
 
 
 @contextmanager
-def pinned_directory(path):
+def _pinned_directory_common(path):
     """Open every existing path component without following symbolic links.
 
     The borrowed descriptor is valid only inside this context. Do not call
     resolve()/realpath() on a subsequent procfd capability: that discards its
     protection against namespace replacement.
     """
-    _private_support()
     with _registered_directory(path) as descriptor:
         if descriptor is not None:
             yield descriptor
@@ -223,14 +278,48 @@ def pinned_directory(path):
     if any(part == '..' for part in path.parts):
         raise ValueError('pinned directory path must not contain parent traversal')
     descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    error = None
     try:
         for part in path.parts[1:]:
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
+            previous, descriptor = descriptor, child
+            # Transfer ownership before closing: even if close reports failure,
+            # the new descriptor is closed and the old one is never retried.
+            os.close(previous)
         yield descriptor
+    except BaseException as exc:
+        error = exc
+        raise
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except BaseException as close_error:
+            if error is None:
+                raise
+            if hasattr(error, 'add_note'):
+                error.add_note('Pinned directory close also failed: ' + str(close_error))
+
+
+@contextmanager
+def pinned_directory(path):
+    """Existing Linux path-adapter parent pinning contract."""
+    _private_support()
+    with _pinned_directory_common(path) as descriptor:
+        yield descriptor
+
+
+@contextmanager
+def pinned_directory_fd(path):
+    """Lend a parent directory FD on POSIX without requiring procfs paths.
+
+    The single canonical no-follow component walk is shared with the existing
+    Linux adapter. Callers retain descriptor-relative I/O on macOS; this does not
+    expose an ordinary mutable path as a substitute for an FD capability.
+    """
+    if not private_stage_fd_supported():
+        raise OSError(errno.ENOTSUP, 'descriptor-only parent pinning is unavailable')
+    with _pinned_directory_common(path) as descriptor:
+        yield descriptor
 
 
 def _clear_private_directory(descriptor):
@@ -309,3 +398,170 @@ def private_stage(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_err
         if descriptor is not None:
             os.close(descriptor)
         os.close(parent)
+
+
+def _file_identity(info):
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _copy_verified_file(source_fd, target_fd, expected_sha256, expected_size):
+    """Copy and re-read only held regular files; all allocations are bounded."""
+    import hashlib
+    source_info = os.fstat(source_fd)
+    if not stat.S_ISREG(source_info.st_mode) or source_info.st_size != expected_size:
+        raise ValueError('verified publication requires the expected regular file size')
+    original_offset = os.lseek(source_fd, 0, os.SEEK_CUR)
+    try:
+        os.lseek(source_fd, 0, os.SEEK_SET)
+        digest = hashlib.sha256()
+        count = 0
+        while True:
+            block = os.read(source_fd, min(65536, expected_size - count + 1))
+            if not block:
+                break
+            count += len(block)
+            if count > expected_size:
+                raise ValueError('verified publication source exceeds its admitted size')
+            digest.update(block)
+            pending = memoryview(block)
+            while pending:
+                written = os.write(target_fd, pending)
+                if written <= 0:
+                    raise OSError(errno.EIO, 'verified publication made no write progress')
+                pending = pending[written:]
+        if (count != expected_size or digest.hexdigest() != expected_sha256
+                or _file_identity(os.fstat(source_fd)) != _file_identity(source_info)):
+            raise ValueError('verified publication source bytes or identity changed')
+    finally:
+        os.lseek(source_fd, original_offset, os.SEEK_SET)
+    os.fsync(target_fd)
+    before = os.fstat(target_fd)
+    if not stat.S_ISREG(before.st_mode) or before.st_size != expected_size:
+        raise ValueError('verified publication payload is not the admitted regular file')
+    os.lseek(target_fd, 0, os.SEEK_SET)
+    digest = hashlib.sha256()
+    count = 0
+    while True:
+        block = os.read(target_fd, min(65536, expected_size - count + 1))
+        if not block:
+            break
+        count += len(block)
+        if count > expected_size:
+            raise ValueError('verified publication payload exceeds its admitted size')
+        digest.update(block)
+    if (count != expected_size or digest.hexdigest() != expected_sha256
+            or _file_identity(os.fstat(target_fd)) != _file_identity(before)):
+        raise ValueError('verified publication payload bytes or identity changed')
+
+
+class VerifiedFileCleanupError(OSError):
+    """Verified bytes committed, but durability completion or cleanup failed."""
+    committed = True
+
+    def __init__(self, receipt):
+        super().__init__(errno.EIO, 'verified file committed; completion or cleanup is pending')
+        self.receipt = dict(receipt)
+
+
+def publish_verified_file(source_fd, destination, *, expected_sha256, expected_size, max_bytes,
+                          staging_parent=None, expected_parent_identity=None):
+    """Exclusively publish a bounded exact copy of an already admitted file FD.
+
+    The caller must open its source without following unsafe paths and verify
+    format/provenance through that same open file. This method never reopens its
+    pathname or hashes an arbitrary destination. The source must be a readable,
+    seekable regular file; it is borrowed and its cursor is restored. Do not use
+    the same open-file description concurrently. It remains open on all exits.
+
+    Destination parents are pinned before copying; on POSIX a renamed parent
+    receives the result through its original directory FD. The returned hash
+    and byte count describe the verified copied bytes, not a later lookup of
+    the mutable public destination. No callback is accepted. Namespace ownership
+    has the same boundary as private stages (not hostile same-user isolation).
+
+    Optional staging_parent keeps retained empty wrappers in a separate existing
+    mutable directory on the same filesystem. Destination admission occurs first.
+    expected_parent_identity=(st_dev, st_ino) rejects a different destination
+    directory after pinning, before creating any staging. POSIX fsyncs its held
+    destination directory after rename; completion failures carry a committed
+    receipt through VerifiedFileCleanupError.
+    """
+    if type(source_fd) is not int or source_fd < 0:
+        raise ValueError('verified publication source must be an open file descriptor')
+    if not isinstance(expected_sha256, str) or not re.fullmatch('[0-9a-f]{64}', expected_sha256):
+        raise ValueError('verified publication requires a lowercase SHA-256 digest')
+    if (type(expected_size) is not int or type(max_bytes) is not int
+            or not 0 <= expected_size <= max_bytes <= 2**40):
+        raise ValueError('verified publication requires bounded nonnegative byte counts')
+    destination = Path(destination).absolute()
+    if '..' in destination.parts or destination.name in ('', '.', '..'):
+        raise ValueError('verified publication destination cannot traverse parents')
+    if staging_parent is not None:
+        staging_parent = Path(staging_parent).absolute()
+        if '..' in staging_parent.parts:
+            raise ValueError('verified publication staging parent cannot traverse parents')
+    if expected_parent_identity is not None:
+        if (type(expected_parent_identity) is not tuple or len(expected_parent_identity) != 2
+                or any(type(value) is not int or value < 0 for value in expected_parent_identity)):
+            raise ValueError('expected parent identity must be a (device, inode) integer tuple')
+    def admit_parent(info):
+        if expected_parent_identity is not None and (info.st_dev, info.st_ino) != expected_parent_identity:
+            raise OSError(errno.ESTALE, 'verified publication destination parent identity changed')
+
+    receipt = {'sha256': expected_sha256, 'byte_size': expected_size}
+    published = False
+    windows_payload = None
+    try:
+        source = os.dup(source_fd)
+        source_error = None
+        try:
+            info = os.fstat(source)
+            if not stat.S_ISREG(info.st_mode) or info.st_size != expected_size:
+                raise ValueError('verified publication requires the expected regular file size')
+            if os.name == 'nt':
+                from atomic_windows import private_file, pinned_directory as windows_pinned_directory
+                # Keep both destination and staging parents pinned during copying.
+                with windows_pinned_directory(destination.parent) as parent:
+                    admit_parent(os.stat(parent.path, follow_symlinks=False))
+                    with private_file(parent.path if staging_parent is None else staging_parent) as payload:
+                        windows_payload = payload
+                        _copy_verified_file(source, payload.fd, expected_sha256, expected_size)
+                        payload.publish_to(parent.path / destination.name)
+                        published = True
+            else:
+                with pinned_directory_fd(destination.parent) as parent, ExitStack() as staging_contexts:
+                    admitted_parent = os.fstat(parent)
+                    admit_parent(admitted_parent)
+                    stage_parent = parent if staging_parent is None else staging_contexts.enter_context(
+                        pinned_directory_fd(staging_parent))
+                    if os.fstat(stage_parent).st_dev != admitted_parent.st_dev:
+                        raise OSError(errno.EXDEV, 'verified publication staging must share the destination filesystem')
+                    with private_stage_fd(stage_parent, prefix='.file-') as stage:
+                        payload = os.open('payload', os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                          0o600, dir_fd=stage)
+                        with _owned_fd(payload, 'Verified payload'):
+                            _copy_verified_file(source, payload, expected_sha256, expected_size)
+                            held = os.fstat(payload)
+                            named = os.stat('payload', dir_fd=stage, follow_symlinks=False)
+                            if (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino):
+                                raise OSError(errno.ESTALE, 'verified publication payload name changed')
+                            rename_no_replace_at(stage, 'payload', parent, destination.name)
+                            published = True
+                            # A failure after rename is a committed completion failure.
+                            os.fsync(parent)
+        except BaseException as exc:
+            source_error = exc
+            raise
+        finally:
+            try:
+                os.close(source)
+            except BaseException as close_error:
+                if source_error is None:
+                    raise
+                if hasattr(source_error, 'add_note'):
+                    source_error.add_note('Verified source close also failed: ' + str(close_error))
+    except BaseException as exc:
+        if published or windows_payload is not None and windows_payload.published:
+            raise VerifiedFileCleanupError(receipt) from exc
+        raise
+    return receipt

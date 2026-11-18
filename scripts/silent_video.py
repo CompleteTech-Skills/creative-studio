@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from fractions import Fraction
 import hashlib
 import json
@@ -339,6 +339,58 @@ def _snapshot(request, root, directory):
             (directory / ('%06d.png' % frame['index'])).write_bytes(data)
 
 
+def _input_snapshot_state(root, expected, *, hash_bytes=True):
+    """Bind the private files actually consumed by a codec to trusted hashes.
+
+    Callers supply digests obtained while validating the declared originals.
+    A dedicated input directory stays open throughout codec/verification work.
+    Atime is excluded because decoder reads may update it; inode, size, mtime
+    and ctime expose replacement and modify/restore writes, even when a callback
+    restores the original bytes and mtime. This is not hostile-process isolation.
+    """
+    file_schema = _obj({'path': {'type': 'string', 'minLength': 1, 'maxLength': 128},
+                        'sha256': SHA, 'bytes': _int(1, MAX_SOURCE_BYTES)})
+    try:
+        _structural(expected, {'type': 'array', 'minItems': 1, 'maxItems': MAX_FRAMES,
+                               'items': file_schema}, 'private encoder input inventory')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('private encoder input inventory exceeds numeric/nesting limits') from exc
+    names = [item['path'] for item in expected]
+    if (len(set(names)) != len(names) or any('/' in name for name in names)
+            or sum(item['bytes'] for item in expected) > MAX_SOURCE_BYTES):
+        raise ValueError('invalid private encoder input inventory')
+    root = normalize_root(root)
+
+    def fingerprint(info):
+        return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+    # normalize_root has admitted the active descriptor alias. Its target is
+    # intentionally followed here; protected child paths still use nofollow I/O.
+    before = root.stat()
+    if not stat.S_ISDIR(before.st_mode) or {path.name for path in root.iterdir()} != set(names):
+        raise ValueError('private encoder input inventory changed')
+    states = []
+    for item in expected:
+        size = int(item['bytes'])  # validated mathematical integers remain accepted
+        with _open_source(root, item['path']) as stream:
+            info = os.fstat(stream.fileno())
+            if info.st_size != size:
+                raise ValueError('private encoder input bytes changed')
+            if hash_bytes:
+                digest, count = hashlib.sha256(), 0
+                while chunk := stream.read(min(1024 * 1024, size - count + 1)):
+                    count += len(chunk)
+                    if count > size:
+                        raise ValueError('private encoder input bytes changed')
+                    digest.update(chunk)
+                if count != size or digest.hexdigest() != item['sha256']:
+                    raise ValueError('private encoder input bytes changed')
+            states.append((item['path'], fingerprint(os.fstat(stream.fileno()))))
+    if fingerprint(root.stat()) != fingerprint(before):
+        raise ValueError('private encoder input directory changed')
+    return fingerprint(before), tuple(states)
+
+
 def _fraction(value, label):
     try:
         if not isinstance(value, str):
@@ -569,9 +621,18 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
     if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with _private_stage(parent_fd) as (stage, source_fd):
+    with _private_stage(parent_fd) as (stage, source_fd), ExitStack() as input_scope:
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
+        # The codec and guard use this same held directory, so replacing the
+        # public frames basename cannot redirect codec reads away from the guard.
+        input_fd = input_scope.enter_context(pinned_directory(inputs))
+        input_authority = input_scope.enter_context(directory_capability(input_fd))
+        inputs = input_authority.path
+        expected_inputs = [{'path': '%06d.png' % index, 'bytes': frame['bytes'],
+                            'sha256': frame['sha256']}
+                           for index, frame in enumerate(request['source']['frames'])]
+        input_state = _input_snapshot_state(inputs, expected_inputs)
         output = stage/('output.partial'+profile['extension'])
         fps = fps_fraction(request['source']['fps'])
         command = [_binary('ffmpeg', ffmpeg), '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
@@ -587,10 +648,15 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(source_fd,))
+        if _input_snapshot_state(inputs, expected_inputs, hash_bytes=False) != input_state:
+            raise ValueError('private encoder inputs changed before encoding')
+        execution = _run(command, request['limits'], cancel=cancel, output=output,
+                         pass_fds=(source_fd, input_authority.fd))
         if cancel is not None and cancel():
             raise ValueError('silent export cancelled before verification')
         receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        if _input_snapshot_state(inputs, expected_inputs) != input_state:
+            raise ValueError('private encoder inputs changed during encoding or verification')
         # Verification rechecks original bytes after its final cancellation
         # callback. No user callback may mutate staging between that check and
         # publication.

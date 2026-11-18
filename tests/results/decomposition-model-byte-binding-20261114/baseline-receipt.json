@@ -1,0 +1,23 @@
+{
+  "actual_main": "d6d06eb9dbba94e6b38dc64ede2138d7b96452c2",
+  "opencv_version": "4.13.0",
+  "request_model_sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0",
+  "response_declared_model_sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0",
+  "actually_loaded": [
+    {
+      "file": "haarcascade_frontalface_default.xml",
+      "actually_loaded_sha256": "7b0c967d9abbdfbde025eb9c786947d151b6426040d07a8f9562ed8fd90724b4",
+      "actual_window_size": [
+        20,
+        20
+      ]
+    }
+  ],
+  "worker_response_status": "proposed",
+  "proposals": 1,
+  "restored_owned_copy_sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0",
+  "model_hash_mismatch_accepted": true,
+  "original_source_untouched": true,
+  "original_installed_models_untouched": true,
+  "method": "Real OpenCV constructor/inference. Only owned model copies changed/restored during constructor; no detector outputs mocked, installed models and source unchanged."
+}

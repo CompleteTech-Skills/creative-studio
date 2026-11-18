@@ -38,6 +38,31 @@ class DescriptorStageTests(unittest.TestCase):
     def test_explicit_unsupported_never_touches_disk(self):
         with mock.patch.object(atomic, 'private_stage_fd_supported', return_value=False):
             self.assertTrue(self.unsupported())
+            with self.assertRaises(OSError) as caught:
+                with atomic.pinned_directory_fd('not-inspected'): self.fail('unsupported parent yielded')
+            self.assertEqual(caught.exception.errno, errno.ENOTSUP)
+
+    def test_fd_parent_entrypoint_pins_namespace_without_procfs(self):
+        if self.unsupported(): return
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); source = root / 'source'; source.mkdir()
+            with atomic.pinned_directory_fd(source) as parent:
+                source.rename(root / 'original'); source.mkdir()
+                self.write(parent, 'owned')
+            self.assertEqual((root / 'original/owned').read_bytes(), b'owned bytes')
+            self.assertEqual(list(source.iterdir()), [])
+            with self.assertRaises(OSError): os.fstat(parent)
+
+    def test_fd_parent_entrypoint_rejects_symlink_and_traversal(self):
+        if self.unsupported(): return
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); target = root / 'target'; target.mkdir()
+            link = root / 'link'; link.symlink_to(target, target_is_directory=True)
+            with self.assertRaises((OSError, ValueError)):
+                with atomic.pinned_directory_fd(link): self.fail('symlink parent admitted')
+            with self.assertRaises(ValueError):
+                with atomic.pinned_directory_fd(root / '..' / root.name): self.fail('traversal admitted')
+            self.assertEqual(list(target.iterdir()), [])
 
     def test_actual_fd_stage_closes_and_keeps_only_empty_wrapper(self):
         if self.unsupported(): return
@@ -132,6 +157,52 @@ class DescriptorStageTests(unittest.TestCase):
             finally:
                 if reused is not None: os.close(reused)
                 os.close(foreign_fd); os.close(parent)
+
+    def test_owned_stage_close_error_preserves_primary_body_error(self):
+        if self.unsupported(): return
+        with tempfile.TemporaryDirectory() as directory:
+            parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            close = os.close; owned = None; attempts = []
+            original = RuntimeError('original body failure')
+            def fail_after_owned_close(fd):
+                close(fd)
+                if fd == owned:
+                    attempts.append(fd)
+                    raise OSError(errno.EIO, 'owned stage close failed')
+            try:
+                with mock.patch.object(atomic.os, 'close', side_effect=fail_after_owned_close):
+                    with self.assertRaises(RuntimeError) as caught:
+                        with atomic.private_stage_fd(parent) as fd:
+                            owned = fd
+                            raise original
+                self.assertIs(caught.exception, original)
+                self.assertEqual(attempts, [owned])
+                self.assertTrue(any('close also failed' in note for note in original.__notes__))
+                self.assertTrue(stat.S_ISDIR(os.fstat(parent).st_mode))
+            finally: close(parent)
+
+    def test_owned_stage_close_error_preserves_primary_cleanup_error(self):
+        if self.unsupported(): return
+        with tempfile.TemporaryDirectory() as directory:
+            parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+            close = os.close; owned = None; attempts = []
+            original = OSError(errno.ENOSPC, 'original cleanup failure')
+            def fail_after_owned_close(fd):
+                close(fd)
+                if fd == owned:
+                    attempts.append(fd)
+                    raise OSError(errno.EIO, 'owned stage close failed')
+            try:
+                with mock.patch.object(atomic.os, 'close', side_effect=fail_after_owned_close), \
+                     mock.patch.object(atomic, '_clear_private_directory_fd', side_effect=original):
+                    with self.assertRaises(OSError) as caught:
+                        with atomic.private_stage_fd(parent) as fd:
+                            owned = fd
+                self.assertIs(caught.exception, original)
+                self.assertEqual(attempts, [owned])
+                self.assertTrue(any('close also failed' in note for note in original.__notes__))
+                self.assertTrue(stat.S_ISDIR(os.fstat(parent).st_mode))
+            finally: close(parent)
 
     def test_parent_descriptor_reuse_is_rejected_before_any_stage_creation(self):
         if self.unsupported(): return
