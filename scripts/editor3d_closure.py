@@ -291,7 +291,13 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
                     _error('UNAVAILABLE', 'Full rig closure requires a native Rig reference.')
                 from rig_models import load_rig
                 from rig_validation import validate_rig
-                rig = load_rig(native_root)
+                try:
+                    rig = load_rig(native_root)
+                except RigError as exc:
+                    if exc.report['code'] != 'RIG_IDENTITY_SCHEMA':
+                        raise
+                    raise RigError('EDITOR3D_NATIVE', 'Native rig identity failed validation: ' + str(exc),
+                                   stage='editor3d') from exc
                 from rig_errors import object_hash
                 if object_hash(rig.manifest) != object_hash(value):
                     _error('IDENTITY', 'Native rig loader did not evaluate the exact bound manifest.')
