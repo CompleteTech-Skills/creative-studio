@@ -114,14 +114,72 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     return result
 
 
+def _exr_envelope(stream, memory_bytes):
+    """Admit only a bounded single-part, non-deep scanline EXR header."""
+    # OpenEXR v3.5.4 ImfVersion.h and OpenEXRFileLayout.rst define these
+    # little-endian fields. LONG_NAMES (0x400) changes names, not storage.
+    prefix = stream.read(8)
+    require(len(prefix) == 8, 'corrupt-output', 'Truncated EXR envelope.')
+    magic, version = struct.unpack('<II', prefix)
+    require(magic == 20000630, 'corrupt-output', 'Not an EXR file.')
+    require(version & 0xff == 2, 'unsupported-feature', 'Unsupported EXR format version.')
+    require((version & ~0xff) in (0, 0x400), 'unsupported-feature',
+            'EXR verification supports only single-part non-deep scanline images; unsupported flags.')
+    # The type attribute selects storage too. Inspect it before InputFile can
+    # initialize a deep compositor, even when version flags are inconsistent.
+    # Cap header work independently of the artifact's compressed byte budget.
+    end = stream.seek(0, 2)
+    stream.seek(8)
+    header_limit = min(memory_bytes, 1024**2)
+    name_limit = 255 if version & 0x400 else 31
+
+    def read(size):
+        require(stream.tell()+size <= header_limit, 'system-memory', 'EXR header exceeds verification memory budget.')
+        data = stream.read(size)
+        require(len(data) == size, 'corrupt-output', 'Truncated EXR header.')
+        return data
+
+    def name():
+        value = bytearray()
+        for _ in range(name_limit+1):
+            char = read(1)
+            if char == b'\x00':
+                return bytes(value)
+            value.extend(char)
+        raise Render3DError('corrupt-output', 'EXR header name exceeds its declared limit.')
+
+    seen = set()
+    while True:
+        attribute = name()
+        if not attribute:
+            break
+        require(attribute not in seen, 'corrupt-output', 'Duplicate EXR header attribute.')
+        seen.add(attribute)
+        kind = name()
+        require(bool(kind), 'corrupt-output', 'Empty EXR attribute type.')
+        size = struct.unpack('<i', read(4))[0]
+        require(size >= 0 and size <= end-stream.tell(), 'corrupt-output', 'Invalid EXR attribute size.')
+        require(stream.tell()+size <= header_limit, 'system-memory', 'EXR header exceeds verification memory budget.')
+        require(attribute != b'tiles', 'unsupported-feature', 'Tiled and multilevel EXR images are unsupported.')
+        if attribute == b'type':
+            require(kind == b'string' and size == len(b'scanlineimage'), 'unsupported-feature',
+                    'Only EXR scanlineimage storage is supported.')
+            require(read(size) == b'scanlineimage', 'unsupported-feature',
+                    'Only EXR scanlineimage storage is supported.')
+        else:
+            stream.seek(size, 1)
+    stream.seek(0)
+
+
 def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
+    _exr_envelope(stream, memory_bytes)
     try:
         import OpenEXR, Imath
         import numpy as np
     except ImportError as exc:
         raise Render3DError('unsupported-feature', 'EXR verification requires optional OpenEXR and numpy packages.') from exc
-    # InputFile reads only the header until channel() is requested. A private
-    # captured stream prevents a hash/decode race with worker-owned filenames.
+    # Envelope admission precedes native decoder construction. The private
+    # captured stream keeps admission, hashing and channel decoding bound.
     reader=OpenEXR.InputFile(stream)
     try:
         header=reader.header();window=header['dataWindow']
