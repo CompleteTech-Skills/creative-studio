@@ -7,6 +7,7 @@ never modified. JSON Schema integers include finite whole-valued JSON floats.
 from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
+import hashlib
 import json
 import unicodedata
 from rig_errors import MAX_JSON_BYTES, RigError, finite_json, portable_name, require
@@ -47,10 +48,13 @@ def schemas():
     header = dict(schema_version=dict(type='integer', const=1))
     metadata = _object(dict(bytes=_integer(1,MAX_FILE_BYTES), sha256=dict(
         type='string',pattern=r'^[0-9a-f]{64}(?![\s\S])')))
+    empty_source = _object(dict(bytes=dict(type='integer', const=0),
+                                sha256=dict(const=hashlib.sha256(b'').hexdigest())))
     export = _object(dict(**header, kind=dict(const='hatch-model3d-mesh-export'),
         format=dict(enum=['glb','gltf','obj']), vertices=_integer(3,MAX_VERTICES),
         triangles=_integer(1,MAX_TRIANGLES),
         files=dict(type='object', propertyNames=path, additionalProperties=metadata,
+                   patternProperties={'^source/': dict(oneOf=[metadata, empty_source])},
                    minProperties=1,maxProperties=MAX_FILES),
         mesh_identity=_array(_object(dict(id=identifier,name=text,region=text,
                                          source_node=_integer(-1,2_000_000))),1,4096),
