@@ -450,6 +450,16 @@ turn solely through coordinate rounding. Independent native controls retain
 small attainable turns, highly scaled parents, changed local scales and
 structured rejection of a nearby direction that would require shear.
 
+Pole admission intersects the candidate's positive ray with the separate
+coordinate rounding intervals of the supplied pole and origin. A distant pole
+does not borrow uncertainty from a short first segment, and an imprecise X
+coordinate cannot conceal a resolved Y/Z mismatch. The first segment comes
+from its native local offset before world translation is added. Trial local
+transforms below the native scale floor are discarded while other rigid
+candidates are checked; the original seed still passes the ordinary native
+transform validation. Three preserved independent regressions exercise both
+solvers at these distance, translation and near-floor scale boundaries.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not

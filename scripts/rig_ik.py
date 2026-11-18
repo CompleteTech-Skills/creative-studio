@@ -9,7 +9,7 @@ import numpy as np
 from rig_contracts import validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import RigError, require
-from rig_math import (decompose, matrix_quaternion, qangle, qbetween, qinverse, qmatrix,
+from rig_math import (compose, decompose, matrix_quaternion, qangle, qbetween, qinverse, qmatrix,
                       qmul, quaternion, unit, vector)
 from rig_skeleton import evaluate_fk
 
@@ -95,7 +95,7 @@ def _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direct
         yield from _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance)
 
 
-def _fold_root_transform(parent, root, seed, source, target, direction_resolution):
+def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     """Choose a rigid pole turn that is representable as local TRS.
 
     Pole direction fixes the swing, but leaves a twist about that direction.
@@ -107,6 +107,7 @@ def _fold_root_transform(parent, root, seed, source, target, direction_resolutio
     """
     swing = qmatrix(qbetween(source, target))
     source, direction = unit(source), unit(target)
+    target_length = math.hypot(*target)
     identity = np.eye(3)
     # Cancel root column magnitudes before solving for the world turn. Local
     # bone scales can span many orders even when the parent is well-conditioned.
@@ -124,16 +125,41 @@ def _fold_root_transform(parent, root, seed, source, target, direction_resolutio
     root_condition = np.linalg.cond(scaled_root)
     conditioning = max(stretches[0] / stretches[-1], root_condition)
     roundoff = min(16 * conditioning, 65536) * eps
-    # Pole positions arrive after world-space rounding and subtraction. Their
-    # directional resolution is separate from the matrix rigidity guarantee.
-    direction_tolerance = max(roundoff, direction_resolution)
+    # This scalar only filters candidate generators. Final pole admission uses
+    # the independently resolved coordinate intervals below, so a large X
+    # origin cannot conceal a well-resolved mismatch in Y or Z.
+    direction_tolerance = roundoff + 2 * math.hypot(*target_resolution) / target_length
+
+    def pole_matches(axis):
+        # A pole specifies a ray, not an elbow distance. Intersect the positive
+        # ray with each coordinate's rounding interval without letting a far
+        # pole's spacing inherit the first segment's much shorter length.
+        lower, upper = 0., math.inf
+        for component, observed, spacing in zip(axis, target, target_resolution):
+            error = spacing + roundoff * target_length
+            if component == 0:
+                if abs(observed) > error:
+                    return False
+                continue
+            endpoints = ((observed - error) / component, (observed + error) / component)
+            lower, upper = max(lower, min(endpoints)), min(upper, max(endpoints))
+            if lower > upper:
+                return False
+        return upper > 0
 
     def pole_error(oriented):
-        local_frame = qmatrix(oriented['rotation']) * oriented['scale']
+        try:
+            local_frame = compose(rotation=oriented['rotation'], scale=oriented['scale'])[:3, :3]
+        except RigError as exc:
+            if exc.report['code'] == 'RIG_SINGULAR_TRANSFORM':
+                return math.inf
+            raise
         world = parent @ local_frame
         turn = np.linalg.solve(scaled_root.T, (world / column_scales).T).T
         if np.linalg.det(turn) > 0 and np.max(np.abs(turn.T @ turn - identity)) <= roundoff:
-            return np.max(np.abs(turn @ source - direction))
+            axis = turn @ source
+            if pole_matches(axis):
+                return np.max(np.abs(axis - direction))
         return math.inf
 
     def try_world_turn(rotation):
@@ -142,25 +168,25 @@ def _fold_root_transform(parent, root, seed, source, target, direction_resolutio
             value[:3, :3] = np.linalg.solve(parent, rotation @ root)
             oriented = decompose(value)
         except RigError as exc:
-            if exc.report['code'] == 'RIG_SHEAR':
+            if exc.report['code'] in ('RIG_SHEAR', 'RIG_SINGULAR_TRANSFORM'):
                 return None
             raise
         columns = value[:3, :3] / oriented['scale']
         if np.max(np.abs(columns.T @ columns - identity)) > 128 * eps:
             return None
-        return oriented if pole_error(oriented) <= direction_tolerance else None
+        return oriented if math.isfinite(pole_error(oriented)) else None
 
     oriented = try_world_turn(swing)
     if oriented is not None:
         return oriented
     # Different sign choices can represent the same pole with different
     # rounding after FK. Prefer a well-resolved fit whenever one is available.
-    closest, best_error = None, direction_tolerance
+    closest, best_error = None, math.inf
     for oriented in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance):
         error = pole_error(oriented)
         if error <= 16 * eps:
             return oriented
-        if error <= best_error:
+        if math.isfinite(error) and error <= best_error:
             closest, best_error = oriented, error
     if closest is not None:
         return closest
@@ -338,16 +364,18 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         bone = next(bone for bone in skeleton['bones'] if bone['id'] == root)
         parent = bone['parent']
         seed = {**bone['rest'], **result['bones'].get(root, {})}
-        # Each world point has its own representable coordinate spacing.
-        # Bound the subtraction uncertainty before normalizing either vector;
-        # do not relax the independent reconstructed-world rigidity check.
-        position_resolution = math.hypot(*(math.ulp(float(origin[i])) +
-            math.ulp(float(points[1, i])) + math.ulp(float(pole[i])) for i in range(3)))
-        direction_resolution = position_resolution / min(math.dist(points[1], origin), math.dist(pole, origin))
+        # Form the first segment before adding the translated world origin.
+        # Its native local offset is available exactly; subtracting rounded
+        # world points would discard that information at distant origins.
+        first = next(bone for bone in skeleton['bones'] if bone['id'] == names[1])
+        first_seed = {**first['rest'], **result['bones'].get(names[1], {})}
+        source = world[root][:3, :3] @ vector(first_seed['translation'])
+        target_resolution = np.array([math.ulp(float(origin[i])) + math.ulp(float(pole[i]))
+                                      for i in range(3)])
         try:
             oriented = _fold_root_transform(world[parent][:3, :3] if parent else np.eye(3),
-                                            world[root][:3, :3], seed, points[1]-origin, pole_delta,
-                                            direction_resolution)
+                                            world[root][:3, :3], seed, source, pole_delta,
+                                            target_resolution)
         except np.linalg.LinAlgError as exc:
             raise RigError('RIG_SINGULAR_TRANSFORM',
                            'Closed-chain pole steering needs a numerically invertible transform.') from exc
