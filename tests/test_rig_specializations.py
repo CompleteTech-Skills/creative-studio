@@ -252,3 +252,63 @@ class RigSpecializationTests(unittest.TestCase):
         r=self.humanoid;p=finger_controls(r,neutral_pose(r.skeleton),side='right',curl=.4)
         with self.assertRaises(RigError):mirror_pose(r.skeleton,p)
         mirrored=mirror_pose(r.skeleton,p,approved=True);self.assertIn('index.1.left',mirrored['bones'])
+
+    def test_wing_controls_preserve_fk_and_deformation_when_joint_ids_change(self):
+        specs=[dict(id='body',role='body',parent=None,head=[0,-1,0],tail=[0,0,0])]
+        for side,x in (('left',-1.),('right',1.)):
+            specs.append(dict(id='wing-root.'+side,role='wing-root.'+side,
+                parent='body',head=[x,0,0],tail=[x,1,0]))
+        skeleton=skeleton_from_heads(specs);validate_skeleton(skeleton)
+        rest=evaluate_fk(skeleton);meshes=[];skins={}
+        for side,x in (('left',-1.),('right',1.)):
+            positions=np.array([[x,0.,0.],[x,1.,0.],[x+.2,.5,.2]])
+            meshes.append(Mesh(side,positions,np.array([[0,1,2]])))
+            joint='wing-root.'+side
+            skins[side]=SkinWeights(side,[joint],np.zeros((3,1),dtype=np.int64),
+                                   np.ones((3,1)),np.linalg.inv(rest[joint])[None,:,:])
+        rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},
+                     Geometry(meshes),skins)
+        neutral=neutral_pose(skeleton)
+        before=evaluate_deformation(rig,neutral)
+        renames=[
+            {'wing-root.left':'joint_17','wing-root.right':'joint_29'},
+            {'wing-root.left':'joint.right','wing-root.right':'joint.left'}]
+        controls=[dict(wing_twist=.7),dict(wing_flap=.6,time=.25),
+                  dict(wing_fold=.5),dict(wing_twist=-.4,wing_flap=.3,wing_fold=-.2,time=.25)]
+        for rename in renames:
+            renamed=deepcopy(rig)
+            renamed.skeleton['root']=rename.get(skeleton['root'],skeleton['root'])
+            for bone in renamed.skeleton['bones']:
+                bone['id']=rename.get(bone['id'],bone['id'])
+                bone['parent']=rename.get(bone['parent'],bone['parent'])
+                bone['mirror']=rename.get(bone['mirror'],bone['mirror'])
+            for skin in renamed.weights.values():
+                skin.joints=[rename.get(joint,joint) for joint in skin.joints]
+            validate_skeleton(renamed.skeleton)
+            renamed_neutral=neutral_pose(renamed.skeleton)
+            for side in ('left','right','both'):
+                for control in controls:
+                    with self.subTest(rename=rename,side=side,control=control):
+                        expected_pose=appendage_controls(rig,neutral,wing_side=side,**control)
+                        actual_pose=appendage_controls(renamed,renamed_neutral,wing_side=side,**control)
+                        expected_world=evaluate_fk(skeleton,expected_pose)
+                        actual_world=evaluate_fk(renamed.skeleton,actual_pose)
+                        for joint,world in expected_world.items():
+                            np.testing.assert_allclose(actual_world[rename.get(joint,joint)],
+                                                       world,rtol=0,atol=1e-12)
+                        expected=evaluate_deformation(rig,expected_pose)
+                        actual=evaluate_deformation(renamed,actual_pose)
+                        for mesh in ('left','right'):
+                            np.testing.assert_allclose(actual[mesh]['positions'],
+                                                       expected[mesh]['positions'],rtol=0,atol=1e-12)
+                            if side in (mesh,'both'):
+                                self.assertGreater(np.linalg.norm(actual[mesh]['positions']-
+                                                                 before[mesh]['positions']),.01)
+                            else:
+                                np.testing.assert_allclose(actual[mesh]['positions'],
+                                                           before[mesh]['positions'],rtol=0,atol=1e-12)
+                                joint='wing-root.'+mesh
+                                np.testing.assert_allclose(actual_world[rename[joint]],
+                                                           rest[joint],rtol=0,atol=1e-12)
+            self.assertEqual(renamed_neutral,neutral_pose(renamed.skeleton))
+        self.assertEqual(neutral,neutral_pose(skeleton))
