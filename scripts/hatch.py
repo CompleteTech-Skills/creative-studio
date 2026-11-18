@@ -609,6 +609,7 @@ def ingest(root, data, name, source, token, note, used_inputs, fixture=False):
         budget.record(job, token, observation)
         if observation['outcome'] != 'complete':
             raise ValueError('native ingestion requires complete known budget usage')
+        budget.authorize_finalization(job, token, observation)
     source = Path(source).resolve()
     managed = [root / folder for folder in ('decoded', 'frames', 'final', 'qa')]
     if any(source == p or source.is_relative_to(p) for p in managed) or source == root / 'references/canonical-base.png':
@@ -661,6 +662,7 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
                                        'budget_observation': budget_usage['id']})
                 save(root, data)
             return {'uncertain': name, 'token': token}
+        budget.authorize_finalization(job, token, budget_usage)
     job.update(status='failed')
     job['history'].append({'event': 'failed', 'time': time.time(), 'reason': reason, 'token': token})
     job.pop('token', None)

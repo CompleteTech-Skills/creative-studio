@@ -533,6 +533,9 @@ def bind_generation_run(root, binding_id, run_dir, requirements):
                 raise ValueError('acquisition fixture label must match the production project')
             if any(job['status'] == 'running' for job in data['jobs']):
                 raise ValueError('reconcile existing active tokens before initially binding an acquisition')
+            if 'director_budget' in state or 'director_budget' in data:
+                from director_budget import require_production_budget
+                require_production_budget(root, state, run, data)
             binding = {'run_path': relative, 'run_id': data['run_id'],
                        'request_sha256': file_hash(run / 'pet_request.json'),
                        'requirements': copy.deepcopy(requirements),
@@ -560,6 +563,9 @@ def _bound_runs(root, state):
             raise ValueError('bound acquisition identity or fixture label changed')
         if file_hash(run / 'pet_request.json') != binding['request_sha256']:
             raise ValueError('bound original request changed; create a separately identified acquisition')
+        if 'director_budget' in state or 'director_budget' in data:
+            from director_budget import require_production_budget
+            require_production_budget(root, state, run, data)
         result.append((binding_id, binding, run, data))
     if len({str(item[2]) for item in result}) != len(result):
         raise ValueError('one acquisition cannot consume multiple production bindings')
