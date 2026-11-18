@@ -112,7 +112,8 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
                               constraints=ordered, orientation=contact.get('orientation'))
             pose = result.pose
             reports.append(dict(id=contact['id'], chain=contact['chain'], target=target.tolist(),
-                                residual_m=result.residual_m, reachable=result.reachable, converged=result.converged))
+                                residual_m=result.residual_m, orientation_residual_rad=result.orientation_residual_rad,
+                                reachable=result.reachable, converged=result.converged))
     root_delta = np.array(pose['bones'].get(root_id, {}).get('translation', root_rest))-root_rest
     return dict(pose=pose, time=local_time, cycle=cycles, root_motion=root_delta.tolist(), contacts=reports,
                 constraints_applied=changes, events=[deepcopy(e) for e in clip['events'] if abs(e['time']-local_time) < 1e-7])
