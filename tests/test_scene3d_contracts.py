@@ -33,35 +33,41 @@ def fixture(name):
 
 
 class SceneContractTests(unittest.TestCase):
-    @unittest.skipUnless(os.open in os.supports_dir_fd, 'descriptor-relative project reads')
     def test_descriptor_project_verifies_deep_dependency_under_low_descriptor_limit(self):
-        import resource
-
+        descriptor_reads = os.open in os.supports_dir_fd
+        if sys.platform == 'darwin':
+            self.assertTrue(descriptor_reads, 'macOS must execute the descriptor-budget test')
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'example'
             build_example(root)
             project = load_project(root)['project']
             original = project['animations'][0]['path']
-            nested = 'animations/' + 'd/' * 160 + 'original.json'
+            # Keep the ordinary path fixture within Windows path limits.
+            depth = 160 if descriptor_reads else 2
+            nested = 'animations/' + 'd/' * depth + 'original.json'
             (root / nested).parent.mkdir(parents=True)
             (root / original).rename(root / nested)
             for reference in project['animations'] + project['dependency_lock']:
                 if reference['path'] == original:
                     reference['path'] = nested
             (root / 'project.json').write_bytes(canonical_bytes(project))
-            with ExitStack() as stack:
-                fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-                stack.callback(os.close, fd)
-                soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-                stack.callback(resource.setrlimit, resource.RLIMIT_NOFILE, (soft, hard))
-                resource.setrlimit(resource.RLIMIT_NOFILE, (64 if soft < 0 else min(soft, 64), hard))
-                bundle = load_project_at(fd)
-                self.assertEqual(os.fstat(fd).st_ino, root.stat().st_ino)
+            if descriptor_reads:
+                import resource
+
+                with ExitStack() as stack:
+                    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+                    stack.callback(os.close, fd)
+                    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+                    stack.callback(resource.setrlimit, resource.RLIMIT_NOFILE, (soft, hard))
+                    resource.setrlimit(resource.RLIMIT_NOFILE, (64 if soft < 0 else min(soft, 64), hard))
+                    bundle = load_project_at(fd)
+                    self.assertEqual(os.fstat(fd).st_ino, root.stat().st_ino)
+            else:
+                bundle = load_project(root)
             data = (root / nested).read_bytes()
             self.assertEqual(bundle['inventory'][nested], {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
             self.assertEqual(bundle['project'], project)
 
-    @unittest.skipUnless(os.open in os.supports_dir_fd, 'descriptor-relative project reads')
     def test_descriptor_apis_report_invalid_handles_consistently(self):
         from production_contracts import load_project_at as load_legacy_at
 
@@ -70,11 +76,14 @@ class SceneContractTests(unittest.TestCase):
                 self.fail('invalid descriptor accepted')
 
         with tempfile.TemporaryFile() as regular:
-            for reader in (load_project_at, load_legacy_at, open_project):
+            readers = [(load_project_at, 'RIG_DIRECTORY_FD'), (load_legacy_at, 'RIG_DIRECTORY_FD')]
+            payload_error = 'RIG_DIRECTORY_FD' if os.open in os.supports_dir_fd else 'RIG_DIRECTORY_UNAVAILABLE'
+            readers.append((open_project, payload_error))
+            for reader, code in readers:
                 for fd in (False, -1, 1 << 128, regular.fileno()):
                     with self.subTest(reader=reader.__name__, fd=fd), self.assertRaises(RigError) as error:
                         reader(fd)
-                    self.assertEqual(error.exception.report['code'], 'RIG_DIRECTORY_FD')
+                    self.assertEqual(error.exception.report['code'], code)
 
     def test_hash_bound_example_files_disable_checkout_newline_conversion(self):
         result = subprocess.run(['git', 'check-attr', 'text', '--',

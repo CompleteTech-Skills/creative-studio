@@ -509,8 +509,7 @@ def job_lock(root: str | Path) -> Iterator[None]:
         stream.seek(0)
         if os.name == 'nt':
             import msvcrt
-            if lock.stat().st_size == 0:
-                stream.write(b'0'); stream.flush(); stream.seek(0)
+            # Windows can lock a byte past EOF, so a new sidecar can stay empty.
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
