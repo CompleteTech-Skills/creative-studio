@@ -533,6 +533,9 @@ def bind_generation_run(root, binding_id, run_dir, requirements):
                 raise ValueError('acquisition fixture label must match the production project')
             if any(job['status'] == 'running' for job in data['jobs']):
                 raise ValueError('reconcile existing active tokens before initially binding an acquisition')
+            if 'director_budget' in state or 'director_budget' in data:
+                from director_budget import require_production_budget
+                require_production_budget(root, state, run, data)
             binding = {'run_path': relative, 'run_id': data['run_id'],
                        'request_sha256': file_hash(run / 'pet_request.json'),
                        'requirements': copy.deepcopy(requirements),
@@ -560,6 +563,9 @@ def _bound_runs(root, state):
             raise ValueError('bound acquisition identity or fixture label changed')
         if file_hash(run / 'pet_request.json') != binding['request_sha256']:
             raise ValueError('bound original request changed; create a separately identified acquisition')
+        if 'director_budget' in state or 'director_budget' in data:
+            from director_budget import require_production_budget
+            require_production_budget(root, state, run, data)
         result.append((binding_id, binding, run, data))
     if len({str(item[2]) for item in result}) != len(result):
         raise ValueError('one acquisition cannot consume multiple production bindings')
@@ -582,6 +588,9 @@ def _generation_report(bundle, state, runs):
                 active.append({'binding_id': binding_id, 'job': job['id'],
                                'token': job['token'], 'stale': copy.deepcopy(job.get('stale'))})
         bindings[binding_id] = {**copy.deepcopy(binding), 'jobs': jobs}
+        budget = hatch._native_budget(run, data)
+        if budget is not None:
+            bindings[binding_id]['budget'] = budget.status()
     limits = copy.deepcopy(state['generation_limits'])
     limits['max_calls'] = min(limits['max_calls'], bundle['project']['limits']['max_generation_calls'])
     return {'schema_version': 1, 'project_id': bundle['project']['id'],
@@ -699,7 +708,9 @@ def _generation_action(root, binding_id, job, action, **arguments):
                 if value.get('production_context') != _binding_context(binding_id, binding):
                     raise ValueError('ingest receipt must attest the exact bound production coverage context')
                 with tempfile.TemporaryDirectory(prefix='hatch-production-receipt-') as temporary:
-                    receipt_path = Path(temporary) / 'receipt.json'
+                    # This directory is owned by this operation. Normalize OS
+                    # temporary-root aliases before the native no-follow reader.
+                    receipt_path = Path(temporary).resolve() / 'receipt.json'
                     hatch.atomic(receipt_path, value)
                     result = hatch.ingest(run, data, job, used_inputs=receipt_path,
                                           fixture=bundle['project']['fixture'], **arguments)
@@ -720,8 +731,9 @@ def ingest_generation(root, binding_id, job, source, token, note, receipt):
                               note=note, receipt=receipt)
 
 
-def fail_generation(root, binding_id, job, token, reason):
-    return _generation_action(root, binding_id, job, 'fail', token=token, reason=reason)
+def fail_generation(root, binding_id, job, token, reason, *, budget_usage=None):
+    return _generation_action(root, binding_id, job, 'fail', token=token, reason=reason,
+                              **({'budget_usage': budget_usage} if budget_usage is not None else {}))
 
 
 def repair_generation(root, binding_id, job, reason):
@@ -772,11 +784,13 @@ def verify_project_archive(path):
     return receipt
 
 
-def _active_acquisitions(root):
+def _active_acquisitions(root, *, restoring=False):
     active = []
     for manifest_path in sorted(Path(root).rglob('imagegen-jobs.json')):
         safe_path(root, manifest_path.relative_to(root).as_posix())
         data = hatch.manifest(manifest_path.parent)
+        if restoring and ('director_budget' in data or any('budget_operation' in job for job in data['jobs'])):
+            raise ValueError('budgeted acquisitions cannot be restored without an explicit accounting reconciliation transaction')
         for job in data['jobs']:
             if job['status'] == 'running':
                 active.append({'run_path': manifest_path.parent.relative_to(root).as_posix(),
@@ -928,9 +942,11 @@ def restore_project(archive_path, destination):
         if bundle['project']['id'] != receipt['project_id'] or bundle['project']['fixture'] is not receipt['fixture']:
             raise ValueError('restored project identity or fixture differs from the verified receipt')
         state = _state(stage, bundle)
-        _bound_runs(stage, state)
-        if _active_acquisitions(stage):
+        if 'director_budget' in state or (stage / 'director-budget-owner.json').exists():
+            raise ValueError('budgeted projects cannot be restored without an explicit accounting reconciliation transaction')
+        if _active_acquisitions(stage, restoring=True):
             raise ValueError('archive contains active acquisition tokens; preserve and reconcile the original run')
+        _bound_runs(stage, state)
         renderer_changed = receipt.get('renderer') != _renderer_identity()
         render_freshness = _cached_render_freshness(stage, bundle)
         rerender_required = renderer_changed or bool(render_freshness['affected_renders'])
