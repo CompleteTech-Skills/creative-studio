@@ -642,6 +642,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         video = streams[0]
         expected_count = len(source['frames'])
         if (video.get('codec_name') != profile['codec'] or video.get('pix_fmt') != profile['pixel_format'] or
+                type(video.get('width')) is not int or type(video.get('height')) is not int or
                 video.get('width') != source['width'] or video.get('height') != source['height'] or
                 _probe_integer(video.get('nb_read_frames', -1), 'frame count') != expected_count):
             raise ValueError('encoded codec/pixel format/dimensions/frame count mismatch')
@@ -735,7 +736,10 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
     This prevents an untrusted producer switching a path between probe/decode
     subprocesses. The receipt identifies bytes, never mutable pathname identity.
     """
-    validate_request(request)
+    try:
+        validate_request(request)
+    except ValueError:
+        raise ValueError('invalid silent verification request') from None
     diagnostics = {'schema_version': 1, 'verified': False,
                    'request_sha256': _digest(request), 'source_manifest_sha256': _digest(request['source'])}
     try:
@@ -934,8 +938,14 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'capabilities': result = capabilities()
-        elif args.command == 'verify-export': result = verify_export(args.artifact, read_json(args.request), root=args.root)
-        else: result = encode(read_json(args.request), args.root, args.destination)
+        else:
+            try:
+                request = read_json(args.request)
+                validate_request(request)
+            except (ValueError, OSError):
+                raise ValueError('silent media request could not be safely read or validated') from None
+            if args.command == 'verify-export': result = verify_export(args.artifact, request, root=args.root)
+            else: result = encode(request, args.root, args.destination)
         print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False))
     except (ValueError, OSError) as exc:
         print(json.dumps({**getattr(exc, 'evidence', {}), 'schema_version': 1, 'verified': False, 'error': str(exc)}))

@@ -134,10 +134,69 @@ the requested-termination result, and separately labeled simulated process
 fixtures cover natural completion before or during the request. This replaces
 the incorrect assumption behind the previously retained intermittent test failure.
 
-The dedicated workflow includes every portable silent-video module and both
-native media modules. Current local completed unittest logs report 51 portable
+The dedicated workflow includes every matching portable and native silent-video
+module. At predecessor `0ef11467`, local completed unittest logs report 51 portable
 tests and 76 tests in the native discovery, all passed with zero skips. The latter
 includes inherited portable methods; it is not 76 independent codec exercises.
 The new actual permission module separately completed two tests with exit 0,
 and portable discovery completed with exit 0. Final exact-head review and hosted
 checks remain mandatory; the original 17 core and 30 native methods are unchanged.
+
+## Logical executable identity and request refusal
+
+Verification and encoding failures identify tools as `ffprobe` or `ffmpeg`,
+including when the selected executable is a caller override or resolves through
+a PATH symlink. The private executable filename is not exported. Portable
+contract tests cover every verification stage and a launch refusal without an
+invented exit status. A native control copies the actual ffprobe binary under a
+synthetic filename and verifies both API override and CLI PATH-symlink failures.
+
+The CLI refuses an unreadable or malformed request with fixed application text;
+it does not forward path-bearing reader exceptions or claim media facts before
+request admission. Direct verification also hides rejected request values.
+Probe dimensions must be integers; separately labeled simulated records test
+float, string and boolean refusals with a valid integer control. These cases do
+not claim an actual ffprobe dimension bypass.
+
+At the corrected source, portable discovery passed 56 methods, the optional
+native discovery passed 77 methods, and the unchanged legacy renderer module
+passed 20 methods, all with zero skips and actual exit 0. Native discovery
+includes inherited portable and mocked contract methods as well as actual
+encode/probe/decode cases; it is not 77 separate native codec executions.
+The source file had the same SHA-256 before and after native execution. An
+initial portable run failed because the correction added keyword arguments to
+capability probes whose independent mocks require the original call contract.
+Capability probe calls were restored without changing those assertions, and the
+full portable rerun passed. Final integrated current-head checks and fresh
+independent review remain required.
+
+## Concurrent diagnostic preservation
+
+The local integration of `542d152c` with `8aa88457` preserves the concurrent
+`tool_role` implementation, token-aware command-path aliases, literal raw probe
+facts, labelled executable stderr diagnostics and child-only reporting/color
+controls. The request privacy and integral-dimension checks described above
+remain. Capability helper call contracts retain their existing form. All
+concurrent silent-video test method bodies remain unchanged; the additional
+public-error test changes only its private keyword from `tool_name` to
+`tool_role`, retaining every assertion.
+
+Complete portable discovery passed 62 tests in 2.228 seconds, optional native
+discovery passed 85 tests in 92.070 seconds and the legacy renderer module passed
+20 tests in 2.602 seconds. Each command returned actual exit 0 with zero skips
+on Linux/Python 3.12.14 and FFmpeg/ffprobe 7.1.5. The tested
+`scripts/silent_video.py` SHA-256 before and after execution was
+`6775a20b124e70cecefe8b644aa51c2859dab03c1b9b46188227bf3006797aeb`.
+The native count includes inherited portable and simulated contract checks;
+it does not represent 85 distinct native codec executions.
+
+Both long non-UTF-8 path methods passed unchanged in that run. The restored
+legacy method requires native exit 1, whereas the additional evidence-budget
+method retains the observed termination flag and platform-consistent status.
+The former remains scheduling-sensitive when the evidence limit requests a
+kill before natural exit; this passing run does not prove deterministic exit 1.
+No existing assertion was relaxed to obtain these results. Real permission
+refusals, the installed probe named `video`, and inherited report/color controls
+ran without skips using synthetic temporary media. These are local execution
+results, not independent review or production acceptance. Final published-head
+checks and fresh independent review remain required.
