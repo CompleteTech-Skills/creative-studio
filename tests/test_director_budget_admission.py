@@ -62,8 +62,18 @@ class NativeBudgetAdmissionTests(unittest.TestCase):
             return hatch.claim(root, hatch.manifest(root), name)
 
     def files(self):
-        return {path.relative_to(self.owner).as_posix(): path.read_bytes()
-                for path in self.owner.rglob('*') if path.is_file()}
+        result = {}
+        for path in self.owner.rglob('*'):
+            if not path.is_file():
+                continue
+            name = path.relative_to(self.owner).as_posix()
+            if path.name.endswith('.hatch.lock'):
+                # An active Windows owner holds a mandatory lock on byte zero.
+                info = path.stat()
+                result[name] = (info.st_size, info.st_mtime_ns)
+            else:
+                result[name] = path.read_bytes()
+        return result
 
     def readonly_verify(self, budget, job, reservation_id, *, input_hashes=None,
                         rejects=False):
@@ -678,6 +688,84 @@ class NativeBudgetAdmissionTests(unittest.TestCase):
         self.assertEqual(generated['attempts'], 1)
         self.assertEqual(self.ledger.snapshot()['state']['revision'], 1)
         self.assertEqual(len(self.ledger.snapshot()['state']['reservations']), 1)
+
+
+    def test_recovery_admission_rejects_before_replaying_or_mutating_any_state(self):
+        for stage in ('fresh', 'reserved', 'pending-usage'):
+            with self.subTest(stage=stage):
+                if stage == 'reserved':
+                    # Normal authority can still admit after a recovery refusal.
+                    self.descriptor(self.reserve())
+                elif stage == 'pending-usage':
+                    claimed = self.claim()
+                    with hatch.ownership(self.root), patch.object(BudgetLedger, 'settle',
+                            side_effect=RuntimeError('synthetic pending usage publication')):
+                        with self.assertRaises(RuntimeError):
+                            hatch.record_budget_usage(self.root, hatch.manifest(self.root), 'base',
+                                claimed['token'], self.observation('pending-admission', 'retry'))
+                with hatch.ownership(self.root):
+                    before_files, before_ledger = self.files(), self.ledger.snapshot()
+                    data = hatch.manifest(self.root, recovery=True)
+                    budget = NativeBudget.for_run(self.root, data, recovery=True)
+                    job = hatch.job_for(data, 'base')
+                    hashes = hatch.inputs(self.root, job)
+                    before_data = deepcopy(data)
+                    with ExitStack() as stack:
+                        for owner, name in ((BudgetLedger, 'reserve'), (BudgetLedger, 'settle'),
+                                (BudgetLedger, 'release'), (BudgetLedger, '_publish'),
+                                (BudgetLedger, 'retain_evidence'), (NativeBudget, '_save'),
+                                (hatch, 'save')):
+                            stack.enter_context(patch.object(owner, name,
+                                side_effect=AssertionError('recovery admission entered writer: ' + name)))
+                        for entry in ('reserve_only', 'before_claim', 'reserve_budget'):
+                            with self.subTest(entry=entry), self.assertRaises((ValueError, RigError)):
+                                if entry == 'reserve_budget':
+                                    hatch.reserve_budget(self.root, data, 'base')
+                                else:
+                                    getattr(budget, entry)(job, hashes)
+                            self.assertEqual(data, before_data)
+                            self.assertEqual(self.ledger.snapshot(), before_ledger)
+                            self.assertEqual(self.files(), before_files)
+
+    def test_recovery_verification_uses_original_anchor_without_replaying_pending_usage(self):
+        reserved = self.reserve()
+        claimed = self.claim()
+        with hatch.ownership(self.root), patch.object(BudgetLedger, 'settle',
+                side_effect=RuntimeError('synthetic pending verification usage')):
+            with self.assertRaises(RuntimeError):
+                hatch.record_budget_usage(self.root, hatch.manifest(self.root), 'base',
+                    claimed['token'], self.observation('pending-verification', 'retry'))
+        for name in ('pet_request.json', 'profile.json', 'prompts/base-pet.md'):
+            (self.root / name).unlink()
+        with hatch.ownership(self.root):
+            before_files, before_ledger = self.files(), self.ledger.snapshot()
+            data = hatch.manifest(self.root, recovery=True)
+            budget = NativeBudget.for_run(self.root, data, recovery=True)
+            job = hatch.job_for(data, 'base')
+            anchor = deepcopy(job['budget_operation'])
+            with patch.object(hatch, 'inputs',
+                    side_effect=AssertionError('current inputs are not verification authority')):
+                for hashes in (None, anchor['input_hashes']):
+                    self.assertEqual(self.readonly_verify(budget, job, reserved['reservation_id'],
+                        input_hashes=hashes), reserved)
+            self.assertEqual(self.files(), before_files)
+            self.assertEqual(self.ledger.snapshot(), before_ledger)
+            # Alter only the two published prompt hashes; operation, token and owner remain authentic.
+            job['input_hashes'][job['prompt_file']] = '0' * 64
+            latest = [event for event in job['history'] if event['event'] == 'claim'][-1]
+            latest['input_hashes'][job['prompt_file']] = '0' * 64
+            hatch.save(self.root, data)
+            forged_files = self.files()
+            with patch.object(hatch, 'inputs',
+                    side_effect=AssertionError('current inputs are not a forgery oracle')):
+                for hashes in (None, deepcopy(job['input_hashes'])):
+                    self.readonly_verify(budget, job, reserved['reservation_id'],
+                                         input_hashes=hashes, rejects=True)
+            self.assertEqual(job['budget_operation'], anchor)
+            self.assertEqual(job['token'], claimed['token'])
+            self.assertEqual(self.ledger.snapshot(), before_ledger)
+            self.assertEqual(self.files(), forged_files)
+
 
 
 if __name__ == '__main__':
