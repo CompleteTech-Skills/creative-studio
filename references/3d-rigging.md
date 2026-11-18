@@ -372,3 +372,33 @@ multiple iterations, invalid dependency graphs and fractional controls. These
 are synthetic numerical regressions; their source does not establish an
 executed pass, visual approval or complete rig acceptance. Broader contact
 validation must also assess required orientation outcomes (tracked in #496).
+
+Morph retargeting preserves a matching source/target mesh ID before considering a
+unique name match. Use `mesh-id::morph-name` keys and values in `morph_mapping` to
+map independently authored controls when mesh IDs differ. Unqualified names are
+accepted only when they select one target; ambiguous matches and multiple source
+controls writing the same target fail with `RIG_RETARGET_MORPH`. Missing optional
+unmapped target morphs remain omitted rather than broadcasting to unrelated faces.
+
+Appendage control parameters include `wing_twist` in `[-1, 1]` (up to 0.7 radians
+around each wing bone's local length axis) and `wing_side` (`both`, `left` or
+`right`). Existing joint constraints still apply. They are available through
+`rig_facial.appendage_controls` and the `appendages` object in a pose-operation
+request. An unsupported requested side fails rather than inventing a wing. A
+one-sided pose does not automatically mirror to the other side. Finger spread and
+tail phase follow parent-to-child hierarchy, so reordering the serialized bone
+array does not change those authored motions.
+
+For imported wing joints, the twist axis follows the authored head-to-tail
+direction in the space where rotation acts after local rest scale. The full
+parent transform is removed before restoring that local scale. Pure twist
+therefore preserves the authored endpoints under nonuniform local rest scale;
+numerical regression cases also cover imported rotations and transformed parents.
+
+State-map discovery includes a `work_estimate` for one export cycle of each unique
+existing clip used by the selected executable recipes. It reports clip duration,
+keyframe/scalar counts, samples at the declared clip frame rates, and uncompressed
+float64 position-buffer sizes. Missing-animation/capability results add no work.
+These figures exclude normals, textures, renderer memory, repeated playback,
+encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
+zero model calls and does not generate the catalog's missing animations.
