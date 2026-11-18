@@ -325,6 +325,12 @@ class Snapshot:
         raise RigError('ANIMATION_OWNER', 'No registered native source owner for '+str(kind), stage='animation3d')
 
 
+def registered_scene_documents(native_project):
+    """Yield the exact scene documents registered by a verified Scene3D project."""
+    for reference in native_project['project']['scenes']:
+        yield native_project['documents'][reference['path']]
+
+
 @_admission
 def verify_native(root, reference):
     """Return detached native owner data after exact closure validation."""
@@ -495,7 +501,7 @@ def _validate_bindings(project, documents, native, snapshot_root):
             return
         if domain == 'node':
             require(scene is not None, 'ANIMATION_TARGET', 'Node target needs a scene binding.')
-            nodes = [n for d in native_scene(scene)['documents'].values() if d['kind'] == 'scene3d-scene'
+            nodes = [n for d in registered_scene_documents(native_scene(scene))
                      for n in d['nodes'] if n['id'] == value['node_id']]
             require(len(nodes) == 1, 'ANIMATION_TARGET', 'Node target is absent or ambiguous.')
             return
@@ -595,8 +601,7 @@ def _validate_bindings(project, documents, native, snapshot_root):
                     if item['parent']:
                         dependencies.append((dict(kind='bone', actor_id=actor['actor_id'], bone_id=item['id']),
                                              dict(kind='bone', actor_id=actor['actor_id'], bone_id=item['parent'])))
-            for native_document in scene_owner['documents'].values():
-                if native_document['kind'] != 'scene3d-scene': continue
+            for native_document in registered_scene_documents(scene_owner):
                 for node in native_document['nodes']:
                     if node['parent']:
                         dependencies.append((dict(kind='node', node_id=node['id']), dict(kind='node', node_id=node['parent'])))
@@ -681,9 +686,8 @@ def _validate_bindings(project, documents, native, snapshot_root):
             for shot in d['shots']:
                 require(shot['scene_id'] in scenes, 'ANIMATION_REFERENCE', 'Shot scene is absent from project closure.')
                 scene = scenes[shot['scene_id']]
-                native_project = native_scene(scene)
-                camera_matches = sum(1 for ref in native_project['project']['scenes']
-                                     for node in native_project['documents'][ref['path']]['nodes']
+                camera_matches = sum(1 for doc in registered_scene_documents(native_scene(scene))
+                                     for node in doc['nodes']
                                      if node['type'] == 'camera' and node['id'] == shot['active_camera_id'])
                 require(camera_matches == 1, 'ANIMATION_TARGET',
                         'Shot camera is absent or ambiguous in the registered native scenes.')

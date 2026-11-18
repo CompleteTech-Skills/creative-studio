@@ -4,7 +4,7 @@ These adapters resolve real persisted objects. They do not add a second native
 scene evaluator or imply that all declared target domains have an executor.
 """
 from copy import deepcopy
-from animation3d_assets import verify_native
+from animation3d_assets import registered_scene_documents, verify_native
 from rig_errors import require
 
 
@@ -21,7 +21,7 @@ def _resolve_property(entry, admitted):
     if owner == 'scene3d':
         require(kind == 'scene3d-project' and domain == 'node', 'ANIMATION_OWNER',
                 'Scene3D adapter requires a native project and node target.')
-        matches = [node for doc in native['documents'].values() if doc['kind']=='scene3d-scene'
+        matches = [node for doc in registered_scene_documents(native)
                    for node in doc['nodes'] if node['id']==target['node_id']]
         require(len(matches)==1, 'ANIMATION_TARGET', 'Scene node is absent or ambiguous across scenes.')
         node = matches[0]

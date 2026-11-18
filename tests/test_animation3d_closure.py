@@ -480,6 +480,48 @@ class NativeClosureRegressionTests(unittest.TestCase):
             self.check()
         self.assertEqual(rejected.exception.report['code'], 'ANIMATION_TARGET')
 
+    def test_lock_only_scene_preserves_inventory_without_owning_nodes_or_parent_edges(self):
+        from animation3d_owners import resolve_property
+
+        scene, _ = self.native_scene()
+        native_root = self.root / 'native'
+        native = json.loads((native_root / 'project.json').read_bytes())
+        archived = json.loads((native_root / 'example-scene.json').read_bytes())
+        archived.update(id='archived-scene', shots=[], roots=['mesh'], cameras=['archived-camera'])
+        archived_nodes = {node['id']: node for node in archived['nodes']}
+        archived_nodes['root']['parent'] = 'mesh'
+        archived_nodes['root']['transform']['translation'] = [9, 0, 0]
+        archived_nodes['mesh']['parent'] = None
+        archived_nodes['camera']['id'] = 'archived-camera'
+        archived_ref = self.put('native/archived-scene.json', archived)
+        native['dependency_lock'].append({**archived_ref, 'path': 'archived-scene.json'})
+        native_ref = self.put('native/project.json', native)
+        scene['scene_asset'] = {**native_ref, 'kind': 'scene'}
+
+        target = dict(kind='node', node_id='root', property='translation')
+        track = deepcopy(self.values['clip']['tracks'][0])
+        track['target'] = target
+        scene['object_tracks'] = [track]
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        admitted = self.check()
+        self.assertTrue(admitted['source_ready'])
+        self.assertEqual(admitted['inventory'][archived_ref['path']]['sha256'], archived_ref['sha256'])
+        entry = dict(owner='scene3d', source=native_ref, target=target)
+        self.assertEqual(resolve_property(self.root, entry), [0, 0, 0])
+
+        self.project['budgets']['max_scene_nodes'] = len(archived_nodes)
+        with self.assertRaises(RigError) as capped:
+            self.check()
+        self.assertEqual(capped.exception.report['code'], 'ANIMATION_LIMIT')
+        self.project['budgets']['max_scene_nodes'] = 2 * len(archived_nodes)
+
+        target['node_id'] = 'archived-camera'
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        for resolve in (self.check, lambda: resolve_property(self.root, entry)):
+            with self.assertRaises(RigError) as unregistered:
+                resolve()
+            self.assertEqual(unregistered.exception.report['code'], 'ANIMATION_TARGET')
+
     def test_actor_retarget_profile_pins_its_actual_target_rig(self):
         from rig_errors import object_hash
 
