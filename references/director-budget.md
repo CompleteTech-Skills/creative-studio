@@ -253,6 +253,27 @@ invalid identities, recovery authority restrictions, existing-receipt replay,
 bounded special-file input checks, precision above 28 significant digits under
 changed ambient contexts, and forged job/claim hashes with authentic pending
 usage. Their author did not inspect the fix.
-Original native tests remain unchanged. These new methods have not yet executed
-at preparation time; hosted results must identify the exact integrated revision.
-No provider, paid service, production host or live API is invoked.
+Original native tests remain unchanged. No provider, paid service, production
+host or live API is invoked. Runtime evidence is bound to its tested revision;
+the presence of these tests is not platform or production acceptance.
+
+### Owned receipt paths and platform checks
+
+The production wrapper writes an operation-owned temporary receipt before
+calling native ingestion. It resolves that owned directory's canonical path so
+OS temporary-root aliases and Windows long-path spelling reach the same strict
+reader. Untrusted receipt inputs still use the existing no-follow reader; this
+does not authorize following arbitrary source symlinks.
+
+The focused production receipt test supplies a real temporary-directory alias,
+performs native ingestion, and verifies retained metadata and complete adoption
+history. It reproduced the reader failure before the correction and passed with
+the correction. The special-input recovery test keeps actual POSIX FIFO and
+symlink refusal, and uses an owned actual Windows named pipe on Windows. It does
+not add an optional skip or relax the delivery skip policy.
+
+On Linux with Python 3.12.14, correction commit `bba9f339` passed 68 budget tests,
+38 production and receipt-path tests, and 21 legacy workflow tests, with no
+skips. These results are local synthetic/native execution. Corrected Windows and
+macOS hosted runs must independently establish those platform outcomes on the
+integrated PR head; the earlier failing artifacts remain historical evidence.
