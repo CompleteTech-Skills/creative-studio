@@ -1,0 +1,42 @@
+test_rejected_unknown_version_closes_owned_connection_without_gc (test_continuity_contracts.RegistryTests.test_rejected_unknown_version_closes_owned_connection_without_gc) ... FAIL
+test_sqlite_pragma_rejection_closes_constructor_connection (test_continuity_contracts.RegistryTests.test_sqlite_pragma_rejection_closes_constructor_connection) ... FAIL
+test_schema_initialization_rejection_closes_and_rolls_back_native_state (test_continuity_contracts.RegistryTests.test_schema_initialization_rejection_closes_and_rolls_back_native_state) ... FAIL
+test_successful_constructor_transfers_connection_until_explicit_close (test_continuity_contracts.RegistryTests.test_successful_constructor_transfers_connection_until_explicit_close) ... ok
+
+======================================================================
+FAIL: test_rejected_unknown_version_closes_owned_connection_without_gc (test_continuity_contracts.RegistryTests.test_rejected_unknown_version_closes_owned_connection_without_gc)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-continuity113/tests/test_continuity_contracts.py", line 573, in test_rejected_unknown_version_closes_owned_connection_without_gc
+    self.assert_native_connection_closed(captured[0])
+  File "/tmp/hatch-continuity113/tests/test_continuity_contracts.py", line 560, in assert_native_connection_closed
+    with self.assertRaisesRegex(sqlite3.ProgrammingError,'closed database'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ProgrammingError not raised
+
+======================================================================
+FAIL: test_sqlite_pragma_rejection_closes_constructor_connection (test_continuity_contracts.RegistryTests.test_sqlite_pragma_rejection_closes_constructor_connection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-continuity113/tests/test_continuity_contracts.py", line 588, in test_sqlite_pragma_rejection_closes_constructor_connection
+    self.assert_native_connection_closed(captured[0])
+  File "/tmp/hatch-continuity113/tests/test_continuity_contracts.py", line 560, in assert_native_connection_closed
+    with self.assertRaisesRegex(sqlite3.ProgrammingError,'closed database'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ProgrammingError not raised
+
+======================================================================
+FAIL: test_schema_initialization_rejection_closes_and_rolls_back_native_state (test_continuity_contracts.RegistryTests.test_schema_initialization_rejection_closes_and_rolls_back_native_state)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-continuity113/tests/test_continuity_contracts.py", line 609, in test_schema_initialization_rejection_closes_and_rolls_back_native_state
+    self.assert_native_connection_closed(captured[0])
+  File "/tmp/hatch-continuity113/tests/test_continuity_contracts.py", line 560, in assert_native_connection_closed
+    with self.assertRaisesRegex(sqlite3.ProgrammingError,'closed database'):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ProgrammingError not raised
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.139s
+
+FAILED (failures=3)
