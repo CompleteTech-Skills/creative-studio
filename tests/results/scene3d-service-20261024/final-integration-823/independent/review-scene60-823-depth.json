@@ -1,0 +1,17 @@
+[
+  {
+    "composed_transform_depth": 128,
+    "accepted": true,
+    "atomic": true
+  },
+  {
+    "composed_transform_depth": 129,
+    "accepted": false,
+    "atomic": true
+  },
+  {
+    "case": "invalid-default-registration",
+    "accepted": false,
+    "catalog_unchanged": true
+  }
+]

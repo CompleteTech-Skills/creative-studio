@@ -1,0 +1,28 @@
+{
+  "dependencies": {
+    "native_module": "246979e97c2622ef1ecf043ca19ae346d5d4c6bc28409774f3192ef4aceb2017",
+    "probe_source": "9fb20f454d3a87030089c211be04a8f11f79ebd85d23276220fb428d719322ef"
+  },
+  "dependency_fingerprint": "316a9d7ba57198b96201185d6a87a9721654a704fee2fe787247690943e1a3ce",
+  "discovered": true,
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": false,
+  "operation": "native.acquisition",
+  "payloads": [],
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "contract-module-only",
+  "schema_version": 1,
+  "status": "untested",
+  "version": null
+}
