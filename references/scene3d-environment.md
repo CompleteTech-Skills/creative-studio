@@ -59,6 +59,12 @@ spanning [0, 1]. The stored OBJ uses bottom-left V, which the native importer
 converts to glTF V. Each LOD uses the same coordinates at its shared vertices.
 The option defaults to `false` and preserves existing recipe and OBJ bytes
 when omitted.
+`test_saved_planar_terrain_uvs_match_lods_and_native_obj_import` verifies the
+saved boolean, unchanged assets for explicit `false`, shared ground/LOD UVs,
+and actual GLB/glTF native roundtrips with preserved triangles. It rejects
+non-boolean recipe options before publication. With `HATCH_RIG_INTEROP_TEST=1`,
+`test_khronos_accepts_saved_planar_ground_and_lod_transports` also runs the
+independent Khronos validator on both formats for the ground and each saved LOD.
 
 Tree placement checks complete crown footprint clearance at the boundary and
 exclusions and uses a grid index for minimum-distance tests. Spacing defaults
