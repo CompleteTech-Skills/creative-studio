@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -42,6 +43,28 @@ class MeshCLI(unittest.TestCase):
             for name,record in report['export']['files'].items():
                 data=(root/'copy'/name).read_bytes()
                 self.assertEqual(hashlib.sha256(data).hexdigest(),record['sha256'])
+    def test_cli_import_retains_and_reopens_empty_obj_material_library(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            obj = root/'mesh.obj'
+            obj.write_bytes(b'mtllib library\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+            (root/'library').write_bytes(b'')
+            destination = root/'copy'
+            cli = Path(__file__).resolve().parents[1]/'scripts/model3d.py'
+            result = subprocess.run([sys.executable, str(cli), 'mesh', 'import',
+                                     '--file', str(obj), '--destination', str(destination)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((destination/'manifest.json').read_text())
+            self.assertEqual(manifest, json.loads(result.stdout)['export'])
+            empty = {'bytes': 0, 'sha256': hashlib.sha256(b'').hexdigest()}
+            self.assertEqual(manifest['files']['source/library'], empty)
+            receipt = json.loads((destination/'source.json').read_text())
+            self.assertIn({'original_path': 'library', 'path': 'source/library', **empty}, receipt['files'])
+            self.assertEqual((destination/'source/library').read_bytes(), b'')
+            self.assertEqual(load_character_model(destination/'source/mesh.obj').geometry.triangle_count, 1)
+            self.assertEqual(load_character_model(destination/'model.glb').geometry.triangle_count, 1)
+
     def test_changed_snapshot_never_publishes_export(self):
         from model3d_mesh_import import import_mesh
         from rig_errors import RigError

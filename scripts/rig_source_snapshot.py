@@ -63,9 +63,12 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
     entry = Path(path).absolute()
     require(entry.suffix.lower() in ('.glb', '.gltf', '.obj', '.blend'),
             'RIG_FORMAT', 'Source snapshots support GLB, glTF, OBJ and packed Blender files.')
-    source_root = entry.parent.resolve()
+    try:
+        source_root = entry.parent.resolve()
+        source_info = source_root.stat()
+    except (OSError, RuntimeError) as exc:
+        raise RigError('RIG_SOURCE', 'Choose a regular model file.', asset=entry.name) from exc
     entry = source_root / entry.name
-    source_info = source_root.stat()
     root_identity = (source_info.st_dev, source_info.st_ino)
     temporary = tempfile.TemporaryDirectory(prefix='rig-source-')
     root = Path(temporary.name).resolve()
@@ -73,7 +76,8 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
     total = 0
     read_bytes = 0
 
-    def capture(source, maximum):
+    def capture(source, maximum, *, code='RIG_LIMIT_SOURCE',
+                message='Source exceeds its encoded-byte budget.', allow_empty=False):
         nonlocal total, read_bytes
         source = Path(source).absolute()
         try:
@@ -87,9 +91,13 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
         if name not in records:
             require(len(records) < limits['archive_files'], 'RIG_LIMIT_FILES', 'Source closure exceeds its file budget.')
             with open_payload(source_root, name, root_identity=root_identity) as (stream, info):
-                ceiling = min(maximum, limits['source_bytes'], limits['dependency_bytes']-total,
-                              limits['memory_bytes']//3)
-                require(0 < info.st_size <= ceiling, 'RIG_LIMIT_SOURCE', 'Source exceeds its encoded-byte budget.', asset=name)
+                require(allow_empty or info.st_size > 0,
+                        'RIG_LIMIT_SOURCE', 'Source must contain bytes.', asset=name)
+                require(info.st_size <= min(maximum, limits['source_bytes']), code, message, asset=name)
+                require(info.st_size <= limits['dependency_bytes'] - total,
+                        'RIG_LIMIT_DEPENDENCIES', 'Source closure exceeds its encoded-byte budget.', asset=name)
+                require(info.st_size <= limits['memory_bytes']//3,
+                        'RIG_LIMIT_MEMORY', 'Source exceeds its encoded memory budget.', asset=name)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 digest = hashlib.sha256(); count = 0
                 with target.open('xb') as output:
@@ -101,8 +109,10 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
             total += count
             aliases[alias] = name
             records[name] = dict(path=name, bytes=count, sha256=digest.hexdigest())
-        require(records[name]['bytes'] <= maximum, 'RIG_LIMIT_SOURCE', 'Repeated source exceeds this parser read budget.', asset=name)
-        read_bytes += records[name]['bytes']
+        size = records[name]['bytes']
+        require(allow_empty or size > 0, 'RIG_LIMIT_SOURCE', 'Source must contain bytes.', asset=name)
+        require(size <= maximum, code, message, asset=name)
+        read_bytes += size
         require(read_bytes * 3 <= limits['memory_bytes'], 'RIG_LIMIT_MEMORY', 'Aggregate parser source reads exceed their encoded memory budget.')
         return target.read_bytes()
 
