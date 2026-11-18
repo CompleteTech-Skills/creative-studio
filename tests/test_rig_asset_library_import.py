@@ -231,3 +231,48 @@ class NativeImportTests(unittest.TestCase):
         self.assertNotIn(marker, json.dumps(error.exception.report))
         self.assertTrue(error.exception.__suppress_context__)
         self.assertEqual(self.library.list_references(), [])
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit',
+    )
+    def test_blender_fixture_retains_original_and_two_verified_derivatives(self):
+        reference = self.pipeline.import_blender_fixture(
+            identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        reopened = AssetLibrary(self.library_path)
+        manifest = reopened.resolve(reference)
+        provenance = manifest['provenance']
+        report = resolve_import(reopened, reference)
+        original = provenance['sources'][0]
+        blender, normalization = provenance['conversions']
+        self.assertTrue(provenance['fixture'])
+        self.assertEqual(original['path'], 'source/fixture.blend')
+        self.assertEqual(original['role'], 'source')
+        self.assertEqual(original['format'], 'binary')
+        self.assertEqual(blender['inputs'], [original])
+        self.assertEqual(normalization['inputs'], blender['outputs'])
+        self.assertEqual(report['blender']['inspection']['build'], '67807e1800cc')
+        self.assertEqual(report['blender']['inspection']['external_dependencies'], 0)
+        self.assertEqual(report['native_observation']['triangles'], 1)
+        self.assertEqual(report['native_observation']['vertices'], 3)
+        for record, digest, magic in (
+            (original, report['blender']['source_sha256'], b'BLENDER'),
+            (blender['outputs'][0], report['blender']['derivative_sha256'], b'glTF'),
+            (normalization['outputs'][0], report['normalized_sha256'], b'glTF'),
+        ):
+            payload = reopened.read_file(reference, record['path'])
+            self.assertTrue(payload.startswith(magic))
+            self.assertEqual(hashlib.sha256(payload).hexdigest(), record['sha256'])
+            self.assertEqual(record['sha256'], digest)
+        for name in ('source-khronos.json', 'normalized-khronos.json'):
+            validation = json.loads(reopened.read_file(reference, name))
+            self.assertEqual(validation['validator'], '2.0.0-dev.3.10')
+            self.assertTrue(validation['ok'])
+
+    def test_regular_import_rejects_blender_paths_without_worker(self):
+        with patch('asset_import_blender.create_fixture') as worker:
+            with self.assertRaises(RigError) as error:
+                self.import_source(self.root / 'unknown.blend', fixture=True)
+            self.assertEqual(error.exception.report['code'], 'SCENE3D_IMPORT_FORMAT')
+            worker.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
