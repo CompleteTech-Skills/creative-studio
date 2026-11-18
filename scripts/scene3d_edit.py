@@ -137,7 +137,8 @@ def main(argv=None):
         batch = apply_commands(graph, library, commands)
         output = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
             scene_version=args.scene_version, project_version=args.project_version,
-            derived_documents=batch['derived_documents'])
+            derived_documents=batch['derived_documents'],
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         output['operations'] = len(batch['results'])
     print(json.dumps(output, ensure_ascii=False, allow_nan=False, indent=2))
     return 0
