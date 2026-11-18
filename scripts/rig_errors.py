@@ -323,7 +323,11 @@ def open_payload(root: str | Path, name: str, *, root_identity=None, profile: st
     try:
         check_root(root.stat())
         if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
-            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            directory_access = os.O_RDONLY
+            if profile == 'scene3d':
+                # Scene3D only searches directories for known dependency names.
+                directory_access = getattr(os, 'O_PATH', getattr(os, 'O_SEARCH', os.O_RDONLY))
+            directory_flags = directory_access | os.O_DIRECTORY | os.O_NOFOLLOW
             if capability is not None:
                 descriptors.append(os.dup(capability.fd))
                 directory_parts = root_parts

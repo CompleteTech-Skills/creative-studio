@@ -36,6 +36,24 @@ class SceneServiceTests(unittest.TestCase):
         self.bundle = build_example(self.root/'source')
         self.scene = deepcopy(self.bundle['documents']['example-scene.json'])
 
+    @unittest.skipUnless((hasattr(os, 'O_PATH') or hasattr(os, 'O_SEARCH')) and os.geteuid() != 0,
+                         'Requires directory search descriptors and an unprivileged user')
+    def test_load_project_through_search_only_ancestor(self):
+        parent = self.root/'search-only'
+        parent.mkdir(mode=0o700)
+        source = parent/'source'
+        (self.root/'source').rename(source)
+        parent.chmod(0o100)
+        try:
+            self.assertTrue(os.access(parent, os.X_OK))
+            with self.assertRaises(PermissionError):
+                list(parent.iterdir())
+
+            verified = load_project(source)
+            self.assertEqual(verified['inventory'], self.bundle['inventory'])
+        finally:
+            parent.chmod(0o700)
+
     def nested_catalog(self, *, property='translation'):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
         outer = deepcopy(self.bundle['documents']['example-prefab.json'])
