@@ -75,10 +75,13 @@ class BatchTests(unittest.TestCase):
             deadline=time.monotonic()+30;owned=None
             while time.monotonic()<deadline:
                 value=batches.status(root)['journal']['items']['first'];owned=value['active_worker']
-                if owned is not None and (root/owned['relative_root']/'state.json').exists():break
+                # The queued state is written before Popen. Wait for the durable
+                # launch receipt before interrupting the scheduler.
+                if owned is not None and owned.get('supervisor_identity') is not None:break
                 if process.poll() is not None:self.fail((self.root/'scheduler.log').read_text())
                 time.sleep(.01)
-            self.assertIsNotNone(owned);process.kill();process.wait(timeout=5)
+            else:self.fail('Scheduler did not record an owned supervisor before the deadline')
+            process.kill();process.wait(timeout=5)
         self.wait_worker(root/owned['relative_root'])
         completed=batches.run_batch(root)['journal']
         self.assertEqual(completed['status'],'completed')
