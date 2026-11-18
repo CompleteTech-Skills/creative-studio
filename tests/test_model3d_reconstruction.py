@@ -11,7 +11,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from model3d_reconstruction import read_image,mask_from_image,publish
+from model3d_reconstruction import Evidence,read_image,mask_from_image,publish
 from model3d_reconstruction_solids import extrude_contour,extrude_mask,revolve_profile,heightfield
 from rig_errors import RigError
 from rig_import import load_character_model
@@ -140,6 +140,23 @@ class ReconstructionTests(unittest.TestCase):
             self.assertFalse(mask_from_image(evidence,mode='alpha',threshold=128).any())
             with patch('model3d_reconstruction.MAX_IMAGE_PIXELS',2):
                 with self.assertRaises(RigError):read_image(path)
+
+    def test_mask_from_image_checks_direct_evidence_budget_before_open(self):
+        cases = (
+            (b'', 1, 1, 'RECON_SOURCE_LIMIT'),
+            (b'12345', 1, 1, 'RECON_SOURCE_LIMIT'),
+            (b'1234', 2, 3, 'RECON_SOURCE_LIMIT'),
+            (b'1234', 0, 2, 'RECON_SOURCE'),
+        )
+        with patch('model3d_reconstruction.MAX_IMAGE_BYTES', 4), \
+                patch('model3d_reconstruction.MAX_IMAGE_PIXELS', 4), \
+                patch('model3d_reconstruction.Image.open',
+                      side_effect=AssertionError('Image opened before preflight')):
+            for payload, width, height, code in cases:
+                evidence = Evidence('image.png', payload, 'mask', width, height)
+                with self.subTest(evidence=evidence), self.assertRaises(RigError) as caught:
+                    mask_from_image(evidence, mode='luminance')
+                self.assertEqual(caught.exception.report['code'], code)
 
     def test_image_parent_alias_preserves_leaf_symlink_rejection(self):
         with tempfile.TemporaryDirectory() as temporary:

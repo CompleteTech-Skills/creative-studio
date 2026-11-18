@@ -79,6 +79,14 @@ def mask_from_image(evidence, *, mode, threshold=127):
     require(isinstance(evidence,Evidence),'RECON_SOURCE','Expected captured image evidence.')
     require(mode in ('alpha','luminance') and type(threshold) is int and 0<=threshold<=254,
             'RECON_MASK','Select alpha/luminance and an integer threshold0..254.')
+    require(type(evidence.payload) is bytes, 'RECON_SOURCE', 'Expected immutable encoded image bytes.')
+    require(0 < len(evidence.payload) <= MAX_IMAGE_BYTES, 'RECON_SOURCE_LIMIT',
+            'Encoded image size is outside the source budget.')
+    require(type(evidence.width) is int and type(evidence.height) is int
+            and evidence.width > 0 and evidence.height > 0, 'RECON_SOURCE',
+            'Evidence dimensions must be positive integers.')
+    require(evidence.width <= MAX_IMAGE_PIXELS // evidence.height, 'RECON_SOURCE_LIMIT',
+            'Observation exceeds the source pixel budget.')
     with Image.open(io.BytesIO(evidence.payload)) as image:
         require(image.size==(evidence.width,evidence.height),'RECON_SOURCE','Evidence dimensions disagree.')
         if mode=='alpha':
