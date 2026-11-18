@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from physics_backends import BackendError,canonical,parse,digest,_run_process,_inventory
-from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output,metrics,_read_verified_cache,_Reader
+from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output,metrics,_read_verified_cache,_Reader,_native_time_scale
 from physics_softbody_example import build_softbody_inputs
 
 
@@ -35,17 +35,26 @@ class SoftBodyAdmissionTests(unittest.TestCase):
         world['solver']['fixed_step']={'numerator':1001,'denominator':4800000}
         with self.assertRaises(BackendError):admit(world)
 
+    def test_physical_clock_and_native_mass_floor(self):
+        world,_=build_softbody_inputs()
+        self.assertAlmostEqual(_native_time_scale(world),1000**.5/24)
+        world['components'][0]['mass']=.01*world['components'][0]['vertex_count']
+        admit(world)
+        world['components'][0]['mass']-=.0001
+        with self.assertRaises(BackendError) as error:admit(world)
+        self.assertEqual(error.exception.report['code'],'PHYSICS_MASS_UNSUPPORTED')
+
     def test_native_report_rejects_false_clock_and_requested_properties(self):
         world,_=build_softbody_inputs();world['frame_range']['end']=2
         comp=world['components'][0]
         report=dict(ok=True,is_baked=True,world_sha256=digest(canonical(world)),application_version='4.5.3 LTS',application_build='67807e1800cc',operation='simulate',sample_count=2,vertex_count=66,
-            fps=24,fps_base=1,time_scale=1,disk_cache=True,capabilities=dict(surface_deformation=True,volume_preservation=False,pressure=False,two_way_rigid_coupling=False),native_settings=dict(mass=comp['mass']/comp['vertex_count'],
+            fps=24,fps_base=1,time_scale=_native_time_scale(world),disk_cache=True,capabilities=dict(surface_deformation=True,volume_preservation=False,pressure=False,two_way_rigid_coupling=False),native_settings=dict(mass=comp['mass']/comp['vertex_count'],
             friction=0,pull=comp['stiffness'],push=comp['stiffness'],damping=comp['damping']*50,
             step_min=1000,step_max=1000,use_auto_step=False,use_goal=False))
         data=dict(component='ball',samples=[dict(frame=f,positions=[[0,0,0]]*66) for f in range(2)])
         payloads={'simulate-report.json':canonical(report),'deformation.json':canonical(data)}
         _validate_output(None,world,payloads)
-        for key,value in [('fps',23),('disk_cache',False),('time_scale',.5)]:
+        for key,value in [('fps',23),('disk_cache',False),('time_scale',1)]:
             altered=deepcopy(report);altered[key]=value
             with self.assertRaises(BackendError):_validate_output(None,world,dict(payloads,**{'simulate-report.json':canonical(altered)}))
         pinned_world=deepcopy(world);pinned_world['components'][0]['pins']=[2]
@@ -160,6 +169,31 @@ class NativeSoftBodyTests(unittest.TestCase):
     def _collapse_initial(path):
         data=parse(path.read_bytes());data['samples'][0]['positions']=[[0,0,0] for _ in data['samples'][0]['positions']]
         path.write_bytes(canonical(data))
+
+    def test_real_physical_seconds_and_mass_boundary(self):
+        centers={}
+        with self.workspace('physical-clock') as name:
+            for numerator,denominator,end,mass in ((12,1,5,1.),(24,1,9,1.),(24,1,9,.66),(30000,1001,9,1.)):
+                with self.subTest(fps=(numerator,denominator),mass=mass):
+                    world,payloads=build_softbody_inputs()
+                    world['fps']=dict(numerator=numerator,denominator=denominator)
+                    world['frame_range']['end']=end
+                    world['solver']['fixed_step']=dict(numerator=denominator,denominator=numerator*1000)
+                    world['components'][0]['mass']=mass
+                    backend=SoftBodyBackend(os.environ['HATCH_BLENDER']);prepared=backend.prepare(world,payloads)
+                    try:
+                        result=backend.simulate(prepared)
+                        cache=Path(name)/(str(numerator)+'-'+str(denominator)+'-'+str(mass))
+                        backend.bake(result,cache);verify_cache(cache)
+                        samples=parse((cache/'deformation.json').read_bytes())['samples']
+                        observed=[sum(v[1] for v in sample['positions'])/66 for sample in samples]
+                        fps=numerator/denominator
+                        # Before impact, all vertices have the same SI acceleration.
+                        # This also exercises native0.01 mass just above its clamp.
+                        self.assertLessEqual(max(abs(y-(3-.5*9.81*(i/fps)**2)) for i,y in enumerate(observed)),.001)
+                        centers[numerator,denominator,mass]=observed
+                    finally:backend.cleanup(prepared)
+            self.assertLessEqual(max(abs(a-b) for a,b in zip(centers[12,1,1.],centers[24,1,1.][::2])),.001)
 
     def test_real_deformation_and_reopened_cache(self):
         backend=SoftBodyBackend(os.environ['HATCH_BLENDER']);world,payloads=build_softbody_inputs()

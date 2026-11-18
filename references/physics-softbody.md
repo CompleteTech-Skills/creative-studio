@@ -11,10 +11,10 @@ The bounded adapter supports one closed connected triangulated soft body and
 static canonical box/sphere collider meshes. The common physics world contract
 owns component mass, edge stiffness, damping, gravity, pins and collider IDs.
 Stiffness is admitted from 0.01 to 0.99 and maps to native pull/push. Total mass
-is divided by the vertex count to set native vertex mass. Normalized damping
+is divided by the vertex count to set native vertex mass. Each native vertex must have at least 0.01 kg; lower requests fail before execution because Blender internally clamps the force denominator below that boundary. Normalized damping
 maps to Blender's edge damping range 0–50. Air friction is explicitly zero. Numerical stability is checked from actual evaluated output; admission alone does not promise a stable trajectory for every parameter combination.
 Pins use a source-bound goal vertex group; numerical pin residuals must be
-inspected. Native fixed minimum/maximum steps per output interval are
+inspected. Blender 4.5.3 soft-body timing is frame-based and ignores render FPS. Its gravity force scale is 0.001. The adapter sets native speed to `sqrt(1000) / fps` to map solver evolution to physical seconds; actual 12/24-fps free-fall and equal-time tests check the mapping against SI gravity with a 1 mm position tolerance. Native speed is read back during simulation and reopen, and is bound into the private worker job. The derivation follows [the pinned Blender implementation](https://github.com/blender/blender/blob/v4.5.3/source/blender/blenkernel/intern/softbody.cc); it is qualified by actual solver tests, including the minimum supported vertex mass. Native fixed minimum/maximum steps per output interval are
 `iterations * substeps`, with adaptive step selection disabled. Requests whose
 rational fixed interval disagrees with these configured limits are rejected.
 Native substep state is not exported or asserted independently. The retained fixture uses 1,000 native steps per 24 fps output interval (1/24,000 second), with a 100,000 step budget. Output is bounded to 128 frames and a Blender FPS numerator at most 32,767.
@@ -43,7 +43,7 @@ hashes, malformed topology and exceeded resource limits fail before publication.
 
 Run the explicit solver gate with `HATCH_SOFTBODY_TEST=1 HATCH_BLENDER=/path/to/blender python -B -m unittest discover -s tests -p test_rig_physics_softbody.py -v`. Ordinary 2D discovery does not execute this gate. The native workflow runs it with the existing checksum-verified Blender and isolated host dependencies. Diagnostic artwork remains an engineering fixture, and the broader stage/parent acceptance remains open.
 
-The retained default engineering fixture uses stiffness 0.2 and damping 0.2.
+Historical pre-clock-correction evidence below used native speed 1. It remains exact geometry/cache evidence, but its frame labels did not establish physical seconds. New clock-correct evidence must be checked against its own worker and source revision. The historical engineering fixture uses stiffness 0.2 and damping 0.2.
 At 1,000 native steps per frame, its 100-frame measured final center is about
 0.491 m above the floor and maximum final-ten-frame vertex step is 0.014 m.
 The matched stiffness-0.7 control deforms less but continues bouncing at frame 99;

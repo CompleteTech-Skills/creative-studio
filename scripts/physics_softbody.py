@@ -33,6 +33,12 @@ def validate_manifest(value):
     require(error is None,'PHYSICS_CACHE_CORRUPT','Invalid soft-body cache manifest: '+(str(error.message) if error else ''))
 
 
+def _native_time_scale(world):
+    # Blender4.5.3 softbody.cc scales gravity by0.001 and integrates in
+    # frame units. speed*sqrt(0.001) maps one native frame to SI seconds.
+    return math.sqrt(1000.)/float(_ratio(world['fps']))
+
+
 def admit(world):
     world=_world(world);solver=world['solver'];components=world['components'];budget=world['budgets']
     require(solver['backend']=='blender' and solver['adapter_version']=='1.0.0','PHYSICS_BACKEND','Select Blender1.0.0 for soft bodies')
@@ -50,6 +56,8 @@ def admit(world):
     comp['vertex_count']=int(comp['vertex_count']);comp['pins']=[int(v) for v in comp['pins']]
     require(comp['parent'] is None and 4<=comp['vertex_count']<=4096 and .01<=comp['stiffness']<=.99 and .01<=comp['mass']<=1000,
         'PHYSICS_SETTINGS','Unsupported soft-body parent, mesh size, stiffness or mass')
+    require(comp['mass']/comp['vertex_count']>=.01,'PHYSICS_MASS_UNSUPPORTED',
+            'Native soft bodies require at least0.01kg per vertex; lower masses are internally clamped')
     require(1<=len(world['bodies'])<=16 and set(comp['colliders'])=={b['id'] for b in world['bodies']},
         'PHYSICS_CAPABILITY_UNAVAILABLE','Explicit static colliders must account for all rigid bodies')
     for body in world['bodies']:
@@ -198,7 +206,7 @@ class SoftBodyBackend(BlenderBackend):
             require(worker_path.is_file() and not worker_path.is_symlink(),'PHYSICS_WORKER_TRUST','Worker must be a regular package file')
             worker=worker_path.read_bytes();_write(root/'worker.py',worker)
             _write(root/'world.json',canonical(world));token=uuid.uuid4().hex
-            job=dict(protocol=1,world=world,world_sha256=digest(canonical(world)),meshes=meshes,worker_sha256=digest(worker),mode='simulate')
+            job=dict(protocol=2,native_time_scale=_native_time_scale(world),world=world,world_sha256=digest(canonical(world)),meshes=meshes,worker_sha256=digest(worker),mode='simulate')
             _write(root/'softbody-job.json',canonical(job))
             replay_job=deepcopy(job);replay_job['mode']='reopen'
             _write(root/'softbody-reopen-job.json',canonical(replay_job))
@@ -265,7 +273,7 @@ def _validate_output(root,world,payloads=None):
         report.get('application_version')=='4.5.3 LTS' and report.get('application_build')=='67807e1800cc' and
         report.get('capabilities')==dict(surface_deformation=True,volume_preservation=False,pressure=False,two_way_rigid_coupling=False) and
         report.get('operation')=='simulate' and report.get('sample_count')==world['frame_range']['end'] and report.get('vertex_count')==comp['vertex_count'],'PHYSICS_BAKE_FAILED','Native soft-body bake missing or inconsistent')
-    require(report.get('fps')==world['fps']['numerator'] and report.get('fps_base')==world['fps']['denominator'] and report.get('time_scale')==1 and report.get('disk_cache') is True,
+    require(report.get('fps')==world['fps']['numerator'] and report.get('fps_base')==world['fps']['denominator'] and type(report.get('time_scale')) in (int,float) and abs(report['time_scale']-_native_time_scale(world))<=1e-5 and report.get('disk_cache') is True,
             'PHYSICS_CACHE_CORRUPT','Native clock or disk cache differs from requested settings')
     steps=world['solver']['iterations']*world['solver']['substeps']
     settings=report.get('native_settings',{})
@@ -344,7 +352,7 @@ def _read_verified_cache(root,*,expected_world_sha256=None):
     except EvidenceError as exc:raise BackendError('PHYSICS_CACHE_CORRUPT',str(exc)) from exc
     worker=Path(__file__).with_name('physics_softbody_worker.py').read_bytes()
     require(payloads['worker.py']==worker,'PHYSICS_CACHE_CORRUPT','Native worker differs from installed adapter version')
-    job=dict(protocol=1,world=world,world_sha256=manifest['world_sha256'],meshes=meshes,worker_sha256=digest(worker),mode='simulate')
+    job=dict(protocol=2,native_time_scale=_native_time_scale(world),world=world,world_sha256=manifest['world_sha256'],meshes=meshes,worker_sha256=digest(worker),mode='simulate')
     require(payloads['softbody-job.json']==canonical(job) and payloads['softbody-reopen-job.json']==canonical(dict(job,mode='reopen')),
             'PHYSICS_CACHE_CORRUPT','Native jobs differ from admitted source geometry/world/worker')
     backend=manifest['backend']

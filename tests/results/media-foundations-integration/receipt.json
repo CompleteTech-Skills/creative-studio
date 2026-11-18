@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0.0",
+  "generated_utc": "2026-11-13T12:44:12.042557+00:00",
+  "validated_code_sha": "44575d4765f34d93080139115de421f14dcf8b32",
+  "base_sha": "4d83833d5d45a8f43842d924132925d8c631ea0f",
+  "source_prs": {
+    "278": "ae7ad8d109c07c1906069650a86d96bb23fa1a91",
+    "289": "f03122f2fcb670b7f7d2b2d7158adb922705cdb3"
+  },
+  "integration": "Both source histories preserved; release gate keeps physics timing/editor/cinematic coverage; README retains both sections.",
+  "checks": [
+    {
+      "command": "scripts/test_rig_gate.py schema-math",
+      "passed": 149,
+      "skipped": 0,
+      "log": "schema-math.log",
+      "note": "Compatibility also discovered1009 legacy tests; discovery is not their execution."
+    },
+    {
+      "command": "unittest production_contracts, production_sources, production_bundle, rig_skinning, rig_weight_input_boundaries",
+      "passed": 82,
+      "skipped": 0,
+      "log": "combined-unit.log"
+    },
+    {
+      "command": "HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests -p test_silent_video.py -v",
+      "passed": 54,
+      "skipped": 0,
+      "log": "actual-media.log",
+      "actual_ffmpeg_ffprobe": true,
+      "execution_utc": [
+        "2026-11-13T12:43:03Z",
+        "2026-11-13T12:43:32Z"
+      ],
+      "lock": "media-validation.lock",
+      "threads_max": 2
+    },
+    {
+      "command": "scripts/generate_schemas.py --check",
+      "exit": 0
+    },
+    {
+      "command": "scripts/cinematics3d_example.py",
+      "exit": 0,
+      "output": "cinematics-example.json"
+    }
+  ],
+  "source_hashes": {
+    ".github/workflows/silent-video.yml": "38e95303d7fb777dad455c8db1ddb361ecfe1c30e0bdc576b79116c990864a08",
+    "README.md": "53c59d5eec97ec69fb2538dfdaac545a03556ace25ed762d81bc76b84bb24dee",
+    "SKILL.md": "831b8ac5a379bac5cb094f2908702c291fd82df7055c4b4746bd523e708a0403",
+    "examples/cinematics3d/README.md": "b160ae4c6d9d74e93a33f862a71cb5df0323a6ab8503c4054a3118caa589e2dd",
+    "examples/cinematics3d/exposure.json": "848d88224592bb5af8b3ae2926b446631d8e96cefeb4e6b12a070d453511cb67",
+    "examples/cinematics3d/grain.json": "b610620b4d39d43cd02a026a54a68903d4e51a68652da1ecae683e0bc3fa4ca7",
+    "examples/cinematics3d/look.json": "5966c85e34ff14d1b8dbe6fd39bc376955dcd60e164deb4eb6dd490dc72c98f0",
+    "examples/cinematics3d/scene-stack.json": "c3985aa5374ba18a06756bda9f754fb5c0a4a9ab79d41d22bc768f750126a7a1",
+    "examples/cinematics3d/scene.json": "759f472659091ea8896be8ec094adca0cd043789d5e633678288c0e4e57c7a18",
+    "examples/cinematics3d/shot-stack.json": "31ab01071ed697eb669178946f67cda79df10619f8884fc1931c9e5c3378b240",
+    "examples/cinematics3d/shot.json": "706f35278ac4a7f0690ff88d70ffbfba4a1df0cc4fb5853c286c0324f9881a16",
+    "profiles/cinematics3d-effect.schema.json": "e703a60c381eab73441ffe9e67a9b41240e3bbb9cc088256cf6adf61a80270a1",
+    "profiles/cinematics3d-graph.schema.json": "352c71c0153432ee2d546b84174b8e99b269bdd4ed038e06b1d95666546bd5c3",
+    "profiles/cinematics3d-preset.schema.json": "6ce0cd019bc82d8f50468fe2cfba033be5aa197cca04c80624624432ed35a077",
+    "profiles/cinematics3d-render.schema.json": "580f38316e0bef883d99303779c5e399eb7103888c2ddf06162c2ddaa9b04643",
+    "profiles/cinematics3d-scene.schema.json": "ef809a4f85d0754604f2ab64dd2536b17b42c8756150d4b560bbdf0a1da3439e",
+    "profiles/cinematics3d-shot.schema.json": "692ff866c41dd7f683278cb258b9f97a7bccfd880656b3160eb84cff27b23d91",
+    "profiles/cinematics3d-stack.schema.json": "63b0cc745d1002530bfcb36773970901021c2b41fb49b9192986ede66ea66d5e",
+    "references/cinematics3d-contracts.md": "912a47a0c971d4f78af047fc1939cc580e68de9212a785936f86d4fda3d2c04c",
+    "references/silent-video.md": "7a288e29ce8ace8a728a9f73f2a1c708c086e64ea964618d4b7e599dfe4e7606",
+    "schemas/silent-video-v1/artifact.schema.json": "f86e12a70e54ba713f0da11138ae6f0f2d071489c7b65b39906e7c93f66b5075",
+    "schemas/silent-video-v1/capability.schema.json": "38b6452c576f8140c04313ac0fa9ea11c715681d372d30d5afcaf50328941180",
+    "schemas/silent-video-v1/job.schema.json": "edd0eda4229fb2b3e1d75a8a7cb0990e7269e75f7ced64562cfbd19ce26d0740",
+    "schemas/silent-video-v1/profile.schema.json": "8266407f8ffdaefd45dae43acbf1df01475e7910f802b7b3dc02b15471dc3412",
+    "schemas/silent-video-v1/request.schema.json": "b500cd90ede1e31d0b4d13fc9820f98982fc6ba70a162fa2d2cd7e850bee843d",
+    "schemas/silent-video-v1/source.schema.json": "09b137489c7a4171915ba79bb265218809664d827a0c59bbc3e5ac40ca92054b",
+    "scripts/atomic_publish.py": "310fcf5f43cabab4e79fcd3f1dfc420af9cd5b27385ac5c47524d155ca47c6e3",
+    "scripts/cinematics3d_contracts.py": "e81a1a6ece4f7b2c3d18b4edd5182dae10bec0645f3f87113be8305bf12e51a3",
+    "scripts/cinematics3d_example.py": "49de572a74e3499c3d6e51faa4b030b07f4a3e17849890f54f7d364a1a7d3d4b",
+    "scripts/demonstrate_silent_video.py": "256691cfa71e83a01332ae11009c642c4a4810f5bd5e4ed1550d64748e77f537",
+    "scripts/generate_schemas.py": "4c07713f58d3cb7ebdf99a835554b2a22d51acc812d662258f7412854b86e7b9",
+    "scripts/silent_video.py": "e60f101d3d2d567c9fe6756033a4d05f63b013a65b3d69643046a654269b9d1f",
+    "scripts/test_rig_gate.py": "3fe1e251b7e1b41e2ccd61d7653f91275d16be66813a519122a6a62dba6c9f01",
+    "tests/test_rig_cinematics3d_contracts.py": "738a36290d2730528f584461885b9ada07443765da7b46b8e47bafb4c2f6e1bb",
+    "tests/test_silent_video.py": "2dab645b073b27a6dbd97c40a0890e9ccc92cf3b0a903049488b06e161db7006"
+  },
+  "evidence_hashes": {
+    "schema-math.log": "a6c96e71909adc2cc5a41b187e87290982fdf591eb579d9cb22496085941dab9",
+    "combined-unit.log": "bfaade427a411097cf710cf0ccc6e3cf85d2fcc215c2b5b3cbb21cde0781ef2a",
+    "actual-media.log": "79a418f612e5ba020642785785dccadeb2d1f3c737bb58898d6e9cf602f3c889",
+    "cinematics-example.json": "2f8589c0365b5e5d2f7f7d0463c458c758762c00440ab2b9e49cf5cfc68193c7"
+  },
+  "native_queue_note": "Original own native-lane waiter was confirmed childless/unstarted then cancelled under bounded-lane update; its empty wait log is retained in external media-foundations-evidence. Only replacement media-lane run executed.",
+  "boundaries": [
+    "Cinematic authoring contracts only; no new effect execution or rendering claimed.",
+    "Synthetic media fixtures; visual approval and production-art acceptance not performed.",
+    "Parent cinematic238 and later silent delivery scopes remain open.",
+    "Existing source receipts remain explicitly historical; this aggregate receipt hashes the integrated candidate source."
+  ]
+}
