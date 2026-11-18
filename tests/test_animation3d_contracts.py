@@ -93,6 +93,43 @@ class AnimationContractTests(unittest.TestCase):
         local=am.compose(rotation=am.euler_xyz([0,0,math.pi/4]))
         with self.assertRaises(RigError):am.local_to_world(local,parent)
 
+    def test_quaternion_log_canonicalizes_exact_half_turns(self):
+        import math
+        import numpy as np
+        import animation3d_math as am
+        from rig_math import axis_angle
+
+        for axis in ([1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 2, 0], [1, -1, 0]):
+            unit_axis = np.asarray(axis) / np.linalg.norm(axis)
+            expected_log = unit_axis * (math.pi / 2)
+            for sign in (1, -1):
+                for scalar in (0.0, -0.0):
+                    with self.subTest(axis=axis, sign=sign, scalar=repr(scalar)):
+                        log = am.quaternion_log([*(sign * unit_axis), scalar])
+                        np.testing.assert_allclose(log, expected_log, rtol=0, atol=1e-15)
+                        self.assertFalse(np.signbit(log[log == 0]).any())
+                        for fraction in (0.25, 0.5, 1):
+                            np.testing.assert_allclose(
+                                am.quaternion_exp(fraction * log),
+                                axis_angle(axis, fraction * math.pi),
+                                rtol=0, atol=1e-15,
+                            )
+
+    def test_quaternion_log_keeps_near_half_turns_on_the_short_arc(self):
+        import math
+        import numpy as np
+        import animation3d_math as am
+
+        for scalar in (1e-8, -1e-8):
+            value = np.array([0, -1, 0, scalar])
+            angle = math.atan2(1, abs(scalar))
+            expected = [0, -math.copysign(angle, scalar), 0]
+            for sign in (1, -1):
+                with self.subTest(scalar=scalar, sign=sign):
+                    np.testing.assert_allclose(
+                        am.quaternion_log(sign * value), expected, rtol=0, atol=1e-15,
+                    )
+
     def test_metadata_is_not_treated_as_embedded_animation_records(self):
         value=samples()['clip']
         for payload in (dict(source='s',target='t',weight=1,type='custom',enabled=True),dict(numerator=0,denominator=0)):

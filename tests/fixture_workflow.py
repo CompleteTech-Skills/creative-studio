@@ -39,7 +39,7 @@ def fixture_strip(spec, size):
 
 def ingest_fixture(root, data, name, source):
     handoff = hatch.claim(root, data, name)
-    receipt = root.parent / ('fixture-receipt-' + name + '.json')
+    receipt = root.parent.resolve() / ('fixture-receipt-' + name + '.json')
     hatch.atomic(receipt, handoff['receipt_template'])
     return hatch.ingest(root, data, name, source, handoff['token'],
                         'Synthetic fixture for deterministic pipeline tests only.', receipt, True)
