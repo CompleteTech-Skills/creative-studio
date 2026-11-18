@@ -116,6 +116,18 @@ class TopologyTests(unittest.TestCase):
         self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
         self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
 
+    def test_outward_rejects_coplanar_shell_at_subtraction_overflow(self):
+        mesh = tetra()
+        limit = np.finfo(np.longdouble).max * np.longdouble('0.8')
+        spacing = np.spacing(limit)
+        base = np.array([limit, limit, limit, -limit])
+        x = base + spacing * np.array([14, 5, 0, -10])
+        y = base + spacing * np.array([-8, -19, -17, -20])
+        mesh.positions = np.stack((x, y, x - y), axis=-1)
+        self.assertTrue(np.isfinite(mesh.positions).all())
+        self.assertEqual(topology_report(mesh)['degenerate_faces'], [])
+        self.assertCode('MODEL3D_TOPOLOGY_ORIENTATION', lambda: orient_mesh(mesh, outward=True))
+
     def test_outward_rejects_large_coplanar_shell_with_rounding_residual(self):
         mesh = tetra()
         mesh.positions[:] = [[0, 0, 0], [2, 0, 6], [0, 3, -6], [1, 1, 1]]

@@ -125,11 +125,15 @@ def _scaled_positions(positions):
     p = positions.astype(np.longdouble)
     with np.errstate(over='ignore', invalid='ignore'):
         local = p - p[0]
-    if not np.isfinite(local).all():
-        scale = np.max(np.abs(p))
-        local = p / scale - p[0] / scale
-    magnitude = np.max(np.abs(local))
-    return local / magnitude if magnitude else local
+    with np.errstate(under='ignore'):
+        if not np.isfinite(local).all():
+            # Halving makes every finite difference representable in range.
+            # The binary shift preserves the significands of normal results
+            # before subtraction, including differences of nearby large values.
+            half = np.ldexp(p, -1)
+            local = half - half[0]
+        magnitude = np.max(np.abs(local))
+        return local / magnitude if magnitude else local
 
 
 def _exact_coordinates(points):
