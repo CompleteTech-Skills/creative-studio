@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "palette": {
+    "head": "#cc4d33"
+  },
+  "proportions": {
+    "head_width_to_body": 0.5
+  },
+  "forbid_mirror": true,
+  "materials": [
+    "Painted body and ceramic head; engineering fixture."
+  ]
+}

@@ -3,8 +3,10 @@ from pathlib import Path
 import hashlib
 import json
 import os
+import shutil
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import numpy as np
@@ -16,6 +18,7 @@ from rig_gltf import export_geometry
 from rig_import import load_character_model
 from rig_jobs import create_run
 from rig_models import Geometry, Mesh
+import test_rig_asset_library_import as native_import_fixture
 
 class MeshImportTests(unittest.TestCase):
     def test_replaced_source_root_is_rejected_before_reading_redirected_bytes(self):
@@ -272,6 +275,63 @@ class MeshImportTests(unittest.TestCase):
         with patch.object(library,'read_file',return_value=b'corrupt'):
             with self.assertRaises(RigError):import_canonical(library,ref)
 
+    def test_manual_normalized_filename_keeps_legacy_explicit_entry(self):
+        from asset_library import file_record
+        from asset_library_contracts import seal
+        from asset_library_import import TOOL, VERSION
+
+        library, manifest, ref = self.canonical()
+        license_path = self.root/'license.txt'
+        license_path.write_bytes(library.read_file(ref, 'source/license.txt'))
+        mesh_path = self.root/'normalized.glb'
+        export_geometry(self.geometry(), mesh_path)
+        mesh = file_record(mesh_path, 'normalized.glb', 'payload')
+        manifest['files'][0] = mesh
+        manifest['provenance']['sources'] = [mesh]
+        manifest['compatibility']['formats'] = ['glb']
+        manifest['publication']['inventory'][0] = mesh['path']
+        paths = {'normalized.glb': mesh_path, 'source/license.txt': license_path}
+
+        manifest['version'] = '1.1.0'
+        legacy = library.register(seal(manifest), paths)
+        with import_canonical(library, legacy, entry=mesh['path']) as result:
+            self.assertEqual(result.model.geometry.triangle_count, 1)
+            self.assertEqual(result.provenance['source_entry'], mesh['path'])
+            self.assertNotIn('source_unit_scale', result.provenance)
+        with self.assertRaises(RigError) as caught:
+            import_canonical(library, legacy)
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_ENTRY')
+
+        manifest['version'] = '1.2.0'
+        manifest['compatibility']['unit_scale'] = 2
+        nonunit = library.register(seal(manifest), paths)
+        with self.assertRaises(RigError) as caught:
+            import_canonical(library, nonunit, entry=mesh['path'])
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_NORMALIZATION')
+
+        manifest['version'] = '1.3.0'
+        manifest['compatibility']['unit_scale'] = 1
+        manifest['provenance']['tools'] = [dict(name=TOOL, version=VERSION)]
+        claimed = library.register(seal(manifest), paths)
+        with self.assertRaises(RigError) as caught:
+            import_canonical(library, claimed, entry=mesh['path'])
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_NORMALIZATION')
+
+        manifest['version'] = '1.4.0'
+        runtime = dict(mesh, role='runtime')
+        manifest['files'][0] = runtime
+        manifest['provenance']['sources'] = [runtime]
+        manifest['provenance']['tools'] = []
+        manifest['provenance']['conversions'] = [
+            dict(tool='Example Offline Converter', version='1', timestamp=manifest['identity']['created_at'],
+                 operation='Pack and normalize GLB', inputs=[runtime], outputs=[runtime])
+        ]
+        custom = library.register(seal(manifest), paths)
+        for entry in (None, runtime['path']):
+            with self.subTest(entry=entry), import_canonical(library, custom, entry=entry) as result:
+                self.assertEqual(result.model.geometry.triangle_count, 1)
+                self.assertNotIn('source_unit_scale', result.provenance)
+
     def test_actual_external_gltf_binary_image_closure(self):
         import base64,io
         from PIL import Image
@@ -347,6 +407,120 @@ class MeshImportTests(unittest.TestCase):
         with patch.object(rig_errors,'open_payload',racing),self.assertRaises(RigError):
             import_mesh(p)
         self.assertTrue(p.read_bytes().endswith(b'# mutation\n'))
+
+
+@unittest.skipUnless(shutil.which('node') and (native_import_fixture.VALIDATOR/'package.json').is_file(),
+                     'Requires the pinned offline Khronos glTF validator')
+class NormalizedCanonicalImportTests(unittest.TestCase):
+    def setUp(self):
+        from asset_library import AssetLibrary
+        from asset_library_import import ImportPipeline
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.library = AssetLibrary(self.root/'registry', create=True)
+        self.library.upgrade_storage()
+        self.source = native_import_fixture.NativeImportTests.external_source(self)
+        self.license = self.root/'license.txt'
+        self.license.write_text('Synthetic test fixture. CC0-1.0.\n')
+        self.pipeline = ImportPipeline(self.library)
+        self.ref = self.register('1.0.0', 2.5)
+
+    def register(self, version, scale):
+        return self.pipeline.import_asset(self.source, identity=native_import_fixture.IDENTITY, version=version,
+                                          metadata=native_import_fixture.METADATA, license_file=self.license,
+                                          unit_scale=scale)
+
+    def test_real_normalized_glb_import_uses_baked_scale_once(self):
+        import model3d_mesh_import
+
+        manifest = self.library.resolve(self.ref)
+        normalized = self.library.read_file(self.ref, 'normalized.glb')
+        report = self.library.read_file(self.ref, 'import-report.json')
+        for entry in (None, 'normalized.glb'):
+            with (self.subTest(entry=entry),
+                  patch.object(model3d_mesh_import, '_load', wraps=model3d_mesh_import._load) as load,
+                  import_canonical(self.library, self.ref, entry=entry) as imported):
+                self.assertEqual(imported.provenance['canonical_ref'], self.ref)
+                self.assertEqual(imported.provenance['manifest'], manifest)
+                self.assertEqual(imported.provenance['source_entry'], 'normalized.glb')
+                self.assertEqual(imported.provenance['source_unit_scale'], 2.5)
+                self.assertEqual(imported.provenance['import_report_sha256'], hashlib.sha256(report).hexdigest())
+                self.assertEqual(imported.model.report['source_sha256'], hashlib.sha256(normalized).hexdigest())
+                self.assertEqual(imported.model.report['scale_conversion'], 1)
+                np.testing.assert_array_equal(imported.model.geometry.meshes[0].positions,
+                                              [[0, 0, 0], [2.5, 0, 0], [0, 2.5, 0]])
+                self.assertEqual({record['path'] for record in imported.source_records},
+                                 {record['path'] for record in manifest['files']})
+                self.assertLess(load.call_args.kwargs['limits']['memory_bytes'], DEFAULT_LIMITS['memory_bytes'])
+        with patch.object(self.library, 'read_file', wraps=self.library.read_file) as reader:
+            with self.assertRaises(RigError) as caught:
+                import_canonical(self.library, self.ref, entry='source/model.gltf')
+            self.assertEqual(caught.exception.report['code'], 'MODEL3D_COORDINATES')
+            with self.assertRaises(RigError) as caught:
+                import_canonical(self.library, self.ref, limits={'dependency_bytes': 1})
+            self.assertEqual(caught.exception.report['code'], 'MODEL3D_BUDGET')
+            with self.assertRaises(RigError) as caught:
+                import_canonical(self.library, self.ref, limits={'memory_bytes': 2 * 1024**2})
+            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+            reader.assert_not_called()
+
+    def test_unit_scale_native_and_existing_explicit_original_entry(self):
+        ref = self.register('1.1.0', 1.0)
+        with import_canonical(self.library, ref) as imported:
+            self.assertEqual(imported.provenance['source_unit_scale'], 1)
+            self.assertEqual(imported.provenance['source_entry'], 'normalized.glb')
+        with import_canonical(self.library, ref, entry='source/model.gltf') as imported:
+            self.assertEqual(imported.provenance['source_entry'], 'source/model.gltf')
+            self.assertNotIn('source_unit_scale', imported.provenance)
+            np.testing.assert_array_equal(imported.model.geometry.meshes[0].positions,
+                                          [[0, 0, 0], [1, 0, 0], [0, 1, 0]])
+
+    def test_real_glb_retains_skin_morphs_and_exact_clip_provenance(self):
+        self.source = native_import_fixture.ROOT/'examples/rig-3d/humanoid/exports/character.glb'
+        ref = self.register('1.2.0', 2.0)
+        digest = hashlib.sha256(self.library.read_file(ref, 'normalized.glb')).hexdigest()
+        with import_canonical(self.library, ref) as imported:
+            self.assertTrue(imported.model.weights)
+            self.assertTrue(any(mesh.morphs for mesh in imported.model.geometry.meshes))
+            self.assertTrue(imported.model.clips)
+            self.assertEqual(imported.provenance['normalized_sha256'], digest)
+            for clip in imported.model.clips.values():
+                self.assertEqual(clip['provenance']['input_hashes']['source'], digest)
+
+    def test_rejects_report_bytes_inventory_and_scale_disagreements(self):
+        from asset_library_contracts import seal
+
+        for case, code in [('unbound-report', 'MODEL3D_HASH'), ('normalized-hash', 'MODEL3D_NORMALIZATION'),
+                           ('original-filename', 'MODEL3D_NORMALIZATION'),
+                           ('source-inventory', 'MODEL3D_NORMALIZATION'), ('declared-scale', 'MODEL3D_COORDINATES'),
+                           ('actual-scale', 'MODEL3D_NORMALIZATION')]:
+            with self.subTest(case=case):
+                manifest = self.library.resolve(self.ref)
+                records = {record['path']: record for record in manifest['files']}
+                payloads = {name: self.library.read_file(self.ref, name) for name in records}
+                report = json.loads(payloads['import-report.json'])
+                if case == 'normalized-hash':
+                    report['normalized_sha256'] = '0'*64
+                elif case == 'original-filename':
+                    report['original_filename'] = 'different.gltf'
+                elif case == 'source-inventory':
+                    report['source_files'].pop()
+                else:
+                    report['source_unit_scale'] = 3.5
+                if case == 'actual-scale':
+                    manifest['compatibility']['unit_scale'] = 3.5
+                payload = payloads['import-report.json'] = json.dumps(report).encode()
+                if case != 'unbound-report':
+                    record = records['import-report.json']
+                    record.update(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+                    manifest['provenance']['conversions'][0]['outputs'][1] = record
+                manifest = seal(manifest)
+                ref = dict(self.ref, sha256=manifest['manifest_sha256'])
+                reader = SimpleNamespace(resolve=lambda _: manifest, read_file=lambda _, name: payloads[name])
+                with self.assertRaises(RigError) as caught:
+                    import_canonical(reader, ref)
+                self.assertEqual(caught.exception.report['code'], code)
 
 
 if __name__=='__main__':unittest.main()

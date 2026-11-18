@@ -1,0 +1,23 @@
+{
+  "result": "CLEAN",
+  "files": {
+    "scripts/model3d_materials.py": "f2c39352252694612df11dcd9f08f7826e5eeb038a5aeea6f8e85af3d4259aa4",
+    "scripts/model3d_uv.py": "f0b3c256f694f4b28ea914f179ecc90941e4c2f02fec809377e13e9a3254badf",
+    "scripts/model3d_projection.py": "66f3a82d1b197e40220b3e9353c505eff8b49832a46adc5858080d6f760707d9",
+    "tests/test_model3d_surfaces.py": "609c0b65e4379a14d026e9bf362820fae397431ac71205dbc8c5cf6060003f8e",
+    "references/model3d/surfaces.md": "3a4f15945239310415a37b2032e14831e6d3f636bee3277cce02a75e95ad6773"
+  },
+  "independent_tests": 15,
+  "seconds": 1.053,
+  "independent_private_texture_mutation": "pass",
+  "independent_receipt_data_binding": "pass",
+  "before_after_source_hashes": "unchanged",
+  "source_edits": false,
+  "scope": "full surface sublane only",
+  "resolved_findings": [
+    "aggregate decoded texture budget",
+    "float32 packed UV collapse",
+    "thin-gap visibility",
+    "texture validation/copy and receipt race"
+  ]
+}

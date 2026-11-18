@@ -1,0 +1,699 @@
+{
+  "schema_version": 1,
+  "kind": "model3d-semantic-asset",
+  "id": "semantic-robot",
+  "version": 21,
+  "geometry": {
+    "schema_version": 1,
+    "version": "1.0.0",
+    "data": {
+      "path": "geometry/03d1196c4b7c4b687ca68ed50d57ee8fc26bad9741e11ee3a6863f8168a100fc.npz",
+      "sha256": "03d1196c4b7c4b687ca68ed50d57ee8fc26bad9741e11ee3a6863f8168a100fc"
+    },
+    "meshes": [
+      "body",
+      "head",
+      "left-arm",
+      "right-arm"
+    ],
+    "vertices": 144,
+    "triangles": 48
+  },
+  "parts": {
+    "body": {
+      "id": "body",
+      "parent": "character-root",
+      "meshes": [
+        "body"
+      ],
+      "matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "visible": true,
+      "semantic": "torso",
+      "side": "center",
+      "attachments": [],
+      "evidence": [
+        {
+          "kind": "measured-surface-operation",
+          "operation": "generate-uv",
+          "report_sha256": "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc"
+        },
+        {
+          "kind": "measured-surface-operation",
+          "operation": "bind-portable-image",
+          "report_sha256": "b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3"
+        }
+      ],
+      "review": "pending"
+    },
+    "head": {
+      "id": "head",
+      "parent": "body",
+      "meshes": [
+        "head"
+      ],
+      "matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          1.4
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "visible": true,
+      "semantic": "head",
+      "side": "center",
+      "attachments": [],
+      "evidence": [
+        {
+          "kind": "measured-surface-operation",
+          "operation": "generate-uv",
+          "report_sha256": "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc"
+        }
+      ],
+      "review": "pending"
+    },
+    "left-arm": {
+      "id": "left-arm",
+      "parent": "body",
+      "meshes": [
+        "left-arm"
+      ],
+      "matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          -0.8
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.3
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pivot": [
+        0.0,
+        0.6,
+        0.0
+      ],
+      "visible": true,
+      "semantic": "arm",
+      "side": "left",
+      "attachments": [
+        {
+          "id": "tool-mount",
+          "point": [
+            0.0,
+            -0.6,
+            0.0
+          ],
+          "target": null
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "measured-surface-operation",
+          "operation": "generate-uv",
+          "report_sha256": "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc"
+        },
+        {
+          "kind": "measured-surface-operation",
+          "operation": "bind-portable-image",
+          "report_sha256": "b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3"
+        }
+      ],
+      "review": "pending"
+    },
+    "right-arm": {
+      "id": "right-arm",
+      "parent": "body",
+      "meshes": [
+        "right-arm"
+      ],
+      "matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.8
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.3
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pivot": [
+        0.0,
+        0.6,
+        0.0
+      ],
+      "visible": true,
+      "semantic": "arm",
+      "side": "right",
+      "attachments": [
+        {
+          "id": "tool-mount",
+          "point": [
+            0.0,
+            -0.6,
+            0.0
+          ],
+          "target": null
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "measured-surface-operation",
+          "operation": "generate-uv",
+          "report_sha256": "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc"
+        },
+        {
+          "kind": "measured-surface-operation",
+          "operation": "bind-portable-image",
+          "report_sha256": "b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3"
+        }
+      ],
+      "review": "pending"
+    },
+    "character-root": {
+      "id": "character-root",
+      "parent": null,
+      "meshes": [],
+      "matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "pivot": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "visible": true,
+      "semantic": "character-root",
+      "side": "center",
+      "attachments": [],
+      "review": "pending",
+      "evidence": [
+        {
+          "kind": "authored-native-transform-group",
+          "children": [
+            "body"
+          ]
+        }
+      ]
+    }
+  },
+  "history": [
+    {
+      "operation": "authored-label:body",
+      "from_version": 1,
+      "affected": [
+        "body"
+      ],
+      "before": "033d16958c7d2dea9f8304efbe86d1d43bf070bb5e3fea29e0a5e4a4b244c33c",
+      "after": "026b292650b80759503573813b6f821694738a7812b96dae85c33e7cbb8df644"
+    },
+    {
+      "operation": "transform:body",
+      "from_version": 2,
+      "affected": [],
+      "before": "026b292650b80759503573813b6f821694738a7812b96dae85c33e7cbb8df644",
+      "after": "026b292650b80759503573813b6f821694738a7812b96dae85c33e7cbb8df644"
+    },
+    {
+      "operation": "authored-label:head",
+      "from_version": 3,
+      "affected": [
+        "head"
+      ],
+      "before": "026b292650b80759503573813b6f821694738a7812b96dae85c33e7cbb8df644",
+      "after": "0d23d360d58a540b394623984298ef1ae2ab754fe22181e28ca5331874efbab4"
+    },
+    {
+      "operation": "reparent:head",
+      "from_version": 4,
+      "affected": [
+        "head"
+      ],
+      "before": "0d23d360d58a540b394623984298ef1ae2ab754fe22181e28ca5331874efbab4",
+      "after": "5154bb518d43b737624956706c651f5491da347a353f974f4ae0b2fb523e2acd"
+    },
+    {
+      "operation": "transform:head",
+      "from_version": 5,
+      "affected": [
+        "head"
+      ],
+      "before": "5154bb518d43b737624956706c651f5491da347a353f974f4ae0b2fb523e2acd",
+      "after": "5d643ff426b49a88f1dbe1898f00cf3ccdd9e624a0081beb395eec26e3e2e173"
+    },
+    {
+      "operation": "authored-label:left-arm",
+      "from_version": 6,
+      "affected": [
+        "left-arm"
+      ],
+      "before": "5d643ff426b49a88f1dbe1898f00cf3ccdd9e624a0081beb395eec26e3e2e173",
+      "after": "420b213149556c924f3ab1f0e9b50691cc8cc68aa4031039a75659806fbe3c0e"
+    },
+    {
+      "operation": "reparent:left-arm",
+      "from_version": 7,
+      "affected": [
+        "left-arm"
+      ],
+      "before": "420b213149556c924f3ab1f0e9b50691cc8cc68aa4031039a75659806fbe3c0e",
+      "after": "0b5766af1154c16307a613d5b250cf6d6e9bbb7596194d1f5ab8fd077ef6b016"
+    },
+    {
+      "operation": "transform:left-arm",
+      "from_version": 8,
+      "affected": [
+        "left-arm"
+      ],
+      "before": "0b5766af1154c16307a613d5b250cf6d6e9bbb7596194d1f5ab8fd077ef6b016",
+      "after": "3aeed9f8ffb1913a614b4fc706319103f58c0ca7fbd3823d53f619fcaa54150d"
+    },
+    {
+      "operation": "authored-label:right-arm",
+      "from_version": 9,
+      "affected": [
+        "right-arm"
+      ],
+      "before": "3aeed9f8ffb1913a614b4fc706319103f58c0ca7fbd3823d53f619fcaa54150d",
+      "after": "7fbc2889a9ceb45e81c656e63d9340efe5ba7dda14a7c504f899a4c986f89c65"
+    },
+    {
+      "operation": "reparent:right-arm",
+      "from_version": 10,
+      "affected": [
+        "right-arm"
+      ],
+      "before": "7fbc2889a9ceb45e81c656e63d9340efe5ba7dda14a7c504f899a4c986f89c65",
+      "after": "a06581f6a331228febe6e985dc236e81d35d4583ce42753344cae630cf3ec3d2"
+    },
+    {
+      "operation": "transform:right-arm",
+      "from_version": 11,
+      "affected": [
+        "right-arm"
+      ],
+      "before": "a06581f6a331228febe6e985dc236e81d35d4583ce42753344cae630cf3ec3d2",
+      "after": "87340db36bbbfc665200110756314dd38e2057b1b077f66a6827d876be192e4d"
+    },
+    {
+      "operation": "group:character-root",
+      "from_version": 12,
+      "affected": [
+        "body",
+        "character-root"
+      ],
+      "before": "87340db36bbbfc665200110756314dd38e2057b1b077f66a6827d876be192e4d",
+      "after": "4da4482c276091c550dff6bebd825c811555e26ff075fe2ec666ab1711e64e7e"
+    },
+    {
+      "operation": "authored-label:character-root",
+      "from_version": 13,
+      "affected": [
+        "character-root"
+      ],
+      "before": "4da4482c276091c550dff6bebd825c811555e26ff075fe2ec666ab1711e64e7e",
+      "after": "3143d12e25f2f2793a739a73bab0b710373133ee1c70038ed17228876b5cd258"
+    },
+    {
+      "operation": "bind-exact-identity",
+      "from_version": 14,
+      "affected": [],
+      "before": "3143d12e25f2f2793a739a73bab0b710373133ee1c70038ed17228876b5cd258",
+      "after": "3143d12e25f2f2793a739a73bab0b710373133ee1c70038ed17228876b5cd258"
+    },
+    {
+      "operation": "bind-style-snapshot",
+      "from_version": 15,
+      "affected": [],
+      "before": "3143d12e25f2f2793a739a73bab0b710373133ee1c70038ed17228876b5cd258",
+      "after": "3143d12e25f2f2793a739a73bab0b710373133ee1c70038ed17228876b5cd258"
+    },
+    {
+      "operation": "generate-uv",
+      "from_version": 16,
+      "affected": [
+        "body",
+        "head",
+        "left-arm",
+        "right-arm"
+      ],
+      "before": "3143d12e25f2f2793a739a73bab0b710373133ee1c70038ed17228876b5cd258",
+      "after": "bb6c4ddd24508175a4603effec9bedbaa62ee5fe832d8c3785cc4838ce403cf7"
+    },
+    {
+      "operation": "bind-portable-image",
+      "from_version": 17,
+      "affected": [
+        "body",
+        "left-arm",
+        "right-arm"
+      ],
+      "before": "bb6c4ddd24508175a4603effec9bedbaa62ee5fe832d8c3785cc4838ce403cf7",
+      "after": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e"
+    },
+    {
+      "operation": "define-rigid-pose:neutral",
+      "from_version": 18,
+      "affected": [],
+      "before": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e",
+      "after": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e"
+    },
+    {
+      "operation": "define-rigid-pose:wave",
+      "from_version": 19,
+      "affected": [],
+      "before": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e",
+      "after": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e"
+    },
+    {
+      "operation": "map-existing-state-definitions",
+      "from_version": 20,
+      "affected": [],
+      "before": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e",
+      "after": "d7861ba6638ea4b8c6b7e95a09c3fceb9854a385202be1b09e490ee8fe36568e"
+    }
+  ],
+  "evidence": {
+    "07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c": {
+      "path": "evidence/07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c.bin",
+      "bytes": 227,
+      "sha256": "07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c"
+    },
+    "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc": {
+      "path": "evidence/d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc.bin",
+      "bytes": 1323,
+      "sha256": "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc"
+    },
+    "b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3": {
+      "path": "evidence/b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3.bin",
+      "bytes": 527,
+      "sha256": "b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3"
+    },
+    "67bc397bda9808d13b93467d6e218c8737dfd34b1ab58139b79c2eff97bd0a38": {
+      "path": "evidence/67bc397bda9808d13b93467d6e218c8737dfd34b1ab58139b79c2eff97bd0a38.bin",
+      "bytes": 139,
+      "sha256": "67bc397bda9808d13b93467d6e218c8737dfd34b1ab58139b79c2eff97bd0a38"
+    }
+  },
+  "identity": {
+    "schema_version": 1,
+    "kind": "model3d-identity",
+    "source_sha256": "07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c",
+    "required_parts": [
+      "body",
+      "head",
+      "left-arm",
+      "right-arm"
+    ],
+    "forbidden_parts": [
+      "wings"
+    ],
+    "ratios": [
+      {
+        "numerator": "head",
+        "denominator": "body",
+        "axis": 0,
+        "minimum": 0.3,
+        "maximum": 0.5,
+        "scope": "owned-meshes"
+      }
+    ],
+    "colors": [
+      {
+        "part": "head",
+        "rgba": [
+          0.6038273388553378,
+          0.07421356838014963,
+          0.033104766570885055,
+          1.0
+        ],
+        "maximum_error": 1e-08
+      }
+    ],
+    "strict": true
+  },
+  "style": {
+    "snapshot": {
+      "schema_version": 1,
+      "catalog_version": "1.0.0",
+      "catalog_sha256": "be2cc5f8e194a61f28b0828edbb2baef295865757d099fdf1ab25c801bfcf747",
+      "requested_id": "3d-toy",
+      "resolved_id": "3d-toy",
+      "selection": {
+        "method": "explicit",
+        "reason": "Selected by stable ID or its declared alias."
+      },
+      "style": {
+        "id": "3d-toy",
+        "name": "3D Toy",
+        "category": "sculpture-toys",
+        "kind": "technique",
+        "description": "Smooth rounded stylized toy with simple materials, a clear silhouette and restrained dimensional lighting.",
+        "tags": [
+          "toy-render",
+          "rounded",
+          "simple-material",
+          "stylized-3d"
+        ],
+        "aliases": [
+          "toy-3d"
+        ],
+        "instructions": {
+          "materials": "Use simple smooth toy-like materials with a soft matte or mild satin finish.",
+          "forms": "Sculpt rounded compact body masses, clear facial features and sturdy readable limbs.",
+          "linework": "Let the clean rendered form boundary define the silhouette without drawn outlines.",
+          "shading": "Apply broad soft lighting and restrained contact shading where body parts meet.",
+          "palette": "Keep material colors stable with simple local-color surfaces and small predictable highlights.",
+          "texture": "Leave surfaces smooth, using only essential seams or markings required by the identity.",
+          "rendering": "Render an isolated stylized 3D toy with one fixed camera and light direction and no photoreal complexity."
+        },
+        "negative_constraints": [
+          "Avoid photo-studio backdrops, floor shadows, pedestals or reflected scenery.",
+          "Do not add tiny molded text, intricate surface scratches or complex metallic coatings."
+        ],
+        "use_cases": [
+          "Dimensional companion pets",
+          "Simple toy-like mascot casts"
+        ],
+        "limitations": [
+          "Smooth shading still needs strong local-color separation so forms do not merge at compact size."
+        ],
+        "applicability": {
+          "character": "recommended",
+          "sequence": "recommended",
+          "icon": "recommended",
+          "print": "recommended",
+          "grid": "unsuitable"
+        },
+        "compatibility": {
+          "alpha": "preferred",
+          "chroma": "supported",
+          "edge_mode": "antialiased",
+          "resampling": "lanczos",
+          "scaling": "Render with sufficient source detail, then downsample once with the recommended filter into the existing profile cells; inspect the final silhouette at actual size.",
+          "notes": [
+            "Preserve the original preset’s smooth rounded simple-material direction; the style does not alter atlas geometry.",
+            "Keep texture and shading inside the isolated silhouette; preserve the same approved pattern placement across animation states."
+          ]
+        }
+      },
+      "modifiers": [],
+      "style_notes": "",
+      "contract": "Preset guidance is subordinate to explicit user requirements and avoidances, the approved identity and references, and the selected profile contract. Apply the medium to the requested subject; do not add mascot anatomy to a non-character asset.\nStyle `3d-toy` — 3D Toy: Smooth rounded stylized toy with simple materials, a clear silhouette and restrained dimensional lighting.\nMaterials: Use simple smooth toy-like materials with a soft matte or mild satin finish.\nForms: Sculpt rounded compact body masses, clear facial features and sturdy readable limbs.\nLinework: Let the clean rendered form boundary define the silhouette without drawn outlines.\nShading: Apply broad soft lighting and restrained contact shading where body parts meet.\nPalette: Keep material colors stable with simple local-color surfaces and small predictable highlights.\nTexture: Leave surfaces smooth, using only essential seams or markings required by the identity.\nRendering: Render an isolated stylized 3D toy with one fixed camera and light direction and no photoreal complexity.\nAvoid for this style: Avoid photo-studio backdrops, floor shadows, pedestals or reflected scenery.; Do not add tiny molded text, intricate surface scratches or complex metallic coatings.\nKeep the approved silhouette, proportions, palette, materials, surface markings, facial features and props stable across all states. Anchor texture to the same surfaces; do not re-randomize it per frame. Keep the entire subject inside each slot with clear gutters. Restrict fine detail at actual cell size. Keep external scenery, floor shadows, trails and detached decorative effects out of the sprite. Represent glow, reflections and texture within the body silhouette; do not draw a background or checkerboard.",
+      "sha256": "b3b0b9c617c88bdb353b3b682255b2b70aec864594e848f364c1df4b85e69fb5"
+    },
+    "adaptations": {
+      "geometry": "Explicit box assembly with authored mechanical arms.",
+      "material": "Portable painted plastic and ceramic PBR factors; no learned texture.",
+      "texture": "Actual seeded checker PNG applied to body; head palette remains explicit.",
+      "render": "Same-model native authoring owner supplies lighting and human review; unexecuted here."
+    },
+    "source_sha256": "3b2b995f33f6db5cacbdb12cdc1488380133c311fab4a8bd792b77f57a2826f6",
+    "geometry_generated": false
+  },
+  "poses": {
+    "neutral": {
+      "right-arm": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.8
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.3
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "wave": {
+      "right-arm": [
+        [
+          0.5000000000000001,
+          -0.8660254037844386,
+          0.0,
+          1.3196152422706633
+        ],
+        [
+          0.8660254037844386,
+          0.5000000000000001,
+          0.0,
+          0.5999999999999999
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  "states": {
+    "idle": {
+      "pose": "neutral",
+      "status": "rigid-pose",
+      "catalog_sha256": "5de72dedb3262ee0e350d1c5b45fa1cd4455d763b4760fa69ff20914f1895795",
+      "animation": false,
+      "review": "pending"
+    },
+    "running": {
+      "pose": null,
+      "status": "unavailable",
+      "catalog_sha256": "5de72dedb3262ee0e350d1c5b45fa1cd4455d763b4760fa69ff20914f1895795",
+      "animation": false,
+      "review": "pending"
+    }
+  },
+  "derivatives": {},
+  "fixture": true,
+  "sha256": "d15e34f24c21fe0e2cf5fc49f48b2eaa92db5bab63dc8f0ce8fba016daf79e08"
+}
