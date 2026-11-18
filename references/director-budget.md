@@ -97,13 +97,25 @@ bind_native_budget(run, ledger.root, owner_root=project,
     evidence=retained_rate_or_policy_evidence)
 ```
 
-The run and ledger must be under the declared owner directory. The portable
-binding pins the ledger genesis, run identity, fixture label, original request,
-provider and policy. All opted-in runs in one project must use the same project
-ledger. One cumulative reservation covers each native job and its bounded
-attempts. Native claim history still owns tokens and call counts; these counts
-are not measurements of actual provider billing. A bare reservation ID is never
-an accounting authorization.
+The run and ledger must be under the declared owner directory. The binding pins
+the ledger genesis, canonical run location, run identity, fixture label, original
+request, provider and policy. A `director-budget-owner.json` accounting association
+is established under the existing Hatch owner lock; a second ledger for that
+owner is rejected before any claim or reservation. Its fields identify a ledger
+and location, not another acquisition controller or reservation store.
+
+Production acquisitions must declare their containing project as owner.
+Enrollment also pins the association in the existing production workflow state.
+Production binding and claim paths verify that association against each native
+run. Configure fresh acquisitions before binding them; this slice does not
+retroactively account for historical unbudgeted work or migrate groups of
+previously bound unbudgeted runs. Standalone legacy runs remain outside this
+opt-in project accounting scope.
+
+One cumulative reservation covers each native job and its bounded attempts.
+Native claim history still owns tokens and call counts; these counts are not
+measurements of actual provider billing. A bare reservation ID is never an
+accounting authorization.
 
 Ingest receipts add a `budget_usage` object. Native `fail` and production
 `fail_generation` take the same object as an optional keyword argument, required
@@ -126,9 +138,21 @@ The native manifest persists each accounting intent before ledger mutation.
 Reconciliation replays accounting idempotently; it never creates a provider call,
 clears an uncertain token or declares source ingestion complete. If accounting
 commits before native finalization, replay the original fail/ingest operation.
+An old accounting receipt remains replayable, but can finalize native work only
+when it is the current observation, its ledger state still agrees, and no newer
+uncertainty remains. A retry receipt preceding a later uncertain observation
+cannot clear that token. Resolve the newer observation explicitly first.
 A pending preclaim intent reuses its token after restart. Estimates, known spent
 totals, held capacity and individual observations are reported separately;
 unavailable metrics remain visible in observations.
+
+Opted-in run relocation is deliberately unsupported, including sibling restore
+and whole-project relocation. The persisted hashes of canonical run and owner
+locations must still match before any handoff. An archive may preserve the run
+for inspection, but a differently restored location cannot mint another token
+against the original reservation. Restore ordinary legacy runs using their
+unchanged portability workflow. A supported relocation/migration transaction
+would require separate ownership and accounting reconciliation.
 
 This first lane supports one budgeted operation per job. Explicit repair cannot
 reopen a settled reservation or erase spend; new work requires a separately

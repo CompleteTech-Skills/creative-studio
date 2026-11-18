@@ -94,8 +94,12 @@ class NativeBudgetTests(unittest.TestCase):
         value = hatch.read(project / 'project.json')
         value['limits']['max_generation_calls'] = 3
         hatch.atomic(project / 'project.json', value)
+        self.ledger = BudgetLedger.create(project / 'ledger',
+            quantities(provider_calls=6, amount=12),
+            provider_limits={'imagegen': quantities(provider_calls=6, amount=12)}, currency='USD')
+        self.proof = [self.ledger.retain_evidence(self.owner / 'evidence.json')]
         root = self.prepare('project/acquisition/rate-limit')
-        self.bind(root)
+        self.bind(root, owner_root=project)
         workflow.bind_generation_run(project, 'rate-limit', root, ['synthetic raster requirement'])
         first = workflow.claim_generation(project, 'rate-limit', 'base')
         rate = self.observe('http-429', 'retry', amount='0.25')
@@ -366,3 +370,127 @@ class NativeBudgetTests(unittest.TestCase):
         self.assertEqual(self.ledger.snapshot(), before)
         self.assertEqual(self.row(other)['spent']['amount'], '0')
         self.assertEqual(hatch.job_for(hatch.manifest(self.root), 'base')['token'], token)
+
+    def test_old_retry_receipt_cannot_finalize_newer_uncertainty_after_reopen(self):
+        token = self.claim()['token']
+        retry = self.observe('R', 'retry', amount='0.25')
+        original = hatch.save
+        def crash(root, data):
+            if hatch.job_for(data, 'base')['status'] == 'failed':
+                raise RuntimeError('synthetic crash after retry accounting')
+            return original(root, data)
+        with patch.object(hatch, 'save', side_effect=crash), self.assertRaises(RuntimeError):
+            self.fail(token, retry)
+        self.fail(token, self.observe('U', 'uncertain', calls=0, amount=None))
+        before = self.ledger.snapshot()
+        # Accounting replay remains valid; it is not native finalization authority.
+        with hatch.ownership(self.root):
+            data = hatch.manifest(self.root)
+            old = hatch.record_budget_usage(self.root, data, 'base', token, retry)
+            self.assertEqual(old['state'], 'reserved')
+        self.assertEqual(self.ledger.snapshot(), before)
+        with self.assertRaises(RigError):
+            self.fail(token, retry)
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root), 'base')['token'], token)
+        self.assertEqual(self.row()['state'], 'uncertain')
+        with self.assertRaises(ValueError):
+            self.claim()
+        self.fail(token, self.observe('resolved-U', 'retry', calls=0, amount='0.75', resolves=['U']))
+        self.assertEqual(self.row()['spent']['provider_calls'], '1')
+        self.assertEqual(self.row()['spent']['amount'], '1.00')
+        self.assertNotEqual(self.claim()['token'], token)
+
+    def test_one_project_rejects_second_ledger_before_opt_in_binding_or_claim(self):
+        project = self.owner / 'single-ledger-project'
+        build_fixture_project(project)
+        value = hatch.read(project / 'project.json')
+        value['limits']['max_generation_calls'] = 2
+        hatch.atomic(project / 'project.json', value)
+        first = self.prepare('single-ledger-project/acquisition/first')
+        second = self.prepare('single-ledger-project/acquisition/second')
+        limits = quantities(provider_calls=1, amount=2)
+        a = BudgetLedger.create(project / 'ledger-a', limits,
+                               provider_limits={'imagegen': limits}, currency='USD')
+        b = BudgetLedger.create(project / 'ledger-b', limits,
+                               provider_limits={'imagegen': limits}, currency='USD')
+        def enroll(run, ledger):
+            return bind_native_budget(run, ledger.root, owner_root=project, provider='imagegen',
+                estimate=limits, retry_allowance=0,
+                evidence=[ledger.retain_evidence(self.owner / 'evidence.json')])
+        enroll(first, a)
+        workflow.bind_generation_run(project, 'first', first, ['synthetic'])
+        with self.assertRaises(RigError):
+            enroll(second, b)
+        self.assertNotIn('director_budget', hatch.manifest(second))
+        self.assertEqual(a.snapshot()['state']['revision'], 0)
+        self.assertEqual(b.snapshot()['state']['revision'], 0)
+        with self.assertRaises(RigError):
+            workflow.bind_generation_run(project, 'second', second, ['synthetic'])
+        enroll(second, a)
+        workflow.bind_generation_run(project, 'second', second, ['synthetic'])
+        workflow.configure_generation_limits(project, concurrency=2)
+        workflow.claim_generation(project, 'first', 'base')
+        with self.assertRaisesRegex(RigError, 'hard limits'):
+            workflow.claim_generation(project, 'second', 'base')
+        self.assertEqual(len(a.snapshot()['state']['reservations']), 1)
+        self.assertEqual(b.snapshot()['state']['revision'], 0)
+        self.assertEqual(hatch.job_for(hatch.manifest(second), 'base')['attempts'], 0)
+
+    def test_production_claim_checks_persisted_project_ledger_association(self):
+        project = self.owner / 'association-project'
+        build_fixture_project(project)
+        value = hatch.read(project / 'project.json')
+        value['limits']['max_generation_calls'] = 1
+        hatch.atomic(project / 'project.json', value)
+        root = self.prepare('association-project/acquisition/run')
+        limits = quantities(provider_calls=1, amount=2)
+        ledger = BudgetLedger.create(project / 'ledger', limits,
+                                    provider_limits={'imagegen': limits}, currency='USD')
+        bind_native_budget(root, ledger.root, owner_root=project, provider='imagegen',
+            estimate=limits, retry_allowance=0,
+            evidence=[ledger.retain_evidence(self.owner / 'evidence.json')])
+        workflow.bind_generation_run(project, 'run', root, ['synthetic'])
+        state = hatch.read(project / workflow.WORKFLOW_FILE)
+        state['director_budget']['ledger_path'] = 'different-ledger'
+        hatch.atomic(project / workflow.WORKFLOW_FILE, state)
+        with self.assertRaises(RigError):
+            workflow.claim_generation(project, 'run', 'base')
+        self.assertEqual(ledger.snapshot()['state']['revision'], 0)
+        self.assertEqual(hatch.job_for(hatch.manifest(root), 'base')['attempts'], 0)
+
+    def test_actual_portable_restore_cannot_duplicate_budgeted_native_authority(self):
+        from portable_runs import archive_run, restore_run
+        owner = self.owner / 'portable-owner'
+        original = self.prepare('portable-owner/original')
+        limits = quantities(provider_calls=1, amount=2)
+        ledger = BudgetLedger.create(owner / 'ledger', limits,
+                                    provider_limits={'imagegen': limits}, currency='USD')
+        bind_native_budget(original, ledger.root, owner_root=owner, provider='imagegen',
+            estimate=limits, retry_allowance=0,
+            evidence=[ledger.retain_evidence(self.owner / 'evidence.json')])
+        archive = self.owner / 'budgeted-run.zip'
+        with hatch.ownership(original):
+            archive_run(original, hatch.manifest(original), archive)
+        restored = owner / 'restored'
+        restore_run(archive, restored)
+        self.assertEqual(hatch.manifest(original)['run_id'], hatch.manifest(restored)['run_id'])
+        self.claim(original)
+        with self.assertRaises(RigError):
+            self.claim(restored)
+        self.assertEqual(hatch.job_for(hatch.manifest(restored), 'base')['attempts'], 0)
+        rows = list(ledger.snapshot()['state']['reservations'].values())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['reserved']['provider_calls'], '1')
+
+    def test_actual_legacy_portable_restore_preserves_unbudgeted_behavior(self):
+        from portable_runs import archive_run, restore_run
+        original = self.prepare('legacy-portable')
+        archive = self.owner / 'legacy-run.zip'
+        with hatch.ownership(original):
+            archive_run(original, hatch.manifest(original), archive)
+        restored = self.owner / 'legacy-restored'
+        restore_run(archive, restored)
+        first, second = self.claim(original), self.claim(restored)
+        self.assertNotEqual(first['token'], second['token'])
+        self.assertNotIn('director_budget', hatch.manifest(restored))
+        self.assertEqual(self.ledger.snapshot()['state']['revision'], 0)

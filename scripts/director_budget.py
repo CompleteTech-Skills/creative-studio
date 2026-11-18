@@ -384,6 +384,45 @@ def execute(ledger, request, *, evidence_root, provider='local', unknown_price_c
     return result
 
 
+
+NATIVE_OWNER_FILE = 'director-budget-owner.json'
+
+
+def _native_owner_identity(owner, ledger_root, genesis):
+    return dict(schema_version=1, kind='native-budget-owner',
+                owner_location_sha256=object_hash(str(owner)),
+                ledger_path=ledger_root.relative_to(owner).as_posix(), genesis=genesis)
+
+
+def _native_owner_binding(owner, ledger_root, genesis, *, create=False):
+    """One immutable ledger association; creation requires Hatch owner ownership."""
+    import hatch
+    expected = _native_owner_identity(owner, ledger_root, genesis)
+    path = owner / NATIVE_OWNER_FILE
+    _need(not path.is_symlink(), 'PATH', 'Native owner association cannot be a link.')
+    if path.exists():
+        _need(decode_json(_read_source_bytes(path, MAX_BYTES)) == expected,
+              'BINDING', 'Native owner already belongs to a different ledger or location.')
+    else:
+        _need(create, 'BINDING', 'Native owner ledger association is missing.')
+        hatch.atomic(path, expected)
+    return expected
+
+
+def require_production_budget(root, state, run, data):
+    """Validate the existing production association; caller keeps native ownership."""
+    root, run = Path(root).resolve(), Path(run).resolve()
+    if 'director_budget' not in data:
+        _need('director_budget' not in state, 'BINDING',
+              'Every acquisition in this budgeted project must opt into its ledger.')
+        return
+    budget = NativeBudget(run, data)
+    _need(budget.owner == root, 'BINDING', 'Production acquisition must use its project budget owner.')
+    expected = _native_owner_binding(root, budget.ledger.root, budget.config['genesis'])
+    _need(state.get('director_budget') == expected, 'BINDING',
+          'Production workflow and acquisition must reference the same authoritative ledger.')
+
+
 def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate,
                        retry_allowance, evidence, unknown_price=False, unknown_price_cap=None):
     """Opt a fresh Hatch run into one existing project ledger; never submit work."""
@@ -391,6 +430,9 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
     root = Path(root).resolve()
     owner = root if owner_root is None else Path(owner_root).resolve()
     ledger_root = Path(ledger_root).absolute()
+    project = next((parent for parent in root.parents if (parent / 'project.json').is_file()), None)
+    _need(project is None or owner == project, 'BINDING',
+          'A production acquisition must opt in under its containing project owner.')
     _need(root.is_relative_to(owner) and ledger_root.is_relative_to(owner),
           'PATH', 'Native run and ledger must belong to the declared owner directory.')
     _need(ledger_root != root and ledger_root.resolve() == ledger_root,
@@ -411,15 +453,44 @@ def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate
                   genesis=next(ledger_root.glob('00000000-*.json')).stem[9:],
                   provider=provider, estimate=deepcopy(estimate), retry_allowance=retry_allowance,
                   evidence=deepcopy(evidence), unknown_price=unknown_price, unknown_price_cap=unknown_price_cap)
-    with hatch.ownership(root):
+    from contextlib import ExitStack
+    with hatch.ownership(owner), ExitStack() as locks:
+        if root != owner:
+            locks.enter_context(hatch.ownership(root))
         data = hatch.manifest(root)
         config.update(run_id=data['run_id'], fixture=data['fixture_mode'],
-                      request_sha256=hatch.digest(root / 'pet_request.json'))
-        if 'director_budget' in data:
-            _need(data['director_budget'] == config, 'BINDING', 'Native accounting policy cannot be replaced.')
+                      request_sha256=hatch.digest(root / 'pet_request.json'),
+                      run_location_sha256=object_hash(str(root)))
+        existing = data.get('director_budget')
+        if existing is not None:
+            _need(existing == config, 'BINDING', 'Native accounting policy cannot be replaced.')
+        else:
+            _need(not any(entry.get('event') == 'claim' for job in data['jobs'] for entry in job['history']),
+                  'BINDING', 'Opt in before the first native claim; existing expenditure cannot be invented.')
+        association = _native_owner_identity(owner, ledger_root, config['genesis'])
+        project_state = None
+        if (owner / 'project.json').is_file():
+            import production_workflow as workflow
+            project_state = workflow._state(owner)
+            _need(project_state.get('director_budget', association) == association, 'BINDING',
+                  'Production project already belongs to a different ledger.')
+            for binding in project_state['generation_bindings'].values():
+                bound = workflow.safe_path(owner, binding['run_path'])
+                if bound == root:
+                    continue
+                bound_data = hatch.manifest(bound)
+                _need('director_budget' in bound_data, 'BINDING',
+                      'Opt existing unclaimed project acquisitions into the same ledger first.')
+                # Existing associations are checked before any configuration is published.
+                previous = NativeBudget(bound, bound_data)
+                _need(previous.owner == owner and previous.ledger.root == ledger_root,
+                      'BINDING', 'Existing project acquisition uses a different ledger.')
+        _native_owner_binding(owner, ledger_root, config['genesis'], create=True)
+        if project_state is not None and 'director_budget' not in project_state:
+            project_state['director_budget'] = association
+            workflow._save(owner, project_state)
+        if existing is not None:
             return deepcopy(config)
-        _need(not any(entry.get('event') == 'claim' for job in data['jobs'] for entry in job['history']),
-              'BINDING', 'Opt in before the first native claim; existing expenditure cannot be invented.')
         data['director_budget'] = config
         hatch.save(root, data)
     return deepcopy(config)
@@ -445,9 +516,11 @@ class NativeBudget:
         _need(isinstance(config, dict) and set(config) == {
             'schema_version', 'owner_depth', 'ledger_path', 'genesis', 'provider', 'estimate',
             'retry_allowance', 'evidence', 'unknown_price', 'unknown_price_cap',
-            'run_id', 'fixture', 'request_sha256'},
+            'run_id', 'fixture', 'request_sha256', 'run_location_sha256'},
             'BINDING', 'Malformed native accounting policy.')
         import hatch
+        _need(config['run_location_sha256'] == object_hash(str(self.root)), 'BINDING',
+              'Relocated opted-in runs cannot authorize work; preserve the original owner location.')
         _need(config['run_id'] == data['run_id'] and config['fixture'] is data['fixture_mode'] and
               config['request_sha256'] == hatch.digest(self.root / 'pet_request.json'),
               'BINDING', 'Native accounting identity or original request changed.')
@@ -455,6 +528,7 @@ class NativeBudget:
         _need(config['schema_version'] == 1 and type(depth) is int and 0 <= depth < len(self.root.parents),
               'PATH', 'Invalid native accounting owner.')
         owner = self.root if depth == 0 else self.root.parents[depth - 1]
+        self.owner = owner
         from pathlib import PurePosixPath
         relative = config['ledger_path']
         _need(isinstance(relative, str) and relative and '\\' not in relative and ':' not in relative,
@@ -468,6 +542,7 @@ class NativeBudget:
         _need(next(ledger_root.glob('00000000-*.json')).stem[9:] == config['genesis'],
               'BINDING', 'Native ledger identity changed.')
         _verify_evidence(ledger_root, config['evidence'])
+        _native_owner_binding(owner, ledger_root, config['genesis'])
         for job in data['jobs']:
             operation = job.get('budget_operation')
             if operation is None:
@@ -681,6 +756,31 @@ class NativeBudget:
             self._save()
         _need(existing['payload'] == payload, 'IDEMPOTENCY', 'Cancellation identity was reused.')
         return self._apply(operation, existing)
+
+    def authorize_finalization(self, job, token, observation):
+        """An old accounting receipt never authorizes a newer native transition."""
+        self.reconcile()
+        _need(job['status'] == 'running' and job.get('token') == token,
+              'STATE', 'Finalization requires the original active native token.')
+        operation = job['budget_operation']
+        events = [event for event in operation['events'] if event['payload']['token'] == token]
+        _need(bool(events), 'STATE', 'Native finalization requires current accounting evidence.')
+        latest = events[-1]
+        _need(latest['payload']['id'] == observation['id'] and
+              latest['payload']['outcome'] == observation['outcome'] and
+              observation['outcome'] in ('retry', 'complete', 'failed'),
+              'STATE', 'This accounting receipt is not the current native outcome.')
+        pending = set()
+        for event in events:
+            payload = event['payload']
+            pending.difference_update(payload['resolves'])
+            if payload['outcome'] == 'uncertain':
+                pending.add(payload['id'])
+        row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
+        expected = 'reserved' if observation['outcome'] == 'retry' else 'settled'
+        _need(not pending and row['state'] == expected and row['attempts'] and
+              row['attempts'][-1]['idempotency_key'] == latest['key'],
+              'UNCERTAIN', 'Current uncertainty or later ledger usage prevents native finalization.')
 
     def status(self):
         """Report estimates separately from measured deltas and unresolved usage."""
