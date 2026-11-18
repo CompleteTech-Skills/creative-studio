@@ -66,9 +66,13 @@ def _bounded_integer(value: int | float, minimum: int, maximum: int, *,
     return int(value)
 
 
-def _read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES) -> bytes:
+def _read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES,
+                       *, allow_empty: bool = False) -> bytes:
     """Reject symlink/reparse components, bound allocation, detect changed files."""
-    limit = _bounded_integer(limit, 1, MAX_FILE_BYTES, code='LIMIT', label='Source read bound')
+    if type(allow_empty) is not bool:
+        _fail('LIMIT', 'Empty-file admission must be an explicit boolean.')
+    minimum = 0 if allow_empty else 1
+    limit = _bounded_integer(limit, minimum, MAX_FILE_BYTES, code='LIMIT', label='Source read bound')
     path = Path(path).absolute()
     for component in (path, *path.parents):
         info = component.lstat()
@@ -116,7 +120,7 @@ def _read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES) -
             if os.path.normcase(actual) != os.path.normcase(os.path.abspath(path)):
                 _fail('PATH', 'Source was redirected or does not use its canonical long path.', path)
         before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit:
+        if not stat.S_ISREG(before.st_mode) or not minimum <= before.st_size <= limit:
             _fail('PAYLOAD', 'Expected a nonempty bounded regular file.', path)
         payload = stream.read(limit + 1)
         after = os.fstat(stream.fileno())
@@ -127,10 +131,11 @@ def _read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES) -
     return payload
 
 
-def read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES) -> bytes:
-    """Read exact bounded source bytes or return a structured library diagnostic."""
+def read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES,
+                      *, allow_empty: bool = False) -> bytes:
+    """Read bounded regular bytes; empty-file admission is explicit and opt-in."""
     try:
-        return _read_source_bytes(path, limit)
+        return _read_source_bytes(path, limit, allow_empty=allow_empty)
     except (OSError, TypeError) as exc:
         raise RigError('LIBRARY_SOURCE', 'Cannot safely read the source file: ' + str(exc),
                        asset=str(path)) from exc
