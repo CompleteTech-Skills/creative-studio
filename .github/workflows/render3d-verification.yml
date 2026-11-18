@@ -1,0 +1,64 @@
+name: Render3D independent image verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render3d-verification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+
+jobs:
+  image-verification:
+    name: Independent PNG and EXR decoding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record the tested revision
+        run: git rev-parse HEAD | tee render3d-verifier-head.txt
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install isolated optional decoder dependencies
+        run: python -m pip install -r requirements-render3d-test.txt
+      - name: Record the decoder environment
+        run: |
+          python --version | tee render3d-verifier-environment.txt
+          python -m pip freeze | tee -a render3d-verifier-environment.txt
+          python -c "import OpenEXR, png, numpy"
+      - name: Decode real synthetic PNG and EXR fixtures without skips
+        run: |
+          python - <<'PY' 2>&1 | tee render3d-verifier-tests.log
+          import sys
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("tests", pattern="test_render3d_verify.py")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.testsRun == 0 or result.skipped:
+              raise SystemExit("The complete independent image verification suite must execute without skips.")
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: render3d-verifier-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            render3d-verifier-head.txt
+            render3d-verifier-environment.txt
+            render3d-verifier-tests.log
+          if-no-files-found: error
+          retention-days: 30
