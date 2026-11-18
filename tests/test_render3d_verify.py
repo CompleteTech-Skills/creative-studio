@@ -77,6 +77,28 @@ class ImageVerification(unittest.TestCase):
                                 self.assertEqual(report['channels']['R']['maximum'],1)
                                 self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
 
+
+    def test_png_idat_run_cannot_restart_after_ancillary_chunk(self):
+        def chunk(kind,payload):
+            return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        text_chunk=chunk(b'tEXt',b'Comment\x00synthetic fixture')
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (8,16):
+                path=Path(temporary)/f'{depth}.png';self.png(path,depth)
+                original=path.read_bytes()
+                # Ancillary chunks before or after the one IDAT run remain valid.
+                valid=(original[:33]+text_chunk+original[33:],original[:-12]+text_chunk+original[-12:])
+                for payload in valid:
+                    path.write_bytes(payload)
+                    for decode in (verify_image,decode_image):
+                        decode(path,output=output(depth=depth),resolution=[3,2])
+                for tail in (b'',b'trailing data'):
+                    path.write_bytes(original[:-12]+text_chunk+chunk(b'IDAT',tail)+original[-12:])
+                    for decode in (verify_image,decode_image):
+                        with self.subTest(depth=depth,tail=tail,decode=decode.__name__):
+                            with self.assertRaisesRegex(Render3DError,'PNG IDAT chunks must be consecutive'):
+                                decode(path,output=output(depth=depth),resolution=[3,2])
+
     def test_png_color_key_transparency_rejects_before_opaque_or_preview_acceptance(self):
         with tempfile.TemporaryDirectory() as temporary:
             for depth in (8,16):

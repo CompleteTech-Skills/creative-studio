@@ -52,6 +52,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     # Strict structure and bounded inflate before the independent PNG decoder.
     require(stream.read(8) == b'\x89PNG\r\n\x1a\n', 'corrupt-output', 'Not a PNG file.')
     header, ended, count, inflated, inflater = None, False, 0, 0, zlib.decompressobj()
+    idat_started = idat_ended = False
     while not ended:
         prefix = stream.read(8)
         require(len(prefix) == 8, 'corrupt-output', 'Truncated PNG chunk.')
@@ -80,7 +81,11 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
                 'unsupported-feature','Unsupported critical PNG chunk.')
         require(kind != b'tRNS', 'unsupported-feature',
                 'PNG color-key transparency is unsupported; use explicit RGBA samples.')
+        if kind != b'IDAT' and idat_started:
+            idat_ended = True
         if kind == b'IDAT':
+            require(not idat_ended, 'corrupt-output', 'PNG IDAT chunks must be consecutive.')
+            idat_started = True
             require(not inflater.eof or length == 0, 'corrupt-output', 'Trailing compressed PNG stream.')
             expanded=inflater.decompress(payload,header[3]-inflated+1);inflated+=len(expanded)
             require(inflated <= header[3] and not inflater.unconsumed_tail and not inflater.unused_data,
