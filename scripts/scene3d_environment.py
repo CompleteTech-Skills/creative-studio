@@ -200,9 +200,14 @@ def _stored_placement(source,bundle,scene,rid):
 def _prepare_recipe(source,bundle,scene,recipe,*,policy='preserve',offset=_OMITTED,parent=_OMITTED):
     """Prepare one recipe entirely in memory; publication is owned by apply_recipes."""
     require(policy in ('preserve','reject'),'Regeneration policy must be preserve or reject.')
-    objects=plan(recipe);scene=deepcopy(scene)
     require(scene['kind']=='scene3d-scene','Select a scene manifest.')
     rid=recipe['id']
+    require(re.fullmatch(ID['pattern'],rid) and re.fullmatch(ID['pattern'],'generator_deleted_'+rid),
+            'Recipe ID must fit Scene3D node IDs and generator metadata keys.','SCENE3D_GENERATOR_ID')
+    objects=plan(recipe)
+    require(all(re.fullmatch(ID['pattern'],item['id']) for item in objects),
+            'Generated node IDs must fit the Scene3D ID format.','SCENE3D_GENERATOR_ID')
+    scene=deepcopy(scene)
     if offset is _OMITTED or parent is _OMITTED:
         stored_offset,stored_parent=_stored_placement(source,bundle,scene,rid)
         offset=stored_offset if offset is _OMITTED else offset

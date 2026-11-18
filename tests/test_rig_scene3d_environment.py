@@ -217,6 +217,20 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(RigError):plan(dict(recipe(),budget=2))
         with self.assertRaises(RigError):plan(recipe('caves'))
 
+    def test_publication_requires_recipe_ids_that_fit_scene_metadata_and_nodes(self):
+        r=recipe('primitive',kind='box',dimensions={})
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source'
+            create_environment(source,dict(r,id='a'*46))
+            bundle=load_project(source);path=bundle['project']['scenes'][-1]['path']
+            for identifier in ('Upper','1test','-test','a'*47):
+                with self.subTest(identifier=identifier):
+                    output=root/'output'
+                    with self.assertRaises(RigError) as failure:
+                        apply_recipe(source,output,path,dict(r,id=identifier))
+                    self.assertEqual(failure.exception.report['code'],'SCENE3D_GENERATOR_ID')
+                    self.assertFalse(output.exists())
+
     def test_schema_valid_malformed_history_is_a_typed_atomic_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);source=root/'source'

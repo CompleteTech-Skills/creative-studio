@@ -8,7 +8,9 @@ existing Scene3D snapshot service. Destinations must be new directories.
 
 A recipe contains exactly `id`, `version` (currently integer 1), `seed`
 (unsigned 32-bit integer), `generator`, `parameters`, and `budget` (maximum
-emitted nodes). The same recipe produces the same geometry and node IDs.
+emitted nodes). Published recipe IDs start with a lowercase letter, contain
+only lowercase ASCII letters, digits, and hyphens, and fit within 46 characters.
+Individual generators can impose shorter limits. The same recipe produces the same geometry and node IDs.
 `primitive` accepts `kind` and `dimensions`; the available kinds are box, plane,
 cylinder, cone, sphere, capsule, torus, stairs, ramp, pipe, beam, platform, door,
 window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygon), and curve (capped straight spans).
