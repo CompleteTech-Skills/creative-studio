@@ -90,7 +90,6 @@ class RigStateRuntime:
             cycle_delta += delta
         total_delta = sum((self._root(evaluate_animation(self.rig, self.rig.clips[c], self.rig.clips[c]['duration'])['pose'])
                            - self._root(evaluate_animation(self.rig, self.rig.clips[c], 0)['pose']) for c in clips if self.rig.clips[c]['root_motion'] == 'embedded'), np.zeros(3))
-        root = self.rig.skeleton['root']
         motion_error = 'Requested runtime time exceeds finite root-motion representation.'
         with np.errstate(over='ignore', invalid='ignore'):
             if math.isfinite(cycles):
@@ -104,8 +103,13 @@ class RigStateRuntime:
                 except OverflowError as exc:
                     raise RigError('RIG_STATE_TIME', motion_error) from exc
             translation = first_root+self._root(pose)-self._root(start)+self.root_offset+prior_delta+repeated_delta
-        require(np.isfinite(translation).all(), 'RIG_STATE_TIME', motion_error)
-        pose['bones'].setdefault(root, {})['translation'] = translation.tolist()
+            placement = first_root-self._root(start)+self.root_offset+prior_delta+repeated_delta
+        require(np.isfinite(translation).all() and np.isfinite(placement).all(), 'RIG_STATE_TIME', motion_error)
+        # Place the root and contact targets before native constraints and IK.
+        # Translating an already solved pose changes its relation to fixed world
+        # poles/constraint points, so matching the endpoint alone is insufficient.
+        pose = evaluate_animation(self.rig, clip, min(local, clip['duration']),
+                                  _root_offset=placement)['pose']
         if self.source_pose is not None and self.blend_seconds and elapsed < self.blend_seconds:
             # Complete both poses: sparse target channels must fade old channels
             # back to rest, including morphs omitted from the target clip.

@@ -1,28 +1,36 @@
 # Bounded native rig state runtime preservation
 
 This layer advances #56 and the contact portion of #54 under parent #11. It
-preserves the existing native evaluator and the selected catalog mapping owner.
+uses the existing native evaluator and preserves the selected catalog mapping owner.
 It does not complete those issues or establish visual or production acceptance.
 
 ## Source boundary
 
-The exact parent is `75e57cba1b8bca4b5ef87f3888d2568ed07d3d04`
-(tree `ae8b4fad967121fa00d1b4f2404da3b85096c4e0`), the current core
-preservation layer. Its retained controls, retargeting, specialization, estimates,
-scaled-wing correction and role-ID correction remain prerequisites.
+The original preparation parent was `75e57cba1b8bca4b5ef87f3888d2568ed07d3d04`
+(tree `ae8b4fad967121fa00d1b4f2404da3b85096c4e0`), the core preservation
+layer. The later integration base is `01edd0913e0119d89d5f9b78298d03dfa1e37855`
+(tree `c4fc696ada395ff653e94c1220c4f09f67cca1fe`). These are distinct source
+boundaries. Retained controls, retargeting, specialization, estimates, scaled-wing
+correction and role-ID correction remain prerequisites.
+
+The root-placement correction below is prepared against candidate
+`d19eefe4a0a0decbb84b43e9712719e256685686`
+(tree `8f736ad52071e2a860e1e5913fbbca8f037751f9`).
 
 | Source | Exact inspected head | Disposition |
 | --- | --- | --- |
-| #309 | `70c672be3e9c72f990d0728b6bb87e29b4183446` | Runtime and its complete 16-test module retained byte for byte |
+| #309 | `70c672be3e9c72f990d0728b6bb87e29b4183446` | Complete original 16-test module retained byte for byte; runtime root placement corrected below |
 | #334 | `c5c8384ff86490e511dd1f49d73c3f43d4a9bc78` | Contact evaluator correction and complete numerical regression retained |
 | #459 | `f2476e66f18fd56237ed68dc705dce0c25c3e505` | Inspected read-only; its contact correction and test body are identical to #334 |
 | #347 | `f9cb0f6657184f94d95705e62720724b64248f9d` | Event dispatch, explicit recovery and reduced-motion execution deferred |
 | #354 | `fb08259c1e31c5508dfd88f76d8e218b31f840e4` | Detailed dependency discovery and provenance reporting deferred |
 | #491 | `baf9332d9ea3030a16c1b8731763a8c31b4a99aa` | Scaled-wing part already in parent; default-morph discovery correction and its three tests must accompany deferred #354 |
 
-No source branch is rewritten or removed. Preserving these source hunks does not
-mean they have reached main, and does not supersede historical revision-bound
-evidence. The separate #459 lane retains its own branch and integration decision.
+No source branch is rewritten or removed. The original runtime source is no
+longer byte-identical to #309: the correction places accumulated root motion
+through the native evaluator. Source retention does not mean these changes have
+reached main, and does not supersede historical revision-bound evidence. The
+separate #459 lane retains its own branch and integration decision.
 
 ## Python interface and behavior
 
@@ -55,6 +63,41 @@ keeps authored contact locations. The retained contact regression checks exact
 FK targets, convergence, full skinned geometry, an embedded positive control and
 non-looping clamping.
 
+### Root placement before native controls
+
+Source inspection identified a defect in the originally retained runtime: it
+evaluated a clip at local non-looping time with constraints/contact IK, then
+translated only the already-solved root for accumulated cycles, preceding clips
+and state-entry alignment. A matching contact endpoint did not establish a
+matching native pose. The IK chain's authored pole is a fixed world-space point;
+moving a solved chain changes its relation to that pole and can change the
+correct intermediate joints and skinned vertices. World-space constraints also
+need to observe the final placement.
+
+The runtime now computes its existing recipe trajectory and finite placement
+offset, then re-evaluates the selected clip through `evaluate_animation` with
+the private `_root_offset` argument. Native evaluation validates that offset as
+a finite three-vector and applies it to the root and active contact targets
+before constraints and contact IK. Authored world-space poles, constraint
+points and orientation goals remain unchanged. The default evaluator call
+without the offset retains its existing behavior. No separate IK implementation
+or disabled-constraint path is introduced.
+
+This handles complete embedded cycles, different clip origins and state-entry
+alignment through the same native controls. In-place cycles still do not
+accumulate their authored root displacement. Existing exact-cycle fallback and
+finite-motion guards remain; there is no arbitrary cycle-count cap. Transition
+rollback and captured-source crossfade behavior are retained.
+
+The reported synthetic case uses root translation from zero to 0.5 meters on X
+over one second, contact target `[0, 1.5, 0]`, fixed pole `[0, 0, 1]` and runtime
+time 2.25 seconds. The original source's post-solve placement cannot reproduce
+the native bend direction after repeated embedded motion. This diagnosis and
+the fix's ordering are source-derived, not an executed numerical result.
+Independent regression coverage must compare full FK and actual skinned
+geometry for embedded loops, in-place loops and displaced recipe entry; endpoint
+agreement alone is insufficient.
+
 This is an in-memory Python API. Durable jobs, event dispatch, explicit catalog
 recovery, authored reduced-motion execution and detailed dependency inventories
 are separate work. No 2D frame index is interpreted as 3D geometry. Existing
@@ -67,13 +110,16 @@ run or local release gate was executed for this layer. Source equality checks
 establish retention only; historical passing runs apply to their original
 revisions. Independent review and exact-current-head hosted checks remain needed.
 
-The root integration must add `test_rig_state_runtime.py` to the existing
-`animation-ik` group in `scripts/test_rig_gate.py`, preserving all other entries.
-The contact test is already in the existing `test_rig_animation.py` group member.
+The existing integration has already added `test_rig_state_runtime.py` to the
+`animation-ik` group in `scripts/test_rig_gate.py`. Its original 16 tests remain
+byte-for-byte preserved. The direct evaluator contact test remains in the
+existing `test_rig_animation.py` group member. The independent
+`test_rig_state_runtime_contacts.py` regression module must also be included by
+the root integrator without removing other gate entries.
 Run the focused tests and release gates against the final integrated revision:
 
 ```bash
-PYTHONPATH=scripts:tests python -m unittest test_rig_state_runtime test_rig_animation -v
+PYTHONPATH=scripts:tests python -m unittest test_rig_state_runtime test_rig_state_runtime_contacts test_rig_animation -v
 python scripts/test_rig_gate.py animation-ik
 python scripts/test_rig_gate.py schema-math
 python scripts/test_rig_gate.py interoperability

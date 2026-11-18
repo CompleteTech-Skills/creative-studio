@@ -9,7 +9,7 @@ from rig_contracts import DEFAULT_LIMITS, validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import atomic_json, read_json, require
 from rig_ik import solve_ik, validate_chain
-from rig_math import IDENTITY_Q, qangle, qinverse, qmul, quaternion, slerp
+from rig_math import IDENTITY_Q, qangle, qinverse, qmul, quaternion, slerp, vector
 from rig_models import RigAsset
 from rig_skeleton import evaluate_fk, neutral_pose
 
@@ -78,7 +78,15 @@ def evaluate_track(track: dict, time: float) -> np.ndarray:
 
 
 def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=False,
-                       contacts=True, constraints=True, _validated=False) -> dict:
+                       contacts=True, constraints=True, _validated=False,
+                       _root_offset=None) -> dict:
+    """Evaluate native controls after optional runtime root/contact placement.
+
+    The private offset is a finite three-vector in native world meters. It moves
+    the sampled root and active contact targets before constraints and IK;
+    authored world-space poles and constraint points stay fixed.
+    """
+    placement = vector(_root_offset) if _root_offset is not None else None
     clip = rig.clips[clip] if isinstance(clip, str) else clip
     if not _validated:validate_animation(rig, clip)
     require(math.isfinite(time) and time >= 0, 'RIG_ANIMATION_TIME', 'Evaluation time must be finite and nonnegative.')
@@ -97,6 +105,10 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
     if cycles and clip['root_motion'] == 'embedded':
         root = pose['bones'].setdefault(root_id, {})
         root['translation'] = (np.array(root.get('translation', root_rest))+cycles*root_cycle).tolist()
+    if placement is not None:
+        root = pose['bones'].setdefault(root_id, {})
+        with np.errstate(over='ignore', invalid='ignore'):
+            root['translation'] = vector(np.asarray(root.get('translation', root_rest))+placement).tolist()
     controller_data = rig.manifest.get('controllers', dict(ik=[], constraints=[]))
     ordered = constraint_order(rig.skeleton, controller_data['constraints']) if constraints else []
     changes = []
@@ -108,6 +120,9 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
             active = contact['start'] <= local_time < contact['end'] or (local_time == duration and contact['end'] == duration)
             if not active:continue
             target = np.array(contact['target'])+(cycles*root_cycle if clip['root_motion'] == 'embedded' else 0)
+            if placement is not None:
+                with np.errstate(over='ignore', invalid='ignore'):
+                    target = vector(target+placement)
             result = solve_ik(rig.skeleton, pose, chains[contact['chain']], target,
                               constraints=ordered, orientation=contact.get('orientation'))
             pose = result.pose
