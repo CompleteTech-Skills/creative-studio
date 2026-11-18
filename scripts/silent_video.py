@@ -275,8 +275,9 @@ def _binary(name, override=None):
 
 
 def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
-    """Bound both process duration and captured evidence, including fast exits."""
+    """Bound process duration and retain bounded observed failure transcripts."""
     start = time.monotonic()
+    failure = None
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
         try:
@@ -293,16 +294,38 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
                 if status is not None:
                     break
                 time.sleep(.02)
+        except ValueError as exc:
+            failure = exc
         finally:
             if process.poll() is None:
                 process.kill()
             process.wait()
-        stdout.seek(0); stderr.seek(0)
-        out = stdout.read().decode('utf-8', 'strict')
-        err = stderr.read().decode('utf-8', 'replace')
-    if status:
-        raise ValueError('media command failed ('+str(status)+'): '+err[-2000:])
-    return {'command': command, 'exit_status': status, 'stdout': out, 'stderr': err}
+        record = {'command': list(command), 'exit_status': process.returncode}
+        for name, stream in (('stdout', stdout), ('stderr', stderr)):
+            stream.seek(0)
+            raw = stream.read(limits['max_log_bytes']+1)
+            truncated = len(raw) > limits['max_log_bytes']
+            raw = raw[:limits['max_log_bytes']]
+            # Replacement characters and partial UTF-8 tails must not expand
+            # the retained transcript beyond the configured byte ceiling.
+            normalized = raw.decode('utf-8', 'replace').encode('utf-8')
+            record[name] = normalized[:limits['max_log_bytes']].decode('utf-8', 'ignore')
+            if truncated or len(normalized) > limits['max_log_bytes']:
+                record[name+'_truncated'] = True
+            if name == 'stdout':
+                try:
+                    raw.decode('utf-8', 'strict')
+                except UnicodeDecodeError:
+                    if not truncated and failure is None:
+                        failure = ValueError('media command emitted invalid UTF-8 stdout')
+    if failure is None and record['exit_status']:
+        failure = ValueError('media command failed ('+str(record['exit_status'])+'): '+record['stderr'][-2000:])
+    if failure is not None:
+        if str(failure) == 'media command exceeded timeout':
+            record['timed_out'] = True
+        failure.evidence = {'command_failure': record}
+        raise failure
+    return record
 
 
 def _advertised_names(transcript, flags):
@@ -416,6 +439,15 @@ def _fraction(value, label):
         raise ValueError('invalid '+label+' in probe') from exc
 
 
+def _probe_integer(value, label):
+    """Admit observed integral ffprobe fields without lossy float coercion."""
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and re.fullmatch(r'[+-]?[0-9]+', value):
+        return int(value)
+    raise ValueError('invalid '+label+' in probe')
+
+
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
     """Probe ALL streams, enumerate presentation timestamps and strictly decode."""
     validate_request(request)
@@ -425,8 +457,20 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     before = file_hash(path)
     profile, source, limits = PROFILES[request['profile']], request['source'], request['limits']
     encoder, probe = _binary('ffmpeg', ffmpeg), _binary('ffprobe', ffprobe)
-    inspected = _run([probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format',
-                      '-of', 'json', str(path.resolve())], limits, cancel=cancel)
+    def execute(stage, command, **options):
+        try:
+            observed = _run(command, limits, cancel=cancel, **options)
+        except ValueError as exc:
+            failed = getattr(exc, 'evidence', {}).get('command_failure')
+            if diagnostics is not None and failed is not None:
+                diagnostics[stage] = failed
+            raise
+        if diagnostics is not None:
+            diagnostics[stage] = observed
+        return observed
+
+    inspected = execute('probe', [probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format',
+                      '-of', 'json', str(path.resolve())])
     try:
         data = json.loads(inspected['stdout'])
         streams = data['streams']
@@ -443,46 +487,52 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         expected_count = len(source['frames'])
         if (video.get('codec_name') != profile['codec'] or video.get('pix_fmt') != profile['pixel_format'] or
                 video.get('width') != source['width'] or video.get('height') != source['height'] or
-                int(video.get('nb_read_frames', -1)) != expected_count):
+                _probe_integer(video.get('nb_read_frames', -1), 'frame count') != expected_count):
             raise ValueError('encoded codec/pixel format/dimensions/frame count mismatch')
         if video.get('sample_aspect_ratio') != '1:1':
             raise ValueError('encoded sample aspect ratio mismatch')
         dar = Fraction(source['width'], source['height'])
-        if Fraction(video.get('display_aspect_ratio', '0:1').replace(':', '/')) != dar:
+        display_aspect = video.get('display_aspect_ratio', '0:1')
+        if not isinstance(display_aspect, str):
+            raise ValueError('invalid display aspect ratio in probe')
+        if Fraction(display_aspect.replace(':', '/')) != dar:
             raise ValueError('encoded display aspect ratio mismatch')
         if video.get('color_range', 'unknown') not in ('unknown', 'tv'):
             raise ValueError('unexpected color range')
         for key in ('color_space', 'color_transfer', 'color_primaries'):
             if video.get(key, 'unknown') not in ('unknown', 'unspecified'):
                 raise ValueError('unexpected color properties for untagged SDR profile')
-        formats = set(data['format']['format_name'].split(','))
+        container = data['format']
+        if not isinstance(container, dict) or not isinstance(container.get('format_name'), str):
+            raise ValueError('invalid container format in probe')
+        formats = set(container['format_name'].split(','))
         if profile['container'] not in formats:
             raise ValueError('encoded container mismatch')
         fps = fps_fraction(source['fps'])
         if _fraction(video['avg_frame_rate'], 'frame rate') != fps:
             raise ValueError('encoded rational frame rate mismatch')
         tick = _fraction(video['time_base'], 'time base')
-        duration = Fraction(data['format']['duration'])
+        duration = _fraction(container['duration'], 'duration')
         if abs(duration - Fraction(expected_count, 1)/fps) > 2*tick:
             raise ValueError('encoded presentation duration mismatch')
     except (KeyError, TypeError, ZeroDivisionError, json.JSONDecodeError) as exc:
         raise ValueError('malformed/incomplete ffprobe evidence') from exc
-    timeline = _run([probe, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
+    timeline = execute('timeline', [probe, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
                      '-show_entries', 'frame=best_effort_timestamp,pkt_duration', '-of', 'json', str(path.resolve())],
-                    limits, cancel=cancel)
+                    )
     try:
         frames = json.loads(timeline['stdout'])['frames']
         if len(frames) != expected_count:
             raise ValueError('decoded frame enumeration mismatch')
-        times = [int(frame['best_effort_timestamp'])*tick for frame in frames]
+        times = [_probe_integer(frame['best_effort_timestamp'], 'frame timestamp')*tick for frame in frames]
         for i, stamp in enumerate(times):
             if abs(stamp-Fraction(i, 1)/fps) > tick or i and stamp <= times[i-1]:
                 raise ValueError('missing/duplicate/out-of-order presentation timestamp')
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError('malformed frame timestamp evidence') from exc
-    decoded = _run([encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
+    decoded = execute('decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
                     '-err_detect', 'explode', '-i', str(path.resolve()), '-map', '0:v:0',
-                    '-an', '-sn', '-dn', '-f', 'null', '-'], limits, cancel=cancel)
+                    '-an', '-sn', '-dn', '-f', 'null', '-'])
     if decoded['stderr'].strip():
         raise ValueError('strict decode reported errors: '+decoded['stderr'][-2000:])
     pixel_checks = []
@@ -492,10 +542,10 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         with tempfile.TemporaryDirectory(prefix='silent-pixels-') as tmp:
             for index in sorted({0, expected_count//2, expected_count-1}):
                 output = Path(tmp)/('decoded-%d.png' % index)
-                _run([encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
+                execute('pixel_decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
                       '-i', str(path.resolve()), '-map', '0:v:0', '-an', '-sn', '-dn',
                       '-vf', 'select=eq(n\\,%d)' % index, '-frames:v', '1', '-threads', '1',
-                      str(output)], limits, cancel=cancel, output=output)
+                      str(output)], output=output)
                 expected = _image(_read_frame(root, source['frames'][index]['path']),
                                   (source['width'], source['height']))
                 with Image.open(output) as decoded_frame:
@@ -549,7 +599,7 @@ def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel
             result = _verify_snapshot(snapshot, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
                                       cancel=cancel, diagnostics=diagnostics)
         except ValueError as exc:
-            exc.evidence = diagnostics
+            exc.evidence = {**getattr(exc, 'evidence', {}), **diagnostics}
             raise
         checked = hashlib.sha256()
         checked_bytes = 0

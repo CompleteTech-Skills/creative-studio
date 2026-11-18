@@ -45,3 +45,23 @@ https://github.com/FFmpeg/FFmpeg/blob/n6.1.1/fftools/opt_common.c .
 The tests were authored independently before this implementation. Their mocked
 probe results are contract fixtures; actual codec evidence comes from the separate
 native silent-media workflow. Current-head execution remains pending at authoring.
+
+## Later failure-evidence correction (#525 / #227)
+
+The correction based on main `69304deb3e55a35aa3717e1e6fcd949502c8bb99`
+passed 37 portable tests and 53 tests in the optional native suite locally on
+Linux, with no skips. The native suite includes inherited portable contract
+tests and actual FFmpeg/ffprobe 7.1.5 checks on synthetic media. An actual
+corrupt MP4 produced ffprobe exit 1; Python and CLI failures retained the raw
+bounded command result and identity hashes without fabricated stream counts.
+Portable malformed-probe, timeout and evidence-bound fixtures separately cover
+the diagnostic contract; they do not establish native codec behavior. Malformed
+aspect-ratio and integral-count fields fail with retained raw probe evidence
+through both Python and CLI paths. UTF-8 replacement expansion also sets the
+truncation flag when its encoded transcript exceeds the byte limit; invalid
+UTF-8 stdout remains an invalid command result.
+
+The original 17 core and 30 native test method bodies remain unchanged. The new
+regressions failed on the preceding source before the correction. Independent
+review and required hosted checks must identify the final integrated head;
+these local results do not grant production-art or full-film acceptance.

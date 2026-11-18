@@ -272,3 +272,20 @@ PY
 [profiles]: https://github.com/CompleteTech-Skills/creative-studio/issues/236
 [color]: https://github.com/CompleteTech-Skills/creative-studio/issues/237
 [profile-pr]: https://github.com/CompleteTech-Skills/creative-studio/pull/417
+
+## Failed verification evidence
+
+Failure evidence retains the artifact, request and source-manifest hashes and
+`verified: false`. Once a media process starts, a failed command retains its
+argument list, observed exit status, stdout and stderr under `command_failure`
+and its verifier stage (`probe`, `timeline` or `decode`). Each transcript stays
+within the request's `max_log_bytes` byte limit, including UTF-8 replacement.
+Truncated streams carry an explicit truncation flag; timeout failures carry
+`timed_out: true` and the observed terminated-process status.
+
+Successful raw command results are retained before JSON or stream interpretation.
+Malformed ffprobe output therefore leaves inspectable raw evidence. If probing
+cannot establish stream counts, the failure does not invent video/audio counts.
+Python exceptions expose this evidence, and the existing
+`verify-export --require-silent` CLI includes it in its JSON failure response.
+These records are failure diagnostics, never successful export receipts.

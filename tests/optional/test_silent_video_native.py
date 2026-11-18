@@ -286,6 +286,31 @@ class SilentMedia(core.SilentContracts):
         with self.assertRaises(ValueError):
             video.verify_export(output, self.request)
 
+    def test_corrupt_media_preserves_actual_ffprobe_failure_in_python_and_cli(self):
+        artifact=self.root/'corrupt-evidence.mp4';artifact.write_bytes(b'not a media artifact')
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact,self.request)
+        evidence=failed.exception.evidence
+        self.assertEqual(evidence['artifact_sha256'],hashlib.sha256(artifact.read_bytes()).hexdigest())
+        self.assertEqual(evidence['request_sha256'],video._digest(self.request))
+        probe=evidence['probe']
+        self.assertEqual(Path(probe['command'][0]).name,Path(shutil.which('ffprobe')).name)
+        self.assertNotEqual(probe['exit_status'],0)
+        self.assertIsInstance(probe['stdout'],str)
+        self.assertTrue(probe['stderr'])
+        self.assertLessEqual(len(probe['stderr'].encode()),self.request['limits']['max_log_bytes'])
+        request_path=self.root/'failure-request.json';request_path.write_text(json.dumps(self.request))
+        result=subprocess.run([sys.executable,str(Path(video.__file__).resolve()),'verify-export',str(artifact),'--request',str(request_path),'--require-silent'],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,1)
+        report=json.loads(result.stdout)
+        self.assertFalse(report['verified'])
+        self.assertEqual(report['artifact_sha256'],evidence['artifact_sha256'])
+        self.assertEqual(report['probe']['exit_status'],probe['exit_status'])
+        self.assertTrue(report['probe']['stderr'])
+        for value in (evidence,report):
+            for field in ('video_stream_count','audio_stream_count','other_stream_count'):
+                self.assertNotIn(field,value)
+
     def test_ffprobe_nonzero_exit_is_rejected(self):
         output = self.root / 'video.mp4'
         video.encode(self.request, self.root, output)
