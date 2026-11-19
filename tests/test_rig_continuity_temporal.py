@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import struct
 import subprocess
 import sys
 import tempfile
@@ -166,6 +167,60 @@ class TemporalTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
                 registry.append_events('main', [wrong_fact], expected_sha256=head)
             self.assertEqual(registry.temporal_history('main')['sha256'], head)
+
+    def test_native_cancellation_agrees_with_authored_origin(self):
+        def configure(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            nodes['camera']['parent'] = None
+            nodes['camera']['transform'] = dict(TRANSFORM, translation=[0.1, 0.0, 0.0])
+            nodes['mesh']['parent'] = 'camera' if index == 0 else None
+            position = 0.2 if index == 0 else 0.3
+            nodes['mesh']['transform'] = dict(TRANSFORM, translation=[position, 0.0, 0.0])
+            scene['roots'] = [node['id'] for node in scene['nodes'] if node['parent'] is None]
+
+        root = Path(self.temp.name) / 'cancellation'
+        plan = fixture(root, configure_scene=configure)
+        for scene in plan['scenes']:
+            scene['scene_to_world']['translation'] = [-0.3, 0.0, 0.0]
+        after = dict(TRANSFORM, translation=[3.0, 0.0, 0.0])
+        move = event('cancellation-origin', 2002, kind='relocate', target='aster',
+                     before=TRANSFORM, after=after)
+        with IdentityRegistry(Path(self.temp.name) / 'cancellation.sqlite', asset_root=root) as registry:
+            head = registry.create_timeline(plan)
+            before = registry.temporal_snapshot('main', 'shot-0', 2, boundary='before')['snapshot']
+            residual = before['entities'][0]['transform']['translation'][0]
+            self.assertNotEqual(residual, 0.0)
+            self.assertLess(abs(residual), 1e-15)
+            registry.append_events('main', [move], expected_sha256=head)
+            observed = registry.temporal_snapshot('main', 'shot-0', 2)['snapshot']
+            self.assertEqual(observed['entities'][0]['transform'], after)
+
+    def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
+        coordinate = 999999999999.0
+        angle_component = math.sqrt(0.5)
+        float32_component = struct.unpack('<f', struct.pack('<f', angle_component))[0]
+        native_before = dict(TRANSFORM, translation=[2, 0, 0])
+        recorded = dict(TRANSFORM, translation=[coordinate, 0, 0],
+                        rotation=[0.0, float32_component, 0.0, float32_component])
+        first = event('authored-first', 2002, kind='relocate', target='aster',
+                      before=native_before, after=recorded)
+        head = self.append([first])
+        for field, value in (
+                ('translation', [coordinate + 0.001, 0, 0]),
+                ('scale', [math.nextafter(1.0, 2.0), 1.0, 1.0])):
+            wrong = dict(recorded, **{field: value})
+            later = event('authored-later', 3003, kind='relocate', target='aster',
+                          before=wrong, after=native_before)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'PRECONDITION'):
+                self.append([later], head=head)
+            self.assertEqual(self.registry.temporal_history('main')['sha256'], head)
+        equivalent = dict(recorded, rotation=[0.0, -angle_component, 0.0, -angle_component])
+        later = event('authored-later', 3003, kind='relocate', target='aster',
+                      before=equivalent, after=native_before)
+        self.append([later], head=head)
+        self.assertEqual(continuity_bytes(self.registry.temporal_history('main')['events']),
+                         continuity_bytes([first, later]))
+        self.assertEqual(self.snap(frame=3)['snapshot']['entities'][0]['transform'], native_before)
 
     def test_plan_and_events_share_one_immutable_path_closure(self):
         source = self.plan['shots'][0]['shot']

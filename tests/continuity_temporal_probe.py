@@ -16,6 +16,8 @@ from scene3d_example import TRANSFORM
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError('Run the replay evidence probe with assertions enabled.')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output',type=Path)
     args=parser.parse_args()
@@ -41,6 +43,12 @@ def main():
             assert snapshots[name]==registry.temporal_snapshot('main',shot,frame,boundary=boundary)
         assert snapshots['terminal']['snapshot']['entities']==snapshots['next-shot']['snapshot']['entities']
         assert snapshots['terminal']['snapshot']['entities']!=snapshots['last-displayed']['snapshot']['entities']
+        before_event = snapshots['before']['snapshot']
+        after_event = snapshots['after']['snapshot']
+        assert before_event['story_tick'] == after_event['story_tick'] == 1001
+        assert before_event['applied_events'] == [] and before_event['facts'] == []
+        assert after_event['applied_events'] == ['discover']
+        assert {fact['id']: fact['value'] for fact in after_event['facts']} == {'discovered': True}
         write('plan.json',plan);write('events.json',events)
         write('history.json',registry.temporal_history('main'))
     # A distinct incoming native scene requires its relocation chronology to

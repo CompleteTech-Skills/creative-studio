@@ -60,16 +60,23 @@ def _equal(a, b):
     return a == b
 
 
-def _same_transform(a, b):
-    """Compare validated TRS across native matrix composition/decomposition."""
+def _same_transform(a, b, *, native):
+    """Compare validated TRS, allowing roundoff only at a native matrix boundary."""
     roundoff = 8 * math.ulp(1.0)
     for field in ('translation', 'scale'):
-        if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=0.0)
-                   for x, y in zip(a[field], b[field])):
+        if native:
+            # Matrix cancellation near zero needs a small absolute floor.
+            if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=roundoff)
+                       for x, y in zip(a[field], b[field])):
+                return False
+        elif not _equal(a[field], b[field]):
             return False
     # Unit quaternion components share a unit scale. Only reversing every
     # component together represents the same rotation.
-    return any(all(abs(x - sign * y) <= roundoff for x, y in zip(a['rotation'], b['rotation']))
+    length_a, length_b = math.hypot(*a['rotation']), math.hypot(*b['rotation'])
+    rotation_a = [x / length_a for x in a['rotation']]
+    rotation_b = [x / length_b for x in b['rotation']]
+    return any(all(abs(x - sign * y) <= roundoff for x, y in zip(rotation_a, rotation_b))
                for sign in (1, -1))
 
 
@@ -77,6 +84,7 @@ def _operations(events, initial, until=None):
     """Replay from source; no mutable evaluator state survives a query."""
     state = deepcopy(initial)
     applied, previous = [], None
+    relocated = set()
     for event in events:
         key = _key(event)
         if previous is not None and key <= previous:
@@ -107,8 +115,12 @@ def _operations(events, initial, until=None):
                 container = state['entities'][entity]
                 field = 'transform' if kind == 'relocate' else 'visible'
                 current = container[field]
-            equal = _same_transform if kind == 'relocate' else _equal
-            if not equal(current, operation['before']):
+            if kind == 'relocate':
+                matches = _same_transform(current, operation['before'], native=entity not in relocated)
+                relocated.add(entity)
+            else:
+                matches = _equal(current, operation['before'])
+            if not matches:
                 fail('PRECONDITION', event['event_id'] + ' before-state mismatch for ' + target)
             container[field] = deepcopy(operation['after'])
         applied.append(event['event_id'])
@@ -266,7 +278,7 @@ class TemporalEngine:
             initial_tick = min(incoming)
             state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick)
             if any(native['visible'] != state['entities'][entity]['visible'] or
-                   not _same_transform(native['transform'], state['entities'][entity]['transform'])
+                   not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True)
                    for entity, native in entities.items()):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
         verify_references(self.root, sources)
