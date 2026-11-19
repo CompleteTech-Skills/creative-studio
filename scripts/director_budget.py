@@ -1503,7 +1503,7 @@ class NativeBudget:
         with hatch._pinned_journal_admission(self._journal_root):
             current = hatch.manifest(self.root, recovery=True)
             _need(object_hash(current) == object_hash(self.data), 'BINDING',
-                  'Native finalization requires the current on-disk owner journal.')
+                  'Native accounting requires the current on-disk owner journal.')
 
     def _legacy_release_witness(self, job, row):
         """Bind the owner's all-attempt attestation to verifiable retained history."""
@@ -1584,6 +1584,11 @@ class NativeBudget:
 
     def reconcile(self):
         """Replay durable accounting only. Never infer that a provider did not run."""
+        # Replaying can acknowledge a reservation or observation by saving the
+        # owner. Authenticate the entire current journal before any ledger or
+        # journal mutation, including ordinary usage and cancellation callers.
+        # An older valid snapshot cannot erase a newer durable observation.
+        self._require_current_journal()
         # Validate the complete journal before replaying even an earlier valid
         # operation. An invalid identity cannot trigger incidental accounting.
         for job in self.data['jobs']:

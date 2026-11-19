@@ -793,3 +793,14 @@ A refusal preserves the published running token and any ledger reservation for
 explicit reconciliation; it does not invent provider usage or refund a hold.
 The unchanged passive observer and actual disposable post-receipt mutations
 exercise both budgeted and unbudgeted paths.
+
+### Current owner snapshot before accounting replay
+
+Every native accounting replay verifies the complete current on-disk owner journal
+before changing the ledger or acknowledging an observation in that journal. Usage
+recording and cancellation share this admission boundary. A previously saved
+snapshot cannot replace a newer durable observation, including one whose ledger
+acknowledgment was interrupted. Reopen the current journal under the existing
+Hatch ownership lock for recovery; repeated replay retains uncertainty and charges
+each measured delta once. This check does not infer nonexecution or authorize
+new provider work.
