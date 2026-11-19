@@ -373,29 +373,45 @@ class StructuredPackageErrorTests(unittest.TestCase):
             archive.writestr('payload.txt', b'x')
         self.refused(lambda: verify_package_archive(empty), 'ARCHIVE')
 
-    def test_compressed_or_aliased_archive_members_are_structured(self):
-        archive_path = self.root / 'package.zip'; create_archive(self.package, archive_path)
-        with zipfile.ZipFile(archive_path) as source:
-            members = [(info, source.read(info)) for info in source.infolist()]
-        for mode in ('deflated', 'aliased'):
-            with self.subTest(mode=mode):
-                path = self.root / (mode + '.zip')
-                with zipfile.ZipFile(path, 'w') as target:
-                    for info, data in members:
-                        target.writestr(info.filename, data, compress_type=
-                                        zipfile.ZIP_DEFLATED if mode == 'deflated' else zipfile.ZIP_STORED)
-                    if mode == 'aliased':
-                        target.writestr('ALIAS.txt', b'a'); target.writestr('alias.txt', b'b')
-                with self.assertRaises(RigError) as caught:
-                    restore_package_archive(path, self.root / (mode + '-out'))
-                self.assertTrue(caught.exception.report['code'].startswith('LIBRARY_PACKAGE_'))
-                self.assertFalse((self.root / (mode + '-out')).exists())
+    def archive_members(self):
+        path = self.root / 'package.zip'; create_archive(self.package, path)
+        with zipfile.ZipFile(path) as source:
+            members = {info.filename: source.read(info) for info in source.infolist()}
+        receipt = json.loads(members.pop('archive-receipt.json'))
+        return members, receipt
 
-    def test_corrupt_deflate_member_cannot_escape_unstructured(self):
-        path = self.root / 'corrupt.zip'
-        with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr('x.json', b'A' * 5000)
-        raw = bytearray(path.read_bytes()); raw[36:39] = b'\xff\xff\xff'; path.write_bytes(bytes(raw))
-        self.refused(lambda: verify_package_archive(path), 'ARCHIVE')
+    def write_archive(self, name, members, receipt, compression=zipfile.ZIP_STORED):
+        path = self.root / name
+        with zipfile.ZipFile(path, 'w') as target:
+            target.writestr('archive-receipt.json', json.dumps(receipt))
+            for member, data in members.items():
+                target.writestr(member, data, compress_type=compression)
+        return path
+
+    def test_compressed_archive_members_are_refused_before_decompression(self):
+        members, receipt = self.archive_members()
+        for compression in (zipfile.ZIP_DEFLATED, zipfile.ZIP_LZMA):
+            with self.subTest(compression=compression):
+                path = self.write_archive('compressed-%d.zip' % compression, members, receipt, compression)
+                destination = self.root / ('compressed-%d-out' % compression)
+                self.refused(lambda: restore_package_archive(path, destination), 'ARCHIVE')
+                self.assertFalse(destination.exists())
+                # Corrupt the first member's compressed stream: without the
+                # stored-only rule it escapes as zlib.error / LZMAError.
+                path = self.write_archive('corrupt-%d.zip' % compression, members, receipt, compression)
+                raw = bytearray(path.read_bytes())
+                with zipfile.ZipFile(path) as archive:
+                    info = archive.infolist()[1]
+                start = info.header_offset + 30 + len(info.filename.encode()) + 10
+                raw[start:start + 3] = b'\xff\xff\xff'; path.write_bytes(bytes(raw))
+                self.refused(lambda: verify_package_archive(path), 'ARCHIVE')
+
+    def test_receipt_listed_case_aliases_are_path_errors(self):
+        members, receipt = self.archive_members()
+        for name, data in (('ALIAS.txt', b'a'), ('alias.txt', b'b')):
+            members[name] = data; receipt['files'][name] = hashlib.sha256(data).hexdigest()
+        path = self.write_archive('aliased.zip', members, receipt)
+        self.refused(lambda: restore_package_archive(path, self.root / 'aliased-out'), 'PATH')
+        self.assertFalse((self.root / 'aliased-out').exists())
 
 if __name__ == '__main__': unittest.main()
