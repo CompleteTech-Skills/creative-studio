@@ -66,7 +66,7 @@ class RigFabrikNestedFoldMatchingTests(unittest.TestCase):
                         pose = zigzag_pose(skeleton, gap, root_rotation=rotation, root_translation=translation)
                         self.assert_preserved(skeleton, pose, 1e-10)
 
-    def steering_error(self, count, translation, bend, angle):
+    def steering_error(self, count, translation, bend, angle, distance=2., along=0.):
         """Relative error of the elbow's achieved pole rotation about the reach axis."""
         skeleton = chain_skeleton(count)
         pose = neutral_pose(skeleton)
@@ -80,7 +80,7 @@ class RigFabrikNestedFoldMatchingTests(unittest.TestCase):
         bent = elbow-root-axis*np.dot(elbow-root, axis)
         bent /= np.linalg.norm(bent)
         other = np.cross(axis, bent)
-        pole = root+axis*np.dot(elbow-root, axis)+(math.cos(angle)*bent+math.sin(angle)*other)*2.
+        pole = root+axis*(np.dot(elbow-root, axis)+along)+(math.cos(angle)*bent+math.sin(angle)*other)*distance
         declaration = dict(boundaries.chain(count), solver='fabrik')
         result = solve_ik(skeleton, pose, declaration, end.tolist(), pole=pole.tolist())
         self.assertTrue(result.converged, result.report())
@@ -101,6 +101,17 @@ class RigFabrikNestedFoldMatchingTests(unittest.TestCase):
         for count, translation, bend, angle in cases:
             with self.subTest(count=count, translation=translation, bend=bend, angle=angle):
                 self.assertLessEqual(self.steering_error(count, translation, bend, angle), 2e-3)
+
+    def test_distant_and_axially_offset_poles_still_steer(self):
+        # Pole coordinate magnitude must not inflate the chain-point rounding bound.
+        cases = ((1e6, 0., 1e-4, 1e-6, 0.), (1e3, 0., 1e-2, 1e-10, 0.), (1e3, 0., 1e-4, 1e-8, 0.),
+                 (2., 1e3, 3.14159, 1e-4, 0.), (1e6, 1., .8, 1e-6, 1e3), (10., 1e3, .8, 1e-6, 0.))
+        for count in (3, 4):
+            for distance, along, bend, angle, translation in cases:
+                with self.subTest(count=count, distance=distance, along=along, bend=bend, angle=angle,
+                                  translation=translation):
+                    error = self.steering_error(count, translation, bend, angle, distance, along)
+                    self.assertLessEqual(error, 2e-3)
 
 if __name__ == '__main__':
     unittest.main()

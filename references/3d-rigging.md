@@ -378,11 +378,17 @@ reach-based pole distance. When that reach is at most `1e-6` meters, the matchin
 meters along the same bend direction; a reach-distance pole below the solver's
 `1e-8` meter pole-degeneracy cutoff would otherwise be replaced by an arbitrary
 axis and move the elbow of a valid near-closed seed. FABRIK skips steering an interior joint only when the requested pole rotation
-is no larger than its first-order rounding uncertainty, which grows as the
-neighbour axis shortens, as the current point or pole offset aligns with that
-axis, and with world coordinate magnitude, as at nested near-pi folds. Small
-resolvable pole changes, including `1e-12` radians at exact coordinates and
-`1e-6` radians a million meters from the origin, still steer. Closure is tested within `1e-9` meters, the matched
+is no larger than its first-order rounding uncertainty: chain-point rounding
+tilts the neighbour axis by about `eps*scale/|axis|`, which changes the
+steering angle by the difference of the current point's and pole offset's
+cotangents against that axis, plus each perpendicular's own rounding. It grows
+as the axis shortens or aligns with the pole offset at nested near-pi folds.
+Pole coordinate magnitude enters only the pole perpendicular's rounding, so
+small resolvable changes, including `1e-12` radians at exact coordinates and
+`1e-6` radians with a pole a million meters away, still steer. A single
+matching pole cannot preserve folds that alternate sides of their neighbour
+axes, such as unequal nested gaps or 6+ joint zigzags; that contract is
+tracked separately in #551. Closure is tested within `1e-9` meters, the matched
 endpoint must also meet the chain's residual tolerance, and normalized pole/first
 segment directions must differ by at most eight machine epsilons in unit-vector
 distance. Comparing the vector difference avoids a dot product rounding a

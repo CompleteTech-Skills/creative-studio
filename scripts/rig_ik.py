@@ -357,11 +357,18 @@ def _pole_steering_unresolved(previous, point, following, pole):
     current_norm, pole_norm = float(np.linalg.norm(current_perp)), float(np.linalg.norm(pole_perp))
     if current_norm == 0. or pole_norm == 0.:
         return True
-    rounding = np.finfo(float).eps*max(float(np.abs(previous).max()), float(np.abs(point).max()),
-                                       float(np.abs(following).max()), float(np.abs(pole).max()))
+    eps = np.finfo(float).eps
+    # Chain-point rounding drives the axis and current perpendicular; only the
+    # pole perpendicular also carries rounding of the pole's own coordinates.
+    point_rounding = eps*max(float(np.abs(previous).max()), float(np.abs(point).max()),
+                             float(np.abs(following).max()))
+    pole_rounding = eps*max(float(np.abs(previous).max()), float(np.abs(pole).max()))
+    # A tilt of the shared axis turns both perpendiculars about it by their
+    # cotangents; for nearly parallel perpendiculars only the difference
+    # changes the steering angle to first order.
     uncertainty = _STEERING_ROUNDING_FACTOR*(
-        rounding/span*(abs(current_along)/current_norm+abs(offset_along)/pole_norm)
-        +rounding/current_norm+rounding/pole_norm)
+        point_rounding/span*abs(current_along/current_norm-offset_along/pole_norm)
+        +point_rounding/current_norm+pole_rounding/pole_norm)
     # atan2 resolves small angles that acos(cos) would round to zero.
     angle = math.atan2(float(np.linalg.norm(np.cross(current_perp, pole_perp))),
                        float(np.dot(current_perp, pole_perp)))
