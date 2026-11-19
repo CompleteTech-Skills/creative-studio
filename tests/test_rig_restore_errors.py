@@ -148,6 +148,14 @@ class RestoreErrorTests(unittest.TestCase):
             for member in ('metadata','array'):
                 with self.subTest(codec=label,member=member):
                     self.reject(native_package(self.original,method,corrupt=member),'native-corrupt-'+label+'-'+member)
+    def test_head_truncated_and_shifted_containers_are_structured(self):
+        self.reject(self.original[100:],'head-truncated')
+        data=bytearray(self.original)
+        end=data.rindex(b'PK\x05\x06')
+        offset=struct.unpack_from('<I',data,end+16)[0]
+        struct.pack_into('<I',data,end+16,offset+100)
+        self.reject(bytes(data),'shifted-central-directory')
+
     def test_encrypted_entry_admission_keeps_its_existing_error_code(self):
         data=bytearray(inventory_archive())
         struct.pack_into('<H',data,6,1)
