@@ -84,6 +84,46 @@ class Render91AuditEvidenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 self.validate.job_binding_source(native)
 
+    def test_present_revision_without_claimed_job_test_file_is_rejected(self):
+        native = dict(self.audit['native_job_equivalent'], revision=self.audit['foundation_revision'])
+        with self.assertRaisesRegex(AssertionError, 'Present job revision lacks'):
+            self.validate.job_binding_source(native)
+
+    def test_recorded_runs_reject_corruption_and_false_agreement(self):
+        workflow = json.loads((EVIDENCE / 'source-workflow.json').read_bytes())
+        names = (
+            'legacy-baseline.log', 'hosted-core317.json',
+            'native-capture.stdout.json', 'native-relocated-verify.stdout.json',
+            'native-source-snapshot/snapshot.json', 'scene-capture.stdout.json',
+            'scene-verify.stdout.json', 'scene-source-snapshot/snapshot.json',
+        )
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(self.validate, 'out', Path(directory)):
+            for name in names:
+                destination = Path(directory) / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes((EVIDENCE / name).read_bytes())
+            self.validate.verify_recorded_runs(self.audit, workflow)
+            for name, invalid in (('legacy-baseline.log', b'FAILED\n'), ('hosted-core317.json', b'{}')):
+                with self.subTest(name=name):
+                    destination = Path(directory) / name
+                    original = destination.read_bytes()
+                    destination.write_bytes(invalid)
+                    with self.assertRaisesRegex(AssertionError, 'digest differs'):
+                        self.validate.verify_recorded_runs(self.audit, workflow)
+                    destination.write_bytes(original)
+            workflow['commands'][0]['returncode'] = 1
+            with self.assertRaisesRegex(AssertionError, 'successful commands'):
+                self.validate.verify_recorded_runs(self.audit, workflow)
+            workflow['commands'][0]['returncode'] = 0
+            workflow['native_capture_relocated_verify_equal'] = False
+            with self.assertRaisesRegex(AssertionError, 'receipts differ'):
+                self.validate.verify_recorded_runs(self.audit, workflow)
+            workflow['native_capture_relocated_verify_equal'] = True
+            (Path(directory) / 'native-relocated-verify.stdout.json').write_bytes(b'{}')
+            with self.assertRaisesRegex(AssertionError, 'receipts differ'):
+                self.validate.verify_recorded_runs(self.audit, workflow)
+
     def test_redacted_review_matches_recorded_redaction_hash(self):
         review = self.audit['foundation_review']
         payload = (EVIDENCE / review['report']).read_bytes()

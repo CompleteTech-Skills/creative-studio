@@ -10,8 +10,16 @@ def check(condition, detail):
   raise AssertionError(detail)
 def gitfile(revision,path):return subprocess.check_output(['git','show',revision+':'+path],cwd=repo)
 def optional_gitfile(revision,path):
- try:return subprocess.check_output(['git','show',revision+':'+path],cwd=repo,stderr=subprocess.DEVNULL)
- except (subprocess.CalledProcessError,OSError):return None
+ check(isinstance(revision,str) and re.fullmatch('[0-9a-f]{40}',revision), 'Expected an exact Git revision.')
+ kind=subprocess.check_output(['git','cat-file','--batch-check=%(objecttype)'],
+                              cwd=repo,input=(revision+'\n').encode('ascii')).strip()
+ if kind==(revision+' missing').encode('ascii'):
+  return None
+ check(kind==b'commit', 'Retained test source revision is not a commit.')
+ try:
+  return gitfile(revision,path)
+ except subprocess.CalledProcessError as error:
+  raise AssertionError('Present job revision lacks its claimed test source.') from error
 def job_binding_source(native):
  """Retained exact bytes; cross-checked against git only when that revision is present."""
  retained=native['retained_test_source']
@@ -20,6 +28,51 @@ def job_binding_source(native):
  committed=optional_gitfile(native['revision'],retained['source_path'])
  if committed is not None:check(committed==payload, ((native['revision'],retained['source_path'])))
  return payload,committed is not None
+def verify_recorded_runs(data,workflow):
+ baseline=data['baseline']
+ baseline_log=(out/baseline['log']).read_bytes()
+ check(hashlib.sha256(baseline_log).hexdigest()==baseline['log_sha256'], 'Legacy baseline log digest differs.')
+ check(data['foundation_revision'].startswith(baseline['revision']), 'Legacy baseline revision differs.')
+ summary=re.findall(rb'^Ran (\d+) tests? in [^\r\n]+\r?$',baseline_log,re.MULTILINE)
+ discovery=re.findall(rb'^Discovered (\d+) 2D tests without optional 3D dependencies\r?$',baseline_log,re.MULTILINE)
+ check(summary==[str(baseline['passed']).encode('ascii')] and baseline['passed']>0
+       and discovery==[str(baseline['legacy_discovered_not_executed']).encode('ascii')]
+       and baseline['failed']==baseline['skipped']==0 and baseline_log.splitlines().count(b'OK')==1,
+       'Legacy baseline does not record the claimed passing run.')
+
+ expected=data['hosted_evidence']
+ payload=(out/expected['file']).read_bytes()
+ check(hashlib.sha256(payload).hexdigest()==expected['sha256'], 'Hosted evidence digest differs.')
+ hosted=json.loads(payload)
+ checks=hosted['statusCheckRollup']
+ check(hosted['headRefOid']==expected['source_head'] and hosted['state']==expected['state']=='MERGED'
+       and hosted['mergeCommit']==expected['merge_commit'] and len(checks)==expected['passed_checks']
+       and bool(checks) and all(c['status']=='COMPLETED' and c['conclusion']=='SUCCESS' for c in checks),
+       'Hosted evidence does not record the claimed successful PR checks.')
+
+ pairs=(
+  ('native_capture_relocated_verify_equal','native-capture','native-relocated-verify','native-source-snapshot/snapshot.json'),
+  ('scene_capture_verify_equal','scene-capture','scene-verify','scene-source-snapshot/snapshot.json'),
+ )
+ expected_commands=[(name+'.stdout.json',name+'.stderr.txt') for _,first,second,_ in pairs for name in (first,second)]
+ commands=workflow['commands']
+ check(workflow['source_revision']==data['foundation_revision']
+       and data['source_workflow']=='source-workflow.json'
+       and [(c['stdout'],c['stderr']) for c in commands]==expected_commands
+       and all(type(c['returncode']) is int and c['returncode']==0 for c in commands),
+       'Retained source workflow did not record the four successful commands.')
+ paths={item['path'] for item in workflow['artifacts']}
+ check(len(paths)==len(workflow['artifacts'])
+       and all(name in paths for command in expected_commands for name in command)
+       and all(snapshot in paths for _,_,_,snapshot in pairs),
+       'Retained workflow output is absent or duplicated in the verified artifact inventory.')
+ for flag,first,second,snapshot in pairs:
+  captured=json.loads((out/(first+'.stdout.json')).read_bytes())
+  verified=json.loads((out/(second+'.stdout.json')).read_bytes())
+  retained=json.loads((out/snapshot).read_bytes())
+  check(workflow[flag] is True and captured==verified==retained,
+        'Retained capture and verification receipts differ.')
+
 def emit(receipt,output=None):
  text = json.dumps(receipt, indent=2) + '\n'
  if output is None:
@@ -32,6 +85,9 @@ def main(argv=None):
  parser.add_argument('--output', help='write the receipt to a new file instead of stdout')
  args = parser.parse_args(argv)
  data=json.loads((out/'audit.json').read_text());workflow=json.loads((out/'source-workflow.json').read_text())
+ tree=subprocess.check_output(['git','rev-parse','--verify','--end-of-options',
+                               data['foundation_revision']+'^{tree}'],cwd=repo).decode('ascii').strip()
+ check(tree==data['foundation_tree'], 'Foundation tree differs from the pinned revision.')
  for item in data['examined_source_inventory']:
   payload=gitfile(data['foundation_revision'],item['path'])
   check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], (item['path']))
@@ -43,6 +99,7 @@ def main(argv=None):
   refs.update(item['tests'])
  for item in data['protocols'].values():refs.update(item['tests'])
  native=data['native_job_equivalent'];job_payload,job_cross_checked=job_binding_source(native)
+ refs.update(native['tests'])
  cache={}
  for ref in refs:
   file,address=ref.split(':');cls,method=address.split('.')
@@ -54,6 +111,7 @@ def main(argv=None):
  for item in workflow['artifacts']:
   payload=(out/item['path']).read_bytes()
   check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], (item['path']))
+ verify_recorded_runs(data,workflow)
  # Expand every schema branch, including nullable objects, independently of the catalog.
  expected={}
  def catalog_fields(node, definitions, document, path='', required=True, nullable=(), seen=()):
@@ -89,6 +147,7 @@ def main(argv=None):
    catalog_fields(schema['$defs'][document],schema['$defs'],document)
  actual={(item['document'],item['path']):item for item in data['field_catalog']}
  check(len(actual)==len(data['field_catalog']), ('duplicate catalog entries'))
+ check(data['field_catalog_semantics']['complete_paths']==len(expected), 'Recorded schema path count differs.')
  check(actual.keys()==expected.keys(), ({'missing':sorted(expected.keys()-actual.keys()),'extra':sorted(actual.keys()-expected.keys())}))
  for key,entry in expected.items():
   check(actual[key]['required']==entry['required'], (key))

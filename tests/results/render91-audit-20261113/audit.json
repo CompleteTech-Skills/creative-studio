@@ -509,8 +509,7 @@
       ],
       "owner": "render3d_contracts.py",
       "tests": [
-        "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
-        "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_output_policy_does_not_silently_downgrade_requested_features"
       ],
       "scope": "implemented foundation contract/planning"
     },
