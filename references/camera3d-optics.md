@@ -104,10 +104,16 @@ view availability can further constrain the validated portable profile. A native
 color rejection preserves the current camera and scene settings. If camera
 setup rejects the optical or render state after color setup, the adapter
 restores the prior scene color settings and affected camera bindings. A standalone
-`apply_camera` exposure change clears the scene and camera color hashes. An
-optics-only update to the same bound camera retains its binding when effective
-exposure stays the same. The adapter reads back the effective color settings
-after the view layer updates, while it can still restore the previous camera.
+`apply_camera` retains the same camera's binding only when its exposure and
+live color settings still match the effective state recorded by the shared
+color owner. An operator edit to tint or output encoding, a change in exposure,
+or a legacy scene hash without recorded effective state clears the binding.
+Reapplying the shared profile establishes fresh proof. After the view layer
+updates, the adapter checks the original scene and its evaluated copy for
+active camera and datablock identity, world pose, optical and focus controls,
+resolution, pixel aspect, shutter and color settings. A rejection restores the
+previous camera, its editable transform channels, and the settings in effect
+at the start of the call.
 Switching cameras releases the former camera's binding for the owning scene.
 Activation requires a camera object exclusive to that scene because it
 replaces the object's optics and pose. A scene-only profile change preserves

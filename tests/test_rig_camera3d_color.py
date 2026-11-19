@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from camera3d_color import apply_camera_with_color, validate_color_binding
 from camera3d_blender import apply_camera
-from lookdev_color import apply_configuration, configuration
+from lookdev_color import (CAMERA_COLOR_OWNER, COLOR_HASH, EFFECTIVE_COLOR_HASH,
+                           apply_configuration, color_state, configuration)
 from rig_errors import RigError
 
 
@@ -91,12 +92,20 @@ class CameraObject(dict):
     constraints = ()
     animation_data = None
     library = None
+    location = rotation_euler = (0., 0., 0.)
+    rotation_quaternion = (1., 0., 0., 0.)
+    rotation_axis_angle = (0., 0., 1., 0.)
+    scale = (1., 1., 1.)
 
     def __init__(self):
         super().__init__()
         self.data = SimpleNamespace(animation_data=None, users=0, get={'hatch_camera3d_owned': True}.get)
         self.matrix_basis = ['original pose']
         self.fail_hash = False
+
+    @property
+    def original(self):
+        return self
 
     @property
     def matrix_world(self):
@@ -130,16 +139,30 @@ def synthetic_backend(scene):
     native_bounds = SimpleNamespace(hard_min=-1e9, hard_max=1e9)
     optics_rna = SimpleNamespace(properties={
         name: native_bounds
-        for name in ('sensor_width', 'shift_x', 'shift_y', 'clip_start', 'clip_end', 'lens',
+        for name in ('sensor_width', 'shift_x', 'shift_y', 'clip_start', 'clip_end', 'lens', 'ortho_scale',
                      'use_dof', 'focus_distance', 'aperture_fstop', 'aperture_blades',
                      'aperture_rotation', 'aperture_ratio')
     })
-    new_camera = SimpleNamespace(bl_rna=optics_rna, dof=SimpleNamespace(bl_rna=optics_rna),
-                                 animation_data=None, users=0, get={}.get)
+    class CameraData(dict):
+        bl_rna = optics_rna
+        animation_data = None
+        users = 0
+
+        def __init__(self):
+            super().__init__()
+            self.dof = SimpleNamespace(bl_rna=optics_rna)
+
+        @property
+        def original(self):
+            return self
+
+    new_camera = CameraData()
     cameras = Mock()
-    cameras.new.return_value = new_camera
+    cameras.new.side_effect = lambda name: new_camera if cameras.new.call_count == 1 else CameraData()
     bpy = SimpleNamespace(data=SimpleNamespace(cameras=cameras, objects=Mock()),
                           context=SimpleNamespace(scene=scene, view_layer=Mock()))
+    bpy.context.view_layer.depsgraph.scene_eval = scene
+    scene.view_layers = (bpy.context.view_layer,)
     mathutils = SimpleNamespace(Matrix=list)
 
     def import_backend(name, *args, **kwargs):
@@ -149,8 +172,7 @@ def synthetic_backend(scene):
             return mathutils
         return native_import(name, *args, **kwargs)
 
-    with (patch('builtins.__import__', new=import_backend),
-          patch('camera3d_blender._configure_camera')):
+    with patch('builtins.__import__', new=import_backend):
         yield bpy, new_camera
 
 
@@ -347,6 +369,33 @@ class CameraColorTests(unittest.TestCase):
         self.assertEqual(bound[key], color['sha256'])
         self.assertEqual(target[key], 'former-binding')
 
+    def test_standalone_optics_invalidates_unproven_color_and_preserves_operator_edits(self):
+        for change in ('tint', 'encoding', 'legacy'):
+            with self.subTest(change=change):
+                scene = ColorScene()
+                bound = CameraObject()
+                scene.objects = {bound.name: bound}
+                color = configuration()
+                with synthetic_backend(scene):
+                    apply_camera_with_color(scene, self.optics, self.render, world_matrix=self.world,
+                                            camera_object=bound, color_configuration=color)
+                    if change == 'tint':
+                        scene.view_settings.white_balance_tint = 100
+                    elif change == 'encoding':
+                        scene.render.image_settings.file_format = 'JPEG'
+                    else:
+                        del scene[EFFECTIVE_COLOR_HASH]
+                    edited = color_state(scene)
+                    with self.assertRaisesRegex(ValueError, 'requires configured'):
+                        apply_camera(scene, self.optics, self.render, world_matrix=self.world,
+                                     camera_object=bound, color_sha256=color['sha256'])
+                    apply_camera(scene, self.optics, self.render, world_matrix=self.world, camera_object=bound)
+                self.assertEqual(color_state(scene), edited)
+                self.assertNotIn(COLOR_HASH, scene)
+                self.assertNotIn(EFFECTIVE_COLOR_HASH, scene)
+                self.assertNotIn(COLOR_HASH, bound)
+                self.assertNotIn(CAMERA_COLOR_OWNER, bound)
+
     def test_scene_only_configuration_releases_stale_active_camera_binding(self):
         scene = ColorScene()
         camera = CameraObject()
@@ -518,6 +567,17 @@ class CameraColorTests(unittest.TestCase):
             self.assertIn(directory, text)
 
     @unittest.skipUnless(os.environ.get('HATCH_CAMERA3D_COLOR_TEST') == '1',
+                         'explicit actual Blender camera transaction acceptance')
+    def test_actual_evaluated_camera_transaction(self):
+        from rig_blender import find_blender
+        command = [find_blender(), '--background', '--factory-startup', '--disable-autoexec',
+                   '--threads', '1', '--python-exit-code', '1', '--python', __file__,
+                   '--', '--probe-evaluated-camera']
+        result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-12000:])
+        self.assertIn('Verified Blender camera transaction', result.stdout)
+
+    @unittest.skipUnless(os.environ.get('HATCH_CAMERA3D_COLOR_TEST') == '1',
                          'explicit actual Blender camera/shared WB acceptance')
     def test_actual_camera_shared_white_balance(self):
         from rig_blender import find_blender
@@ -559,5 +619,88 @@ class CameraColorTests(unittest.TestCase):
             self.assertEqual(report['linear_exr_maximum_difference'], 0)
 
 
+def probe_evaluated_camera():
+    import bpy
+    from mathutils import Matrix
+
+    if os.environ.get('HATCH_CAMERA_TEST_SITE'):
+        sys.path.append(os.environ['HATCH_CAMERA_TEST_SITE'])
+    optics = json.loads((ROOT / 'examples/camera3d/optics.json').read_text())
+    render = json.loads((ROOT / 'examples/camera3d/render.json').read_text())
+    scene = bpy.context.scene
+    second_layer = scene.view_layers.new('Second camera evaluation')
+    scene.render.engine = 'CYCLES'
+    camera = scene.camera
+    pose = Matrix.Identity(4)
+    profile = configuration(tint=20)
+    apply_camera_with_color(scene, optics, render, world_matrix=pose,
+                            color_configuration=profile, camera_object=camera)
+    original_data = camera.data
+
+    def snapshot():
+        return (scene.camera, camera.data, camera.matrix_basis.copy(), camera.matrix_world.copy(),
+                len(bpy.data.cameras), len(bpy.data.objects), scene.get(COLOR_HASH),
+                scene.get(EFFECTIVE_COLOR_HASH), camera.get(COLOR_HASH), camera.get(CAMERA_COLOR_OWNER),
+                tuple(value for _, _, value in color_state(scene)), scene.render.resolution_x,
+                scene.render.resolution_percentage, bpy.context.view_layer.objects.active,
+                tuple(bpy.context.selected_objects), tuple(camera.rotation_euler), tuple(camera.scale))
+
+    camera.rotation_euler.x = 7.5
+    camera.scale = (-1.1, 2.3, 1.4)
+    bpy.context.view_layer.update()
+    previous = snapshot()
+    for field, owner, changed, error in (
+            ('resolution_x', lambda: scene.render, 64, 'resolution_x'),
+            ('lens', lambda: scene.camera.data, 18, 'lens'),
+            ('sensor_fit', lambda: scene.camera.data, 'VERTICAL', 'sensor_fit'),
+            ('lens', lambda: bpy.context.view_layer.depsgraph.scene_eval.camera.data, 19, 'lens'),
+            ('shift_y', lambda: scene.camera.data, .3, 'shift_y'),
+            ('shift_x', lambda: second_layer.depsgraph.scene_eval.camera.data, .4, 'shift_x'),
+            ('clip_end', lambda: scene.camera.data, 17, 'clip_end'),
+            ('focus_distance', lambda: scene.camera.data.dof, 7, 'focus_distance'),
+            ('focus_object', lambda: scene.camera.data.dof, bpy.data.objects['Cube'], 'focus_object'),
+            ('white_balance_tint', lambda: bpy.context.view_layer.depsgraph.scene_eval.view_settings,
+             100, 'white_balance_tint'),
+            ('location', lambda: scene.camera, (9, 8, 7), 'world transform'),
+            ('data', lambda: scene.camera, original_data, 'camera data')):
+        changes = []
+
+        def mutate(updated, depsgraph):
+            if updated == scene and not changes and (field != 'shift_x' or depsgraph.view_layer == second_layer):
+                target = owner()
+                changes.append(field)
+                setattr(target, field, changed)
+
+        bpy.app.handlers.depsgraph_update_post.append(mutate)
+        try:
+            try:
+                # Cover rollback for both a supplied camera and a newly linked object.
+                apply_camera_with_color(scene, optics, dict(render, width=128),
+                                        world_matrix=Matrix.Translation((2, 3, 4)),
+                                        color_configuration=configuration(), camera_object=(
+                                            None if field == 'lens' else camera))
+            except ValueError as exc:
+                if error not in str(exc):
+                    raise
+            else:
+                raise AssertionError(f'Accepted dependency-graph change to {field}')
+        finally:
+            bpy.app.handlers.depsgraph_update_post.remove(mutate)
+        if changes != [field] or snapshot() != previous:
+            raise AssertionError(f'Failed to restore camera transaction after {field}')
+        bpy.context.view_layer.update()
+        if snapshot() != previous:
+            raise AssertionError(f'Camera rollback changed on the next evaluation after {field}')
+    scene.view_settings.white_balance_tint = 100
+    apply_camera(scene, optics, render, world_matrix=pose, camera_object=camera)
+    if (scene.view_settings.white_balance_tint != 100 or COLOR_HASH in camera or
+            COLOR_HASH in scene or EFFECTIVE_COLOR_HASH in scene or CAMERA_COLOR_OWNER in camera):
+        raise AssertionError('Standalone optics retained stale tint proof or lost operator edit')
+    print('Verified Blender camera transaction')
+
+
 if __name__ == '__main__':
-    unittest.main()
+    if sys.argv[-1] == '--probe-evaluated-camera':
+        probe_evaluated_camera()
+    else:
+        unittest.main()

@@ -11,6 +11,7 @@ from rig_errors import require, finite_json, RigError
 
 
 COLOR_HASH = 'hatch_color_sha256'
+EFFECTIVE_COLOR_HASH = 'hatch_color_effective_sha256'
 CAMERA_COLOR_OWNER = 'hatch_color_scene'
 
 
@@ -62,6 +63,11 @@ def color_state(scene):
     if hasattr(view, 'use_hdr_view'):
         fields.append((view, ('use_hdr_view',)))
     return [(owner, name, getattr(owner, name)) for owner, names in fields for name in names]
+
+
+def effective_color_hash(profile_hash, state):
+    return content_hash({'configuration_sha256': profile_hash,
+                         'fields': {name: value for _, name, value in state}})
 
 
 def verify_color_state(state, *, allow_float32=False):
@@ -145,6 +151,7 @@ def configured_color(scene, value):
         target['exr_codec'] = 'ZIP'
     assignments = [(owner, name, target[name]) for owner, name, _ in previous if name in target]
     previous_hash = scene.get(COLOR_HASH)
+    previous_effective = scene.get(EFFECTIVE_COLOR_HASH)
     active_camera = scene.camera
     previous_binding = [] if active_camera is None else [
         (key, active_camera.get(key)) for key in (COLOR_HASH, CAMERA_COLOR_OWNER)]
@@ -161,11 +168,13 @@ def configured_color(scene, value):
             release_camera_color(scene, active_camera)
         scene[COLOR_HASH] = value['sha256']
         verify_color_state(assignments, allow_float32=True)
+        scene[EFFECTIVE_COLOR_HASH] = effective_color_hash(value['sha256'], color_state(scene))
         yield {'configuration_sha256': value['sha256'], 'view': settings.view_transform,
                'output_encoding': value['output'], 'display_transform_baked': not linear}
     except Exception:
         for key, original in previous_binding:
             restore_property(active_camera, key, original)
         restore_property(scene, COLOR_HASH, previous_hash)
+        restore_property(scene, EFFECTIVE_COLOR_HASH, previous_effective)
         restore_color_state(previous)
         raise

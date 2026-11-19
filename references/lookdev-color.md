@@ -25,7 +25,10 @@ is a view transform: it does not recolor physical lights, source textures or
 materials. The function resets unmanaged grading curves/export overrides and
 sets one scene exposure. Before recording the profile hash, it reads back every
 requested display, grading and output field, including codec for EXR. Numeric
-fields allow Blender float rounding. Applying a different profile clears a stale
+fields allow Blender float rounding. The scene stores a second digest of the
+profile hash and the native settings read back after configuration. A later
+optics-only call can use it to detect edits even when exposure is unchanged.
+Applying a different profile clears a stale
 active-camera binding. If setup fails, the previous settings and hashes are
 restored. PNG is display-transformed 16-bit sRGB; 32-bit
 EXR remains scene-linear and does not bake view WB/exposure/tone mapping.
