@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from fractions import Fraction
 from itertools import permutations, product
 import math
 import numpy as np
@@ -429,17 +430,40 @@ def _pole_perpendicular(direction, origin, pole):
     return unit(perpendicular)
 
 
-def _pole_keeps_bend(axis, origin, pole, bend):
+def _pole_keeps_bend(axis, origin, pole, bend, *, two_links):
     """Check the bend encoded by the rounded world pole."""
     with np.errstate(over='ignore', invalid='ignore'):
         delta = pole - origin
     span = float(np.max(np.abs(delta)))
-    if not math.isfinite(span) or span < POLE_BEND_CUTOFF:
+    if not math.isfinite(span) or span == 0 or (not two_links and span < POLE_BEND_CUTOFF):
         return False
     represented = np.cross(axis, delta / span)
     requested = np.cross(axis, bend)
     alignment = float(np.dot(represented, requested))
-    return alignment >= max(POLE_BEND_CUTOFF / span, 16 * np.finfo(float).eps)
+    if not alignment >= max(POLE_BEND_CUTOFF / span, 16 * np.finfo(float).eps):
+        return False
+    if not two_links:
+        return True
+    # A positive dot still admits a rotated plane if rounding erases one
+    # component of an oblique pole. Compare the unit directions decoded by
+    # the solver, including its projection arithmetic for a near-axial elbow.
+    with np.errstate(over='ignore', invalid='ignore'):
+        try:
+            decoded = _pole_perpendicular(axis, origin, pole)
+        except RigError:
+            return False
+    return math.dist(decoded, bend) <= 64 * np.finfo(float).eps
+
+
+def _two_link_is_collinear(points):
+    # Only matching poles that failed both numerical checks reach this path.
+    # Exact differences of the represented FK positions avoid inventing a
+    # bend during projection or concealing one beneath a large translation.
+    root, elbow, end = [list(map(Fraction, point)) for point in points]
+    first = [m - r for r, m in zip(root, elbow)]
+    second = [e - m for m, e in zip(elbow, end)]
+    return all(first[i] * second[j] == first[j] * second[i]
+               for i, j in ((0, 1), (0, 2), (1, 2)))
 
 
 def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
@@ -614,12 +638,17 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         # Keep the near-closed matching pole above the degeneracy cutoff.
         with np.errstate(over='ignore', invalid='ignore'):
             pole = origin + bend * max(reach, MIN_MATCHING_POLE_DISTANCE)
-        if np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend):
-            # The shorter pole can round away at a large origin. The measured
-            # elbow is already an admitted world point on the requested side.
-            pole = points[1]
-            require(_pole_keeps_bend(axis, origin, pole, bend), 'RIG_IK_POLE',
-                    'FK-to-IK pole cannot represent the measured bend in world coordinates.')
+        # One elbow defines a two-link bend plane. A longer FABRIK chain
+        # applies the same pole around multiple distinct neighbor axes.
+        two_links = len(points) == 3
+        if np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend, two_links=two_links):
+            # The shorter pole can round away at a large origin. Try the
+            # measured elbow before classifying a two-link chain as straight.
+            if _pole_keeps_bend(axis, origin, points[1], bend, two_links=two_links):
+                pole = points[1]
+            else:
+                require(two_links and _two_link_is_collinear(points), 'RIG_IK_POLE',
+                        'FK-to-IK pole cannot represent the measured bend in world coordinates.')
     require(np.isfinite(pole).all(), 'RIG_NONFINITE',
             'FK-to-IK pole exceeds finite world-coordinate representation.')
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
