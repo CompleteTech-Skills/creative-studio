@@ -1,20 +1,21 @@
 """Hash-bound manual corrections; geometry and original sources remain immutable."""
 from __future__ import annotations
+from collections import Counter
 from copy import deepcopy
 import numpy as np
-from rig_contracts import validate_contract
+from rig_contracts import definitions, validate_contract
 from rig_errors import atomic_json, object_hash, require, safe_path, sha256
 from rig_jobs import next_version, save_rig
 from rig_models import rig_signature
 from rig_skeleton import skeleton_from_heads, validate_skeleton
 from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
+from rig_templates import fitted_anatomy_uncertainty, generate_skeleton
 
 
 def validate_correction_binding(rig, correction):
     """Validate the bounded original envelope before resolving execution inputs."""
     if isinstance(correction, dict) and isinstance(correction.get('edits'), list):
-        from rig_contracts import definitions
         limit=definitions()['RigCorrection']['properties']['edits']['maxItems']
         require(len(correction['edits']) <= limit, 'RIG_SCHEMA',
                 'Correction exceeds the edit limit.', stage='RigCorrection',
@@ -25,10 +26,37 @@ def validate_correction_binding(rig, correction):
             'RIG_STALE_CORRECTION', 'Correction targets a different rig revision; rebase it against the current rig.')
 
 
+def replace_fit(manifest, fitted, first_fitted_uncertainty):
+    """Apply the admitted template identity and fit while retaining unrelated evidence."""
+    previous = manifest['uncertainties']
+    if first_fitted_uncertainty is None:
+        # Older manifests have no fit-ownership field. A unique match to the
+        # previous bone's generated evidence identifies its fit observation.
+        bones = manifest['skeleton']['bones'] if manifest['skeleton'] else []
+        known_fit = {bone['id']: fitted_anatomy_uncertainty(bone['id'], bone['evidence']) for bone in bones}
+        matches = [known_fit.get(issue['element']) == {**issue, 'resolution': 'pending'} for issue in previous]
+        occurrences = Counter(issue['element'] for issue, matches_fit in zip(previous, matches) if matches_fit)
+        independent = [issue for issue, matches_fit in zip(previous, matches)
+                       if not matches_fit or occurrences[issue['element']] > 1]
+    else:
+        independent = previous[:first_fitted_uncertainty]
+    uncertainties = independent + fitted['uncertainties']
+    limit = definitions()['Rig']['properties']['uncertainties']['maxItems']
+    require(len(uncertainties) <= limit, 'RIG_LIMIT_UNCERTAINTY',
+            'Refit uncertainty count exceeds the rig limit.', asset='uncertainties',
+            expected=limit, observed=len(uncertainties))
+    for key in ('skeleton', 'controllers', 'attachments'):
+        manifest[key] = fitted[key]
+    manifest['archetype'] = fitted['template_id']
+    manifest['uncertainties'] = uncertainties
+    return len(independent)
+
+
 def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
     validate_correction_binding(rig, correction)
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
     specs=[];evidence={}
+    first_fitted_uncertainty = None
     if result.manifest['skeleton']:
         for bone in result.skeleton['bones']:
             specs.append({k:deepcopy(bone[k]) for k in ('id','role','parent','head','tail','deform','mirror','roll')})
@@ -144,11 +172,10 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
                     expression['morphs'].pop(target+'::'+name,None)
                     if not any(name in m.morphs for m in result.geometry.meshes):expression['morphs'].pop(name,None)
         elif operation=='template':
-            from rig_templates import generate_skeleton
             require(isinstance(value,dict) and set(value) <= {'template','landmarks'} and 'template' in value,'RIG_TEMPLATE_EDIT','Specify a template and optional landmarks.')
             template=value['template'] if resolve_template is None else resolve_template(value['template'])
             fitted=generate_skeleton(result.geometry,template,landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
-            for key in ('skeleton','controllers','attachments','uncertainties'):result.manifest[key]=fitted[key]
+            first_fitted_uncertainty = replace_fit(result.manifest, fitted, first_fitted_uncertainty)
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True
     if skeleton_changed:
@@ -156,8 +183,8 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
         for b in skeleton['bones']:b['evidence']=evidence[b['id']]
         result.manifest['skeleton']=skeleton
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
-        for u in result.manifest['uncertainties']:
-            if evidence.get(u['element'],{}).get('source')=='human-landmark':u['resolution']='corrected'
+        for u in result.manifest['uncertainties'][first_fitted_uncertainty:]:
+            if u['code']=='RIG_ANATOMY_UNCERTAIN' and evidence.get(u['element'],{}).get('source')=='human-landmark':u['resolution']='corrected'
     validate_skeleton(result.skeleton,result.manifest['limits'])
     validate_controllers(result.skeleton,result.manifest['controllers'])
     bone_ids={b['id'] for b in result.skeleton['bones']}
