@@ -11,7 +11,7 @@ import tempfile
 import zipfile
 from atomic_publish import _rename_no_replace
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import MAX_JSON_BYTES, atomic_bytes, decode_json, job_lock, open_payload, portable_name, require, safe_path, sha256
+from rig_errors import RigError, MAX_JSON_BYTES, atomic_bytes, decode_json, job_lock, open_payload, portable_name, require, safe_path, sha256
 from rig_models import load_rig, rig_signature
 from rig_zip import zip_read_scope, open_zip_reader
 
@@ -153,7 +153,17 @@ def restore_rig(archive_path,destination,*,limits=None):
         with archive:
             infos=archive.infolist();names={};total=0
             require(len(infos)<=limits['archive_files'],'RIG_ARCHIVE_LIMIT','Archive contains too many entries.')
+            archive_size=archive_path.stat().st_size
             for info in infos:
+                # A head-truncated or shifted container yields member offsets
+                # outside the file; zipfile would seek there and raise an
+                # errno-bearing OSError that looks like a filesystem failure.
+                if not (0 <= info.header_offset and info.header_offset + 30 + info.compress_size <= archive_size):
+                    raise RigError('RIG_ARCHIVE_FORMAT', 'ZIP input is corrupt or incomplete.', stage='restore',
+                                   asset=info.filename, observed=dict(header_offset=info.header_offset,
+                                   compress_size=info.compress_size, archive_bytes=archive_size),
+                                   preserved=str(archive_path),
+                                   correction='Use complete input with valid ZIP data and checksums; preserve the original for diagnosis.')
                 require(info.orig_filename==info.filename and not info.is_dir(),'RIG_ARCHIVE_PATH','Only regular file entries are accepted.')
                 name=portable_name(info.filename);key=name.casefold()
                 require(key not in names,'RIG_ARCHIVE_COLLISION','Duplicate or case-aliased archive member.')

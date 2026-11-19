@@ -180,6 +180,14 @@ class RestoreErrorTests(unittest.TestCase):
                 self.assertFalse(target.exists());self.assertEqual(source.read_bytes(),data)
         self.assertFalse(list(self.root.glob('.rig-restore-*')))
 
+    def test_head_truncated_and_shifted_containers_are_structured(self):
+        self.reject(self.original[100:],'head-truncated')
+        data=bytearray(self.original)
+        end=data.rindex(b'PK\x05\x06')
+        offset=struct.unpack_from('<I',data,end+16)[0]
+        struct.pack_into('<I',data,end+16,offset+100)
+        self.reject(bytes(data),'shifted-central-directory')
+
     def test_invalid_utf8_member_names_are_structured(self):
         data=bytearray(inventory_archive())
         central=data.index(b'PK\x01\x02')
