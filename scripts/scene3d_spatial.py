@@ -49,6 +49,14 @@ def _bounds(points):
     return dict(minimum=points.min(axis=0).tolist(), maximum=points.max(axis=0).tolist())
 
 
+def _oriented_bounds(record):
+    low, high = _box(record['local'])
+    matrix = record['matrix']
+    center = matrix[:3,:3] @ ((low + high) / 2) + matrix[:3,3]
+    half_axes = (matrix[:3,:3] @ np.diag((high - low) / 2)).T
+    return center, half_axes
+
+
 def _overlap(a, b, clearance=0):
     return bool(np.all(a[0] <= b[1]+clearance) and np.all(b[0] <= a[1]+clearance))
 
@@ -298,11 +306,8 @@ class SpatialIndex:
         """Return exact transformed local bounds as a parallelepiped (shear retained)."""
         self._refresh()
         require(identifier in self._records, 'Node has no geometric bounds.', 'SCENE3D_SPATIAL')
-        record = self._records[identifier]
-        low, high = _box(record['local'])
-        matrix = record['matrix']
-        return dict(center=(matrix[:3,:3] @ ((low+high)/2)+matrix[:3,3]).tolist(),
-                    half_axes=(matrix[:3,:3] @ np.diag((high-low)/2)).T.tolist())
+        center, half_axes = _oriented_bounds(self._records[identifier])
+        return dict(center=center.tolist(), half_axes=half_axes.tolist())
 
     def overlap(self, bounds, *, clearance=0, exclude=(), visibility='all'):
         """Conservative world AABB overlap candidates, sorted by node ID."""
@@ -316,17 +321,17 @@ class SpatialIndex:
         Geometry boxes remain conservative with respect to non-box meshes.
         Degenerate (flat/line) bounds use world AABB broad-phase candidates.
         """
-        source = self.obb(identifier)
-        center = np.asarray(source['center'])
-        axes = np.asarray(source['half_axes'])
-        low,high = _box(self.bounds(identifier))
+        records = self._chosen(exclude, visibility)
+        require(identifier in self._records, 'Node has no geometric bounds.', 'SCENE3D_SPATIAL')
+        source = self._records[identifier]
+        center, axes = _oriented_bounds(source)
+        source_box = _box(source['box'])
         result = []
-        for other,record in self._chosen(exclude,visibility):
-            if other == identifier or not _overlap((low,high),_box(record['box'])):
+        for other,record in records:
+            if other == identifier or not _overlap(source_box,_box(record['box'])):
                 continue
-            target = self.obb(other)
-            other_axes = np.asarray(target['half_axes'])
-            delta = np.asarray(target['center'])-center
+            other_center, other_axes = _oriented_bounds(record)
+            delta = other_center - center
             # Face normals from each box plus all nine edge cross products.
             candidates = [np.cross(a,b) for a,b in ((axes[0],axes[1]),(axes[1],axes[2]),(axes[2],axes[0]),
                                                     (other_axes[0],other_axes[1]),(other_axes[1],other_axes[2]),(other_axes[2],other_axes[0]))]

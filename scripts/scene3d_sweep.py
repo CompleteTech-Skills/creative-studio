@@ -5,23 +5,46 @@ Minkowski sum. Candidate analytic roots are checked against its actual nearest
 point. Open meshes are two-sided surfaces; closed meshes also reject initial
 solid containment. Work is bounded by the spatial owner's query budget.
 """
+from fractions import Fraction
 import math
 import numpy as np
 
 
 def _roots(offset, velocity, radius):
-    a=float(velocity@velocity)
-    if a == 0:
+    speed = math.hypot(*velocity)
+    if speed == 0:
         return []
-    b=2*float(offset@velocity);c=float(offset@offset)-radius*radius
-    discriminant=b*b-4*a*c
-    # Roundoff at a tangent may make a mathematically zero discriminant negative.
-    tolerance=32*np.finfo(float).eps*(b*b+abs(4*a*c))
-    if discriminant < -tolerance:
-        return []
-    root=math.sqrt(max(0.,discriminant))
-    q=-.5*(b+math.copysign(root,b))
-    return sorted(set([-b/(2*a)] if q == 0 else [q/a,c/q]))
+    direction = velocity / speed
+    along = float(offset @ direction)
+    # The half chord depends on the distance to the line, even when the
+    # sweep started thousands of radii away from the vertex or edge.
+    perpendicular = math.hypot(*np.cross(offset, direction))
+    roundoff = 8 * np.finfo(float).eps * max(radius, perpendicular, abs(along))
+    if abs(perpendicular - radius) <= roundoff and abs(along) > radius and np.count_nonzero(velocity) > 1:
+        # On a long oblique tangent, even the cross product can subtract
+        # nearly equal terms. Resolve the sign using the exact input floats.
+        origin = [Fraction(x) for x in offset]
+        motion = [Fraction(x) for x in velocity]
+        speed_squared = sum(x*x for x in motion)
+        projection = sum(x*v for x, v in zip(origin, motion))
+        perpendicular_squared = sum(x*x for x in origin) - projection**2 / speed_squared
+        chord_ratio = 1 - perpendicular_squared / Fraction(radius)**2
+        if chord_ratio < 0:
+            return []
+        half_chord = radius * math.sqrt(chord_ratio)
+    else:
+        tolerance = 8 * np.finfo(float).eps * max(radius, perpendicular)
+        if perpendicular > radius + tolerance:
+            return []
+        half_chord = math.sqrt(max(0., radius - perpendicular)) * math.sqrt(radius + perpendicular)
+    if half_chord == 0:
+        return [-along / speed]
+    far_root = -along - math.copysign(half_chord, along)
+    # Recover the other root from the product to avoid cancellation when
+    # the sphere starts just outside the surface.
+    distance = math.hypot(*offset)
+    near_root = ((distance - radius) / far_root) * (distance + radius)
+    return sorted((near_root / speed, far_root / speed))
 
 
 def _triangle_hit(start, delta, radius, triangle, closest):

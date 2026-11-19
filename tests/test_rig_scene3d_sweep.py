@@ -43,6 +43,35 @@ class SphereSweepTests(unittest.TestCase):
         self.assertIsNone(index.sweep_sphere([.2,1,.2],[.2,1,.2],.1))
         self.assertEqual(index.sweep_sphere([.2,.1,.2],[.2,1,.2],.1)['fraction'],0)
 
+    def test_long_sweep_returns_entry_contact_on_vertex_and_edge(self):
+        index = self.index()
+        radius = .2
+        for z, contact_z in ((-.1, 0), (.5, .5)):
+            with self.subTest(z=z):
+                start, end = [-2000, .1, z], [2000, .1, z]
+                entry_x = -math.sqrt(radius**2 - .1**2 - (z - contact_z)**2)
+                hit = index.sweep_sphere(start, end, radius)
+                self.assertIsNotNone(hit)
+                self.assertAlmostEqual(hit['fraction'], (entry_x - start[0]) / 4000, places=13)
+                np.testing.assert_allclose(hit['center'], [entry_x, .1, z], atol=1e-10, rtol=0)
+                np.testing.assert_allclose(hit['point'], [0, 0, contact_z], atol=1e-10, rtol=0)
+                np.testing.assert_allclose(hit['normal'], np.array([entry_x, .1, z - contact_z]) / radius,
+                                           atol=1e-10, rtol=0)
+
+        # The path overlaps the triangle's padded AABB but misses its vertex and edges.
+        self.assertIsNone(index.sweep_sphere([-2000, .18, -.1], [2000, .18, -.1], radius))
+
+    def test_long_oblique_vertex_tangent_and_near_miss(self):
+        index = self.index(vertices=[[0,0,0]] * 3)
+        # (-4, 3) is exactly perpendicular to the (3, 4) path and has length 5.
+        travel = np.array([9000., 12000., 0.])
+        tangent = np.array([-4., 3., 0.])
+        hit = index.sweep_sphere(tangent - travel, tangent + travel, 5)
+        self.assertIsNotNone(hit)
+        self.assertAlmostEqual(hit['fraction'], .5, places=14)
+        np.testing.assert_allclose(hit['center'], tangent, atol=1e-10, rtol=0)
+        self.assertIsNone(index.sweep_sphere(tangent - travel, tangent + travel, math.nextafter(5., 0.)))
+
     def test_bounds_only_and_false_positive_triangle_region_do_not_hit(self):
         index=self.index()
         self.assertIsNone(index.sweep_sphere([.9,1,.9],[.9,-1,.9],.05))

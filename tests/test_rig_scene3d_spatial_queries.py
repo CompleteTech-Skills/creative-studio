@@ -229,4 +229,30 @@ class SpatialQueryTests(unittest.TestCase):
             with self.assertRaisesRegex(RigError, 'budget'):
                 index.mesh_overlap('mesh', _budget=budget)
 
+    def test_oriented_overlap_reads_one_scene_evaluation_per_query(self):
+        from unittest.mock import patch
+
+        scene = self.graph().document()
+        source = scene['nodes'][1]
+        source['bounds'] = dict(minimum=[0,0,0], maximum=[1,1,1])
+        candidates = [f'candidate-{i}' for i in range(8)]
+        for name in reversed(candidates):
+            other = deepcopy(source)
+            other.update(id=name, name=name)
+            scene['nodes'].append(other)
+        graph = SceneGraph(scene, external_references={})
+        index = SpatialIndex(graph)
+        with patch.object(graph, 'evaluate_base', wraps=graph.evaluate_base) as evaluate:
+            self.assertEqual(index.oriented_overlap('mesh', exclude=[candidates[-1]]), candidates[:-1])
+            evaluate.assert_called_once_with()
+            evaluate.reset_mock()
+            graph.isolate([candidates[0]])
+            self.assertEqual(index.oriented_overlap('mesh', visibility='editor'), [candidates[0]])
+            evaluate.assert_called_once_with()
+
+        moved = deepcopy(source['transform'])
+        moved['translation'][0] += 10
+        graph.set_transform(candidates[0], moved)
+        self.assertEqual(index.oriented_overlap('mesh', visibility='render'), candidates[1:])
+
 if __name__ == '__main__': unittest.main()
