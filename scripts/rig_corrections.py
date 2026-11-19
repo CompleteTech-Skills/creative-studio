@@ -23,6 +23,11 @@ def replace_fit(manifest, fitted):
     require(count <= limit, 'RIG_LIMIT_UNCERTAINTY',
             'Refit uncertainty count exceeds the rig limit.', asset='uncertainties',
             expected=limit, observed=count)
+    bone_ids = {bone['id'] for bone in fitted['skeleton']['bones']}
+    manifest['anatomy_uncertainty_bindings'] = [
+        object_hash(issue) if issue['element'] in bone_ids else None
+        for issue in fitted['uncertainties'] if issue['code'] == 'RIG_ANATOMY_UNCERTAIN'
+    ]
     for key in ('skeleton', 'controllers', 'attachments'):
         manifest[key] = fitted[key]
     manifest['uncertainties'] = independent + fitted['uncertainties']
@@ -111,29 +116,42 @@ class _BoneEdits:
                 corrected.add(identity)
             else:
                 bone['evidence'] = original['evidence']
-        kept = []
+        bindings = iter(manifest.get('anatomy_uncertainty_bindings', []))
+        kept, kept_bindings = [], []
         for issue in manifest['uncertainties']:
             if issue['code'] == 'RIG_ANATOMY_UNCERTAIN':
+                binding = next(bindings, None)
                 identity = issue['element']
-                if identity not in self.original:
-                    # An unresolved historical spelling is not evidence that
-                    # this transaction removed its original bone.
-                    kept.append(issue)
-                    continue
-                if identity not in final_name:
-                    continue
-                issue['element'] = final_name[identity]
-                if identity in corrected:
-                    issue['resolution'] = 'corrected'
+                if binding is None or identity not in self.original or binding != object_hash(issue):
+                    kept_bindings.append(None)
+                else:
+                    if identity not in final_name:
+                        continue
+                    issue = dict(issue, element=final_name[identity])
+                    if identity in corrected:
+                        issue['resolution'] = 'corrected'
+                    kept_bindings.append(object_hash(issue))
             kept.append(issue)
         manifest['uncertainties'] = kept
+        manifest['anatomy_uncertainty_bindings'] = kept_bindings
 
 
-def apply_rig_corrections(rig, correction, *, persist=True):
+def validate_correction_binding(rig, correction):
+    """Validate the bounded original envelope before resolving execution inputs."""
+    if isinstance(correction, dict) and isinstance(correction.get('edits'), list):
+        from rig_contracts import definitions
+        limit=definitions()['RigCorrection']['properties']['edits']['maxItems']
+        require(len(correction['edits']) <= limit, 'RIG_SCHEMA',
+                'Correction exceeds the edit limit.', stage='RigCorrection',
+                asset='edits', expected=limit, observed=len(correction['edits']))
     validate_contract(correction, 'RigCorrection')
     require(correction['rig_id']==rig.manifest['id'] and correction['rig_version']==rig.manifest['version']
             and correction['expected_sha256']==rig_signature(rig.manifest),
             'RIG_STALE_CORRECTION', 'Correction targets a different rig revision; rebase it against the current rig.')
+
+
+def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
+    validate_correction_binding(rig, correction)
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
     bones = _BoneEdits(result.skeleton['bones'] if result.manifest['skeleton'] else [])
     for step, edit in enumerate(correction['edits'], start=1):
@@ -235,7 +253,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
         elif operation=='template':
             from rig_templates import generate_skeleton
             require(isinstance(value,dict) and set(value) <= {'template','landmarks'} and 'template' in value,'RIG_TEMPLATE_EDIT','Specify a template and optional landmarks.')
-            fitted=generate_skeleton(result.geometry,value['template'],landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
+            template=value['template'] if resolve_template is None else resolve_template(value['template'])
+            fitted=generate_skeleton(result.geometry,template,landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
             bones.reconcile_references(result.manifest)
             replace_fit(result.manifest, fitted)
             bones = _BoneEdits(fitted['skeleton']['bones'])

@@ -12,7 +12,8 @@ from atomic_publish import _rename_no_replace
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, valid_import_scale, validate_contract
 from rig_errors import (VERSION, RigError, atomic_bytes, atomic_json, job_lock,
                         object_hash, read_json, require, safe_path, sha256, slug, timestamp, normalize_root)
-from rig_models import RigAsset, load_rig, rig_signature, save_geometry, save_weights
+from rig_models import (RigAsset, load_rig, normalize_anatomy_bindings, rig_signature,
+                        save_geometry, save_weights)
 
 
 def provenance(operation, inputs=None, ancestry=None):
@@ -29,6 +30,7 @@ def save_rig(rig: RigAsset, *, bump=True, operation='save') -> dict:
     require(rig.root is not None, 'RIG_RUN', 'The rig needs a run directory.')
     root = Path(rig.root);old = read_json(root/'rig.json') if (root/'rig.json').exists() else None
     manifest = deepcopy(rig.manifest)
+    normalize_anatomy_bindings(manifest)
     if old and bump:
         manifest['version'] = next_version(old['version']);manifest['revision'] = old['revision']+1
         manifest['review'] = dict(status='pending', receipts=[]);manifest['validation'] = []
@@ -146,7 +148,7 @@ def code_signature():
     return object_hash({p.name:sha256(p) for p in sorted(Path(__file__).parent.glob('rig_*.py'))})
 
 
-def run_step(root, name, parameters, action, *, status, retry=False):
+def run_step(root, name, parameters, action, *, status, retry=False, admit=None):
     """Single writer, content/parameter/code cache and preserved failure diagnostics."""
     root=Path(root).absolute()
     with job_lock(root):
@@ -159,6 +161,7 @@ def run_step(root, name, parameters, action, *, status, retry=False):
             if intact:return dict(status='cached', step=name, rig_sha256=current, artifacts=previous['artifacts'])
         attempts=previous['attempts'] if same and previous['input_sha256']==current else 0
         require(attempts < rig.manifest['limits']['attempts'], 'RIG_ATTEMPTS', 'Step attempt budget is exhausted; correct the input or parameters.')
+        if admit is not None:admit(rig)
         if previous and previous['status']=='running':
             previous['status']='interrupted';job['history'].append(dict(operation=name, status='interrupted', at=timestamp()))
         step=dict(status='running', input_sha256=current, output_sha256=None, parameters=deepcopy(parameters),

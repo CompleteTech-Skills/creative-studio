@@ -15,11 +15,37 @@ STATUSES={'analyze':'geometry-analyzed','auto':'skeleton-generated','weights':'w
 def mutate(root,operation,parameters=None):
     parameters=parameters or {}
     require(operation in STATUSES,'RIG_OPERATION','Unsupported mutation operation.')
-    fields={'analyze':{'require_animation'},'auto':{'template','replace','landmarks'},'weights':{'method','regions','iterations'},
-            'validate':{'require_animation'},'test-motion':{'require_animation'},'correct':{'correction'},'review':{'receipt'},
+    fields={'analyze':{'require_animation'},'auto':{'template','replace','landmarks','template_source'},'weights':{'method','regions','iterations'},
+            'validate':{'require_animation'},'test-motion':{'require_animation'},'correct':{'correction','template_source'},'review':{'receipt'},
             'configure':{'limits'},'animate':{'clip','id','keyframes','fps','loop','contacts','events','reduce'},
             'retarget':{'source','clip','profile','partial'},'state-map':{'recipes','selected','pack','approved_props'}}
     require(set(parameters)<=fields[operation],'RIG_OPERATION_SCHEMA','Unexpected operation parameter.',observed=sorted(set(parameters)-fields[operation]))
+    installed = 'template_source' in parameters
+    if installed:
+        require(parameters['template_source'] == 'installed', 'RIG_OPERATION_SCHEMA', 'Unknown template source.')
+
+    resolve_template = None
+
+    def admit_templates(rig):
+        nonlocal resolve_template
+        from rig_templates import installed_template_paths
+        if operation == 'correct':
+            from rig_corrections import validate_correction_binding
+            correction = parameters['correction']
+            validate_correction_binding(rig, correction)
+            identifiers = []
+            for edit in correction['edits']:
+                if edit['operation'] == 'template':
+                    value = edit['value']
+                    require(isinstance(value, dict) and 'template' in value, 'RIG_API_TEMPLATE',
+                            'Template corrections require an exact installed template ID.')
+                    require(set(value) <= {'template', 'landmarks'}, 'RIG_TEMPLATE_EDIT',
+                            'Specify a template and optional landmarks.')
+                    identifiers.append(value['template'])
+        else:
+            identifiers = [parameters.get('template', 'humanoid')]
+        resolve_template = installed_template_paths(identifiers).__getitem__
+
     def action(rig):
         artifacts=[];result={}
         if operation=='analyze':
@@ -36,7 +62,9 @@ def mutate(root,operation,parameters=None):
                         and isinstance(landmarks['landmarks'],dict),
                         'RIG_LANDMARK_SOURCE','Landmarks must be bound to the exact source model hash.')
                 landmarks=landmarks['landmarks']
-            fitted=generate_skeleton(rig.geometry,parameters.get('template','humanoid'),landmarks=landmarks,character_id=rig.manifest['id'])
+            template=parameters.get('template','humanoid')
+            if resolve_template is not None:template=resolve_template(template)
+            fitted=generate_skeleton(rig.geometry,template,landmarks=landmarks,character_id=rig.manifest['id'])
             old=rig.manifest['skeleton']
             if old:fitted['skeleton']['version']=next_version(old['version'])
             replace_fit(rig.manifest, fitted)
@@ -63,7 +91,7 @@ def mutate(root,operation,parameters=None):
             require(ok,'RIG_VALIDATION_FAILED','Numerical validation failed; inspect the retained report.',asset=name,preserved=str(rig.root))
         elif operation=='correct':
             from rig_corrections import apply_rig_corrections
-            _,result=apply_rig_corrections(rig,parameters['correction'])
+            _,result=apply_rig_corrections(rig,parameters['correction'],resolve_template=resolve_template)
         elif operation=='review':
             from rig_review import apply_review
             result=apply_review(rig,parameters['receipt']);result['job_status']='review-approved' if result['status']=='approved' else 'needs-correction'
@@ -88,7 +116,8 @@ def mutate(root,operation,parameters=None):
             rig.manifest['state_mapping'].update(result['mapping']);save_rig(rig,operation='map-selected-states')
             atomic_json(rig.root/'animations/state-mapping.json',result);artifacts=['animations/state-mapping.json']
         return dict(result=result,artifact_paths=artifacts,**({'job_status':result['job_status']} if 'job_status' in result else {}))
-    return run_step(root,operation,parameters,action,status=STATUSES[operation])
+    return run_step(root,operation,parameters,action,status=STATUSES[operation],
+                    admit=admit_templates if installed else None)
 
 
 def pose_operation(rig,parameters):

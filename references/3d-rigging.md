@@ -241,7 +241,7 @@ The facade exports model import/analysis, templates/skeleton generation, correct
 python scripts/rig.py serve --run-dir output/rig-jobs --intake input/models --port 8766
 ```
 
-The server binds only `127.0.0.1` and prints its local bearer token. Send `Authorization: Bearer TOKEN` and `Content-Type: application/json`. Cross-origin requests are refused, intake reads stay inside the chosen folder, exports stay inside the selected job, JSON bodies are limited to four MiB, connections time out, and two workers are available. There is no remote/public-server mode.
+The server binds only `127.0.0.1` and prints its local bearer token. Configured tokens must contain 24–4096 printable ASCII characters without whitespace; missing, repeated, malformed or non-ASCII authorization fields return structured `401 RIG_API_AUTH` responses. Send one `Authorization: Bearer TOKEN` field and `Content-Type: application/json`. Cross-origin requests are refused, intake reads stay inside the chosen folder, exports stay inside the selected job, JSON bodies are limited to four MiB, connections time out, and two workers are available. There is no remote/public-server mode.
 
 | Method and route | Behavior |
 | --- | --- |
@@ -257,7 +257,9 @@ The server binds only `127.0.0.1` and prints its local bearer token. Send `Autho
 | `POST /v1/rigs/{id}/pose`, `/solve-ik` | Evaluate a native pose or spatial target |
 | `POST .../retarget`, `/review` | Retarget from another local job or apply a bound review receipt |
 
-Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
+Unknown mutation fields fail. For HTTP `generate` and template-replacement corrections, use an exact installed canonical template ID such as `humanoid`. The server checks a correction's schema, 1,024-edit ceiling and current rig binding before looking up its templates. One installed catalogue serves all edits in a request. Native execution opens the installed file for each selected ID. Native Python and CLI callers can also select custom files explicitly.
+
+Job status and portable archives record the canonical ID and the operation's `template_source` of `installed`. Resume uses that source to resolve the ID on the current installation. A saved correction contains the submitted object, and its filename is the hash of that object. A stale correction returns 409, missing jobs return 404, unauthenticated requests return 401, and occupied workers return 429.
 
 ## Resource limits, jobs and recovery
 
@@ -552,9 +554,17 @@ the exact allowed count; it does not truncate or discard independent records.
 temporary manifests, revision files and immutable source bytes. These are local
 synthetic contract controls, not artistic approval or full rig acceptance.
 
-A pending anatomy record whose bone identity was already unresolved when a
-correction began stays intact through unrelated edits. Only a known original
-bone actually removed in that transaction loses its owned anatomy record.
-Historical names are not assigned to a newly added bone merely because its
-spelling matches. The original old-writer reproduction and separately labeled
-simulated historical-byte regressions cover this upgrade boundary.
+Each fit records one entry in `anatomy_uncertainty_bindings` for each
+`RIG_ANATOMY_UNCERTAIN` record, in occurrence order. Independent uncertainty
+codes occupy no entries. A SHA-256 digest of the entire anatomy record binds
+that occurrence to its fitted bone. A rename updates the element and digest.
+A change to rest placement or hierarchy also marks the bound record corrected.
+Removing a bone drops its bound occurrences.
+
+A null entry preserves the original record even if a different bone later takes
+its name. Saving and reloading retains that distinction, including when two
+occurrences have identical contents. Historical manifests without bindings
+carry no bone ownership evidence. Their anatomy records remain unchanged by
+bone edits until explicit refitting replaces them. The original old-writer
+reproduction and separately labeled simulated historical-byte regressions
+exercise this upgrade boundary.

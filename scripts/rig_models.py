@@ -89,6 +89,54 @@ class RigAsset:
         return self.manifest['skeleton']
 
 
+def _anatomy_binding_inputs(manifest):
+    """Read the bounded occurrence list before persistence or binary loading."""
+    issues = manifest.get('uncertainties')
+    require(isinstance(issues, list) and len(issues) <= 1024 and
+            all(isinstance(issue, dict) for issue in issues),
+            'RIG_SCHEMA', 'Rig uncertainty records must be a bounded array.')
+    records = [issue for issue in issues if issue.get('code') == 'RIG_ANATOMY_UNCERTAIN']
+    bindings = manifest.get('anatomy_uncertainty_bindings', [])
+    require(isinstance(bindings, list) and len(bindings) <= 1024 and
+            all(value is None or isinstance(value, str) and len(value) == 64 and
+                all(character in '0123456789abcdef' for character in value)
+                for value in bindings),
+            'RIG_SCHEMA', 'Anatomy uncertainty bindings must contain bounded digests or nulls.')
+    skeleton = manifest.get('skeleton')
+    bones = skeleton.get('bones', []) if isinstance(skeleton, dict) else []
+    bones = bones if isinstance(bones, list) else []
+    names = {bone['id'] for bone in bones if isinstance(bone, dict) and
+             isinstance(bone.get('id'), str)}
+    return records, bindings, names
+
+
+def normalize_anatomy_bindings(manifest):
+    """Demote stale occurrence metadata; only an explicit fit may bind it."""
+    records, bindings, names = _anatomy_binding_inputs(manifest)
+    if not records and 'anatomy_uncertainty_bindings' not in manifest:
+        return
+    # A generic caller which changed the occurrence count did not retain a
+    # positional correspondence. Never transfer a digest to an equal-looking
+    # record at a different position. Native edits update both arrays together.
+    if len(bindings) != len(records):
+        bindings = [None] * len(records)
+    manifest['anatomy_uncertainty_bindings'] = [
+        binding if binding is not None and binding == object_hash(issue) and
+        issue.get('element') in names else None
+        for issue, binding in zip(records, bindings)]
+
+
+def validate_anatomy_bindings(manifest):
+    """Validate present metadata without changing historical manifest identity."""
+    if 'anatomy_uncertainty_bindings' not in manifest:
+        return
+    records, bindings, names = _anatomy_binding_inputs(manifest)
+    require(len(bindings) == len(records) and all(
+        binding is None or binding == object_hash(issue) and issue.get('element') in names
+        for issue, binding in zip(records, bindings)),
+        'RIG_UNCERTAINTY_BINDING', 'Anatomy uncertainty bindings differ from their native occurrences.')
+
+
 # Texture fields in the material extensions already supported by rig_gltf.
 # Only declared texture slots are traversed: arbitrary extras are not bindings.
 _MATERIAL_TEXTURE_SLOTS = {
@@ -501,6 +549,7 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     manifest_budget = LoadBudget(preliminary)
     manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True),
                                  expected_hash=expected_manifest_sha256), 'Rig')
+    validate_anatomy_bindings(manifest)
     captured_manifest_bytes = manifest_budget.json_bytes
     limits = effective_limits(manifest['limits'], limits)
     _preflight_load(root, manifest, limits, verify_source, max_total_morph_targets=max_total_morph_targets,
