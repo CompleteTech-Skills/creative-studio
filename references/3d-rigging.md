@@ -553,3 +553,16 @@ native regressions cover direct solving, animation and runtime evaluation,
 ordinary bent limbs, and measured contact reports. A contact evaluation failure
 makes the aggregate contact check fail and leaves its unavailable distances
 `null`; it cannot report a successful check with invented zero distances.
+
+Finite folded-parent steering measures basis columns without squaring overflow
+and applies one common finite scale to both sides of its relative linear
+systems before elimination. This leaves the requested relative transform
+unchanged and avoids false singular/nonfinite candidates caused only by
+intermediate arithmetic. Existing shear, reflection and pole-ray checks remain
+authoritative. The independent source comparator is retained unchanged in
+`tests/independent/test_rig_fold_relative_solve.py`; run it explicitly with
+`PYTHONPATH=scripts:tests python tests/independent/test_rig_fold_relative_solve.py`.
+The automatic finite-basis and finite-solve modules check actual native FK,
+skin deformation, direct IK, animation and state playback at smaller and
+near-maximum finite scales with explicit attainable local pose witnesses.
+They establish synthetic numerical behavior, not artistic acceptance.

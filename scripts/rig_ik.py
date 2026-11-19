@@ -153,6 +153,11 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     require(np.all(column_scales > 0), 'RIG_SINGULAR_TRANSFORM',
             'Closed-chain pole steering needs an invertible root transform.')
     scaled_root = root / column_scales
+    # Solving finite, well-conditioned matrices near the binary64 maximum can
+    # overflow the elimination arithmetic. A common magnitude leaves the
+    # relative transform unchanged and also bounds the rotated right-hand side.
+    relative_scale = max(float(np.max(np.abs(parent))), float(np.max(np.abs(root))))
+    relative_parent, relative_root = parent / relative_scale, root / relative_scale
     # The measured turn uses a linear solve. Allow its conditioning to amplify
     # arithmetic roundoff, but cap the error even for poorly resolved frames.
     eps = np.finfo(float).eps
@@ -205,7 +210,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     def try_world_turn(rotation):
         value = np.eye(4)
         try:
-            value[:3, :3] = np.linalg.solve(parent, rotation @ root)
+            value[:3, :3] = np.linalg.solve(relative_parent, rotation @ relative_root)
             oriented = decompose(value)
         except RigError as exc:
             if exc.report['code'] in ('RIG_SHEAR', 'RIG_SINGULAR_TRANSFORM'):
@@ -235,7 +240,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     perpendicular = np.eye(3) - parallel
     x, y, z = direction
     cross = np.array([[0., -z, y], [z, 0., -x], [-y, x, 0.]])
-    constant, cosine, sine = (np.linalg.solve(parent, part @ swing @ root)
+    constant, cosine, sine = (np.linalg.solve(relative_parent, part @ swing @ relative_root)
                               for part in (parallel, perpendicular, cross))
     # Uniform rescaling leaves all zero dot-product conditions unchanged and
     # avoids overflow while forming polynomial coefficients.
