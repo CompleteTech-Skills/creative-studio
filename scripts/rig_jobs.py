@@ -146,7 +146,7 @@ def code_signature():
     return object_hash({p.name:sha256(p) for p in sorted(Path(__file__).parent.glob('rig_*.py'))})
 
 
-def run_step(root, name, parameters, action, *, status, retry=False):
+def run_step(root, name, parameters, action, *, status, retry=False, admit=None):
     """Single writer, content/parameter/code cache and preserved failure diagnostics."""
     root=Path(root).absolute()
     with job_lock(root):
@@ -159,6 +159,7 @@ def run_step(root, name, parameters, action, *, status, retry=False):
             if intact:return dict(status='cached', step=name, rig_sha256=current, artifacts=previous['artifacts'])
         attempts=previous['attempts'] if same and previous['input_sha256']==current else 0
         require(attempts < rig.manifest['limits']['attempts'], 'RIG_ATTEMPTS', 'Step attempt budget is exhausted; correct the input or parameters.')
+        if admit is not None:admit(rig)
         if previous and previous['status']=='running':
             previous['status']='interrupted';job['history'].append(dict(operation=name, status='interrupted', at=timestamp()))
         step=dict(status='running', input_sha256=current, output_sha256=None, parameters=deepcopy(parameters),
