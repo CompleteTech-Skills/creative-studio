@@ -153,23 +153,25 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     require(np.all(column_scales > 0), 'RIG_SINGULAR_TRANSFORM',
             'Closed-chain pole steering needs an invertible root transform.')
     scaled_root = root / column_scales
-    # Equilibrate equations separately: a single global divisor can erase a
-    # small, independent parent axis even though every local scale is valid.
-    # Rotate bounded root columns and combine powers of two only at the final
-    # RHS step, avoiding both elimination overflow and an overflowing ratio.
-    row_scales = np.max(np.abs(parent), axis=1)
-    require(np.all(row_scales > 0), 'RIG_SINGULAR_TRANSFORM',
+    # Normalize independent parent columns before balancing equations. A global
+    # or row-only divisor can erase a small axis after a rigid world rotation.
+    # The solve uses bounded columns; restore relative local magnitudes using
+    # binary exponents only after elimination, without an overflowing ratio.
+    parent_columns = np.max(np.abs(parent), axis=0)
+    require(np.all(parent_columns > 0), 'RIG_SINGULAR_TRANSFORM',
             'Closed-chain pole steering needs an invertible parent transform.')
-    relative_parent = parent / row_scales[:, None]
-    row_mantissa, row_exponent = np.frexp(row_scales)
+    normalized_parent = parent / parent_columns
+    row_scales = np.max(np.abs(normalized_parent), axis=1)
+    relative_parent = normalized_parent / row_scales[:, None]
+    parent_mantissa, parent_exponent = np.frexp(parent_columns)
     column_mantissa, column_exponent = np.frexp(column_scales)
-    ratio = column_mantissa[None, :] / row_mantissa[:, None]
-    exponents = column_exponent[None, :] - row_exponent[:, None]
+    ratio = column_mantissa[None, :] / parent_mantissa[:, None]
+    exponents = column_exponent[None, :] - parent_exponent[:, None]
 
     def relative_solve(rotation):
         with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-            right = np.ldexp((rotation @ scaled_root) * ratio, exponents)
-            return np.linalg.solve(relative_parent, right)
+            solved = np.linalg.solve(relative_parent, (rotation @ scaled_root) / row_scales[:, None])
+            return np.ldexp(solved * ratio, exponents)
     # The measured turn uses a linear solve. Allow its conditioning to amplify
     # arithmetic roundoff, but cap the error even for poorly resolved frames.
     eps = np.finfo(float).eps

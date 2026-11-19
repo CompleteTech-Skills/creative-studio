@@ -555,10 +555,10 @@ makes the aggregate contact check fail and leaves its unavailable distances
 `null`; it cannot report a successful check with invented zero distances.
 
 Finite folded-parent steering measures basis columns without squaring overflow
-and equilibrates each equation of its relative linear systems separately.
-A single global divisor can erase an independent small axis. Bounded root
-columns are rotated before their row-relative magnitudes are restored using
-binary exponents, without first forming an overflowing scale ratio. This
+and normalizes independent parent columns before equilibrating equations.
+A global or row-only divisor can erase a small axis after a rigid world turn.
+Bounded root columns are rotated and solved before relative local magnitudes
+are restored using binary exponents, without an overflowing scale ratio. This
 preserves both finite near-maximum rotated bases and attainable turns around
 extremely unequal independent axes. Nonfinite candidates remain inadmissible.
 Existing shear, reflection and pole-ray checks remain
@@ -573,3 +573,13 @@ its unchanged independent source control is retained in
 `tests/independent/test_rig_fold_anisotropic_solve.py` for explicit execution
 with `PYTHONPATH=scripts:tests`.
 They establish synthetic numerical behavior, not artistic acceptance.
+
+Canonical contact validation now measures every active positional goal in the
+final FK pose at the union of the existing sample times. The original seven
+requested samples per contact remain the `samples` coverage count;
+`final_samples` records all active-goal observations used for error and drift.
+A short overlapping contact can no longer hide a miss in an earlier active
+goal merely because their seven-point grids differ. The retained independent
+controls also exercise rigid world rotations of highly unequal parent axes,
+actual native skin deformation and playback rollback. All are synthetic
+geometry checks rather than visual or production acceptance.

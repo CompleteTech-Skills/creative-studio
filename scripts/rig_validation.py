@@ -46,6 +46,7 @@ def contact_metrics(rig, clip) -> dict:
     contacts = clip['contacts']
     endpoints = [chains[contact['chain']]['bones'][-1] for contact in contacts]
     positions = [[] for _ in contacts]
+    final_positions = [[] for _ in contacts]
     position_samples = {}
     oriented = {}
     # The solver uses this angular bound. Chain tolerance is positional.
@@ -63,13 +64,16 @@ def contact_metrics(rig, clip) -> dict:
             orientation_errors[index] = []
             orientation_converged[index] = True
 
-    # Reuse final FK across contacts. Angular checks cover every active goal at
-    # each existing contact sample, while positions retain their own seven times.
+    # Every active goal owns the final pose at every sampled time. Retain each
+    # contact's seven requested samples as a separate legacy coverage count.
     for time, sample_indices in sorted(position_samples.items()):
         evaluated = evaluate_animation(rig, clip, time, _validated=True)
         world = evaluate_fk(rig.skeleton, evaluated['pose'])
         for index in sample_indices:
             positions[index].append(world[endpoints[index]][:3, 3])
+        for index, contact in enumerate(contacts):
+            if contact_is_active(contact, evaluated['time'], clip['duration']):
+                final_positions[index].append(world[endpoints[index]][:3, 3])
         receipts = {(row['id'], row['chain']): row for row in evaluated['final_contacts']}
         for index, goal in oriented.items():
             contact = contacts[index]
@@ -88,28 +92,31 @@ def contact_metrics(rig, clip) -> dict:
                 and isinstance(native_error, (int, float))
                 and math.isfinite(native_error) and 0 <= native_error <= orientation_tolerance)
 
-    maximum, drift, count = 0., 0., 0
+    maximum, drift, count, final_count = 0., 0., 0, 0
     orientation_maximum, orientation_count = None, 0
     by_contact = []
     for index, contact in enumerate(contacts):
-        points = np.array(positions[index])
+        points = np.array(final_positions[index])
         local_error = _max_distance(points, contact['target'], asset=contact['id'])
         local_drift = _max_distance(points, points[0], asset=contact['id'])
         maximum = max(maximum, local_error)
         drift = max(drift, local_drift)
-        count += len(points)
+        count += len(positions[index])
+        final_count += len(points)
         angles = orientation_errors.get(index, [])
         local_orientation_maximum = max(angles) if angles else None
         if local_orientation_maximum is not None:
             orientation_maximum = (local_orientation_maximum if orientation_maximum is None
                                    else max(orientation_maximum, local_orientation_maximum))
         orientation_count += len(angles)
-        by_contact.append(dict(id=contact['id'], samples=len(points), max_error_m=local_error, max_drift_m=local_drift,
+        by_contact.append(dict(id=contact['id'], samples=len(positions[index]), final_samples=len(points),
+                               max_error_m=local_error, max_drift_m=local_drift,
                                max_orientation_error_rad=local_orientation_maximum, orientation_samples=len(angles),
                                orientation_tolerance_rad=orientation_tolerance if index in oriented else None,
                                orientation_converged=orientation_converged[index] and bool(angles)
                                if index in oriented else None))
-    metrics = dict(max_contact_error_m=maximum, max_planted_drift_m=drift, samples=count, contacts=by_contact,
+    metrics = dict(max_contact_error_m=maximum, max_planted_drift_m=drift, samples=count,
+                   final_samples=final_count, contacts=by_contact,
                    max_contact_orientation_error_rad=orientation_maximum, orientation_samples=orientation_count)
     if orientation_count:
         metrics.update(clip_id=clip['id'], clip_version=clip['version'], clip_content_sha256=object_hash(clip),
