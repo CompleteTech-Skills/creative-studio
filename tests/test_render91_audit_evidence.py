@@ -90,6 +90,19 @@ class Render91AuditEvidenceTests(unittest.TestCase):
         self.assertEqual(len(payload), review['report_redaction']['bytes'])
         self.assertEqual(hashlib.sha256(payload).hexdigest(), review['report_redaction']['sha256'])
 
+    def test_optimized_validator_rejects_retained_and_git_mismatches(self):
+        path = EVIDENCE / 'validate.py'
+        namespace = {'__name__': 'optimized_audit_validator', '__file__': str(path)}
+        exec(compile(path.read_bytes(), str(path), 'exec', optimize=1), namespace)
+        native = json.loads(json.dumps(self.audit['native_job_equivalent']))
+        with mock.patch.dict(namespace, {'optional_gitfile': lambda *_: b'different'}):
+            with self.assertRaises(AssertionError):
+                namespace['job_binding_source'](native)
+        native['retained_test_source']['sha256'] = '0' * 64
+        with mock.patch.dict(namespace, {'optional_gitfile': lambda *_: None}):
+            with self.assertRaises(AssertionError):
+                namespace['job_binding_source'](native)
+
     def test_evidence_contains_no_absolute_local_home_paths(self):
         for path in sorted(EVIDENCE.rglob('*')):
             if path.is_file() and '__pycache__' not in path.parts:

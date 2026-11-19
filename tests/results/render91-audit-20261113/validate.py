@@ -5,6 +5,9 @@ The receipt is printed to stdout by default. Use --output to create a new file.
 from pathlib import Path
 import argparse,ast,datetime,hashlib,json,re,subprocess,sys
 out=Path(__file__).resolve().parent;repo=out.parents[2]
+def check(condition, detail):
+ if not condition:
+  raise AssertionError(detail)
 def gitfile(revision,path):return subprocess.check_output(['git','show',revision+':'+path],cwd=repo)
 def optional_gitfile(revision,path):
  try:return subprocess.check_output(['git','show',revision+':'+path],cwd=repo,stderr=subprocess.DEVNULL)
@@ -13,9 +16,9 @@ def job_binding_source(native):
  """Retained exact bytes; cross-checked against git only when that revision is present."""
  retained=native['retained_test_source']
  payload=(out/retained['path']).read_bytes()
- assert len(payload)==retained['bytes'] and hashlib.sha256(payload).hexdigest()==retained['sha256'],retained['path']
+ check(len(payload)==retained['bytes'] and hashlib.sha256(payload).hexdigest()==retained['sha256'], (retained['path']))
  committed=optional_gitfile(native['revision'],retained['source_path'])
- if committed is not None:assert committed==payload,(native['revision'],retained['source_path'])
+ if committed is not None:check(committed==payload, ((native['revision'],retained['source_path'])))
  return payload,committed is not None
 def emit(receipt,output=None):
  text = json.dumps(receipt, indent=2) + '\n'
@@ -31,10 +34,10 @@ def main(argv=None):
  data=json.loads((out/'audit.json').read_text());workflow=json.loads((out/'source-workflow.json').read_text())
  for item in data['examined_source_inventory']:
   payload=gitfile(data['foundation_revision'],item['path'])
-  assert len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'],item['path']
+  check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], (item['path']))
  redaction=data['foundation_review']['report_redaction']
  payload=(out/data['foundation_review']['report']).read_bytes()
- assert len(payload)==redaction['bytes'] and hashlib.sha256(payload).hexdigest()==redaction['sha256'],data['foundation_review']['report']
+ check(len(payload)==redaction['bytes'] and hashlib.sha256(payload).hexdigest()==redaction['sha256'], (data['foundation_review']['report']))
  refs=set()
  for item in data['field_catalog']+data['required_semantic_traceability']:
   refs.update(item['tests'])
@@ -47,10 +50,10 @@ def main(argv=None):
   else:key=(data['foundation_revision'],file);source=lambda:gitfile(data['foundation_revision'],file)
   if key not in cache:cache[key]=ast.parse(source())
   tree=cache[key]
-  assert any(isinstance(c,ast.ClassDef) and c.name==cls and any(isinstance(m,ast.FunctionDef) and m.name==method for m in c.body) for c in tree.body),ref
+  check(any(isinstance(c,ast.ClassDef) and c.name==cls and any(isinstance(m,ast.FunctionDef) and m.name==method for m in c.body) for c in tree.body), (ref))
  for item in workflow['artifacts']:
   payload=(out/item['path']).read_bytes()
-  assert len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'],item['path']
+  check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], (item['path']))
  # Expand every schema branch, including nullable objects, independently of the catalog.
  expected={}
  def catalog_fields(node, definitions, document, path='', required=True, nullable=(), seen=()):
@@ -61,7 +64,7 @@ def main(argv=None):
   if path:
    key=(document,path)
    entry={'required':required,'nullable_ancestors':list(nullable)}
-   if key in expected:assert expected[key]==entry,(key,expected[key],entry)
+   if key in expected:check(expected[key]==entry, ((key,expected[key],entry)))
    expected[key]=entry
   for name,value in node.get('properties',{}).items():
    catalog_fields(value,definitions,document,(path+'.' if path else '')+name,name in node.get('required',()),nullable,seen)
@@ -85,17 +88,17 @@ def main(argv=None):
    document=schema['$ref'].rsplit('/',1)[-1]
    catalog_fields(schema['$defs'][document],schema['$defs'],document)
  actual={(item['document'],item['path']):item for item in data['field_catalog']}
- assert len(actual)==len(data['field_catalog']),'duplicate catalog entries'
- assert actual.keys()==expected.keys(),{'missing':sorted(expected.keys()-actual.keys()),'extra':sorted(actual.keys()-expected.keys())}
+ check(len(actual)==len(data['field_catalog']), ('duplicate catalog entries'))
+ check(actual.keys()==expected.keys(), ({'missing':sorted(expected.keys()-actual.keys()),'extra':sorted(actual.keys()-expected.keys())}))
  for key,entry in expected.items():
-  assert actual[key]['required']==entry['required'],key
-  assert actual[key]['nullable_ancestors']==entry['nullable_ancestors'],key
- assert workflow['fixture'] and workflow['native_geometry']=={'vertices':4,'triangles':2}
- assert set(data['deliverables'])==set(map(str,range(1,8)))
- assert len({item['id'] for item in data['required_semantic_traceability']})==len(data['required_semantic_traceability'])
+  check(actual[key]['required']==entry['required'], (key))
+  check(actual[key]['nullable_ancestors']==entry['nullable_ancestors'], (key))
+ check(workflow['fixture'] and workflow['native_geometry']=={'vertices':4,'triangles':2}, ("audit consistency check failed"))
+ check(set(data['deliverables'])==set(map(str,range(1,8))), ("audit consistency check failed"))
+ check(len({item['id'] for item in data['required_semantic_traceability']})==len(data['required_semantic_traceability']), ("audit consistency check failed"))
  for doc in ('references/render3d-foundation-audit.md','references/render3d-contracts.md'):
   for link in re.findall(r'\]\(([^)]+)\)',(repo/doc).read_text()):
-   if '://' not in link and not link.startswith('#'):assert ((repo/doc).parent/link.split('#')[0]).exists(),(doc,link)
+   if '://' not in link and not link.startswith('#'):check(((repo/doc).parent/link.split('#')[0]).exists(), ((doc,link)))
  receipt = {
   'kind': 'render91-audit-consistency-check',
   'recorded_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
