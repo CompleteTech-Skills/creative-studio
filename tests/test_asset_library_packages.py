@@ -321,10 +321,8 @@ class StructuredPackageErrorTests(unittest.TestCase):
                 else:
                     index['assets'][0]['location'] = 'x'
                 self.reseal(index)
-                with self.assertRaises(RigError):
-                    verify_package(self.package)
-                with self.assertRaises(RigError):
-                    restore_package(self.package, self.root / ('restored-' + change))
+                self.refused(lambda: verify_package(self.package), 'SCHEMA')
+                self.refused(lambda: restore_package(self.package, self.root / ('restored-' + change)), 'SCHEMA')
                 self.assertFalse((self.root / ('restored-' + change)).exists())
         self.reseal(original)
         self.assertTrue(verify_package(self.package)['verified'])
@@ -373,7 +371,31 @@ class StructuredPackageErrorTests(unittest.TestCase):
         empty = self.root / 'empty.zip'
         with zipfile.ZipFile(empty, 'w') as archive:
             archive.writestr('payload.txt', b'x')
-        with self.assertRaises(RigError):
-            verify_package_archive(empty)
+        self.refused(lambda: verify_package_archive(empty), 'ARCHIVE')
+
+    def test_compressed_or_aliased_archive_members_are_structured(self):
+        archive_path = self.root / 'package.zip'; create_archive(self.package, archive_path)
+        with zipfile.ZipFile(archive_path) as source:
+            members = [(info, source.read(info)) for info in source.infolist()]
+        for mode in ('deflated', 'aliased'):
+            with self.subTest(mode=mode):
+                path = self.root / (mode + '.zip')
+                with zipfile.ZipFile(path, 'w') as target:
+                    for info, data in members:
+                        target.writestr(info.filename, data, compress_type=
+                                        zipfile.ZIP_DEFLATED if mode == 'deflated' else zipfile.ZIP_STORED)
+                    if mode == 'aliased':
+                        target.writestr('ALIAS.txt', b'a'); target.writestr('alias.txt', b'b')
+                with self.assertRaises(RigError) as caught:
+                    restore_package_archive(path, self.root / (mode + '-out'))
+                self.assertTrue(caught.exception.report['code'].startswith('LIBRARY_PACKAGE_'))
+                self.assertFalse((self.root / (mode + '-out')).exists())
+
+    def test_corrupt_deflate_member_cannot_escape_unstructured(self):
+        path = self.root / 'corrupt.zip'
+        with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('x.json', b'A' * 5000)
+        raw = bytearray(path.read_bytes()); raw[36:39] = b'\xff\xff\xff'; path.write_bytes(bytes(raw))
+        self.refused(lambda: verify_package_archive(path), 'ARCHIVE')
 
 if __name__ == '__main__': unittest.main()

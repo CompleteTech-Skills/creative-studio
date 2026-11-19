@@ -303,7 +303,11 @@ def _verify(root):
         _keys(asset, ('location', 'manifest'), 'Package asset')
         node = asset['location']
         # Bind the canonical locator exactly; extra or malformed fields cannot verify.
-        if location(node) != node:
+        try:
+            canonical = location(node)
+        except RigError as exc:
+            fail('SCHEMA', 'Package asset location is not a canonical locator: ' + exc.report['code'])
+        if canonical != node:
             fail('SCHEMA', 'Package asset location is not an exact canonical locator.')
         token = location_key(node)
         if token in locations:
@@ -595,6 +599,10 @@ def _extract_archive(raw, temporary):
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             if any((e.external_attr >> 16) & 0o170000 not in (0, 0o100000) for e in archive.infolist()):
                 fail('PATH', 'Archive special-file members are forbidden.')
+            # Package archives are written stored; refusing compression keeps
+            # corrupt deflate/LZMA streams from reaching a decompressor.
+            if any(e.compress_type != zipfile.ZIP_STORED for e in archive.infolist()):
+                fail('ARCHIVE', 'Package archive members must be stored without compression.')
             if len(archive.infolist()) > MAX_FILES + 1 or any(e.file_size > MAX_FILE_BYTES for e in archive.infolist()):
                 fail('LIMIT', 'Archive member/count exceeds asset package limits.')
             if sum(e.file_size for e in archive.infolist()) > MAX_BYTES + MAX_INDEX_BYTES:
@@ -611,7 +619,10 @@ def _extract_archive(raw, temporary):
             for name in names:
                 portable_path(name)
             # Case-insensitive volumes would otherwise merge aliased members.
-            _portable_inventory(names)
+            try:
+                _portable_inventory(names)
+            except ValueError as exc:
+                fail('PATH', str(exc))
             target = temporary / 'package'; target.mkdir()
             for name in names:
                 output = target / name; output.parent.mkdir(parents=True, exist_ok=True)
