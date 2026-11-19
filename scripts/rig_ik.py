@@ -316,6 +316,11 @@ def _orient_chain(skeleton: dict, pose: dict, names: list[str], targets: np.ndar
     return result
 
 
+# Minimum FK-to-IK matching pole distance, far above the 1e-8 m pole-degeneracy
+# cutoff in _pole_perpendicular. Ordinary matches keep their reach distance.
+MIN_MATCHING_POLE_DISTANCE = 1e-6
+
+
 def _pole_perpendicular(direction, origin, pole):
     delta = pole-origin
     perpendicular = delta-direction*np.dot(delta, direction)
@@ -493,6 +498,9 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         pole = points[1]
     else:
         bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
-        pole = points[0]+bend*reach
+        # Below the 1e-8 m pole-degeneracy cutoff a reach-distance pole would
+        # be replaced by an arbitrary axis, moving the elbow of a valid
+        # near-closed seed. Keep the same bend direction at a safe distance.
+        pole = points[0]+bend*max(reach, MIN_MATCHING_POLE_DISTANCE)
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
                 orientation=decompose(world[chain['bones'][-1]])['rotation'])
