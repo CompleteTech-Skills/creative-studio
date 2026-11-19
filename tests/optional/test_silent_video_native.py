@@ -100,11 +100,13 @@ class SilentMedia(core.SilentContracts):
 
     def test_distinct_containers_with_shared_probe_family_are_rejected(self):
         cases = (('vp9-webm', '.webm', 'matroska', '.mkv'),
-                 ('h264-mp4', '.mp4', 'mov', '.mov'))
+                 ('h264-mp4', '.mp4', 'mov', '.mov'),
+                 ('h264-mp4', '.mp4', '3gp', '.3gp'),
+                 ('h264-mp4', '.mp4', '3g2', '.3g2'))
         for profile, extension, other_muxer, other_extension in cases:
             with self.subTest(profile=profile, actual=other_muxer):
                 request = video.make_request(self.source, profile=profile)
-                expected = self.root / ('expected' + extension)
+                expected = self.root / ('expected-' + other_muxer + extension)
                 other = self.root / ('other' + other_extension)
                 video.encode(request, self.root, expected)
                 self.assert_receipt(video.verify_export(expected, request, root=self.root), expected)

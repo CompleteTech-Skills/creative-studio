@@ -65,6 +65,22 @@ class SilentContracts(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'encoded container mismatch'):
                     video._check_container_header(artifact, container)
 
+    def test_mp4_identity_requires_a_version_brand_and_matching_major_type(self):
+        cases = (
+            (b'isom', (b'iso2', b'avc1', b'mp41'), True),
+            (b'mp42', (b'avc1',), True),
+            (b'iso5', (b'iso6', b'mp41'), True),
+            (b'isom', (b'iso2', b'avc1'), False),
+            (b'3gp6', (b'isom', b'iso2', b'avc1'), False),
+            (b'3g2b', (b'isom', b'iso2', b'avc1'), False),
+            (b'3g2b', (b'isom', b'mp41'), False),
+        )
+        for major, brands, expected in cases:
+            with self.subTest(major=major, brands=brands):
+                size = 16 + 4 * len(brands)
+                header = struct.pack('>I', size) + b'ftyp' + major + b'\0'*4 + b''.join(brands)
+                self.assertIs(video._mp4_header_matches(header), expected)
+
     def _simulated_verification_records(self):
         # Portable contract fixtures: these records do not establish real media
         # probing or decoding. The optional suite executes those processes.
