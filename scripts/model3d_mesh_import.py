@@ -195,6 +195,14 @@ def _gltf_sources(inventory, provenance, report):
     require(primary_record is not None and report.get('source_sha256') == primary_record['sha256']
             and len(primary_evidence) == 1 and primary_evidence[0]['original_filename'] == original_name,
             'MODEL3D_NORMALIZATION', 'Import report does not bind the original model entry.')
+    reported = report.get('source_files')
+    expected = {name.removeprefix('source/'): (item['bytes'], item['sha256'])
+                for name, item in sources.items()}
+    require(isinstance(reported, list) and len(reported) == len(expected)
+            and all(isinstance(item, dict) and isinstance(item.get('path'), str)
+                    and type(item.get('bytes')) is int for item in reported)
+            and {item['path']: (item['bytes'], item.get('sha256')) for item in reported} == expected,
+            'MODEL3D_NORMALIZATION', 'Report source inventory differs from the registered acquisition.')
     return primary, sources
 
 
@@ -240,24 +248,7 @@ def _check_blender_scene(value):
             'attributes, materials, textures, skin, animation or morph channels.')
 
 
-def _verify_normalized(root, manifest, inventory, limits, *, blender):
-    """Reproduce GLB packing from the retained glTF input and verify the exact output."""
-    from asset_library_import import (BLENDER_VALIDATOR, TOOL, VERSION,
-                                      _inspect, _normalization_plan, _write_glb)
-    from rig_interop import validate_gltf
-
-    report_record = inventory.get(_IMPORT_REPORT, {})
-    require(report_record.get('role') == 'evidence' and report_record.get('format') == 'json',
-            'MODEL3D_NORMALIZATION', 'Native conversion requires its inventoried import report.')
-    normalized = inventory[_NORMALIZED]
-    provenance = manifest['provenance']
-    conversions = provenance.get('conversions', [])
-    require(len(conversions) == (2 if blender else 1), 'MODEL3D_NORMALIZATION',
-            'Registry provenance must bind the supported native conversion chain.')
-    normalization = conversions[-1]
-
-    report = LoadBudget(limits).json(root/_IMPORT_REPORT, expected_hash=report_record['sha256'],
-                                     hash_code='MODEL3D_HASH')
+def _native_report_scale(report, normalized, provenance, expected_scale, *, blender):
     require(isinstance(report, dict) and type(report.get('schema_version')) is int
             and report['schema_version'] == 1 and ('blender' in report) == blender
             and report.get('operation') == 'pack glTF buffers and textures into GLB and apply explicit scene-root units'
@@ -268,8 +259,28 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
             'MODEL3D_NORMALIZATION', 'Import report does not describe the exact supported normalized payload.')
     scale = report.get('source_unit_scale')
     require(type(scale) in (int, float) and 1e-3 <= scale <= 1e6
-            and scale == manifest['compatibility']['unit_scale'],
+            and scale == expected_scale,
             'MODEL3D_COORDINATES', 'Import report and registry disagree on the original unit scale.')
+    return scale
+
+
+def _normalized_binding(root, manifest, inventory, limits, *, blender):
+    """Verify the registered version's conversion evidence for either geometry entry."""
+    from asset_library_import import TOOL, VERSION
+
+    report_record = inventory.get(_IMPORT_REPORT, {})
+    require(report_record.get('role') == 'evidence' and report_record.get('format') == 'json',
+            'MODEL3D_NORMALIZATION', 'Native conversion requires its inventoried import report.')
+    normalized = inventory[_NORMALIZED]
+    provenance = manifest['provenance']
+    conversions = provenance.get('conversions', [])
+    require(len(conversions) == (2 if blender else 1), 'MODEL3D_NORMALIZATION',
+            'Registry provenance must bind the supported native conversion chain.')
+    normalization = conversions[-1]
+    report = LoadBudget(limits).json(root/_IMPORT_REPORT, expected_hash=report_record['sha256'],
+                                     hash_code='MODEL3D_HASH')
+    scale = _native_report_scale(report, normalized, provenance, manifest['compatibility']['unit_scale'],
+                                 blender=blender)
     if blender:
         primary = Path(_BLENDER_INTERMEDIATE).name
         sources = _blender_source(root, inventory, provenance, report, conversions[0])
@@ -282,6 +293,16 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
             and {record['path'] for record in normalization['inputs']} == set(sources)
             and normalization['outputs'] == [normalized, report_record],
             'MODEL3D_NORMALIZATION', 'Registry provenance must bind the supported native conversion.')
+    return report, scale, primary, sources
+
+
+def _verify_normalized(root, manifest, inventory, limits, *, blender):
+    """Reproduce GLB packing from the retained glTF input and verify the exact output."""
+    from asset_library_import import BLENDER_VALIDATOR, _inspect, _normalization_plan, _write_glb
+    from rig_interop import validate_gltf
+
+    report, scale, primary, sources = _normalized_binding(root, manifest, inventory, limits, blender=blender)
+    normalized = inventory[_NORMALIZED]
     resource_evidence = object_hash([report.get('source_files'), report.get('embedded')])
     del report
 
@@ -300,7 +321,7 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
     # The exact registered length is enough for the producer's packing plan.
     # It also avoids reserving its full configured output limit for a small GLB.
     document.limits = {**document.limits, 'source_bytes': int(normalized['bytes'])}
-    plan = _normalization_plan(document, images, scale, provenance['fixture'], preflight)
+    plan = _normalization_plan(document, images, scale, manifest['provenance']['fixture'], preflight)
     with tempfile.TemporaryDirectory(prefix='model3d-normalize-') as verification:
         regenerated = Path(verification)/_NORMALIZED
         _write_glb(regenerated, plan)
@@ -382,7 +403,8 @@ def import_canonical(library, ref, *, entry=None, limits=None):
             'MODEL3D_ENTRY', 'Entry must name an inventoried supported geometry file.')
     unit_scale = manifest['compatibility']['unit_scale']
     verify_native = entry == _NORMALIZED and (blender or producer_claim or (native_payload and unit_scale != 1))
-    require(not verify_native or native_payload, 'MODEL3D_NORMALIZATION',
+    bind_native = producer_claim or verify_native
+    require(not bind_native or native_payload, 'MODEL3D_NORMALIZATION',
             'Native conversion requires an inventoried normalized GLB payload.')
     require(manifest['compatibility']['coordinate_system'] == 'right-handed-y-up-z-forward'
             and (verify_native or unit_scale == 1),
@@ -390,9 +412,9 @@ def import_canonical(library, ref, *, entry=None, limits=None):
     require(len(inventory) <= limits['archive_files'] and
             sum(int(item['bytes']) for item in inventory.values()) <= min(limits['dependency_bytes'], limits['memory_bytes']//3) and
             all(item['bytes'] <= limits['source_bytes'] for item in inventory.values()) and
-            (not verify_native or inventory.get(_IMPORT_REPORT, {}).get('bytes', 0) <= MAX_JSON_BYTES),
+            (not bind_native or inventory.get(_IMPORT_REPORT, {}).get('bytes', 0) <= MAX_JSON_BYTES),
             'MODEL3D_BUDGET', 'Canonical inventory exceeds encoded-byte limits before reading.')
-    if verify_native and _IMPORT_REPORT in inventory:
+    if bind_native and _IMPORT_REPORT in inventory:
         LoadBudget(limits).charge_json(Path(_IMPORT_REPORT), captured_size=int(inventory[_IMPORT_REPORT]['bytes']))
     temporary = _temporary(); root = Path(temporary.name).resolve()
     try:
@@ -414,6 +436,8 @@ def import_canonical(library, ref, *, entry=None, limits=None):
             normalization = 'verified native GLB with source unit scale baked into geometry'
             evidence = dict(source_unit_scale=scale, normalized_sha256=normalized['sha256'],
                             import_report_sha256=inventory[_IMPORT_REPORT]['sha256'])
+        elif bind_native:
+            _normalized_binding(root, manifest, inventory, limits, blender=blender)
         model = _load(root/entry, scale=1., limits=decode_limits)
         actual = {p.relative_to(root).as_posix() for p in model.source_files}
         require(actual <= set(inventory), 'MODEL3D_INVENTORY', 'Model references a non-inventoried dependency.')

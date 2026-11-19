@@ -66,7 +66,13 @@ reader before decoding geometry, including when a legacy runtime entry is
 selected. This checks retained provenance consistency; it does not authenticate
 the author of a caller-supplied manifest or execute a conversion.
 
-When a registered version contains both native normalized geometry and a legacy runtime entry, the builder can bind either geometry payload. The native conversion evidence, original filenames and fixture classification are checked for the registered version, including when the selected runtime bytes differ from the normalized GLB. A legacy runtime-only manifest or an ordinary evidence file named `normalized.glb` retains its existing runtime binding.
+When a registered version contains both native normalized geometry and a legacy
+runtime entry, the builder can bind either geometry payload. Both the reader and
+builder verify the version's native acquisition records and the import report's
+source scale, resource lengths and hashes. The builder checks original filenames
+and fixture classification even when runtime bytes differ from the normalized
+GLB. A legacy runtime-only manifest or an ordinary evidence file named
+`normalized.glb` retains its existing runtime binding.
 
 ## Reproduce actual geometry evidence
 

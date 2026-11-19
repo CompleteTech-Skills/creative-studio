@@ -324,7 +324,7 @@ class RegisteredResourceAcquisitionTests(unittest.TestCase):
                 self.assertEqual(self.library.read_file(ref, name), data)
                 self.assertEqual(self.paths[name].read_bytes(), data)
 
-    def register_metadata_variant(self, resource, *, omit):
+    def register_metadata_variant(self, resource, *, omit, legacy_runtime=False):
         manifest = deepcopy(self.manifest)
         records = manifest['provenance']['source_records']
         record = next(item for item in records if item['file']['path'] == resource)
@@ -333,26 +333,42 @@ class RegisteredResourceAcquisitionTests(unittest.TestCase):
         else:
             record['original_filename'] = 'alternate' + Path(resource).suffix
         manifest['version'] = '1.0.1'
-        manifest = seal(manifest)
         self.assertEqual(manifest['files'], self.manifest['files'])
         self.assertEqual(manifest['provenance']['conversions'], self.manifest['provenance']['conversions'])
-        ref = self.library.register(manifest, self.paths)
+        paths = dict(self.paths)
+        if legacy_runtime:
+            name = 'runtime/asset.glb'
+            runtime = self.work / name
+            runtime.parent.mkdir()
+            points = np.array([[0., 0., 0.], [3., 0., 0.], [0., 1., 0.]])
+            export_geometry(Geometry([Mesh('runtime', points, np.array([[0, 1, 2]]))], [{}]), runtime)
+            runtime_bytes = runtime.read_bytes()
+            self.assertNotEqual(runtime_bytes, self.payloads['normalized.glb'])
+            manifest['files'].append(file_record(runtime, name, 'payload'))
+            manifest['publication']['inventory'].append(name)
+            paths[name] = runtime
+        manifest = seal(manifest)
+        ref = self.library.register(manifest, paths)
         self.versions.append((ref, deepcopy(manifest)))
+        if legacy_runtime:
+            self.addCleanup(lambda: self.assertEqual((self.library.read_file(ref, name), runtime.read_bytes()),
+                                                     (runtime_bytes, runtime_bytes)))
         return ref
 
-    def build_from_reference(self, ref, *, texture_name):
+    def build_from_reference(self, ref, *, texture_name, root=None):
+        root = self.work if root is None else root
         manifest = self.library.resolve(ref)
-        canonical = self.work / 'canonical.json'
+        canonical = root / 'canonical.json'
         canonical.write_text(json.dumps(dict(canonical_ref=ref, manifest=manifest)), encoding='utf-8')
-        texture = record(self.work, self.texture, 'image/png')
+        texture = record(root, self.texture, 'image/png')
         supplied = dict(source(texture), role='texture', original_filename=texture_name, dimensions_px=[2, 2])
-        geometry = record(self.work, 'normalized.glb', 'model/gltf-binary')
-        asset = build_asset(self.work, geometry, asset_id='resource-names', version='1.0.0',
+        geometry = record(root, 'normalized.glb', 'model/gltf-binary')
+        asset = build_asset(root, geometry, asset_id='resource-names', version='1.0.0',
             category='prop', sources=[supplied], provenance=provenance(), files=[geometry, texture],
-            canonical_evidence=record(self.work, 'canonical.json', 'application/json'))
-        output = self.work / 'asset.json'
+            canonical_evidence=record(root, 'canonical.json', 'application/json'))
+        output = root / 'asset.json'
         output.write_text(json.dumps(asset), encoding='utf-8')
-        checked = validate_file(output, self.work)
+        checked = validate_file(output, root)
         self.assertTrue(checked['payloads_verified'])
         self.assertTrue(checked['geometry_inspected'])
         return asset
@@ -406,6 +422,49 @@ class RegisteredResourceAcquisitionTests(unittest.TestCase):
 
     def test_native_buffer_contradictory_acquisition_refused(self):
         self.assert_native_claim_refused(self.buffer, omit=False)
+
+    def test_both_geometry_entries_check_the_registered_texture_acquisition(self):
+        ref = self.register_metadata_variant(self.texture, omit=True, legacy_runtime=True)
+        for entry in ('normalized.glb', 'runtime/asset.glb'):
+            with self.subTest(entry=entry), self.assertRaisesRegex(RigError, 'every exact original source record'):
+                with import_canonical(self.library, ref, entry=entry):
+                    pass
+
+    def assert_retained_report_metadata_refused(self, mutate, code):
+        name = 'import-report.json'
+        root = self.root / 'report-variant'
+        shutil.copytree(self.work, root)
+        path = root / name
+        contents = json.loads(path.read_bytes())
+        mutate(contents)
+        path.write_text(json.dumps(contents), encoding='utf-8')
+        changed = file_record(path, name, 'evidence')
+        manifest = deepcopy(self.manifest)
+        manifest['version'] = '1.0.1'
+        manifest['files'] = [changed if item['path'] == name else item for item in manifest['files']]
+        outputs = manifest['provenance']['conversions'][-1]['outputs']
+        outputs[:] = [changed if item['path'] == name else item for item in outputs]
+        ref = self.library.register(seal(manifest), {item['path']: root/item['path'] for item in manifest['files']})
+        with self.subTest(owner='reader'):
+            with self.assertRaises(RigError) as rejected:
+                with import_canonical(self.library, ref):
+                    pass
+            self.assertEqual(rejected.exception.report['code'], code)
+        with self.subTest(owner='builder'):
+            with self.assertRaises(RigError) as rejected:
+                self.build_from_reference(ref, texture_name='resources/paint.png', root=root)
+            self.assertEqual(rejected.exception.report['code'], code)
+        self.assertEqual(self.library.read_file(ref, name), path.read_bytes())
+
+    def test_builder_and_reader_bind_retained_report_source_scale(self):
+        self.assert_retained_report_metadata_refused(
+            lambda report: report.update(source_unit_scale=2.), 'MODEL3D_COORDINATES')
+
+    def test_builder_and_reader_bind_retained_report_resource_hashes(self):
+        def alter_texture_hash(report):
+            texture = next(item for item in report['source_files'] if item['path'] == 'resources/paint.png')
+            texture['sha256'] = 'f' * 64
+        self.assert_retained_report_metadata_refused(alter_texture_hash, 'MODEL3D_NORMALIZATION')
 
 
 if __name__ == '__main__':

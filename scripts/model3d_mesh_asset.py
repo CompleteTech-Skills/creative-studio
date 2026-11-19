@@ -143,12 +143,14 @@ def _canonical_binding(payload, geometry_record, sources, provenance, snapshot):
         # The producer inventory identifies the primary document separately
         # from external resources. Read its exact report instead of guessing
         # from filenames, which may also name legitimate resource payloads.
-        from model3d_mesh_import import _gltf_sources
+        from model3d_mesh_import import _gltf_sources, _native_report_scale
         report_record = registered_files['import-report.json']
         report_path = snapshot.capture(dict(path=report_record['path'], bytes=report_record['bytes'],
                                             sha256=report_record['sha256'], media_type='application/json'),
                                        file_bytes=MAX_JSON_BYTES)
-        _gltf_sources(registered_files, registered, decode_json(report_path.read_bytes()))
+        report = decode_json(report_path.read_bytes())
+        _native_report_scale(report, normalized, registered, manifest['compatibility']['unit_scale'], blender=False)
+        _gltf_sources(registered_files, registered, report)
         if (runtime is None or geometry_record['path'] == normalized['path']
                 or (normalized['sha256'], normalized['bytes']) ==
                    (geometry_record['sha256'], geometry_record['bytes'])):
