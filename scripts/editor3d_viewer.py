@@ -203,8 +203,9 @@ class EditorServer(HTTPServer):
             self.shutdown_request(request)
             self.slots.release()
 
-    def snapshot(self):
-        snapshot = self.repository.snapshot()
+    def snapshot(self, snapshot=None):
+        if snapshot is None:
+            snapshot = self.repository.snapshot()
         key = (snapshot['revision'], snapshot['sha256'])
         with self.cache_lock:
             if key in self.cache:
@@ -421,12 +422,12 @@ class EditorHandler(BaseHTTPRequestHandler):
         # closure verification stays independent of new browser mutations.
         with self.server._checkpoint_writer_guard:
             if route == 'commands':
-                self.server.repository.apply(body['expected_revision'], body['commands'], body['transaction_id'],
-                                             expected_sha256=body['expected_sha256'], schedule_autosave=True)
+                committed = self.server.repository.apply(body['expected_revision'], body['commands'], body['transaction_id'],
+                                                         expected_sha256=body['expected_sha256'], schedule_autosave=True)
             else:
-                getattr(self.server.repository, route)(body['expected_revision'], body['transaction_id'],
-                                                        expected_sha256=body['expected_sha256'], schedule_autosave=True)
-        return self.respond(200, self.server.snapshot())
+                committed = getattr(self.server.repository, route)(body['expected_revision'], body['transaction_id'],
+                                                                   expected_sha256=body['expected_sha256'], schedule_autosave=True)
+        return self.respond(200, self.server.snapshot(committed))
 
     do_GET = run
     do_POST = run

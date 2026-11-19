@@ -388,6 +388,76 @@ raise AssertionError('writer was not excluded')
         restored=self.repo.restore_revision(0,1,'restore')
         self.assertEqual(restored['revision'],2);self.assertEqual(self.mesh_x(restored),2)
 
+    def test_checkpoint_admission_preserves_archive_and_allows_exact_replacement(self):
+        def save(repository, name):
+            if name == 'autosave':
+                repository.request_autosave()
+                return repository.autosave(force=True)
+            return repository.checkpoint(0)
+
+        baseline = len(self.repo._all_files())
+        for name in ('checkpoint', 'autosave'):
+            for budget in ('files', 'bytes'):
+                with self.subTest(name=name, budget=budget):
+                    label = name + '-' + budget
+                    limits = {'max_files': baseline} if budget == 'files' else {'max_bytes': 100_000}
+                    repository = EditorRepository.create(self.source, self.root / label, limits=limits)
+                    if budget == 'bytes':
+                        used = sum(item['bytes'] for item in repository._all_files().values())
+                        (repository.root / 'padding.bin').write_bytes(bytes(limits['max_bytes'] - used))
+                    original = repository._all_files()
+                    with self.assertRaises(RigError) as refused:
+                        save(repository, name)
+                    self.assertEqual(refused.exception.report['code'], 'EDITOR3D_LIMIT')
+                    self.assertEqual(repository._all_files(), original)
+                    archive = self.root / (label + '.zip')
+                    repository.archive(archive)
+                    self.assertEqual(EditorRepository.verify_archive(archive)['files'], original)
+            repository = EditorRepository.create(self.source, self.root / (name + '-replace'),
+                                                 limits={'max_files': baseline + 2, 'max_bytes': 100_000})
+            save(repository, name)
+            used = sum(item['bytes'] for item in repository._all_files().values())
+            (repository.root / 'padding.bin').write_bytes(bytes(repository.limits['max_bytes'] - used))
+            self.assertEqual(save(repository, name)['revision'], 0)
+            stored = (repository.root / (name + '.json')).read_bytes()
+            # A growing replacement must leave its predecessor intact.
+            (repository.root / (name + '.json')).write_bytes(stored[:-1])
+            with (repository.root / 'padding.bin').open('ab') as padding:
+                padding.write(b'x')
+            with self.assertRaises(RigError) as refused:
+                save(repository, name)
+            self.assertEqual(refused.exception.report['code'], 'EDITOR3D_LIMIT')
+            self.assertEqual((repository.root / (name + '.json')).read_bytes(), stored[:-1])
+
+    def test_history_rejects_changed_staged_inventory_and_preserves_head(self):
+        import editor3d_repository as module
+        from scene3d_contracts import canonical_bytes
+
+        def changed_copy(source, destination, limits):
+            result = original_copy(source, destination, limits)
+            project = dict(result['project'], name='Different valid native project')
+            (destination / 'project.json').write_bytes(canonical_bytes(project))
+            return result
+
+        original_copy = module._copy_closure
+        moved = self.repo.apply(0, self.move(4), 'move')
+        for action in ('restore', 'undo', 'redo'):
+            with self.subTest(action=action):
+                if action == 'redo':
+                    self.repo.undo(moved['revision'], 'prepare-redo')
+                before = self.repo.snapshot()
+                revision = before['revision']
+                with patch.object(module, '_copy_closure', side_effect=changed_copy):
+                    with self.assertRaises(RigError) as changed:
+                        if action == 'restore':
+                            self.repo.restore_revision(0, revision, 'restore')
+                        else:
+                            getattr(self.repo, action)(revision, 'changed-' + action)
+                self.assertEqual(changed.exception.report['code'], 'EDITOR3D_HASH')
+                self.assertEqual(self.repo.snapshot(), before)
+                self.assertFalse(self.repo.recovery())
+                self.assertFalse((self.repo.root / 'revisions' / f'{revision + 1:08d}').exists())
+
     def fail_head_once(self, write_then_fail=False):
         import editor3d_repository as module
         real=module._write_metadata
@@ -464,6 +534,22 @@ raise AssertionError('writer was not excluded')
         native=self.repo.root/'revisions/00000000/native/triangle.obj';native.write_bytes(b'corrupt')
         with self.assertRaises(RigError):self.repo.read_file('triangle.obj',view['sha256'])
         with self.assertRaises(RigError):self.repo.snapshot()
+
+    def test_save_as_rejects_resolved_descendant_before_creating_parents(self):
+        untouched = self.repo._all_files()
+        alias = self.root / 'source-alias'
+        if os.name == 'nt':
+            subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(alias), str(self.repo.root)],
+                           check=True, capture_output=True)
+        else:
+            alias.symlink_to(self.repo.root, target_is_directory=True)
+        for parent in (self.repo.root, alias, self.root / 'absent' / '..' / self.repo.root.name):
+            with self.assertRaises(RigError) as refused:
+                self.repo.save_as(parent / 'new-parent' / 'export')
+            self.assertEqual(refused.exception.report['code'], 'EDITOR3D_DESTINATION')
+        self.assertFalse((self.repo.root / 'new-parent').exists())
+        self.assertFalse((self.root / 'absent').exists())
+        self.assertEqual(self.repo._all_files(), untouched)
 
     def test_save_as_and_archive_restore_preserve_all_revisions_and_bytes(self):
         self.repo.apply(0,self.move(4),'edit');self.repo.undo(1,'undo')

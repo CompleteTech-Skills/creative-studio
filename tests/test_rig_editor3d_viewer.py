@@ -278,12 +278,21 @@ class EditorHttpTests(unittest.TestCase):
             self.assertTrue(restored['redo_available'])
             self.assertEqual(restored['sha256'], before['sha256'])
             replayed = mutate('commands', before, 'high-exposure', commands=commands)
-            self.assertEqual(replayed, restored)
+            self.assertEqual(replayed, edited)
+            self.assertEqual(snapshot(), restored)
             self.assertEqual(len(repository.history()), 3)
             redone = mutate('redo', restored, 'redo-exposure')
             self.assertEqual(redone['sha256'], edited['sha256'])
             self.assertEqual(redone['revision'], 3)
             self.assertFalse(redone['viewport_state']['available'])
+            newest = mutate('undo', redone, 'undo-again')
+            # Exercise a fresh cache so old history controls must come from
+            # the acknowledged revision even with a newer HEAD on disk.
+            with self.server.cache_lock:
+                self.server.cache.clear()
+            self.assertEqual(mutate('undo', edited, 'undo-exposure'), restored)
+            self.assertEqual(mutate('redo', restored, 'redo-exposure'), redone)
+            self.assertEqual(snapshot(), newest)
 
     def test_auth_origin_and_static_path_boundaries(self):
         for route, options in (
@@ -382,6 +391,62 @@ class EditorBrowserTests(EditorHttpTests):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual editor browser acceptance explicitly.')
 class EditorPersistentBrowserTests(unittest.TestCase):
+    def test_offline_drag_restores_acknowledged_viewport_and_inspector(self):
+        from tempfile import TemporaryDirectory
+        from editor3d_repository import EditorRepository
+        from playwright.sync_api import sync_playwright, expect
+        from browser_runtime import launch_chromium
+
+        with TemporaryDirectory() as directory:
+            repository = EditorRepository.create(ROOT / 'examples/scene3d-contracts', Path(directory) / 'saved')
+            before = repository.snapshot()
+            with EditorServer(repository) as server:
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    with sync_playwright() as runtime:
+                        browser = launch_chromium(runtime)
+                        try:
+                            page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                            errors = []
+                            page.on('pageerror', lambda error: errors.append(str(error)))
+                            page.goto(server.url)
+                            page.wait_for_function('() => window.editorReady')
+                            page.locator('[data-id="mesh"]').click()
+                            x = page.get_by_label('translation X', exact=True)
+                            position = "window.hatchEditor.objects.get('mesh').position.x"
+                            original = page.evaluate(position)
+                            methods = []
+
+                            def disconnect(route):
+                                methods.append(route.request.method)
+                                route.abort('internetdisconnected')
+
+                            page.route('**/api/**', disconnect)
+                            page.evaluate("""() => {
+                                const {gizmo, objects} = window.hatchEditor;
+                                gizmo.dispatchEvent({type: 'dragging-changed', value: true});
+                                const mesh = objects.get('mesh');
+                                mesh.position.x += 5;
+                                mesh.updateMatrixWorld(true);
+                                gizmo.dispatchEvent({type: 'objectChange'});
+                            }""")
+                            self.assertEqual(page.evaluate(position), original + 5)
+                            page.evaluate("""window.hatchEditor.gizmo.dispatchEvent(
+                                {type: 'dragging-changed', value: false})""")
+                            expect(page.locator('#status')).to_have_text('Showing last acknowledged revision 0.')
+                            expect(x).to_be_enabled()
+                            self.assertEqual(page.evaluate(position), original)
+                            self.assertEqual(float(x.input_value()), original)
+                            self.assertEqual(repository.snapshot(), before)
+                            self.assertEqual(methods, ['POST', 'GET'])
+                            self.assertEqual(errors, [])
+                        finally:
+                            browser.close()
+                finally:
+                    server.shutdown()
+                    thread.join(timeout=5)
+
     def test_pending_and_consecutive_numeric_edits_preserve_control_state(self):
         from tempfile import TemporaryDirectory
         from editor3d_repository import EditorRepository

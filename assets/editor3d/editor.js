@@ -305,6 +305,7 @@ function rejectPendingEdit() {
 }
 async function commit(commands) {
   if (!sceneAvailable || rejectPendingEdit() || !commands.length) return;
+  const acknowledged = currentSnapshot;
   setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
@@ -326,7 +327,13 @@ async function commit(commands) {
     $("status").textContent = "Saved revision " + revision;
   } catch (error) {
     diagnostic(error);
-    await reload(false);
+    if (currentSnapshot === acknowledged) clearPreview();
+    try {
+      await reload(false);
+    } catch (refreshError) {
+      diagnostic(error.message + " Could not refresh the saved revision: " + refreshError.message);
+      $("status").textContent = "Showing last acknowledged revision " + revision + ".";
+    }
   } finally {
     setBusy(false);
   }

@@ -27,7 +27,7 @@ import zipfile
 from atomic_publish import (_rename_no_replace, pinned_directory, pinned_directory_fd,
                             private_stage_fd_supported, private_stage_supported,
                             publish_verified_file, VerifiedFileCleanupError, windows_private_stage_supported)
-from rig_errors import (RigError, atomic_json, decode_json, directory_capability, finite_json,
+from rig_errors import (RigError, atomic_bytes, decode_json, directory_capability, finite_json,
                         job_lock, portable_name, safe_path, timestamp, open_payload)
 from scene3d_contracts import load_project
 
@@ -163,9 +163,14 @@ def _sync_directory_tree(root):
         _sync_directory(directory)
 
 
+def _metadata_bytes(value):
+    finite_json(value)
+    return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
+
+
 def _write_metadata(path, value):
     _require(not path.is_symlink(), 'PATH', 'Metadata cannot be a symbolic link.')
-    atomic_json(path, value)
+    atomic_bytes(path, _metadata_bytes(value))
     _sync_directory(path.parent)
 
 
@@ -175,13 +180,13 @@ def _directory_identity(path):
     return info.st_dev, info.st_ino
 
 
-def _write_checkpoint_at(directory, name, value):
+def _write_checkpoint_at(directory, name, payload):
     temporary = '.autosave-' + secrets.token_hex(16) + '.tmp'
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory)
     committed = False
     try:
         with os.fdopen(fd, 'wb') as stream:
-            stream.write(_bytes(value) + b'\n')
+            stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
@@ -219,7 +224,7 @@ def _portable_alias(name):
     return unicodedata.normalize('NFC', name).casefold()
 
 
-def _scan(root, limits):
+def _scan(root, limits, *, replacement=None):
     """Bound traversal itself, rejecting links before descending."""
     import stat
     pending=[(Path(root),'')]; files={}; aliases=set(); entries=0; total=0
@@ -245,6 +250,17 @@ def _scan(root, limits):
                     _require(len(files)<limits['max_files'] and info.st_size<=limits['max_file_bytes'] and
                              total<=limits['max_bytes'], 'LIMIT', 'Repository exceeds file or byte limits.')
                     files[name]=info.st_size
+    if replacement is not None:
+        name, size = replacement
+        exists = name in files
+        _require(exists or _portable_alias(name) not in aliases, 'PATH',
+                 'Checkpoint destination conflicts with an existing entry.')
+        _require(entries + int(not exists) <= limits['max_files'] * 4 and
+                 len(files) + int(not exists) <= limits['max_files'] and
+                 size <= limits['max_file_bytes'] and
+                 total - files.get(name, 0) + size <= limits['max_bytes'],
+                 'LIMIT', 'Checkpoint would exceed retained repository limits.')
+        files[name] = size
     return files
 
 
@@ -388,10 +404,24 @@ class EditorRepository:
         head = self._head()
         record = self._record(head['revision'] if revision is None else revision)
         bundle = self._bundle(record)
+        undo, redo = len(head['undo']), len(head['redo'])
+        if record['revision'] != head['revision']:
+            # Old repositories retain every action, including entries that
+            # have fallen off the bounded interactive history stacks.
+            undo = redo = 0
+            maximum = self.limits['max_history']
+            for index in range(1, record['revision'] + 1):
+                action = self._record(index)['action']
+                if action == 'undo':
+                    undo -= 1
+                    redo = min(redo + 1, maximum)
+                else:
+                    undo = min(undo + 1, maximum)
+                    redo = redo - 1 if action == 'redo' else 0
         return dict(revision=record['revision'], sha256=record['snapshot_sha256'],
                     project=bundle['project'], documents=bundle['documents'], inventory=bundle['inventory'],
                     scene=deepcopy(bundle['documents'][record['scene_path']]), scene_path=record['scene_path'],
-                    undo_available=bool(head['undo']), redo_available=bool(head['redo']))
+                    undo_available=bool(undo), redo_available=bool(redo))
 
     def native_snapshot(self, revision, expected_sha256):
         """Verified immutable source reference for native render/import owners.
@@ -433,7 +463,7 @@ class EditorRepository:
         _require(used + estimate <= self.limits['max_bytes'], 'LIMIT', 'Retained repository byte budget exceeded.')
 
     def _commit(self, head, transaction_id, request, label, action, build, undo, redo,
-                *, schedule_autosave=False):
+                *, schedule_autosave=False, expected_inventory=None):
         _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before another edit.')
         revision = head['revision'] + 1
         self._space(revision, sum(self._record(head['revision'])['inventory'][n]['bytes'] for n in self._record(head['revision'])['inventory']))
@@ -451,6 +481,8 @@ class EditorRepository:
         try:
             scene_path = build(stage / 'native')
             bundle = load_project(stage / 'native')
+            _require(expected_inventory is None or bundle['inventory'] == expected_inventory,
+                     'HASH', 'Staged history differs from the selected immutable revision.')
             _require(scene_path in bundle['documents'] and bundle['documents'][scene_path]['kind'] == 'scene3d-scene',
                      'SCENE', 'Edited snapshot lacks its active native scene.')
             _require(bundle['bytes'] <= self.limits['max_bytes'] and len(bundle['inventory']) <= self.limits['max_files'],
@@ -552,7 +584,7 @@ class EditorRepository:
                 _copy_closure(source, destination, self.limits)
                 return original['scene_path']
             return self._commit(head, transaction_id, request, action.capitalize(), action, build, undo, redo,
-                                schedule_autosave=schedule_autosave)
+                                schedule_autosave=schedule_autosave, expected_inventory=original['inventory'])
 
     def undo(self, expected_revision, transaction_id, *, expected_sha256=None, schedule_autosave=False):
         return self._restore(expected_revision, transaction_id, 'undo', expected_sha256=expected_sha256,
@@ -801,6 +833,8 @@ class EditorRepository:
                 with pinned_windows_directory(self.root) as directory:
                     self._check_checkpoint_root()
                     yield directory.path
+            except RigError:
+                raise
             except ValueError as exc:
                 raise RigError('EDITOR3D_PATH', 'Cannot pin the autosave directory.', stage='editor3d-repository') from exc
             return
@@ -850,17 +884,14 @@ class EditorRepository:
                     return dict(saved=False, reason='superseded')
             checkpoint = dict(schema_version=FORMAT, revision=head['revision'], sha256=head['sha256'], created_at=timestamp())
             name = 'autosave.json'
-            with os.scandir(checkpoint_root) as entries:
-                for count, entry in enumerate(entries, start=1):
-                    _require(count <= self.limits['max_files'] * 4, 'LIMIT', 'Repository directory-entry budget exceeded.')
-                    _require(entry.name == name or _portable_alias(entry.name) != name,
-                             'PATH', 'Portable path alias collision.')
-                    if entry.name == name:
-                        _require(entry.is_file(follow_symlinks=False), 'PATH', 'Autosave metadata must be a regular file.')
-            self._check_checkpoint_root()
             if isinstance(checkpoint_root, int):
-                _write_checkpoint_at(checkpoint_root, name, checkpoint)
+                payload = _bytes(checkpoint) + b'\n'
+                _scan(self.root, self.limits, replacement=(name, len(payload)))
+                self._check_checkpoint_root()
+                _write_checkpoint_at(checkpoint_root, name, payload)
             else:
+                _scan(checkpoint_root, self.limits, replacement=(name, len(_metadata_bytes(checkpoint))))
+                self._check_checkpoint_root()
                 _write_metadata(safe_path(checkpoint_root, name), checkpoint)
             self._check_checkpoint_root()
             with self._autosave_lock:
@@ -874,15 +905,18 @@ class EditorRepository:
             head = self._head(); self._check_expected(head, expected_revision, expected_sha256)
             self._bundle(self._record(head['revision']))
             record = dict(schema_version=FORMAT, revision=head['revision'], sha256=head['sha256'], created_at=timestamp())
+            _scan(self.root, self.limits, replacement=('checkpoint.json', len(_metadata_bytes(record))))
             _write_metadata(safe_path(self.root, 'checkpoint.json'), record)
         return record
 
     def save_as(self, destination):
         """Copy the complete editor repository, preserving exact native bytes/history."""
         destination = Path(destination).absolute()
-        _require(not destination.exists() and not destination.is_symlink(), 'DESTINATION', 'Save As needs a new destination.')
+        _require(not destination.is_symlink(), 'DESTINATION', 'Save As needs a new destination.')
+        destination = destination.resolve()
+        _require(not destination.exists() and not destination.is_relative_to(self.root),
+                 'DESTINATION', 'Save As needs a new destination outside the repository.')
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination = destination.parent.resolve(strict=True) / destination.name
         with job_lock(self.root):
             self._verify_all()
             _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before Save As.')
