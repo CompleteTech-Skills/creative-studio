@@ -28,6 +28,63 @@ def job_binding_source(native):
  committed=optional_gitfile(native['revision'],retained['source_path'])
  if committed is not None:check(committed==payload, ((native['revision'],retained['source_path'])))
  return payload,committed is not None
+
+def verify_foundation_review(audit):
+    review = audit['foundation_review']
+    redaction = review['report_redaction']
+    payload = (out / review['report']).read_bytes()
+    check(len(payload) == redaction['bytes'] and hashlib.sha256(payload).hexdigest() == redaction['sha256'],
+          'Redacted foundation review digest or size differs.')
+    report = payload.decode('utf-8')
+    check(re.findall(r'^Exact reviewed head: `([0-9a-f]{40})`\.$', report, re.MULTILINE)
+          == [audit['foundation_revision']], 'Foundation review revision differs.')
+    for field, label in (('focused_passed', 'Focused Render3D discovery'),
+                         ('schema_math_passed', 'Full combined schema/math gate')):
+        counts = re.findall(r'^- ' + label + r': \*\*(\d+) passed\*\*,', report, re.MULTILINE)
+        check(counts == [str(review[field])], 'Foundation review count differs for ' + label)
+    lines = report.splitlines()
+    check(review['newly_spawned_whole_feature'] == 'PASS'
+          and '# Fresh independent whole-feature Render3D core review' in lines
+          and any(line.startswith('Reviewer: newly spawned `<agent-root>/') for line in lines)
+          and 'No actionable finding identified in the reviewed feature.' in lines,
+          'Foundation review scope or outcome differs.')
+    check(review['schema_template_parity'] == 'PASS'
+          and '- Schema generation parity, rig-template generation parity and diff whitespace: passed.' in lines,
+          'Foundation review parity result differs.')
+
+def verify_command_arguments(commands):
+    python = '<rig-py312-venv>/bin/python'
+    script = '<audit-worktree>/scripts/render3d.py'
+    work = '<local-coordination-dir>/render91-source-workflow/'
+    scene_destination = work + 'scene-snapshot'
+    expected = [
+        [python, script, 'snapshot-rig', '--source', work + 'original-source/render91-fixture',
+         '--destination', work + 'native-snapshot'],
+        [python, script, 'verify-snapshot', work + 'relocated-native-snapshot'],
+        [python, script, 'snapshot-scene', '--source', work + 'scene-source',
+         '--destination', scene_destination],
+        [python, script, 'verify-snapshot', scene_destination, '--adapter', 'scene3d'],
+    ]
+    check([command.get('argv') for command in commands] == expected,
+          'Recorded argv differs from the redacted capture and verification commands.')
+
+def verify_snapshot_inventory(manifest_path, manifest, artifacts):
+    root = (out / manifest_path).parent
+    members = {row['path']: row for row in manifest['files']}
+    check(bool(members) and len(members) == len(manifest['files']) and 'snapshot.json' not in members
+          and manifest['entrypoint'] in members, 'Invalid snapshot member inventory.')
+    check(manifest['total_bytes'] == sum(row['bytes'] for row in members.values()),
+          'Snapshot total differs from its member inventory.')
+    expected = {manifest_path, *(root.name + '/' + path for path in members)}
+    recorded = {path for path in artifacts if path.startswith(root.name + '/')}
+    actual = {path.relative_to(out).as_posix() for path in root.rglob('*') if path.is_file()}
+    check(expected == recorded == actual, 'Snapshot member paths differ from the retained inventory.')
+    for path, member in members.items():
+        row = artifacts[root.name + '/' + path]
+        check(row['bytes'] == member['bytes'] and row['sha256'] == member['sha256'],
+              'Snapshot member size or digest differs from the workflow inventory: ' + path)
+    return expected
+
 def verify_recorded_runs(data,workflow):
  baseline=data['baseline']
  baseline_log=(out/baseline['log']).read_bytes()
@@ -61,10 +118,12 @@ def verify_recorded_runs(data,workflow):
        and [(c['stdout'],c['stderr']) for c in commands]==expected_commands
        and all(type(c['returncode']) is int and c['returncode']==0 for c in commands),
        'Retained source workflow did not record the four successful commands.')
- paths={item['path'] for item in workflow['artifacts']}
- check(len(paths)==len(workflow['artifacts'])
-       and all(name in paths for command in expected_commands for name in command)
-       and all(snapshot in paths for _,_,_,snapshot in pairs),
+ verify_command_arguments(commands)
+ artifacts={item['path']:item for item in workflow['artifacts']}
+ expected_paths={name for command in expected_commands for name in command}
+ check(len(artifacts)==len(workflow['artifacts'])
+       and expected_paths.issubset(artifacts)
+       and all(snapshot in artifacts for _,_,_,snapshot in pairs),
        'Retained workflow output is absent or duplicated in the verified artifact inventory.')
  for flag,first,second,snapshot in pairs:
   captured=json.loads((out/(first+'.stdout.json')).read_bytes())
@@ -72,6 +131,11 @@ def verify_recorded_runs(data,workflow):
   retained=json.loads((out/snapshot).read_bytes())
   check(workflow[flag] is True and captured==verified==retained,
         'Retained capture and verification receipts differ.')
+  expected_paths.update(verify_snapshot_inventory(snapshot,retained,artifacts))
+ check(expected_paths==artifacts.keys(), 'Unexpected artifact in recorded source workflow.')
+ for path,item in artifacts.items():
+  payload=(out/path).read_bytes()
+  check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], path)
 
 def emit(receipt,output=None):
  text = json.dumps(receipt, indent=2) + '\n'
@@ -91,9 +155,7 @@ def main(argv=None):
  for item in data['examined_source_inventory']:
   payload=gitfile(data['foundation_revision'],item['path'])
   check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], (item['path']))
- redaction=data['foundation_review']['report_redaction']
- payload=(out/data['foundation_review']['report']).read_bytes()
- check(len(payload)==redaction['bytes'] and hashlib.sha256(payload).hexdigest()==redaction['sha256'], (data['foundation_review']['report']))
+ verify_foundation_review(data)
  refs=set()
  for item in data['field_catalog']+data['required_semantic_traceability']:
   refs.update(item['tests'])
@@ -108,9 +170,6 @@ def main(argv=None):
   if key not in cache:cache[key]=ast.parse(source())
   tree=cache[key]
   check(any(isinstance(c,ast.ClassDef) and c.name==cls and any(isinstance(m,ast.FunctionDef) and m.name==method for m in c.body) for c in tree.body), (ref))
- for item in workflow['artifacts']:
-  payload=(out/item['path']).read_bytes()
-  check(len(payload)==item['bytes'] and hashlib.sha256(payload).hexdigest()==item['sha256'], (item['path']))
  verify_recorded_runs(data,workflow)
  # Expand every schema branch, including nullable objects, independently of the catalog.
  expected={}

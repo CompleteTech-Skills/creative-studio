@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -99,12 +100,8 @@ class Render91AuditEvidenceTests(unittest.TestCase):
 
     def test_recorded_runs_reject_corruption_and_false_agreement(self):
         workflow = json.loads((EVIDENCE / 'source-workflow.json').read_bytes())
-        names = (
-            'legacy-baseline.log', 'hosted-core317.json',
-            'native-capture.stdout.json', 'native-relocated-verify.stdout.json',
-            'native-source-snapshot/snapshot.json', 'scene-capture.stdout.json',
-            'scene-verify.stdout.json', 'scene-source-snapshot/snapshot.json',
-        )
+        names = ['legacy-baseline.log', 'hosted-core317.json',
+                 *(row['path'] for row in workflow['artifacts'])]
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.object(self.validate, 'out', Path(directory)):
             for name in names:
@@ -131,6 +128,53 @@ class Render91AuditEvidenceTests(unittest.TestCase):
             (Path(directory) / 'native-relocated-verify.stdout.json').write_bytes(b'{}')
             with self.assertRaisesRegex(AssertionError, 'receipts differ'):
                 self.validate.verify_recorded_runs(self.audit, workflow)
+
+    def test_snapshot_members_must_match_the_workflow_inventory_and_bytes(self):
+        for member in ('native-source-snapshot/source/render91-fixture.glb',
+                       'scene-source-snapshot/triangle.obj'):
+            for change in ('omit', 'rehash', 'retained-bytes', 'extra'):
+                with self.subTest(member=member, change=change), tempfile.TemporaryDirectory() as directory:
+                    out = shutil.copytree(EVIDENCE, Path(directory) / 'evidence')
+                    workflow = json.loads((out / 'source-workflow.json').read_bytes())
+                    row = next(row for row in workflow['artifacts'] if row['path'] == member)
+                    if change == 'omit':
+                        (out / member).unlink()
+                        workflow['artifacts'].remove(row)
+                    elif change == 'extra':
+                        (out / member).with_suffix('.extra').write_bytes(b'unlisted')
+                    else:
+                        (out / member).write_bytes(b'changed')
+                        if change == 'rehash':
+                            row.update(bytes=7, sha256=hashlib.sha256(b'changed').hexdigest())
+                    with mock.patch.object(self.validate, 'out', out), self.assertRaises(AssertionError):
+                        self.validate.verify_recorded_runs(self.audit, workflow)
+
+    def test_recorded_commands_bind_program_operation_options_and_paths(self):
+        for index, position, replacement in (
+                (0, None, ['unrelated-program']), (0, 1, 'other.py'), (0, 2, 'snapshot-scene'),
+                (0, 3, '--destination'), (0, 4, 'other/source'), (1, 3, 'native-snapshot'),
+                (2, 6, 'other/scene-snapshot'), (3, 3, 'other/scene-snapshot'),
+                (3, 4, '--other'), (3, 5, 'native')):
+            with self.subTest(index=index, position=position):
+                workflow = json.loads((EVIDENCE / 'source-workflow.json').read_bytes())
+                command = workflow['commands'][index]
+                if position is None:
+                    command['argv'] = replacement
+                else:
+                    command['argv'][position] = replacement
+                with self.assertRaisesRegex(AssertionError, 'argv'):
+                    self.validate.verify_recorded_runs(self.audit, workflow)
+
+    def test_review_claims_must_agree_with_the_redacted_report(self):
+        for key, value in (('focused_passed', 58), ('schema_math_passed', 177),
+                           ('newly_spawned_whole_feature', 'FAIL'), ('schema_template_parity', 'FAIL'),
+                           ('foundation_revision', '0' * 40)):
+            with self.subTest(key=key):
+                audit = dict(self.audit, foundation_review=dict(self.audit['foundation_review']))
+                target = audit if key == 'foundation_revision' else audit['foundation_review']
+                target[key] = value
+                with self.assertRaisesRegex(AssertionError, 'review'):
+                    self.validate.verify_foundation_review(audit)
 
     def test_redacted_review_matches_recorded_redaction_hash(self):
         review = self.audit['foundation_review']

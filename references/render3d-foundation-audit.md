@@ -53,6 +53,10 @@ python scripts/render3d.py snapshot-rig --source tests/results/render91-audit-20
 
 Use a new destination. The native fixture, identity, geometry and clips are actual retained bytes. Scene3D verification establishes its document/closure semantics, not decoded mesh topology or pixels. The source-workflow receipt lists the original executed commands and every retained artifact hash.
 
+The audit validator checks the four recorded argument lists with their original path placeholders. The native verification names the relocated copy. The scene verification names the scene capture destination. Each snapshot's member paths, sizes and hashes must agree with the workflow inventory and the files under its retained directory.
+
+Full historical validation requires the pinned foundation commit `c809829debf565f2030feebad3b6066b50dc43c4` and its tree and blobs in the local Git object database. A shallow checkout can lack those objects. The separate job-binding commit is optional because the audit retains its test source and checks its digest. The redacted foundation review supplies the reviewed head, test counts, reviewer scope, finding and parity outcome. Its retained bytes verify against the redaction digest. The original report digest refers to the pre-redaction bytes.
+
 ## 3. Explicit 2D/3D compatibility matrix
 
 | Concern | Existing 2D contract | Additive Render3D contract / compatibility gate |
