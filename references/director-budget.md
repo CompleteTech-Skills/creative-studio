@@ -709,3 +709,21 @@ newly prepared and enrolled run. Do not rewrite the original admission hashes,
 append a capacity marker retroactively, or delete its ledger/history. Published
 or uncertain historical work must follow its measured recovery and explicit
 owner attestation instead.
+
+A returned native claim now rechecks its complete durable journal after ledger
+publication and after its final input checks. A production claim retains every
+bound run's original native admission and directory pin from the first binding
+read until the wrapper returns; it rechecks the selected running journal again
+after saving the production receipt. A refusal never cancels already retained
+ledger publication or invents provider usage. Restore the original journal and
+use its existing explicit reconciliation path when the current journal is lost.
+
+`tests/test_native_handoff_continuity.py` preserves the independent passive
+ordering controls byte for byte. The independent Linux descriptor observer is
+preserved in `tests/independent/test_production_journal_continuity.py`; run it
+explicitly with `PYTHONPATH=scripts:tests python
+ tests/independent/test_production_journal_continuity.py`. The automatic
+directory-identity suite also exercises real disposable journal rollback after
+ledger publication and after the production receipt, plus ordinary-directory
+replacement before the production admission report. Its wrappers retain the
+original readers, journal writers and accounting; no provider is called.

@@ -402,6 +402,14 @@ def _save_admitted(root, data):
     return save(_admitted_journal_root(root), data)
 
 
+def _require_current_handoff(root, data):
+    """A returned claim must still belong to its durable native journal."""
+    with _pinned_journal_admission(root):
+        current = manifest(root, recovery=True)
+        if hash_object(current) != hash_object(data):
+            raise ValueError('native claim differs from its current on-disk journal')
+
+
 def save(root, data):
     # A direct save admits its explicit destination. Lifecycle writers instead
     # retain the identity captured before their reads and accounting changes.
@@ -801,6 +809,7 @@ def claim(root, data, name):
         if budget is not None:
             budget.publish_claim(job, token)
         check_captured_inputs()
+        _require_current_handoff(root, data)
         return {'job': name, 'token': job['token'], 'generation_skill': '$imagegen', 'attempt': job['attempts'],
                 **({'budget_reservation_id': job['budget_operation']['reservation_id'],
                     'budget_operation_id': job['budget_operation']['operation_id']} if budget is not None else {}),

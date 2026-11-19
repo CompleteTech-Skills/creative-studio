@@ -191,6 +191,93 @@ class JournalDirectoryIdentityTests(unittest.TestCase):
         self.assertEqual(row['spent']['provider_calls'], '0')
         self.assertEqual(row['held']['provider_calls'], '3')
 
+    def test_journal_rollback_during_ledger_commit_cannot_return_a_handoff(self):
+        original = (self.root / 'imagegen-jobs.json').read_bytes()
+        real_change = fixture.BudgetLedger._change
+        reached = []
+
+        def restore_journal(ledger, revision, key, action, payload, mutate):
+            result = real_change(ledger, revision, key, action, payload, mutate)
+            if action == 'native-claim':
+                reached.append(True)
+                (self.root / 'imagegen-jobs.json').write_bytes(original)
+            return result
+
+        with hatch.ownership(self.root), patch.object(fixture.BudgetLedger, '_change', restore_journal):
+            with self.assertRaises((OSError, ValueError, fixture.RigError)):
+                hatch.claim(self.root, hatch.manifest(self.root), 'base')
+        self.assertEqual(reached, [True])
+        self.assertEqual((self.root / 'imagegen-jobs.json').read_bytes(), original)
+        state = self.ledger.snapshot()['state']
+        self.assertEqual(len([event for event in state['events'] if event['action'] == 'native-claim']), 1)
+        rows = list(state['reservations'].values())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['state'], 'reserved')
+        self.assertEqual(rows[0]['spent']['provider_calls'], '0')
+        self.assertEqual(rows[0]['held']['provider_calls'], '3')
+
+    def production_fixture(self):
+        project, runs, ledger, proof = fixture.NativeBudgetTests.project_enrollment_fixture(self, 'handoff-project')
+        for run in runs:
+            fixture.bind_native_budget(run, ledger.root, owner_root=project, provider='imagegen',
+                estimate=fixture.quantities(provider_calls=1, amount=2), retry_allowance=0, evidence=proof)
+        return project, runs, ledger
+
+    def test_production_retains_directory_authority_before_admission_report(self):
+        project, runs, ledger = self.production_fixture()
+        selected = runs[0]
+        retained = project / 'retained-synthetic-run'
+        before = ledger.snapshot()['sha256']
+        original = (selected / 'imagegen-jobs.json').read_bytes()
+        reached = []
+        real_report = fixture.workflow._generation_report
+
+        def replace_before_report(*args, **kwargs):
+            reached.append(True)
+            # Windows may refuse replacement while its native pin is held.
+            selected.rename(retained)
+            shutil.copytree(retained, selected)
+            return real_report(*args, **kwargs)
+
+        try:
+            with patch.object(fixture.workflow, '_generation_report', replace_before_report):
+                with self.assertRaises((OSError, ValueError, fixture.RigError)):
+                    fixture.workflow.claim_generation(project, 'first', 'base')
+        finally:
+            if retained.exists():
+                self.assertEqual((selected / 'imagegen-jobs.json').read_bytes(), original)
+                shutil.rmtree(selected)
+                retained.rename(selected)
+        self.assertEqual(reached, [True])
+        self.assertEqual(ledger.snapshot()['sha256'], before)
+        self.assertEqual((selected / 'imagegen-jobs.json').read_bytes(), original)
+
+    def test_production_rechecks_claim_after_its_receipt_save(self):
+        project, runs, ledger = self.production_fixture()
+        selected = runs[0]
+        original = (selected / 'imagegen-jobs.json').read_bytes()
+        real_save = fixture.workflow._save
+        reached = []
+
+        def restore_after_receipt(*args, **kwargs):
+            result = real_save(*args, **kwargs)
+            reached.append(True)
+            (selected / 'imagegen-jobs.json').write_bytes(original)
+            return result
+
+        with patch.object(fixture.workflow, '_save', restore_after_receipt):
+            with self.assertRaises((OSError, ValueError, fixture.RigError)):
+                fixture.workflow.claim_generation(project, 'first', 'base')
+        self.assertEqual(reached, [True])
+        self.assertEqual((selected / 'imagegen-jobs.json').read_bytes(), original)
+        state = ledger.snapshot()['state']
+        self.assertEqual(len([event for event in state['events'] if event['action'] == 'native-claim']), 1)
+        rows = list(state['reservations'].values())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['state'], 'reserved')
+        self.assertEqual(rows[0]['spent']['provider_calls'], '0')
+        self.assertEqual(rows[0]['held']['provider_calls'], '1')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -546,7 +546,7 @@ def bind_generation_run(root, binding_id, run_dir, requirements):
     return {'bound': binding_id, **binding, 'provider_called': False}
 
 
-def _bound_runs(root, state):
+def _bound_runs(root, state, *, admissions=None):
     result = []
     for binding_id, binding in sorted(state['generation_bindings'].items()):
         strict_keys(binding, {'run_path', 'run_id', 'request_sha256', 'requirements',
@@ -558,6 +558,11 @@ def _bound_runs(root, state):
         run = safe_path(root, binding['run_path'])
         if run == Path(root).resolve():
             raise ValueError('bound acquisition cannot share the production root')
+        if admissions is not None:
+            # Capture authority before the first journal read, and retain both
+            # the witness and native pins until the outer handoff has finished.
+            run = admissions.enter_context(hatch._journal_admission(run))
+            admissions.enter_context(hatch._pinned_journal_admission(run))
         data = hatch.manifest(run)
         if data['run_id'] != binding['run_id'] or data['fixture_mode'] is not state['fixture']:
             raise ValueError('bound acquisition identity or fixture label changed')
@@ -638,10 +643,10 @@ def configure_generation_limits(root, *, max_calls=None, attempts_per_job=None, 
 
 def claim_generation(root, binding_id, job):
     root = Path(root).resolve()
-    with hatch.ownership(root):
+    with hatch.ownership(root), ExitStack() as admissions:
         bundle = _bundle(root)
         state = _state(root, bundle)
-        runs = _bound_runs(root, state)
+        runs = _bound_runs(root, state, admissions=admissions)
         if binding_id not in state['generation_bindings']:
             raise ValueError('unknown production acquisition binding: ' + str(binding_id))
         with ExitStack() as locks:
@@ -686,6 +691,7 @@ def claim_generation(root, binding_id, job):
             _event(state, 'generation-claimed', binding_id=binding_id, job=job, token=handoff['token'],
                    requirements_hash=binding['requirements_hash'])
             _save(root, state)
+            hatch._require_current_handoff(run, data)
             return handoff
 
 
