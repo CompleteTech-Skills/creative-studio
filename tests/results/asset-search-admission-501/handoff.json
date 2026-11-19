@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "role": "Independent test-only oracle; no implementation edits or future fix diff inspection",
+  "issue": 144,
+  "parent_issue": 128,
+  "pull_request": 501,
+  "frozen_source": "f819bb50fbd0c52f65f58b97c6d5abd3b5614915",
+  "frozen_tree": "e1defa569c61d335a33d64a1e98e548c61e2ac9a",
+  "worktree": "<local-work-dir>/oracle501-admission",
+  "inputs_read": [
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "references/asset-library-search.md",
+    "issues #144, #132 and #128 including parent continuation comments",
+    "<local-work-dir>/campaign-evidence/review501-f819-security.json",
+    "<local-work-dir>/security501-f819-offline-probe.py"
+  ],
+  "environment": {
+    "python": "3.12.14",
+    "sqlite": "3.53.1",
+    "system": "Linux",
+    "machine": "x86_64",
+    "python_path": "<local-work-dir>/env-rig/bin/python",
+    "PYTHONPATH": "scripts:tests"
+  },
+  "fixture_setup": "Sparse checkout materialized exact tracked examples/asset-library-foundation and examples/production-pilot. Tests compose the existing fixture through a module alias; no inherited suite duplication. Each method registers two real local OBJ payload references and builds a two-record native index.",
+  "commands": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts:tests ../env-rig/bin/python -m unittest -v test_asset_library_search_admission_regressions > ../campaign-evidence/oracle501-admission-f819.log 2>&1",
+      "exit_code": 1,
+      "tests": 11,
+      "failures": 28,
+      "errors": 1,
+      "skips": 0,
+      "seconds": 5.88,
+      "classification": "Initial oracle run reached every target. The one runtime error is FTS explicit repair raising LIBRARY_SEARCH_INDEX, not a fixture/setup error. Some provider mutation cases hit independent PRIVATE gate before dispatch; refined authorization setup in final oracle. Initial test source retained separately."
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts:tests ../env-rig/bin/python -m unittest -v test_asset_library_search_admission_regressions > ../campaign-evidence/oracle501-admission-f819-final.log 2>&1",
+      "exit_code": 1,
+      "tests": 11,
+      "failures": 38,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 3.088,
+      "classification": "Final oracle: seven methods expose regressions, four methods pass. Failure count includes independent subtest assertions for typed refusal, dispatch, and preservation. FTS repair failure is an explicit assertion. No setup errors."
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts:tests ../env-rig/bin/python -m unittest -v test_asset_library_search test_asset_library_search_owner_identity > ../campaign-evidence/oracle501-admission-f819-original.log 2>&1",
+      "exit_code": 0,
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 8.963
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0,
+      "classification": "Whitespace check only; not runtime evidence"
+    }
+  ],
+  "observed_contracts": [
+    {
+      "gap": "native authority without optional versions owner",
+      "observed": "Constructor creates a derived index for a stale native handle. Explicit selection reports success and changes good index bytes. Full-catalog rebuild and existing query/embedding refusal pass. Both native roots and fixture source hashes remain preserved."
+    },
+    {
+      "gap": "derived FTS postings integrity",
+      "observed": "Three query forms accept inconsistent postings while displayed content still equals entries. Query-time bytes remain preserved. Explicit rebuild cannot repair this fixture on frozen source because DELETE FROM words raises a typed SQLite index failure."
+    },
+    {
+      "gap": "provider declarations at use",
+      "observed": "Malformed transmission/credential/requirement flags reach never-network encode; missing runtime/model attributes leak untyped exceptions; removed callable and blank model version are not consistently admitted with typed provider errors. Both rebuild and query paths are exercised. Valid local/authorized remote protocol paths and default-disabled refusal pass."
+    },
+    {
+      "gap": "documented compatibility clause",
+      "observed": "Structured kind search finds the real registered character. Documented phrase excludes it before callback, and false callback is not invoked. Additional real lexical words, missing requirements and missing authority boundaries are asserted."
+    },
+    {
+      "gap": "contradictory kind explanation",
+      "observed": "Explicit prop filter returns the real prop with a false character constraint reason. Oracle accepts an explicit REQUEST conflict refusal, an empty intersection, or accurate explicit-precedence explanations."
+    }
+  ],
+  "sha256": {
+    "scripts/asset_library_search.py": "18b9fc1152a18d2c5174b8da4e2bff868a6cde3e22ee594e5ad9ca30d570ef86",
+    "scripts/asset_library.py": "e88c22bbb9adb30179d1039c7f184497bc4c73184bf60af4950701853f7aee19",
+    "scripts/asset_library_storage.py": "8e208fc157788a59a35b141508a3b87e45244a6f78e0bf8177ebea2adc0c5c5b",
+    "scripts/asset_library_versions.py": "6791c8010dbdcf41e9b427752fac095963c6f8f578ac5d91c219ddad82dc9d69",
+    "tests/test_asset_library_search.py": "531f8344985a2bc3d3f34c75a751667800e08a6b90bd7f0760dfcfa2dbc7e630",
+    "tests/test_asset_library_search_owner_identity.py": "bc81b80c6395d21d0f484c458c2550f18b01e7cebc63fcd4791873a74b8d0fec",
+    "tests/test_asset_library_search_admission_regressions.py": "c051914f2ec448c8be9257b9f7cd880ea938dc4810f6a888b3bab3badb08af6f",
+    "examples/asset-library-foundation/manifest.json": "3c6c5f60824a159e7362c855086edda92494b80cce9ac7ead01a18e0cf02e648",
+    "examples/asset-library-foundation/mesh/triangle.obj": "830e41de3e98d4841fcc666158ba5f55c2e542968e0dbb0c82a360909b992431",
+    "examples/production-pilot/cast.json": "cbeb179e22574fbac903b703be72d38a0de41ecdc37c2e00dffeca4efcde9048",
+    "examples/asset-library-foundation/source/license.txt": "a984165690a05e694a9affcdaaa457ed48efad956069f5ae23cb151262c64380"
+  },
+  "retained_logs": {
+    "<local-work-dir>/campaign-evidence/oracle501-admission-f819.sanitized.log": {
+      "sha256": "b346462af0ece93c709817a8a60685fcdfc83fa7a3a329d12de157417ef61126",
+      "path_normalization": "workspace and runtime prefixes only"
+    },
+    "<local-work-dir>/campaign-evidence/oracle501-admission-f819-final.sanitized.log": {
+      "sha256": "b87a207b56eff956efd586ca1545875a9162b3d7b659424e15613f237c8ee50b",
+      "path_normalization": "workspace and runtime prefixes only"
+    },
+    "<local-work-dir>/campaign-evidence/oracle501-admission-f819-original.sanitized.log": {
+      "sha256": "0cccbb194f9440505276c3bf38db6d4ef8def88c954b47e4b5acf7b08b27f425",
+      "path_normalization": "workspace and runtime prefixes only"
+    }
+  },
+  "initial_oracle_source": {
+    "path": "<local-work-dir>/campaign-evidence/oracle501-admission-initial-test.py",
+    "sha256": "2d34a6acc06ad714cd9a2593db0bb17a462cc8e9466454160510b098756d7ca3"
+  },
+  "limits": [
+    "Only disposable native databases and local synthetic registered payloads were mutated; no real records or sources removed.",
+    "Protocol doubles never use network or credentials and are not evidence of actual model execution or semantic quality.",
+    "Compatibility callback dispatch is tested; native #143 rig/dependency compatibility is not implemented or evaluated by these tests.",
+    "No future implementation, shared gate, PR publication, full compatibility suite, rendering, production readiness, Windows/macOS or broader #128 completion is established by this lane.",
+    "Historical original test modules remain unchanged; root integrator owns shared gate enrollment and fixed-source validation."
+  ]
+}

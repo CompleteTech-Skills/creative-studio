@@ -1,0 +1,45 @@
+{
+  "scope": "Independent test authorship on frozen PR 501. Offline native synthetic assets, SQLite, standard threads and a local compatibility callback.",
+  "source_commit": "ddc4a69aae9bdd621f289a8edefd7cb18d5f9bb5",
+  "source_tree": "c29a5a5164e69e8a3b068d7a2ff3f2ace0647c93",
+  "test_path": "tests/test_asset_library_search_concurrency_and_compatibility.py",
+  "test_sha256": "42208fc9f716718d3fb58f298e7bd6b6bce8a781a956e71830b00e58d24badac",
+  "runtime": {
+    "system": "Linux",
+    "python": "3.12.14",
+    "sqlite": "3.53.1"
+  },
+  "frozen_acceptance": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts:tests python -m unittest -v test_asset_library_search_concurrency_and_compatibility",
+    "exit": 1,
+    "methods": 5,
+    "passing_methods": 2,
+    "failing_methods": 3,
+    "assertion_failures_including_subtests": 12,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 8.271,
+    "observations": [
+      "The concurrent ordinary reader received LIBRARY_SEARCH_INDEX (database is locked) while the valid callback paused. The first and subsequent serial reads found the exact assets. Source, native library and derived index hash checks passed.",
+      "Six malformed decision mappings completed successfully. The missing field raised a raw KeyError. Three non-mappings raised raw TypeError. All ten cases failed the typed-refusal assertion; no source or index hash changed.",
+      "After Alpha lost eligibility, the accepted cursor returned Gamma and skipped Beta. A fresh first page returned Beta.",
+      "The genuine Boolean admission control selected only the exact Beta reference. Unchanged eligibility paginated Alpha, Beta and Gamma without omission."
+    ]
+  },
+  "previous_exact_head_controls": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts:tests python -m unittest test_asset_library_search test_asset_library_search_owner_identity test_asset_library_search_admission_regressions",
+    "exit": 0,
+    "methods": 45,
+    "skips": 0,
+    "seconds": 19.098,
+    "source": "Earlier independent review on the frozen commit before adding these tests."
+  },
+  "previous_observational_probe": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts:tests python ../ddc4-security-review-probe.py",
+    "sha256": "69a51eaa72f6e788dbad1c9ba1b345612c19ebc00e5f55e369304988c059e898",
+    "exit": 0,
+    "meaning": "Observational execution printed three defects and controls. Its exit code is not a passing acceptance result.",
+    "sanitized_review_sha256": "eedc11cbfb689469101c9b79b2529da1ede7f10cdebf00b3577830f54ae59b07"
+  },
+  "limits": "The new tests establish frozen-head regressions only. No corrected implementation, model, network, provider, production system or Windows execution was exercised."
+}
