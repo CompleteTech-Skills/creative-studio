@@ -76,7 +76,7 @@ class PublicErrors(unittest.TestCase):
 
     def test_simulated_probe_dimensions_require_integer_types(self):
         artifact = self.root/'dimension-fixture.mp4'
-        artifact.write_bytes(core.SIMULATED_MP4_FTYP + b'portable simulated media only')
+        artifact.write_bytes(core.SIMULATED_MP4_FTYP + core.mp4_box(b'free', b'portable simulated media only'))
         for dimension in ('width', 'height'):
             for invalid in (float(self.source[dimension]), str(self.source[dimension]), True):
                 records = core.SilentContracts._simulated_verification_records(self)

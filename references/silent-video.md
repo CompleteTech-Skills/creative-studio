@@ -101,9 +101,16 @@ so a mutable source pathname cannot switch between probe and decode. It runs:
 - `ffmpeg -xerror -err_detect explode` decoding of the complete video.
 
 All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
-families and protocols to local files. The verifier also reads the first 64 KiB
-of the private snapshot for its file type. The WebM profile requires the EBML
-document type `webm`. The MP4 profile accepts an `ftyp` major brand of `mp41` or
+families and protocols to local files. The verifier also checks the private
+snapshot's file type. WebM reads at most the first 64 KiB and requires the EBML
+document type `webm`. MP4 walks all top-level box extents on one open snapshot
+descriptor, entering at most 4096 boxes and reading at most 64 KiB total of
+headers and file-type data. Payloads of padding and media boxes are skipped by
+seeking, so legitimate large leading `free`/`skip`/`wide` boxes and large media
+payloads do not consume the read budget. Extents must fit the captured file;
+extended sizes and a final size-zero box extending to EOF retain their defined
+meaning. Partial headers, invalid extents, exhausted budgets and repeated
+`ftyp` declarations fail. Exactly one `ftyp` is required, with a major brand of `mp41` or
 `mp42`. An `isom`, `iso2` through `iso9`, or `avc1` major brand also qualifies
 when the compatible brands include `mp41` or `mp42`. An `avc1` compatibility
 entry alone is insufficient. QuickTime, 3GP and 3G2 major brands are rejected
@@ -114,6 +121,14 @@ transcripts exclude unrelated metadata and
 replace command-owned paths, including a path cut at a UTF-8 capture boundary.
 Their matching spellings also cover POSIX filesystem bytes that decode to
 replacement characters in a native tool's transcript.
+
+Portable box-conformance tests cover padding, media skipping, extended and
+size-zero extents, later conflicting type declarations and both resource
+limits. These are parser checks, without native media claims. The native
+positive regression constructs a one-frame H.264 fragmented MP4 with a
+65536-byte leading `free` box, checks unchanged stream and timeline facts,
+and exercises actual strict decode plus Python and CLI verification. A separate
+native control verifies a final `mdat` whose size is zero (extends to EOF).
 
 It requires exactly one video and zero audio/subtitle/data/attachment streams;
 checks the explicit codec, container, pixel format, resolution, square samples,

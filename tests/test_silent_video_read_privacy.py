@@ -96,7 +96,7 @@ class ReadPrivacyAssertions:
 
 class PortableReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
     def test_simulated_source_read_refusal_preserves_completed_stage_evidence(self):
-        original = core.SIMULATED_MP4_FTYP + b'portable simulated media fixture'
+        original = core.SIMULATED_MP4_FTYP + core.mp4_box(b'free', b'portable simulated media fixture')
         self.artifact.write_bytes(original)
         descriptor_reader = video.open_payload
 
@@ -137,7 +137,7 @@ class PortableReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
 
 class HistoricalProbeReadPrivacy(ReadPrivacyAssertions, unittest.TestCase):
     def assert_historical_refusal(self, recorded, observed, *, digest_error=None):
-        original = core.SIMULATED_MP4_FTYP + b'portable historical receipt fixture'
+        original = core.SIMULATED_MP4_FTYP + core.mp4_box(b'free', b'portable historical receipt fixture')
         self.artifact.write_bytes(original)
         records = core.SilentContracts._simulated_verification_records(self)
         records.append(dict(command=['simulated-private-historical-probe'], exit_status=0,

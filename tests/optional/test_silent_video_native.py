@@ -118,6 +118,59 @@ class SilentMedia(core.SilentContracts):
         self.assertEqual(receipt['frame_count'], 1)
         self.assertEqual(receipt['decode']['exit_status'], 0)
 
+    def test_actual_fragmented_mp4_with_large_leading_free_passes_public_verifier(self):
+        source = video.build_source(self.root, self.paths[:1], fps=self.source['fps'], origin='synthetic')
+        request = video.make_request(source)
+        original = self.root / 'fragmented-control.mp4'
+        output = self.root / 'fragmented-leading-free.mp4'
+        self.ffmpeg('-framerate', '24', '-i', self.root / '%06d.png', '-frames:v', '1',
+                    '-an', '-vf', 'setsar=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-movflags', '+default_base_moof+frag_keyframe+empty_moov', '-brand', 'avc1', original)
+        # Fragment offsets are relative to moof; the leading padding does not
+        # move media relative to its fragment's declared base.
+        output.write_bytes(core.mp4_box(b'free', b'\0' * 65528) + original.read_bytes())
+        control = self.independent_probe(original)
+        observed = self.independent_probe(output)
+        self.assertEqual(observed['streams'], control['streams'])
+        self.independent_decode(output)
+        control_receipt = video.verify_export(original, request, root=self.root)
+        receipt = video.verify_export(output, request, root=self.root)
+        self.assert_receipt(receipt, output)
+        self.assertEqual(receipt['frame_count'], 1)
+        self.assertEqual(receipt['timeline']['stdout'], control_receipt['timeline']['stdout'])
+        for stage in ('probe', 'timeline', 'decode'):
+            self.assertEqual(receipt[stage]['exit_status'], 0)
+        request_path = self.root / 'fragmented-request.json'
+        request_path.write_text(json.dumps(request), encoding='utf-8')
+        result = subprocess.run(
+            [sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+             str(output), '--request', str(request_path), '--root', str(self.root), '--require-silent'],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_receipt(json.loads(result.stdout), output)
+
+    def test_actual_mp4_final_media_size_zero_passes_public_verifier(self):
+        original = self.root / 'sized-media-control.mp4'
+        output = self.root / 'media-to-eof.mp4'
+        video.encode(self.request, self.root, original)
+        data = bytearray(original.read_bytes())
+        offset = 0
+        while offset < len(data):
+            size, kind = struct.unpack_from('>I4s', data, offset)
+            self.assertGreaterEqual(size, 8)
+            if kind == b'mdat':
+                self.assertEqual(offset + size, len(data))
+                data[offset:offset + 4] = b'\0' * 4
+                break
+            offset += size
+        else:
+            self.fail('control has no final media box')
+        output.write_bytes(data)
+        self.independent_decode(output)
+        receipt = video.verify_export(output, self.request, root=self.root)
+        self.assert_receipt(receipt, output)
+        self.assertEqual(receipt['decode']['exit_status'], 0)
+
     def test_distinct_containers_with_shared_probe_family_are_rejected(self):
         cases = (('vp9-webm', '.webm', 'matroska', '.mkv'),
                  ('h264-mp4', '.mp4', 'mov', '.mov'),

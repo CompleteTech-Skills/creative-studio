@@ -11,6 +11,7 @@ import copy
 from contextlib import contextmanager, ExitStack
 from fractions import Fraction
 import hashlib
+import io
 import json
 import math
 import os
@@ -35,6 +36,7 @@ MAX_SOURCE_BYTES = 2 * 1024**3
 MAX_FRAME_BYTES = 64 * 1024**2
 MAX_PIXELS = 4096 * 2160
 MAX_CONTAINER_HEADER_BYTES = 64 * 1024
+MAX_CONTAINER_BOXES = 4096
 DEFAULT_LIMITS = {'timeout_seconds': 300, 'max_output_bytes': 512 * 1024**2,
                   'max_log_bytes': 4 * 1024**2}
 PROFILES = {
@@ -654,39 +656,82 @@ def _webm_header_matches(header):
 
 
 def _mp4_header_matches(header):
+    return _mp4_file_matches(io.BytesIO(header), len(header))
+
+
+def _mp4_file_matches(stream, file_size):
+    """Walk top-level extents without reading skipped payloads or reopening paths."""
     offset = 0
-    while offset + 8 <= len(header):
-        size = int.from_bytes(header[offset:offset + 4], 'big')
-        kind = header[offset + 4:offset + 8]
-        payload = offset + 8
-        if size == 1 and payload + 8 <= len(header):
-            size = int.from_bytes(header[payload:payload + 8], 'big')
-            payload += 8
-        end = offset + size
-        if end < payload or end > len(header):
+    read_bytes = 0
+    boxes = 0
+    found_type = False
+
+    def read_at(position, length):
+        nonlocal read_bytes
+        if length > MAX_CONTAINER_HEADER_BYTES - read_bytes:
+            return None
+        stream.seek(position)
+        data = stream.read(length)
+        read_bytes += len(data)
+        return data if len(data) == length else None
+
+    while offset < file_size:
+        if boxes >= MAX_CONTAINER_BOXES or file_size - offset < 8:
             return False
-        if kind == b'ftyp':
-            if end - payload < 8 or (end - payload) % 4:
+        boxes += 1
+        header = read_at(offset, 8)
+        if header is None:
+            return False
+        size = int.from_bytes(header[:4], 'big')
+        kind = header[4:8]
+        payload = offset + 8
+        if size == 1:
+            if file_size - payload < 8:
                 return False
-            major = header[payload:payload + 4]
-            compatible = {header[index:index + 4] for index in range(payload + 8, end, 4)}
+            extended = read_at(payload, 8)
+            if extended is None:
+                return False
+            size = int.from_bytes(extended, 'big')
+            payload += 8
+        elif size == 0:
+            size = file_size - offset
+        # Subtraction bounds the extent before addition and requires forward
+        # progress, including for extended sizes and the final size-zero box.
+        if size < payload - offset or size > file_size - offset:
+            return False
+        end = offset + size
+        if kind == b'ftyp':
+            if found_type or end - payload < 8 or (end - payload) % 4:
+                return False
+            type_data = read_at(payload, end - payload)
+            if type_data is None:
+                return False
+            major = type_data[:4]
+            compatible = {type_data[index:index + 4] for index in range(8, len(type_data), 4)}
             mp4_versions = {b'mp41', b'mp42'}
             # ISO base and AVC major brands need explicit MP4 compatibility.
             iso_base = major == b'isom' or (major[:3] == b'iso' and major[3] in b'23456789')
-            return major in mp4_versions or ((iso_base or major == b'avc1') and bool(compatible & mp4_versions))
-        if kind not in (b'free', b'skip', b'wide'):
+            if not (major in mp4_versions or ((iso_base or major == b'avc1') and bool(compatible & mp4_versions))):
+                return False
+            found_type = True
+        elif not found_type and kind not in (b'free', b'skip', b'wide'):
             return False
         offset = end
-    return False
+    return found_type
 
 
 def _check_container_header(path, container):
     # ffprobe reports broad demuxer families for both profiles. Read only the
     # private snapshot's bounded format identity, never a file name or tags.
-    with path.open('rb') as stream:
-        header = stream.read(MAX_CONTAINER_HEADER_BYTES)
-    check = {'mp4': _mp4_header_matches, 'webm': _webm_header_matches}.get(container)
-    if check is None or not check(header):
+    # Unbuffered reads keep the byte budget independent of skipped payloads.
+    with path.open('rb', buffering=0) as stream:
+        if container == 'mp4':
+            matches = _mp4_file_matches(stream, os.fstat(stream.fileno()).st_size)
+        elif container == 'webm':
+            matches = _webm_header_matches(stream.read(MAX_CONTAINER_HEADER_BYTES))
+        else:
+            matches = False
+    if not matches:
         raise ValueError('encoded container mismatch')
 
 
