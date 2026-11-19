@@ -97,7 +97,9 @@ class SpatialQueryTests(unittest.TestCase):
         graph = self.graph()
         node = graph.document()['nodes'][1]
         width, offset = 2.0**-23, 2.0**29
-        for name, x in (('left', offset), ('right', offset+width), ('apart', offset+3*width)):
+        # Conservative: separation is certified only beyond the rounding scale
+        # of the coordinates involved (about 1e-5 m at 2**29 m).
+        for name, x in (('left', offset), ('right', offset+width), ('apart', offset+width+1e-3)):
             item = deepcopy(node)
             item.update(id=name, name=name, bounds=dict(minimum=[0,0,0], maximum=[width,1,1]))
             item['transform'] = dict(translation=[x,0,0], rotation=[0,0,0,1], scale=[1,1,1])
@@ -107,6 +109,34 @@ class SpatialQueryTests(unittest.TestCase):
         self.assertIn('right', index.oriented_overlap('left'))
         self.assertIn('left', index.oriented_overlap('right'))
         self.assertNotIn('apart', index.oriented_overlap('left'))
+
+    def test_oriented_overlap_keeps_rotated_far_local_boxes_touching(self):
+        graph = self.graph()
+        node = graph.document()['nodes'][1]
+        angle = math.radians(30)
+        rotation = [0, 0, math.sin(angle/2), math.cos(angle/2)]
+        width, offset = 1e-3, 2.0**29
+        for name, low in (('near', offset), ('far', offset+width)):
+            item = deepcopy(node)
+            item.update(id=name, name=name, bounds=dict(minimum=[low,0,0], maximum=[low+width,1,1]))
+            item['transform'] = dict(translation=[0,0,0], rotation=rotation, scale=[1,1,1])
+            graph.create(item)
+        index = SpatialIndex(graph)
+        self.assertIn('far', index.oriented_overlap('near'))
+        self.assertIn('near', index.oriented_overlap('far'))
+
+    def test_triangle_contact_is_exact_for_nearly_parallel_skew_edges(self):
+        from scene3d_spatial import _triangle_intersects
+        left = np.array([[1678.9275453845798,552.2476837411891,-17.483032618084046],
+                         [-1678.9275453845798,-552.2476837411891,17.483032618084046],
+                         [-150.01064768274784,613.1908458429399,498.13423978480466]])
+        right = np.array([[1678.9275453440628,552.247683846023,-17.483033197574446],
+                          [-1678.9275453402383,-552.2476838577292,17.483033195053007],
+                          [288.7652557845327,-727.162056553735,-120.0931074335002]])
+        self.assertFalse(_triangle_intersects(left, right))
+        self.assertFalse(_triangle_intersects(right, left))
+        shared = np.array([left[0], left[1], right[2]])
+        self.assertTrue(_triangle_intersects(left, shared))
 
     def test_mesh_overlap_decides_rounding_band_exactly(self):
         graph = self.graph()

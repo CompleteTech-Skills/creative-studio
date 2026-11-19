@@ -171,7 +171,7 @@ def _closest_triangle(point, triangle, *, frame=None, face_only=False):
 
 def _triangle_intersects(left, right):
     """Separating-axis triangle intersection, including coplanar triangles."""
-    original_left, original_right, ambiguous = left, right, False
+    original_left, original_right = left, right
     anchor = left[0]
     combined = np.concatenate([left-anchor,right-anchor])
     scale = float(np.max(np.abs(combined)))
@@ -192,13 +192,12 @@ def _triangle_intersects(left, right):
         axis = axis/magnitude
         a,b = left@axis,right@axis
         tolerance = 32*np.finfo(float).eps*max(1.,float(np.max(np.abs(a))),float(np.max(np.abs(b))))
-        gap = max(float(b.min()-a.max()), float(a.min()-b.max()))
-        if gap > tolerance:
+        if a.max() < b.min()-tolerance or b.max() < a.min()-tolerance:
             return False
-        if gap >= -tolerance:
-            ambiguous = True
-    # The rounding band is a trigger for exact arithmetic, not a contact margin.
-    return _triangle_intersects_exact(original_left, original_right) if ambiguous else True
+    # Float axes only reject clearly separated pairs. Nearly parallel edges give
+    # skewed float cross products, so every remaining contact is confirmed by an
+    # exact SAT on the same vertices; the rounding band is not a contact margin.
+    return _triangle_intersects_exact(original_left, original_right)
 
 
 def _triangle_intersects_exact(left, right):
@@ -389,6 +388,9 @@ class SpatialIndex:
 
         Geometry boxes remain conservative with respect to non-box meshes.
         Degenerate (flat/line) bounds are separated by the face and edge axes.
+        Touching counts as overlap, and separation smaller than the rounding
+        scale of the translations and local centres involved is reported as a
+        possible overlap rather than dropped.
         """
         records = self._chosen(exclude, visibility)
         require(identifier in self._records, 'Node has no geometric bounds.', 'SCENE3D_SPATIAL')
@@ -403,8 +405,11 @@ class SpatialIndex:
                 continue
             other_translation, other_local_center, other_axes = _oriented_parts(record)
             delta = (other_translation - translation) + (other_local_center - local_center)
+            # Rounding in each cancelled term is bounded by its own magnitude.
+            cancelled = (np.abs(other_translation)+np.abs(translation)
+                         +np.abs(other_local_center)+np.abs(local_center))
             extent = source_extent + np.abs(other_axes).sum(axis=0)
-            if np.any(np.abs(delta) > extent + 32*np.finfo(float).eps*np.maximum(extent, np.abs(delta))):
+            if np.any(np.abs(delta) > extent + 32*np.finfo(float).eps*(np.maximum(extent, np.abs(delta))+cancelled)):
                 continue
             # Face normals from each box plus all nine edge cross products.
             candidates = [np.cross(a,b) for a,b in ((axes[0],axes[1]),(axes[1],axes[2]),(axes[2],axes[0]),
@@ -419,7 +424,8 @@ class SpatialIndex:
                 axis = axis/np.linalg.norm(axis)
                 radius = np.abs(axes@axis).sum()+np.abs(other_axes@axis).sum()
                 distance = abs(np.dot(delta,axis))
-                tolerance = 32*np.finfo(float).eps*max(float(radius),float(distance))
+                tolerance = 32*np.finfo(float).eps*(max(float(radius),float(distance))
+                                                    +float(cancelled@np.abs(axis)))
                 if distance > radius+tolerance:
                     separated = True
                     break
