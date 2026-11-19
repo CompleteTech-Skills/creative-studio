@@ -11,6 +11,7 @@ import copy
 import hashlib
 import math
 import re
+import struct
 import tempfile
 from typing import Any
 
@@ -163,10 +164,41 @@ def _blender_source(root, inventory, provenance, report, conversion):
             and report.get('source_sha256') == intermediate['sha256'],
             'MODEL3D_NORMALIZATION', 'Import report must bind the exact Blender source and intermediate GLB.')
     _blender_receipts(blender, original, intermediate)
-    with (root/_BLENDER_ORIGINAL).open('rb') as retained:
-        require(retained.read(7) == b'BLENDER', 'MODEL3D_NORMALIZATION',
-                'Retained original is missing the Blender file signature.')
+    _check_blender_file(root/_BLENDER_ORIGINAL, original['bytes'])
     return {_BLENDER_INTERMEDIATE: intermediate}
+
+
+def _check_blender_file(path, size):
+    """Read the fixed Linux producer's uncompressed Blender 4.5 block framing."""
+    error = 'MODEL3D_NORMALIZATION'
+    header = struct.Struct('<4sIQii')
+    required = {b'GLOB', b'SC\0\0', b'OB\0\0', b'ME\0\0', b'DATA', b'DNA1'}
+    seen = set()
+    with path.open('rb') as stream:
+        require(stream.read(12) == b'BLENDER-v405', error,
+                'Retained original requires the fixed Blender 4.5 little-endian 64-bit header.')
+        # The fixed triangle uses fewer than 300 blocks. Never allocate a block
+        # from its declared size or read beyond the hash-bound original.
+        for _ in range(4096):
+            raw = stream.read(header.size)
+            require(len(raw) == header.size, error, 'Truncated Blender block header.')
+            code, length, address, sdna, count = header.unpack(raw)
+            if code == b'ENDB':
+                require(not any((length, address, sdna, count)) and stream.tell() == size
+                        and required <= seen, error, 'Incomplete or malformed Blender block sequence.')
+                return
+            require(0 < length <= size - stream.tell() and sdna >= 0 and count > 0
+                    and b'DNA1' not in seen, error, 'Invalid Blender block framing.')
+            seen.add(code)
+            if code == b'DNA1':
+                # SDNA is generated from the pinned executable's types and is
+                # independent of a project's contents and allocation addresses.
+                require(length == 132244 and hashlib.sha256(stream.read(length)).hexdigest() ==
+                        '02ce981347ad58d054a1c55e991c0a8b5df996efabd7ea93e88d385d08c86b3e',
+                        error, 'Retained original differs from the pinned Blender type schema.')
+            else:
+                stream.seek(length, 1)
+    raise RigError(error, 'Retained Blender original exceeds the fixed fixture block limit.')
 
 
 def _gltf_sources(inventory, provenance, report):
@@ -293,18 +325,15 @@ def _normalized_binding(root, manifest, inventory, limits, *, blender):
             and {record['path'] for record in normalization['inputs']} == set(sources)
             and normalization['outputs'] == [normalized, report_record],
             'MODEL3D_NORMALIZATION', 'Registry provenance must bind the supported native conversion.')
-    return report, scale, primary, sources
-
-
-def _verify_normalized(root, manifest, inventory, limits, *, blender):
-    """Reproduce GLB packing from the retained glTF input and verify the exact output."""
-    from asset_library_import import BLENDER_VALIDATOR, _inspect, _normalization_plan, _write_glb
-    from rig_interop import validate_gltf
-
-    report, scale, primary, sources = _normalized_binding(root, manifest, inventory, limits, blender=blender)
-    normalized = inventory[_NORMALIZED]
     resource_evidence = object_hash([report.get('source_files'), report.get('embedded')])
     del report
+    inspected = _inspect_registered_primary(root, primary, sources, resource_evidence, limits)
+    return scale, sources, inspected
+
+
+def _inspect_registered_primary(root, primary, sources, resource_evidence, limits):
+    """Compare native decoder reads and reported resources with the retained original inventory."""
+    from asset_library_import import _inspect
 
     source_inventory = {name.removeprefix('source/'): dict(bytes=record['bytes'], sha256=record['sha256'])
                         for name, record in sources.items()}
@@ -314,8 +343,20 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
         document, images, files, embedded, preflight = _inspect(source, limits)
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError, OSError) as exc:
         raise RigError('MODEL3D_NORMALIZATION', 'Cannot verify the retained glTF resource closure.') from exc
-    require(object_hash([files, embedded]) == resource_evidence,
+    actual = {path.relative_to(source['path'].parent).as_posix() for path in document.dependencies}
+    require(actual == set(source_inventory) and object_hash([files, embedded]) == resource_evidence,
             'MODEL3D_NORMALIZATION', 'Report inventory differs from the retained glTF resource closure.')
+    return document, images, preflight
+
+
+def _verify_normalized(root, manifest, inventory, limits, *, blender):
+    """Reproduce GLB packing from the retained glTF input and verify the exact output."""
+    from asset_library_import import BLENDER_VALIDATOR, _normalization_plan, _write_glb
+    from rig_interop import validate_gltf
+
+    scale, sources, (document, images, preflight) = _normalized_binding(
+        root, manifest, inventory, limits, blender=blender)
+    normalized = inventory[_NORMALIZED]
     if blender:
         _check_blender_scene(document.json)
     # The exact registered length is enough for the producer's packing plan.
@@ -331,7 +372,7 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
     path = root/_NORMALIZED
     decode_limits = _normalized_decode_limits(path, int(normalized['bytes']), limits)
     if blender:
-        checked = validate_gltf(source['path'], timeout=min(120, limits['timeout_seconds']))
+        checked = validate_gltf(root/_BLENDER_INTERMEDIATE, timeout=min(120, limits['timeout_seconds']))
         require(checked['ok'] and checked['validator'] == BLENDER_VALIDATOR
                 and checked['asset_sha256'] == sources[_BLENDER_INTERMEDIATE]['sha256'],
                 'MODEL3D_NORMALIZATION', 'Pinned Khronos validation did not verify the retained intermediate GLB.')

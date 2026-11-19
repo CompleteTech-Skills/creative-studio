@@ -459,7 +459,7 @@ class RegisteredChainTests(unittest.TestCase):
     def test_claimed_restrictive_file_cap_covering_actual_inputs_is_valid(self):
         # Any file cap >= each retained input can come from restrictive caller
         # source/dependency limits. It need not equal the maximum memory ratio.
-        self.accept_budget(file_limit=64 * 1024)
+        self.accept_budget(file_limit=192 * 1024)
 
     def retained_input_file_cap(self, delta=0):
         def mutate(report):

@@ -36,11 +36,15 @@ def _check_original_filenames(inventory, registered, supplied):
         names_by_path.setdefault(record['file']['path'], set()).add(record['original_filename'])
     for source in supplied:
         file = source['file']
+        item = inventory.get(file['path'])
+        if item and item['path'] in names_by_path:
+            require((file['bytes'], file['sha256'], file['media_type']) ==
+                    (item['bytes'], item['sha256'], item['mime_type']),
+                    'MODEL3D_PROVENANCE', 'Supplied original differs from its exact registered file.')
         candidates = [item for item in registered['sources']
                       if (item['sha256'], item['bytes']) == (file['sha256'], file['bytes'])]
         # An exact inventory path identifies the retained item, even when
         # another original or a derived payload happens to have identical bytes.
-        item = inventory.get(file['path'])
         if item and (item['sha256'], item['bytes']) == (file['sha256'], file['bytes']):
             candidates = [candidate for candidate in candidates if candidate['path'] == file['path']]
         names = set()
@@ -79,7 +83,7 @@ def _normalized_evidence(manifest):
     return normalized, inventory, provenance
 
 
-def _canonical_binding(payload, geometry_record, sources, provenance, snapshot):
+def _canonical_binding(payload, geometry_record, sources, provenance, snapshot, native_limits):
     require(isinstance(payload, dict) and set(payload) == {'canonical_ref', 'manifest'},
             'MODEL3D_REFERENCE', 'Canonical evidence must retain exact reference and original manifest.')
     ref, manifest = payload['canonical_ref'], payload['manifest']
@@ -143,14 +147,16 @@ def _canonical_binding(payload, geometry_record, sources, provenance, snapshot):
         # The producer inventory identifies the primary document separately
         # from external resources. Read its exact report instead of guessing
         # from filenames, which may also name legitimate resource payloads.
-        from model3d_mesh_import import _gltf_sources, _native_report_scale
+        from model3d_mesh_import import _gltf_sources, _inspect_registered_primary, _native_report_scale
         report_record = registered_files['import-report.json']
         report_path = snapshot.capture(dict(path=report_record['path'], bytes=report_record['bytes'],
                                             sha256=report_record['sha256'], media_type='application/json'),
                                        file_bytes=MAX_JSON_BYTES)
         report = decode_json(report_path.read_bytes())
         _native_report_scale(report, normalized, registered, manifest['compatibility']['unit_scale'], blender=False)
-        _gltf_sources(registered_files, registered, report)
+        primary, originals = _gltf_sources(registered_files, registered, report)
+        resource_evidence = object_hash([report.get('source_files'), report.get('embedded')])
+        del report
         if (runtime is None or geometry_record['path'] == normalized['path']
                 or (normalized['sha256'], normalized['bytes']) ==
                    (geometry_record['sha256'], geometry_record['bytes'])):
@@ -171,6 +177,10 @@ def _canonical_binding(payload, geometry_record, sources, provenance, snapshot):
                         if (source['file']['sha256'], source['file']['bytes']) in fixture_bytes),
                     'MODEL3D_PROVENANCE', 'Canonical fixture sources must remain fixtures.')
         _check_original_filenames(registered_files, registered, sources)
+        for item in originals.values():
+            snapshot.capture(dict(path=item['path'], bytes=item['bytes'],
+                                  sha256=item['sha256'], media_type=item['mime_type']))
+        _inspect_registered_primary(snapshot.destination, primary, originals, resource_evidence, native_limits)
 
 
 def build_asset(root, geometry, *, asset_id, version, category, sources, provenance,
@@ -225,13 +235,13 @@ def build_asset(root, geometry, *, asset_id, version, category, sources, provena
         for record in provenance.get('evidence',[]): snapshot.capture(record)
         license_record = provenance.get('license',{}).get('evidence')
         if license_record is not None: snapshot.capture(license_record)
-        if canonical_evidence is not None:
-            require(canonical_evidence['media_type']=='application/json', 'MODEL3D_REFERENCE', 'Canonical evidence must be JSON.')
-            path = snapshot.capture(canonical_evidence)
-            _canonical_binding(decode_json(path.read_bytes()), geometry, sources, provenance, snapshot)
         native_limits = dict(DEFAULT_LIMITS,source_bytes=selected_limits['file_bytes'],
                              dependency_bytes=selected_limits['total_bytes'],vertices=selected_limits['vertices'],
                              triangles=selected_limits['triangles'],memory_bytes=selected_limits['memory_bytes'],influences=8)
+        if canonical_evidence is not None:
+            require(canonical_evidence['media_type']=='application/json', 'MODEL3D_REFERENCE', 'Canonical evidence must be JSON.')
+            path = snapshot.capture(canonical_evidence)
+            _canonical_binding(decode_json(path.read_bytes()), geometry, sources, provenance, snapshot, native_limits)
         model = _load(Path(temporary)/geometry['path'], scale=1., limits=native_limits)
         actual_paths = {p.relative_to(temporary).as_posix() for p in model.source_files}
         require(actual_paths <= {r['path'] for r in inventory}, 'MODEL3D_INVENTORY', 'Actual native dependencies must occur in supplied inventory.')
