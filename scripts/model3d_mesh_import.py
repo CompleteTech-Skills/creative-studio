@@ -198,6 +198,14 @@ def _check_blender_triangle(model):
     expected = [(0, 0, 0), (1, 0, 0), (0, 1, -2)]
     require(any(vertices == expected[index:] + expected[:index] for index in range(3)),
             'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has different coordinates or winding.')
+    normals = meshes[0].attributes.get('NORMAL')
+    # Missing normals use the same flat triangle normal. Authored normals, when
+    # retained, must agree with that surface rather than changing its shading.
+    normal = (0., 2 / math.sqrt(5), 1 / math.sqrt(5))
+    require(normals is None or (normals.shape == (3, 3) and all(
+                math.isclose(float(value), component, rel_tol=1e-6, abs_tol=1e-6)
+                for row in normals for value, component in zip(row, normal))),
+            'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has different surface normals.')
 
 
 def _verify_normalized(root, manifest, inventory, limits, *, blender):
@@ -260,9 +268,11 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
                 and all(not document.json.get(key) for key in ('materials', 'images', 'textures', 'samplers'))
                 and all(not mesh.get('weights') and all(not primitive.get('targets')
                         and 'material' not in primitive
+                        and set(primitive.get('attributes', {})) <= {'POSITION', 'NORMAL'}
                         for primitive in mesh['primitives']) for mesh in document.json.get('meshes', [])),
                 'MODEL3D_NORMALIZATION',
-                'The fixed Blender fixture cannot contain materials, textures, skin, animation or morph channels.')
+                'The fixed Blender fixture cannot contain additional appearance attributes, '
+                'materials, textures, skin, animation or morph channels.')
     # The exact registered length is enough for the producer's packing plan.
     # It also avoids reserving its full configured output limit for a small GLB.
     document.limits = {**document.limits, 'source_bytes': int(normalized['bytes'])}
