@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from model3d_primitives import primitive
-from model3d_semantic import create_asset,define_pose,evaluated_geometry,part_signatures,transform_part
+from model3d_semantic import create_asset,define_pose,evaluated_geometry,part_signatures,reparent_part,transform_part
 from model3d_semantic_evidence import map_states
 from model3d_semantic_io import export_asset
 from model3d_semantic_style import apply_style_materials,apply_catalog_state
@@ -96,26 +96,53 @@ class StyleExecutionTests(unittest.TestCase):
                 with self.assertRaises(RigError) as caught:apply_catalog_state(asset,'waving')
                 self.assertEqual(caught.exception.report['code'],'MODEL3D_STATE_NOT_RIGID')
 
-    def test_catalog_state_rigidity_is_relative_to_the_current_part_transform(self):
-        rotation=np.eye(4);rotation[:3,:3]=[[np.cos(.5),-np.sin(.5),0],[np.sin(.5),np.cos(.5),0],[0,0,1]]
-        scaled=transform_part(self.asset,'head',np.asarray(self.asset.parts['head']['matrix'])@np.diag([2.,2.,2.,1.]))
-        rest=np.asarray(scaled.parts['head']['matrix'])
-        for label,pose,rigid in (('neutral',rest,True),('rest-then-rotate',rest@rotation,True),
-                                 ('drops-scale',rotation,False)):
+    def state(self,asset,transforms):
+        return apply_catalog_state(map_states(define_pose(asset,'p',transforms),{'waving':'p'}),'waving')
+
+    def refused(self,asset,transforms):
+        with self.assertRaises(RigError) as caught:self.state(asset,transforms)
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_STATE_NOT_RIGID')
+
+    @staticmethod
+    def rotation(angle,axis=(0,0,1)):
+        axis=np.asarray(axis,float)/np.linalg.norm(axis);k=np.array([[0,-axis[2],axis[1]],[axis[2],0,-axis[0]],[-axis[1],axis[0],0]])
+        m=np.eye(4);m[:3,:3]=np.eye(3)+np.sin(angle)*k+(1-np.cos(angle))*(k@k);return m
+
+    def spans(self,asset,part):
+        points=evaluated_geometry(asset).by_id()[part].positions;return np.linalg.norm(points-points[0],axis=1)
+
+    def test_catalog_state_rigidity_is_judged_in_world_space(self):
+        r=self.rotation(.5);head=np.asarray(self.asset.parts['head']['matrix'])
+        anisotropic=transform_part(self.asset,'head',head@np.diag([1.,3.,1.,1.]))
+        rest=np.asarray(anisotropic.parts['head']['matrix'])
+        for label,pose in (('neutral',rest),('rotate-after-rest',r@rest)):
             with self.subTest(label=label):
-                asset=map_states(define_pose(scaled,'p',{'head':pose}),{'waving':'p'})
-                if rigid:
-                    posed=apply_catalog_state(asset,'waving')
-                    def spans(geometry):
-                        points=geometry.by_id()['head'].positions;return np.linalg.norm(points-points[0],axis=1)
-                    np.testing.assert_allclose(spans(evaluated_geometry(posed)),spans(evaluated_geometry(scaled)),atol=1e-9)
-                else:
-                    with self.assertRaises(RigError) as caught:apply_catalog_state(asset,'waving')
-                    self.assertEqual(caught.exception.report['code'],'MODEL3D_STATE_NOT_RIGID')
+                np.testing.assert_allclose(self.spans(self.state(anisotropic,{'head':pose}),'head'),
+                                           self.spans(anisotropic,'head'),atol=1e-9)
+        for label,pose in (('rotate-before-rest',rest@r),('drops-scale',r)):
+            with self.subTest(label=label):self.refused(anisotropic,{'head':pose})
+        tiny=transform_part(self.asset,'head',head@np.diag([1e-3,1e-3,1e-3,1.]))
+        self.refused(tiny,{'head':np.asarray(tiny.parts['head']['matrix'])@np.diag([1.4,1.,1.,1.])})
+
+    def test_catalog_state_accounts_for_non_uniformly_scaled_parents(self):
+        child=reparent_part(self.asset,'head','body')
+        scaled=transform_part(child,'body',np.asarray(child.parts['body']['matrix'])@np.diag([1.,3.,1.,1.]))
+        from model3d_semantic import world_matrices
+        world=world_matrices(scaled);parent,local=world['body'],np.asarray(scaled.parts['head']['matrix'])
+        r=self.rotation(.8)
+        self.refused(scaled,{'head':r@local})
+        rigid=np.linalg.inv(parent)@r@world['head']
+        np.testing.assert_allclose(self.spans(self.state(scaled,{'head':rigid}),'head'),self.spans(scaled,'head'),atol=1e-9)
 
     def test_catalog_state_admits_rotations_authored_to_six_decimals(self):
-        rotation=np.eye(4);rotation[:3,:3]=np.round([[np.cos(.7),-np.sin(.7),0],[np.sin(.7),np.cos(.7),0],[0,0,1]],6)
-        asset=map_states(define_pose(self.asset,'turn',{'head':rotation}),{'waving':'turn'})
-        self.assertEqual(apply_catalog_state(asset,'waving').history[-1]['operation'],'apply-existing-catalog-state:waving')
+        rng=np.random.default_rng(386)
+        for _ in range(50):
+            pose=self.rotation(rng.uniform(-np.pi,np.pi),rng.normal(size=3));pose[:3,:3]=np.round(pose[:3,:3],6)
+            self.state(self.asset,{'head':pose})
+
+    def test_catalog_pose_naming_a_missing_part_is_structured(self):
+        asset=map_states(define_pose(self.asset,'p',{'head':np.eye(4)}),{'waving':'p'})
+        asset.poses['p']['ghost']=np.eye(4).tolist()
+        with self.assertRaises(RigError):apply_catalog_state(asset,'waving')
 
 if __name__=='__main__':unittest.main()
