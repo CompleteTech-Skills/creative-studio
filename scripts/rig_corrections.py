@@ -15,8 +15,14 @@ _BONE_FIELDS = ('id', 'role', 'parent', 'head', 'tail', 'deform', 'mirror', 'rol
 
 def replace_fit(manifest, fitted):
     """Refresh the fit-owned records, keeping every independent uncertainty."""
+    from rig_contracts import definitions
     independent = [issue for issue in manifest['uncertainties']
                    if issue['code'] != 'RIG_ANATOMY_UNCERTAIN']
+    count = len(independent) + len(fitted['uncertainties'])
+    limit = definitions()['Rig']['properties']['uncertainties']['maxItems']
+    require(count <= limit, 'RIG_LIMIT_UNCERTAINTY',
+            'Refit uncertainty count exceeds the rig limit.', asset='uncertainties',
+            expected=limit, observed=count)
     for key in ('skeleton', 'controllers', 'attachments'):
         manifest[key] = fitted[key]
     manifest['uncertainties'] = independent + fitted['uncertainties']

@@ -1,0 +1,125 @@
+{
+  "role": "Independent tests-only count and diagnostic boundary oracle for PR486 / issue52",
+  "baseline_head": "3eca9b21629fb36b88f8596152c551a06f4baeac",
+  "baseline_tree": "a2a9add39ca253da55af12232cc546fc20c4f644",
+  "independence": "Corrective implementation and corrective diff never inspected; tests authored and executed only on frozen baseline 3eca9b21629fb36b88f8596152c551a06f4baeac.",
+  "issue_source": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/issues/52",
+  "requirements_read": [
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "issue52 original body",
+    "issue11 parent and continuation",
+    "review486-3eca-integrity.json",
+    "review486-3eca-integrity-oracle.py",
+    "review486-3eca-integrity-cap.py",
+    "review486-3eca-integrity-cap-diagnostic.py"
+  ],
+  "python": "3.12.14",
+  "environment": {
+    "PYTHONPATH": "scripts:tests",
+    "interpreter": "../env-rig/bin/python",
+    "populated_directories": [
+      "assets",
+      "profiles",
+      "rig-templates",
+      "state-library",
+      "scripts",
+      "tests",
+      "references"
+    ]
+  },
+  "test_module": "tests/test_rig_refit_uncertainty_limits.py",
+  "test_source_sha256": "ef26f4108fa3af6150322ff1da21182dd4d503642428e12d25d283bd6906fb4e",
+  "production_source_signature_sha256": "2c54725a36b398b73a585cd86e36d9636fd25a0aee76c1f9c3cfe5c44a5cffc6",
+  "production_source_sha256": {
+    "scripts/rig_contracts.py": "5bd3ca42e7dc5cd07b77b382e005b51b5d0a90c928150f430281c2d548b8533c",
+    "scripts/rig_corrections.py": "ca8d0cfd9baf62620391b80869d0f579708f5e338949cedb8a264e722305053b",
+    "scripts/rig_operations.py": "e6762dd057e7c88606df5fa57e5648598cfce78e465692584237d4f81708bd70",
+    "scripts/rig_jobs.py": "8a61ee4fd65cdf1410a449b2ab85ff1e01fe8a7f7741c61b5be5461159d5a6bc",
+    "scripts/rig_models.py": "5249a5cfcc7f71925b4c6ba98685ea5c5fc3549cee07d36f802c7412cd48bf79"
+  },
+  "schema_or_production_source_modified": false,
+  "synthetic_fixture": {
+    "source": "Native rig_test_helpers.fixture(animated=False), genuine locally generated GLB; real create_run/save_rig/load_rig/mutate operations.",
+    "source_sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+    "source_receipt": "Separately regenerated fixture source/captured-source hash equality verified during handoff generation.",
+    "independent_records_at_equality": 1022,
+    "independent_records_at_overflow": 1023,
+    "newly_fitted_pending_anatomy_records": 2,
+    "combined_equality": 1024,
+    "combined_overflow": 1025
+  },
+  "coverage": [
+    "Public template correction and public auto replace, both saved/reloaded",
+    "Equality retains every independent record including authored messages/evidence/order and all three resolutions, and both pending anatomy records",
+    "Overflow audits actual original manifest, revisions, existing correction receipts, source and all other non-job/non-lock run files as bytes; added files forbidden",
+    "Returned and persisted error messages <=256 characters; whole error reports <=1024 characters; count1025 and limit1024 required without authored marker",
+    "Persisted step/job status failed, retained active signature, full job excludes authored marker"
+  ],
+  "checks": [
+    {
+      "label": "baseline",
+      "command": [
+        "../env-rig/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_rig_refit_uncertainty_limits"
+      ],
+      "environment": {
+        "PYTHONPATH": "scripts:tests"
+      },
+      "exit_code": 1,
+      "tests": 8,
+      "failures": 19,
+      "errors": 0,
+      "skips": 0,
+      "log": "campaign-evidence/oracle486-refit-limits-baseline.log",
+      "log_sha256": "76de7fbcce622603aab662ec937c6da76ebb74d22b94320b5dcb8e1c318d5faf",
+      "log_normalization": "Local absolute repository prefix replaced by <repo> and trailing line whitespace removed; complete output retained."
+    },
+    {
+      "label": "legacy",
+      "command": [
+        "../env-rig/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_rig_correction_evidence_domains",
+        "test_rig_correction_validation",
+        "test_rig_landmarks",
+        "test_rig_workflow",
+        "test_rig_import_transforms"
+      ],
+      "environment": {
+        "PYTHONPATH": "scripts:tests"
+      },
+      "exit_code": 0,
+      "tests": 96,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "log": "campaign-evidence/oracle486-refit-limits-legacy.log",
+      "log_sha256": "b5ff2c47c4b84a47d6b9380e7b89f152701f21a0abb383065c688de498a4117a",
+      "log_normalization": "Local absolute repository prefix replaced by <repo> and trailing line whitespace removed; complete output retained."
+    }
+  ],
+  "baseline_observations": {
+    "tests": 8,
+    "passed_test_methods": 3,
+    "failed_test_methods": 5,
+    "failed_assertions_including_subtests": 19,
+    "errors": 0,
+    "skips": 0,
+    "equality": "Both public paths succeed at exactly1024 and retain all observations",
+    "overflow": "Both public paths reject1025; auto preserves run files; correction creates an unapplied history receipt",
+    "returned_and_persisted_diagnostics": "Both paths echo synthetic authored observations in a261293-character message /261503-character serialized report, and omit explicit count/limit"
+  },
+  "nonfinal_logs": "Initial-development and unnormalized raw logs remain outside committed evidence; neither substitutes for the complete final baseline/legacy run logs.",
+  "limitations": [
+    "No corrective head executed or reviewed in this lane. Baseline failures are expected observations, not passing acceptance.",
+    "Linux native synthetic workflow coverage only; no production/private inputs, third-party API calls, rendering, Blender, Windows or artistic acceptance.",
+    "Legacy96-test aggregate includes preexisting fault-injection mocks; the new8-test native boundary module uses no mocks.",
+    "This bounded test lane does not establish completion of issue52 or parent issue11."
+  ]
+}

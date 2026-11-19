@@ -541,3 +541,13 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+Template replacement and automatic refitting retain uncertainty records owned
+by independent evidence domains. Before publishing a correction or changing the
+active rig, the combined independent and newly fitted records must fit the
+existing schema limit. An over-limit request returns a compact count/limit error
+without copying authored evidence text into the diagnostic. The boundary includes
+the exact allowed count; it does not truncate or discard independent records.
+`test_rig_refit_uncertainty_limits.py` exercises both public workflows with actual
+temporary manifests, revision files and immutable source bytes. These are local
+synthetic contract controls, not artistic approval or full rig acceptance.

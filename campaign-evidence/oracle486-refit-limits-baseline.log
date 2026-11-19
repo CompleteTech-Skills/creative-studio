@@ -1,0 +1,187 @@
+test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) ...
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='authored-observation-privacy') ... FAIL
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-message') ... FAIL
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-report') ... FAIL
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='count-and-limit') ... FAIL
+test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) ... FAIL
+test_combined_limit_plus_one_refusal_preserves_original_files (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_refusal_preserves_original_files) ... ok
+test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) ...
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='authored-observation-privacy') ... FAIL
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-message') ... FAIL
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-report') ... FAIL
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='count-and-limit') ... FAIL
+test_combined_limit_succeeds_and_preserves_every_observation (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_succeeds_and_preserves_every_observation) ... ok
+test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) ...
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='authored-observation-privacy') ... FAIL
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-message') ... FAIL
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-report') ... FAIL
+  test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='count-and-limit') ... FAIL
+test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) ... FAIL
+test_combined_limit_plus_one_refusal_preserves_original_files (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_refusal_preserves_original_files) ... FAIL
+test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) ...
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='authored-observation-privacy') ... FAIL
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-message') ... FAIL
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-report') ... FAIL
+  test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='count-and-limit') ... FAIL
+test_combined_limit_succeeds_and_preserves_every_observation (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_succeeds_and_preserves_every_observation) ... ok
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='authored-observation-privacy')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 110, in assert_compact_count_report
+    self.assertTrue(self.marker not in encoded,
+AssertionError: False is not true : Rejected diagnostic copied synthetic authored observations
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-message')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 113, in assert_compact_count_report
+    self.assertLessEqual(len(report['message']), 256)
+AssertionError: 261293 not less than or equal to 256
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-report')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 115, in assert_compact_count_report
+    self.assertLessEqual(len(encoded), 1024)
+AssertionError: 261503 not less than or equal to 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='count-and-limit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 117, in assert_compact_count_report
+    self.assertTrue(all(re.search(r'\b' + str(n) + r'\b', encoded)
+AssertionError: False is not true : Count refusal must identify observed 1025 and limit 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 160, in test_combined_limit_plus_one_persists_compact_private_failure
+    self.assertTrue(self.marker not in json.dumps(self.job),
+AssertionError: False is not true : Persisted job copied synthetic authored observations
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='authored-observation-privacy')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 110, in assert_compact_count_report
+    self.assertTrue(self.marker not in encoded,
+AssertionError: False is not true : Rejected diagnostic copied synthetic authored observations
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-message')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 113, in assert_compact_count_report
+    self.assertLessEqual(len(report['message']), 256)
+AssertionError: 261293 not less than or equal to 256
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-report')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 115, in assert_compact_count_report
+    self.assertLessEqual(len(encoded), 1024)
+AssertionError: 261503 not less than or equal to 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicAutoRefitUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='count-and-limit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 117, in assert_compact_count_report
+    self.assertTrue(all(re.search(r'\b' + str(n) + r'\b', encoded)
+AssertionError: False is not true : Count refusal must identify observed 1025 and limit 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='authored-observation-privacy')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 110, in assert_compact_count_report
+    self.assertTrue(self.marker not in encoded,
+AssertionError: False is not true : Rejected diagnostic copied synthetic authored observations
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-message')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 113, in assert_compact_count_report
+    self.assertLessEqual(len(report['message']), 256)
+AssertionError: 261293 not less than or equal to 256
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='bounded-report')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 115, in assert_compact_count_report
+    self.assertLessEqual(len(encoded), 1024)
+AssertionError: 261503 not less than or equal to 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure) (check='count-and-limit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 117, in assert_compact_count_report
+    self.assertTrue(all(re.search(r'\b' + str(n) + r'\b', encoded)
+AssertionError: False is not true : Count refusal must identify observed 1025 and limit 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_persists_compact_private_failure (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_persists_compact_private_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 160, in test_combined_limit_plus_one_persists_compact_private_failure
+    self.assertTrue(self.marker not in json.dumps(self.job),
+AssertionError: False is not true : Persisted job copied synthetic authored observations
+
+======================================================================
+FAIL: test_combined_limit_plus_one_refusal_preserves_original_files (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_refusal_preserves_original_files)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 147, in test_combined_limit_plus_one_refusal_preserves_original_files
+    self.assertEqual(dict(added=added, removed=removed, changed=changed),
+AssertionError: {'added': ['rig/corrections/0c0e1219d6117f786f091262[73 chars]: []} != {'added': [], 'removed': [], 'changed': []}
++ {'added': [], 'changed': [], 'removed': []}
+- {'added': ['rig/corrections/0c0e1219d6117f786f091262aa86ff93a753d28ca1568c1d3f9abee7d4aa1e48.json'],
+-  'changed': [],
+-  'removed': []}
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='authored-observation-privacy')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 110, in assert_compact_count_report
+    self.assertTrue(self.marker not in encoded,
+AssertionError: False is not true : Rejected diagnostic copied synthetic authored observations
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-message')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 113, in assert_compact_count_report
+    self.assertLessEqual(len(report['message']), 256)
+AssertionError: 261293 not less than or equal to 256
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='bounded-report')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 115, in assert_compact_count_report
+    self.assertLessEqual(len(encoded), 1024)
+AssertionError: 261503 not less than or equal to 1024
+
+======================================================================
+FAIL: test_combined_limit_plus_one_returns_compact_private_count_diagnostic (test_rig_refit_uncertainty_limits.PublicTemplateCorrectionUncertaintyLimitTests.test_combined_limit_plus_one_returns_compact_private_count_diagnostic) (check='count-and-limit')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<repo>/tests/test_rig_refit_uncertainty_limits.py", line 117, in assert_compact_count_report
+    self.assertTrue(all(re.search(r'\b' + str(n) + r'\b', encoded)
+AssertionError: False is not true : Count refusal must identify observed 1025 and limit 1024
+
+----------------------------------------------------------------------
+Ran 8 tests in 7.384s
+
+FAILED (failures=19)
