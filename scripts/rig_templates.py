@@ -59,6 +59,10 @@ def load_rig_template(name: str | Path, *, directory: Path | None = None, _activ
             'Template inheritance exceeds the 256-document traversal limit.')
     directory = Path(directory or ROOT)
     path = Path(name)
+    if _active and directory == ROOT:
+        require(path.name == str(name), 'RIG_TEMPLATE_PATH', 'Installed templates must inherit from a sibling file.')
+        if path.suffix == '.json':
+            path = directory/path
     if path.suffix != '.json':
         require('/' not in str(name) and '\\' not in str(name) and '..' not in str(name), 'RIG_TEMPLATE_PATH', 'Use a template ID or explicit JSON file.')
         path = directory/(str(name)+'.json')
@@ -77,6 +81,24 @@ def load_rig_template(name: str | Path, *, directory: Path | None = None, _activ
         require(len(set(ids)) == len(ids), 'RIG_TEMPLATE_CONFLICT', 'Template composition repeats '+key+' IDs.')
     # Individual parents being valid does not make their composition bounded.
     return _validate_template_semantics(combined)
+
+
+def installed_template_paths(identifiers):
+    """Bind the requested public IDs to trusted files once per operation."""
+    message = 'Use an exact installed template ID, not a template object or file path.'
+    require(all(isinstance(identifier, str) for identifier in identifiers), 'RIG_API_TEMPLATE', message)
+    if not identifiers:
+        return {}
+    installed = {}
+    for path in ROOT.glob('*.json'):
+        if path.is_symlink() or not path.is_file():
+            continue
+        require(len(installed) < MAX_TEMPLATE_FILES, 'RIG_TEMPLATE_WORK', 'Installed template catalogue exceeds its file limit.')
+        canonical = load_rig_template(path)['id']
+        require(canonical not in installed, 'RIG_API_TEMPLATE', 'Installed template IDs must be unambiguous.')
+        installed[canonical] = str(path.resolve())
+    require(all(identifier in installed for identifier in identifiers), 'RIG_API_TEMPLATE', message)
+    return {identifier: installed[identifier] for identifier in identifiers}
 
 
 def list_templates(directory=None) -> list[dict]:

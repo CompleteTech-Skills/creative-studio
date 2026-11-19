@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 import hashlib
 import math
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -265,6 +266,97 @@ class EnvironmentTests(unittest.TestCase):
                 verified=load_project(staged);selected=verified['project']['scenes'][-1]['path']
                 with self.assertRaises(RigError) as failure:load_meshes(staged,selected)
                 self.assertIsNotNone(failure.exception.__cause__)
+
+    def test_saved_planar_terrain_uvs_match_lods_and_native_obj_import(self):
+        from rig_obj import import_obj
+        from rig_gltf import export_geometry
+        from rig_import import load_character_model
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            arguments = dict(width=12, depth=6, resolution=13, elevation=2, lod_strides=[2, 3])
+            original = root / 'original'
+            create_environment(original, recipe('terrain', **arguments))
+            planar = root / 'planar'
+            create_environment(planar, recipe('terrain', planar_uv=True, **arguments))
+
+            def assets(project):
+                bundle = load_project(project)
+                path = bundle['project']['scenes'][-1]['path']
+                scene = bundle['documents'][path]
+                stored = json.loads((project / scene['metadata']['generator_recipe_test']).read_text())
+                self.assertEqual(stored['parameters'].get('planar_uv', False), project == planar)
+                ground = next(node for node in scene['nodes'] if node['id'] == 'test-ground')
+                asset = bundle['documents'][ground['asset']['path']]
+                return path, [asset, *(bundle['documents'][r['path']] for r in asset['lods'])]
+
+            legacy_path, legacy_assets = assets(original)
+            planar_path, planar_assets = assets(planar)
+            explicit_false = root / 'explicit-false'
+            create_environment(explicit_false, recipe('terrain', planar_uv=False, **arguments))
+            self.assertEqual(assets(explicit_false)[1], legacy_assets)
+            self.assertEqual(load_meshes(original, legacy_path), load_meshes(planar, planar_path))
+            for stride, legacy_asset, asset in zip((1, 2, 3), legacy_assets, planar_assets, strict=True):
+                with self.subTest(stride=stride):
+                    path = planar / asset['content']['path']
+                    lines = path.read_text().splitlines()
+                    old = (original / legacy_asset['content']['path']).read_text().splitlines()
+                    self.assertEqual([line for line in lines if line.startswith(('v ', 'vn '))],
+                                     [line for line in old if line.startswith(('v ', 'vn '))])
+                    uv = np.array([list(map(float, line.split()[1:])) for line in lines if line.startswith('vt ')])
+                    n = 12 // stride + 1
+                    self.assertEqual(uv.shape, (n*n, 2))
+                    np.testing.assert_array_equal(uv[[0, n-1, -n, -1]], [[0, 1], [1, 1], [0, 0], [1, 0]])
+                    if stride == 1:
+                        full_uv = uv.reshape(n, n, 2)
+                    else:
+                        np.testing.assert_array_equal(uv, full_uv[::stride, ::stride].reshape(-1, 2))
+                    imported = import_obj(path)
+                    mesh = imported.geometry.meshes[0]
+                    native_uv = np.column_stack((mesh.positions[:, 0] / 12 + .5, mesh.positions[:, 2] / 6 + .5))
+                    np.testing.assert_allclose(mesh.attributes['TEXCOORD_0'], native_uv, rtol=0, atol=1e-15)
+                    for extension in ('glb', 'gltf'):
+                        output = root / f'lod-{stride}.{extension}'
+                        export_geometry(imported.geometry, output, provenance={'fixture': True})
+                        reopened = load_character_model(output).geometry.meshes[0]
+                        np.testing.assert_array_equal(reopened.triangles, mesh.triangles)
+                        np.testing.assert_allclose(reopened.positions, mesh.positions, rtol=0, atol=1e-6)
+                        np.testing.assert_allclose(reopened.attributes['TEXCOORD_0'], native_uv, rtol=0, atol=1e-7)
+            for index, value in enumerate((0, 1, None, 'true', [], {})):
+                with self.subTest(planar_uv=value):
+                    invalid = root / f'invalid-{index}'
+                    with self.assertRaises(RigError):
+                        create_environment(invalid, recipe('terrain', planar_uv=value))
+                    self.assertFalse(invalid.exists())
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_INTEROP_TEST') == '1',
+                         'Enable HATCH_RIG_INTEROP_TEST=1 for independent optional validators.')
+    def test_khronos_accepts_saved_planar_ground_and_lod_transports(self):
+        from rig_obj import import_obj
+        from rig_gltf import export_geometry
+        from rig_interop import validate_gltf
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / 'project'
+            create_environment(project, recipe('terrain', width=12, depth=6, resolution=13,
+                                              elevation=2, lod_strides=[2, 3], planar_uv=True))
+            bundle = load_project(project)
+            scene = bundle['documents'][bundle['project']['scenes'][-1]['path']]
+            ground = next(node for node in scene['nodes'] if node['id'] == 'test-ground')
+            asset = bundle['documents'][ground['asset']['path']]
+            assets = [asset, *(bundle['documents'][ref['path']] for ref in asset['lods'])]
+            for stride, asset in zip((1, 2, 3), assets, strict=True):
+                geometry = import_obj(project / asset['content']['path']).geometry
+                for extension in ('glb', 'gltf'):
+                    with self.subTest(stride=stride, extension=extension):
+                        output = root / f'lod-{stride}.{extension}'
+                        exported = export_geometry(geometry, output, provenance={'fixture': True})
+                        report = validate_gltf(output)
+                        self.assertTrue(report['ok'], report)
+                        self.assertEqual(report['issues']['numErrors'], 0)
+                        self.assertIs(report['issues']['truncated'], False)
+                        self.assertEqual(report['asset_sha256'], exported['sha256'])
 
     def test_actual_terrain_lod_dependency_closure_survives_reopen(self):
         with tempfile.TemporaryDirectory() as temp:

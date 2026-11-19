@@ -31,6 +31,7 @@ def count(value, name, low=3, high=256):
 class Mesh:
     vertices: list
     triangles: list
+    texcoords: list | None = None
 
     def validate(self, budget=MAX_TRIANGLES):
         count(budget, 'triangle budget', 1, MAX_TRIANGLES)
@@ -43,6 +44,9 @@ class Mesh:
                 'Invalid or excessive mesh vertices.', 'SCENE3D_GEOMETRY')
         require(f.ndim == 2 and f.shape[1] == 3 and 1 <= len(f) <= budget and f.dtype.kind in 'iu'
                 and f.min() >= 0 and f.max() < len(v), 'Invalid or excessive triangle indices.', 'SCENE3D_GEOMETRY')
+        if self.texcoords is not None:
+            uv = numeric_array(self.texcoords, 'texture coordinates')
+            require(uv.shape == (len(v), 2),'Expected one UV pair per vertex.', 'SCENE3D_GEOMETRY')
         area = np.linalg.norm(np.cross(v[f[:, 1]]-v[f[:, 0]], v[f[:, 2]]-v[f[:, 0]]), axis=1)
         require(np.isfinite(area).all() and (area > 1e-12).all(), 'Degenerate geometry.', 'SCENE3D_GEOMETRY')
         return self
@@ -54,7 +58,7 @@ class Mesh:
         return dict(minimum=v.min(axis=0).tolist(), maximum=v.max(axis=0).tolist())
 
     def obj(self):
-        """Separate vertex normals preserve hard edges; planar per-face UVs are explicit."""
+        """Write flat normals and explicit OBJ texture coordinates."""
         self.validate()
         lines = ['# Scene3D procedural geometry v1; right handed Y up meters']
         lines += ['v '+' '.join(format(float(x), '.17g') for x in p) for p in self.vertices]
@@ -64,8 +68,13 @@ class Mesh:
             require(math.isfinite(length) and length>1e-12,'Cannot emit a nonfinite or degenerate normal.')
             normal /= length
             lines.append('vn '+' '.join(format(float(x), '.17g') for x in normal))
-        lines += ['vt 0 0','vt 1 0','vt 0 1']
-        lines += [f'f {a+1}/1/{i+1} {b+1}/2/{i+1} {c+1}/3/{i+1}' for i,(a,b,c) in enumerate(self.triangles)]
+        if self.texcoords is None:
+            lines += ['vt 0 0','vt 1 0','vt 0 1']
+            lines += [f'f {a+1}/1/{i+1} {b+1}/2/{i+1} {c+1}/3/{i+1}' for i,(a,b,c) in enumerate(self.triangles)]
+        else:
+            lines += ['vt '+' '.join(format(float(x), '.17g') for x in uv) for uv in self.texcoords]
+            lines += [f'f {a+1}/{a+1}/{i+1} {b+1}/{b+1}/{i+1} {c+1}/{c+1}/{i+1}'
+                      for i,(a,b,c) in enumerate(self.triangles)]
         return ('\n'.join(lines)+'\n').encode()
 
 
