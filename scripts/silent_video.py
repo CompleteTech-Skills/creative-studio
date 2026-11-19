@@ -34,6 +34,7 @@ MAX_FRAMES = 18000
 MAX_SOURCE_BYTES = 2 * 1024**3
 MAX_FRAME_BYTES = 64 * 1024**2
 MAX_PIXELS = 4096 * 2160
+MAX_CONTAINER_HEADER_BYTES = 64 * 1024
 DEFAULT_LIMITS = {'timeout_seconds': 300, 'max_output_bytes': 512 * 1024**2,
                   'max_log_bytes': 4 * 1024**2}
 PROFILES = {
@@ -616,6 +617,76 @@ def _probe_json(transcript):
     return json.loads(transcript, object_pairs_hook=unique_members, parse_constant=invalid_constant)
 
 
+def _ebml_vint(data, offset, end, max_width, *, size):
+    if offset >= end or data[offset] == 0:
+        raise ValueError('encoded container mismatch')
+    width = 9 - data[offset].bit_length()
+    if width > max_width or offset + width > end:
+        raise ValueError('encoded container mismatch')
+    value = int.from_bytes(data[offset:offset + width], 'big')
+    if size:
+        marker = 1 << (7 * width)
+        value &= marker - 1
+        if value == marker - 1:
+            raise ValueError('encoded container mismatch')
+    return value, offset + width
+
+
+def _webm_header_matches(header):
+    if header[:4] != b'\x1a\x45\xdf\xa3':
+        return False
+    header_size, offset = _ebml_vint(header, 4, len(header), 8, size=True)
+    end = offset + header_size
+    if end > len(header):
+        return False
+    doc_type = None
+    while offset < end:
+        element, offset = _ebml_vint(header, offset, end, 4, size=False)
+        length, payload = _ebml_vint(header, offset, end, 8, size=True)
+        offset = payload + length
+        if offset > end:
+            return False
+        if element == 0x4282:
+            if doc_type is not None:
+                return False
+            doc_type = header[payload:offset].partition(b'\x00')[0]
+    return doc_type == b'webm'
+
+
+def _mp4_header_matches(header):
+    offset = 0
+    while offset + 8 <= len(header):
+        size = int.from_bytes(header[offset:offset + 4], 'big')
+        kind = header[offset + 4:offset + 8]
+        payload = offset + 8
+        if size == 1 and payload + 8 <= len(header):
+            size = int.from_bytes(header[payload:payload + 8], 'big')
+            payload += 8
+        end = offset + size
+        if end < payload or end > len(header):
+            return False
+        if kind == b'ftyp':
+            if end - payload < 8 or (end - payload) % 4:
+                return False
+            major = header[payload:payload + 4]
+            brands = {header[index:index + 4] for index in range(payload + 8, end, 4)} | {major}
+            return major != b'qt  ' and bool(brands & {b'mp41', b'mp42', b'avc1'})
+        if kind not in (b'free', b'skip', b'wide'):
+            return False
+        offset = end
+    return False
+
+
+def _check_container_header(path, container):
+    # ffprobe reports broad demuxer families for both profiles. Read only the
+    # private snapshot's bounded format identity, never a file name or tags.
+    with path.open('rb') as stream:
+        header = stream.read(MAX_CONTAINER_HEADER_BYTES)
+    check = {'mp4': _mp4_header_matches, 'webm': _webm_header_matches}.get(container)
+    if check is None or not check(header):
+        raise ValueError('encoded container mismatch')
+
+
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
     """Probe ALL streams, enumerate presentation timestamps and strictly decode."""
     validate_request(request)
@@ -711,6 +782,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         raise ValueError('strict decode diagnostics were truncated')
     if decoded['stderr'].strip():
         raise ValueError('strict decode reported errors')
+    _check_container_header(path, profile['container'])
     pixel_checks = []
     if root is not None:
         _snapshot(request, root, None)

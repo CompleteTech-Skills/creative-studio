@@ -101,9 +101,13 @@ so a mutable source pathname cannot switch between probe and decode. It runs:
 - `ffmpeg -xerror -err_detect explode` decoding of the complete video.
 
 All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
-families and protocols to local files. They still detect the actual container;
-an edit list disguised as a supported media file is refused before following
-its referenced inputs. Failure transcripts exclude unrelated metadata and
+families and protocols to local files. The verifier also reads the first 64 KiB
+of the private snapshot for its file type. The WebM profile requires the EBML
+document type `webm`. The MP4 profile requires a declared MP4 or AVC brand and
+rejects the QuickTime major brand. This distinguishes containers that ffprobe
+reports under the same demuxer family. An edit list disguised as a supported
+media file is refused before following its referenced inputs. Failure
+transcripts exclude unrelated metadata and
 replace command-owned paths, including a path cut at a UTF-8 capture boundary.
 Their matching spellings also cover POSIX filesystem bytes that decode to
 replacement characters in a native tool's transcript.

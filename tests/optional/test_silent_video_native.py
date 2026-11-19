@@ -98,6 +98,25 @@ class SilentMedia(core.SilentContracts):
         self.assert_receipt(video.verify_export(output, request, root=self.root), output)
         self.independent_decode(output)
 
+    def test_distinct_containers_with_shared_probe_family_are_rejected(self):
+        cases = (('vp9-webm', '.webm', 'matroska', '.mkv'),
+                 ('h264-mp4', '.mp4', 'mov', '.mov'))
+        for profile, extension, other_muxer, other_extension in cases:
+            with self.subTest(profile=profile, actual=other_muxer):
+                request = video.make_request(self.source, profile=profile)
+                expected = self.root / ('expected' + extension)
+                other = self.root / ('other' + other_extension)
+                video.encode(request, self.root, expected)
+                self.assert_receipt(video.verify_export(expected, request, root=self.root), expected)
+                self.ffmpeg('-i', expected, '-map', '0:v:0', '-c:v', 'copy', '-f', other_muxer, other)
+                self.independent_decode(other)
+                self.assertEqual(self.independent_probe(other)['format']['format_name'],
+                                 self.independent_probe(expected)['format']['format_name'])
+                with self.assertRaisesRegex(ValueError, 'encoded container mismatch') as caught:
+                    video.verify_export(other, request, root=self.root)
+                self.assertIs(caught.exception.evidence['verified'], False)
+                self.assertEqual(caught.exception.evidence['audio_stream_count'], 0)
+
     def test_zero_valued_aac_track_is_not_silent_delivery(self):
         silent = self.root / 'video.mp4'
         video.encode(self.request, self.root, silent)

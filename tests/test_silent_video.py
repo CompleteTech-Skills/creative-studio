@@ -25,6 +25,9 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import silent_video as video
 
+# Only the type box is real. Tests using this prefix simulate all media tools.
+SIMULATED_MP4_FTYP = b'\x00\x00\x00\x14ftypisom\x00\x00\x00\x00mp41'
+
 MEDIA_AVAILABLE = bool(shutil.which('ffmpeg') and shutil.which('ffprobe') and video.secure_publication_supported())
 if os.environ.get('HATCH_SILENT_MEDIA_TEST') == '1' and not MEDIA_AVAILABLE:
     raise RuntimeError('HATCH_SILENT_MEDIA_TEST requires real FFmpeg and ffprobe')
@@ -48,6 +51,19 @@ class SilentContracts(unittest.TestCase):
                                          fps={'numerator': 24, 'denominator': 1},
                                          origin='synthetic')
         self.request = video.make_request(self.source)
+
+    def test_container_identity_reads_bounded_structured_headers(self):
+        artifact = self.root / 'container-type.bin'
+        webm = b'\x1a\x45\xdf\xa3\x88\x42\x82\x85webm\x00'
+        for container, header in (
+                ('mp4', b'\x00\x00\x00\x08free' + SIMULATED_MP4_FTYP),
+                ('webm', webm)):
+            with self.subTest(container=container):
+                artifact.write_bytes(header)
+                video._check_container_header(artifact, container)
+                artifact.write_bytes(header[:-1])
+                with self.assertRaisesRegex(ValueError, 'encoded container mismatch'):
+                    video._check_container_header(artifact, container)
 
     def _simulated_verification_records(self):
         # Portable contract fixtures: these records do not establish real media
@@ -119,7 +135,7 @@ class SilentContracts(unittest.TestCase):
         request_path = self.root / 'reread-request.json'
         request_path.write_text(json.dumps(request))
         artifact = self.root / 'SYNTHETIC_PRIVATE_ARTIFACT.mp4'
-        original_bytes = b'portable simulated artifact'
+        original_bytes = SIMULATED_MP4_FTYP + b'portable simulated artifact'
         for mutation in ('changed', 'oversized', 'removed', 'unchanged'):
             for cli in (False, True):
                 artifact.write_bytes(original_bytes)
