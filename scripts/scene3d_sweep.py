@@ -43,8 +43,13 @@ def _roots(offset, velocity, radius):
     # Recover the other root from the product to avoid cancellation when
     # the sphere starts just outside the surface.
     distance = math.hypot(*offset)
-    near_root = ((distance - radius) / far_root) * (distance + radius)
-    return sorted((near_root / speed, far_root / speed))
+    if abs(distance - radius) <= 8 * math.ulp(max(distance, radius)):
+        # A positive residual can disappear when the distance rounds to the radius.
+        squared_gap = sum(Fraction(float(value))**2 for value in offset) - Fraction(radius)**2
+        near_time = float(squared_gap / Fraction(far_root) / Fraction(speed))
+    else:
+        near_time = ((distance - radius) / far_root) * (distance + radius) / speed
+    return sorted((near_time, far_root / speed))
 
 
 def _local_sweep_origin(start, end, anchor, delta, radius):

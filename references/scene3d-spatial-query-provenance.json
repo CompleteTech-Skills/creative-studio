@@ -26,8 +26,8 @@
         "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47"
       },
       "current": {
-        "git_blob": "f4a1d866e9bd23664352d7e29f493fe12c38d8e2",
-        "sha256": "be0eb483fbaa92db49f0eb471f01e88def3ed8991e969ca2fc39364053bec102"
+        "git_blob": "d613bf6cc499e24dac7cebd3e14419726908f158",
+        "sha256": "ea4f8a3a8ba689bcba032569292ac38320b5c1c5cf5eb8ad458d366a0496562e"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -48,15 +48,15 @@
         "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2"
       },
       "current": {
-        "git_blob": "26b77ae550a012f4e7f1c8ea7616993ee11c54e4",
-        "sha256": "a42e1245ccf915e3ab1f8afd6e8e8044d1f9f2bb3e5625a8bdbebee6bef26981"
+        "git_blob": "f528821cffc7f488d49ce2dbd60470018a2d1906",
+        "sha256": "a7d2e234d7eb0390662df77094a2755944e3b4fd5471af2c33d43155062ec0a5"
       },
       "byte_identical_to_archived_transport": false
     }
   },
   "review_history": "Retained original independent source review: coordination scene-program/review-scene62-initial.md; whole integration candidate requires new independent review.",
   "scope": "Canonical query transport first prepared for Director38. Current recovery covers the query and sweep modules.",
-  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow. Geometry review regressions exercise rotated mesh boxes in both directions, exact ray edge and vertex decisions, and closed prism clearance after translation. Precision regressions cover a positive sub-tolerance coplanar gap, exact axis-aligned tangency, the preserved order of first contacts sharing one public fraction, long-path hit and miss with small geometric offsets, bounded shell traversal, and exact half-step grid choices. Independent follow-up adds a bounded long-thin triangle edge case, exact ray and nearest winners when displayed distances tie, a positive one-ULP box gap with exact-contact control, a finite extreme box midpoint, a noncollinear triangle whose squared area underflows binary64, and stationary sphere gap and contact controls.",
+  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow. Geometry review regressions exercise rotated mesh boxes in both directions, exact ray edge and vertex decisions, and closed prism clearance after translation. Precision regressions cover a positive sub-tolerance coplanar gap, exact axis-aligned tangency, the preserved order of first contacts sharing one public fraction, long-path hit and miss with small geometric offsets, bounded shell traversal, and exact half-step grid choices. Independent follow-up adds a bounded long-thin triangle edge case, exact ray and nearest winners when displayed distances tie, a positive one-ULP box gap with exact-contact control, a finite extreme box midpoint, a noncollinear triangle whose squared area underflows binary64, and stationary sphere gap and contact controls. A moving-corner regression preserves a strictly positive near root when the initial distance rounds to the radius.",
   "resource_limits": {
     "vertices": 1000000,
     "triangles": 1000000,
@@ -75,5 +75,6 @@
   },
   "geometry_review_base": "5936c830c86ee6f2c5da7a53076bbb14bcde1633",
   "precision_review_base": "b33cc4f82f05e162a73cd88fd6685e4b220c970d",
-  "distance_and_bounds_review_base": "0320cf88e413cdb8b17b532b4f4cf86db2ac358a"
+  "distance_and_bounds_review_base": "0320cf88e413cdb8b17b532b4f4cf86db2ac358a",
+  "moving_corner_review_base": "1401ec0c7643dde690f3166e2264d5c4d2514f9d"
 }

@@ -309,4 +309,14 @@ class SphereSweepTests(unittest.TestCase):
         self.assertEqual(hit['point'], [0,0,0])
         self.assertEqual(hit['center'], [0,3,4])
 
+    def test_moving_sphere_keeps_first_contact_after_rounded_corner_clearance(self):
+        index = self.index(vertices=[[0,0,0], [0,-1,0], [0,0,-1]])
+        start_y = math.nextafter(3., math.inf)
+        hit = index.sweep_sphere([0,start_y,4], [0,0,4], 5)
+        self.assertIsNotNone(hit)
+        self.assertAlmostEqual(hit['fraction'] / ((start_y - 3) / start_y), 1.)
+        self.assertEqual(hit['center'], [0,3,4])
+        self.assertEqual(hit['point'], [0,0,0])
+
+
 if __name__=='__main__':unittest.main()
