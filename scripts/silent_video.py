@@ -11,6 +11,7 @@ import copy
 from contextlib import contextmanager, ExitStack
 from fractions import Fraction
 import hashlib
+import io
 import json
 import math
 import os
@@ -34,6 +35,9 @@ MAX_FRAMES = 18000
 MAX_SOURCE_BYTES = 2 * 1024**3
 MAX_FRAME_BYTES = 64 * 1024**2
 MAX_PIXELS = 4096 * 2160
+MAX_CONTAINER_HEADER_BYTES = 64 * 1024
+MAX_CONTAINER_BOXES = 4096
+MAX_FRAGMENT_BOXES = 2 * MAX_FRAMES
 DEFAULT_LIMITS = {'timeout_seconds': 300, 'max_output_bytes': 512 * 1024**2,
                   'max_log_bytes': 4 * 1024**2}
 PROFILES = {
@@ -616,6 +620,137 @@ def _probe_json(transcript):
     return json.loads(transcript, object_pairs_hook=unique_members, parse_constant=invalid_constant)
 
 
+def _ebml_vint(data, offset, end, max_width, *, size):
+    if offset >= end or data[offset] == 0:
+        raise ValueError('encoded container mismatch')
+    width = 9 - data[offset].bit_length()
+    if width > max_width or offset + width > end:
+        raise ValueError('encoded container mismatch')
+    value = int.from_bytes(data[offset:offset + width], 'big')
+    if size:
+        marker = 1 << (7 * width)
+        value &= marker - 1
+        if value == marker - 1:
+            raise ValueError('encoded container mismatch')
+    return value, offset + width
+
+
+def _webm_header_matches(header):
+    if header[:4] != b'\x1a\x45\xdf\xa3':
+        return False
+    header_size, offset = _ebml_vint(header, 4, len(header), 8, size=True)
+    end = offset + header_size
+    if end > len(header):
+        return False
+    doc_type = None
+    while offset < end:
+        element, offset = _ebml_vint(header, offset, end, 4, size=False)
+        length, payload = _ebml_vint(header, offset, end, 8, size=True)
+        offset = payload + length
+        if offset > end:
+            return False
+        if element == 0x4282:
+            if doc_type is not None:
+                return False
+            doc_type = header[payload:offset].partition(b'\x00')[0]
+    return doc_type == b'webm'
+
+
+def _mp4_header_matches(header):
+    return _mp4_file_matches(io.BytesIO(header), len(header))
+
+
+def _mp4_file_matches(stream, file_size):
+    """Walk top-level extents without reading skipped payloads or reopening paths."""
+    offset = 0
+    read_bytes = 0
+    boxes = 0
+    fragment_boxes = 0
+    found_type = False
+
+    def read_at(position, length, *, metadata=True):
+        nonlocal read_bytes
+        if metadata and length > MAX_CONTAINER_HEADER_BYTES - read_bytes:
+            return None
+        stream.seek(position)
+        data = stream.read(length)
+        if metadata:
+            read_bytes += len(data)
+        return data if len(data) == length else None
+
+    while offset < file_size:
+        if file_size - offset < 8:
+            return False
+        if not found_type and (boxes >= MAX_CONTAINER_BOXES or read_bytes + 8 > MAX_CONTAINER_HEADER_BYTES):
+            return False
+        header = read_at(offset, 8, metadata=False)
+        if header is None:
+            return False
+        size = int.from_bytes(header[:4], 'big')
+        kind = header[4:8]
+        # A fragmented export can carry one moof/mdat pair per frame. Only
+        # those box headers use the additional allowance. Their bodies are skipped.
+        fragment = found_type and (kind == b'moof' or (fragment_boxes > 0 and kind == b'mdat'))
+        if fragment:
+            fragment_boxes += 1
+            if fragment_boxes > MAX_FRAGMENT_BOXES:
+                return False
+        else:
+            boxes += 1
+            read_bytes += 8
+            if boxes > MAX_CONTAINER_BOXES or read_bytes > MAX_CONTAINER_HEADER_BYTES:
+                return False
+        payload = offset + 8
+        if size == 1:
+            if file_size - payload < 8:
+                return False
+            extended = read_at(payload, 8, metadata=not fragment)
+            if extended is None:
+                return False
+            size = int.from_bytes(extended, 'big')
+            payload += 8
+        elif size == 0:
+            size = file_size - offset
+        # Subtraction bounds the extent before addition and requires forward
+        # progress, including for extended sizes and the final size-zero box.
+        if size < payload - offset or size > file_size - offset:
+            return False
+        end = offset + size
+        if kind == b'ftyp':
+            if found_type or end - payload < 8 or (end - payload) % 4:
+                return False
+            type_data = read_at(payload, end - payload)
+            if type_data is None:
+                return False
+            major = type_data[:4]
+            compatible = {type_data[index:index + 4] for index in range(8, len(type_data), 4)}
+            mp4_versions = {b'mp41', b'mp42'}
+            # ISO base and AVC major brands need explicit MP4 compatibility.
+            iso_base = major == b'isom' or (major[:3] == b'iso' and major[3] in b'23456789')
+            if not (major in mp4_versions or ((iso_base or major == b'avc1') and bool(compatible & mp4_versions))):
+                return False
+            found_type = True
+        elif not found_type and kind not in (b'free', b'skip', b'wide'):
+            return False
+        offset = end
+    return found_type
+
+
+def _check_container_header(path, container):
+    # ffprobe reports broad demuxer families for both profiles. Read only the
+    # private snapshot's bounded format identity, never a file name or tags.
+    # Unbuffered reads keep the byte budget independent of skipped payloads.
+    with path.open('rb', buffering=0) as stream:
+        if container == 'mp4':
+            matches = _mp4_file_matches(stream, os.fstat(stream.fileno()).st_size)
+        elif container == 'webm':
+            matches = _webm_header_matches(stream.read(MAX_CONTAINER_HEADER_BYTES))
+        else:
+            matches = False
+    if not matches:
+        raise ValueError('encoded container mismatch')
+
+
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
     """Probe ALL streams, enumerate presentation timestamps and strictly decode."""
     validate_request(request)
@@ -711,6 +846,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         raise ValueError('strict decode diagnostics were truncated')
     if decoded['stderr'].strip():
         raise ValueError('strict decode reported errors')
+    _check_container_header(path, profile['container'])
     pixel_checks = []
     if root is not None:
         _snapshot(request, root, None)

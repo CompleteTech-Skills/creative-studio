@@ -98,6 +98,124 @@ class SilentMedia(core.SilentContracts):
         self.assert_receipt(video.verify_export(output, request, root=self.root), output)
         self.independent_decode(output)
 
+    def test_actual_avc_major_mp4_passes_independent_silent_verifier(self):
+        source = video.build_source(self.root, self.paths[:1], fps=self.source['fps'], origin='synthetic')
+        request = video.make_request(source)
+        output = self.root / 'avc-major.mp4'
+        self.ffmpeg('-framerate', '24', '-i', self.root / '%06d.png', '-frames:v', '1',
+                    '-an', '-vf', 'setsar=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-movflags', '+default_base_moof+frag_keyframe+empty_moov', '-brand', 'avc1', output)
+        probe = self.independent_probe(output)
+        tags = probe['format']['tags']
+        self.assertEqual(tags['major_brand'], 'avc1')
+        self.assertIn('iso6', tags['compatible_brands'])
+        self.assertIn('mp41', tags['compatible_brands'])
+        self.assertEqual([(s['codec_type'], s['codec_name'], s['nb_read_frames']) for s in probe['streams']],
+                         [('video', 'h264', '1')])
+        self.independent_decode(output)
+        receipt = video.verify_export(output, request, root=self.root)
+        self.assert_receipt(receipt, output)
+        self.assertEqual(receipt['frame_count'], 1)
+        self.assertEqual(receipt['decode']['exit_status'], 0)
+
+    def test_actual_fragmented_mp4_with_large_leading_free_passes_public_verifier(self):
+        source = video.build_source(self.root, self.paths[:1], fps=self.source['fps'], origin='synthetic')
+        request = video.make_request(source)
+        original = self.root / 'fragmented-control.mp4'
+        output = self.root / 'fragmented-leading-free.mp4'
+        self.ffmpeg('-framerate', '24', '-i', self.root / '%06d.png', '-frames:v', '1',
+                    '-an', '-vf', 'setsar=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-movflags', '+default_base_moof+frag_keyframe+empty_moov', '-brand', 'avc1', original)
+        # Fragment offsets are relative to moof; the leading padding does not
+        # move media relative to its fragment's declared base.
+        output.write_bytes(core.mp4_box(b'free', b'\0' * 65528) + original.read_bytes())
+        control = self.independent_probe(original)
+        observed = self.independent_probe(output)
+        self.assertEqual(observed['streams'], control['streams'])
+        self.independent_decode(output)
+        control_receipt = video.verify_export(original, request, root=self.root)
+        receipt = video.verify_export(output, request, root=self.root)
+        self.assert_receipt(receipt, output)
+        self.assertEqual(receipt['frame_count'], 1)
+        self.assertEqual(receipt['timeline']['stdout'], control_receipt['timeline']['stdout'])
+        for stage in ('probe', 'timeline', 'decode'):
+            self.assertEqual(receipt[stage]['exit_status'], 0)
+        request_path = self.root / 'fragmented-request.json'
+        request_path.write_text(json.dumps(request), encoding='utf-8')
+        result = subprocess.run(
+            [sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+             str(output), '--request', str(request_path), '--root', str(self.root), '--require-silent'],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_receipt(json.loads(result.stdout), output)
+
+    def test_actual_mp4_final_media_size_zero_passes_public_verifier(self):
+        original = self.root / 'sized-media-control.mp4'
+        output = self.root / 'media-to-eof.mp4'
+        video.encode(self.request, self.root, original)
+        data = bytearray(original.read_bytes())
+        offset = 0
+        while offset < len(data):
+            size, kind = struct.unpack_from('>I4s', data, offset)
+            self.assertGreaterEqual(size, 8)
+            if kind == b'mdat':
+                self.assertEqual(offset + size, len(data))
+                data[offset:offset + 4] = b'\0' * 4
+                break
+            offset += size
+        else:
+            self.fail('control has no final media box')
+        output.write_bytes(data)
+        self.independent_decode(output)
+        receipt = video.verify_export(output, self.request, root=self.root)
+        self.assert_receipt(receipt, output)
+        self.assertEqual(receipt['decode']['exit_status'], 0)
+
+    def test_native_per_frame_fragmented_mp4_exceeding_base_box_budget(self):
+        count = 2048
+        frame = self.root / 'fragment-template.png'
+        Image.new('RGB', (32, 32), 'black').save(frame)
+        pixels = frame.read_bytes()
+        paths = []
+        for index in range(count):
+            name = f'fragment-{index:06d}.png'
+            (self.root / name).write_bytes(pixels)
+            paths.append(name)
+        source = video.build_source(self.root, paths,
+                                    fps={'numerator': 24, 'denominator': 1}, origin='synthetic')
+        request = video.make_request(source)
+        output = self.root / 'fragmented.mp4'
+        self.ffmpeg('-framerate', '24', '-i', self.root / 'fragment-%06d.png',
+                    '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-vf', 'setsar=1', '-bf', '0',
+                    '-movflags', 'empty_moov+default_base_moof+frag_every_frame', output)
+        probe = self.independent_probe(output)
+        self.assertEqual(len(probe['streams']), 1)
+        self.assertEqual(int(probe['streams'][0]['nb_read_frames']), count)
+        self.independent_decode(output)
+        self.assert_receipt(video.verify_export(output, request, root=self.root), output)
+
+    def test_distinct_containers_with_shared_probe_family_are_rejected(self):
+        cases = (('vp9-webm', '.webm', 'matroska', '.mkv'),
+                 ('h264-mp4', '.mp4', 'mov', '.mov'),
+                 ('h264-mp4', '.mp4', '3gp', '.3gp'),
+                 ('h264-mp4', '.mp4', '3g2', '.3g2'))
+        for profile, extension, other_muxer, other_extension in cases:
+            with self.subTest(profile=profile, actual=other_muxer):
+                request = video.make_request(self.source, profile=profile)
+                expected = self.root / ('expected-' + other_muxer + extension)
+                other = self.root / ('other' + other_extension)
+                video.encode(request, self.root, expected)
+                self.assert_receipt(video.verify_export(expected, request, root=self.root), expected)
+                self.ffmpeg('-i', expected, '-map', '0:v:0', '-c:v', 'copy', '-f', other_muxer, other)
+                self.independent_decode(other)
+                self.assertEqual(self.independent_probe(other)['format']['format_name'],
+                                 self.independent_probe(expected)['format']['format_name'])
+                with self.assertRaisesRegex(ValueError, 'encoded container mismatch') as caught:
+                    video.verify_export(other, request, root=self.root)
+                self.assertIs(caught.exception.evidence['verified'], False)
+                self.assertEqual(caught.exception.evidence['audio_stream_count'], 0)
+
     def test_zero_valued_aac_track_is_not_silent_delivery(self):
         silent = self.root / 'video.mp4'
         video.encode(self.request, self.root, silent)

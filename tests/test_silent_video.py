@@ -6,6 +6,7 @@ art. The integration cases execute the installed FFmpeg and ffprobe binaries.
 from copy import deepcopy
 from fractions import Fraction
 import hashlib
+import io
 import errno
 import json
 import os
@@ -24,6 +25,15 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import silent_video as video
+
+# Only the type box is real. Tests using this prefix simulate all media tools.
+SIMULATED_MP4_FTYP = b'\x00\x00\x00\x14ftypisom\x00\x00\x00\x00mp41'
+
+
+def mp4_box(kind, payload=b'', *, extended=False, to_eof=False):
+    if extended:
+        return struct.pack('>I4sQ', 1, kind, 16 + len(payload)) + payload
+    return struct.pack('>I4s', 0 if to_eof else 8 + len(payload), kind) + payload
 
 MEDIA_AVAILABLE = bool(shutil.which('ffmpeg') and shutil.which('ffprobe') and video.secure_publication_supported())
 if os.environ.get('HATCH_SILENT_MEDIA_TEST') == '1' and not MEDIA_AVAILABLE:
@@ -48,6 +58,122 @@ class SilentContracts(unittest.TestCase):
                                          fps={'numerator': 24, 'denominator': 1},
                                          origin='synthetic')
         self.request = video.make_request(self.source)
+
+    def test_container_identity_reads_bounded_structured_headers(self):
+        artifact = self.root / 'container-type.bin'
+        webm = b'\x1a\x45\xdf\xa3\x88\x42\x82\x85webm\x00'
+        for container, header in (
+                ('mp4', b'\x00\x00\x00\x08free' + SIMULATED_MP4_FTYP),
+                ('webm', webm)):
+            with self.subTest(container=container):
+                artifact.write_bytes(header)
+                video._check_container_header(artifact, container)
+                artifact.write_bytes(header[:-1])
+                with self.assertRaisesRegex(ValueError, 'encoded container mismatch'):
+                    video._check_container_header(artifact, container)
+
+    def test_mp4_identity_requires_a_version_brand_and_matching_major_type(self):
+        cases = (
+            (b'isom', (b'iso2', b'avc1', b'mp41'), True),
+            (b'mp42', (b'avc1',), True),
+            (b'iso5', (b'iso6', b'mp41'), True),
+            (b'avc1', (b'iso6', b'mp42'), True),
+            (b'avc1', (b'iso6', b'avc1'), False),
+            (b'isom', (b'iso2', b'avc1'), False),
+            (b'3gp6', (b'isom', b'iso2', b'avc1'), False),
+            (b'3g2b', (b'isom', b'iso2', b'avc1'), False),
+            (b'3g2b', (b'isom', b'mp41'), False),
+        )
+        for major, brands, expected in cases:
+            with self.subTest(major=major, brands=brands):
+                size = 16 + 4 * len(brands)
+                header = struct.pack('>I', size) + b'ftyp' + major + b'\0'*4 + b''.join(brands)
+                self.assertIs(video._mp4_header_matches(header), expected)
+
+    def test_simulated_verifier_accepts_avc_major_with_mp41_compatibility(self):
+        artifact = self.root / 'avc-major.mp4'
+        artifact.write_bytes(struct.pack('>I4s4sI4s4s', 24, b'ftyp', b'avc1', 0, b'iso6', b'mp41'))
+        with patch.object(video, '_binary', return_value=sys.executable), \
+             patch.object(video, '_run', side_effect=self._simulated_verification_records()):
+            receipt = video.verify_export(artifact, self.request)
+        self.assertIs(receipt['verified'], True)
+        self.assertEqual(receipt['artifact_sha256'], video.file_hash(artifact))
+
+    def test_mp4_identity_walks_complete_top_level_extents(self):
+        type_data = b'isom' + b'\0' * 4 + b'mp41'
+        cases = (
+            ('large-leading-free', mp4_box(b'free', b'\0' * 65528) + SIMULATED_MP4_FTYP, True),
+            ('skip-and-wide', mp4_box(b'skip') + mp4_box(b'wide') + SIMULATED_MP4_FTYP, True),
+            ('extended', mp4_box(b'free', extended=True) + mp4_box(b'ftyp', type_data, extended=True)
+             + mp4_box(b'mdat', b'\0' * 65536, extended=True), True),
+            ('final-media-to-eof', SIMULATED_MP4_FTYP + mp4_box(b'mdat', b'\0' * 65536, to_eof=True), True),
+            ('type-to-eof', mp4_box(b'ftyp', type_data, to_eof=True), True),
+            ('free-to-eof-has-no-type', mp4_box(b'free', SIMULATED_MP4_FTYP, to_eof=True), False),
+            ('repeated-type', SIMULATED_MP4_FTYP + SIMULATED_MP4_FTYP, False),
+            ('conflicting-type-after-media', SIMULATED_MP4_FTYP + mp4_box(b'mdat', b'\0' * 65536)
+             + mp4_box(b'ftyp', b'qt  ' + b'\0' * 4 + b'mp41'), False),
+            ('trailing-partial-header', SIMULATED_MP4_FTYP + b'\0' * 7, False),
+            ('short-extent', SIMULATED_MP4_FTYP + struct.pack('>I4s', 7, b'free'), False),
+            ('past-eof', SIMULATED_MP4_FTYP + struct.pack('>I4s', 1000, b'mdat'), False),
+            ('partial-extended', SIMULATED_MP4_FTYP + struct.pack('>I4s', 1, b'mdat') + b'\0' * 7, False),
+            ('short-extended', SIMULATED_MP4_FTYP + struct.pack('>I4sQ', 1, b'mdat', 15), False),
+            ('oversized-extended', SIMULATED_MP4_FTYP + struct.pack('>I4sQ', 1, b'mdat', 2**64 - 1), False),
+        )
+        artifact = self.root / 'top-level-boxes.mp4'
+        for label, data, expected in cases:
+            with self.subTest(case=label):
+                self.assertIs(video._mp4_header_matches(data), expected)
+                artifact.write_bytes(data)
+                if expected:
+                    video._check_container_header(artifact, 'mp4')
+                else:
+                    with self.assertRaisesRegex(ValueError, 'encoded container mismatch'):
+                        video._check_container_header(artifact, 'mp4')
+
+    def test_mp4_identity_has_independent_header_count_and_read_byte_budgets(self):
+        class ObservedReads(io.BytesIO):
+            def __init__(self, data):
+                super().__init__(data)
+                self.reads = []
+
+            def read(self, length=-1):
+                self.reads.append((self.tell(), length))
+                return super().read(length)
+
+        max_bytes = video.MAX_CONTAINER_HEADER_BYTES
+        max_boxes = video.MAX_CONTAINER_BOXES
+        exact_type = mp4_box(b'ftyp', b'mp41' + b'\0' * (max_bytes - 12))
+        cases = (
+            ('header-limit', SIMULATED_MP4_FTYP + mp4_box(b'free') * (max_boxes - 1), True),
+            ('over-header-limit', SIMULATED_MP4_FTYP + mp4_box(b'free') * max_boxes, False),
+            ('byte-limit', exact_type, True),
+            ('over-byte-limit', mp4_box(b'ftyp', b'mp41' + b'\0' * (max_bytes - 8)), False),
+            ('no-budget-after-type', exact_type + mp4_box(b'free'), False),
+            ('skipped-media', SIMULATED_MP4_FTYP + mp4_box(b'mdat', b'\0' * (2 * max_bytes)), True),
+        )
+        for label, data, expected in cases:
+            with self.subTest(case=label):
+                stream = ObservedReads(data)
+                self.assertIs(video._mp4_file_matches(stream, len(data)), expected)
+                lookahead = 8 if label == 'no-budget-after-type' else 0
+                self.assertLessEqual(sum(length for _, length in stream.reads), max_bytes + lookahead)
+                self.assertTrue(all(0 <= length <= max_bytes for _, length in stream.reads))
+                if label == 'over-header-limit':
+                    # One ftyp payload read and one rejected classification lookahead.
+                    self.assertEqual(len(stream.reads), max_boxes + 2)
+                if label == 'skipped-media':
+                    self.assertEqual(stream.reads, [(0, 8), (8, 12), (20, 8)])
+
+    def test_mp4_fragment_headers_preserve_the_independent_metadata_budget(self):
+        fragment = mp4_box(b'moof', extended=True) + mp4_box(b'mdat', extended=True)
+        full = SIMULATED_MP4_FTYP + fragment * video.MAX_FRAMES
+        self.assertTrue(video._mp4_header_matches(full))
+        self.assertFalse(video._mp4_header_matches(full + mp4_box(b'moof')))
+        self.assertFalse(video._mp4_header_matches(full + SIMULATED_MP4_FTYP))
+        padding = mp4_box(b'free') * (video.MAX_CONTAINER_BOXES - 1)
+        self.assertTrue(video._mp4_header_matches(full + padding))
+        self.assertTrue(video._mp4_header_matches(SIMULATED_MP4_FTYP + padding + fragment))
+        self.assertFalse(video._mp4_header_matches(full + padding + mp4_box(b'free')))
 
     def _simulated_verification_records(self):
         # Portable contract fixtures: these records do not establish real media
@@ -119,7 +245,7 @@ class SilentContracts(unittest.TestCase):
         request_path = self.root / 'reread-request.json'
         request_path.write_text(json.dumps(request))
         artifact = self.root / 'SYNTHETIC_PRIVATE_ARTIFACT.mp4'
-        original_bytes = b'portable simulated artifact'
+        original_bytes = SIMULATED_MP4_FTYP + mp4_box(b'free', b'portable simulated artifact')
         for mutation in ('changed', 'oversized', 'removed', 'unchanged'):
             for cli in (False, True):
                 artifact.write_bytes(original_bytes)

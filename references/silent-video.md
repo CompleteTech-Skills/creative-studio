@@ -101,12 +101,35 @@ so a mutable source pathname cannot switch between probe and decode. It runs:
 - `ffmpeg -xerror -err_detect explode` decoding of the complete video.
 
 All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
-families and protocols to local files. They still detect the actual container;
-an edit list disguised as a supported media file is refused before following
-its referenced inputs. Failure transcripts exclude unrelated metadata and
+families and protocols to local files. The verifier also checks the private
+snapshot's file type. WebM reads at most the first 64 KiB and requires the EBML
+document type `webm`. MP4 walks all top-level box extents on one open snapshot
+descriptor. The metadata budget is 4096 boxes and 64 KiB of headers and
+file-type data. After MP4 identification, a separate allowance covers one
+`moof`/`mdat` pair per supported frame, including 64-bit box extents.
+After MP4 identification, a rejected file may require one eight-byte lookahead
+to classify the next box. The walk seeks past padding and media payloads. Extents must fit the captured file;
+extended sizes and a final size-zero box extending to EOF retain their defined
+meaning. Partial headers, invalid extents, exhausted budgets and repeated
+`ftyp` declarations fail. Exactly one `ftyp` is required, with a major brand of `mp41` or
+`mp42`. An `isom`, `iso2` through `iso9`, or `avc1` major brand also qualifies
+when the compatible brands include `mp41` or `mp42`. An `avc1` compatibility
+entry alone is insufficient. QuickTime, 3GP and 3G2 major brands are rejected
+even if they list MP4 compatibility. This distinguishes containers that ffprobe
+reports under the same demuxer family. An edit list disguised as a supported
+media file is refused before following its referenced inputs. Failure
+transcripts exclude unrelated metadata and
 replace command-owned paths, including a path cut at a UTF-8 capture boundary.
 Their matching spellings also cover POSIX filesystem bytes that decode to
 replacement characters in a native tool's transcript.
+
+Portable box-conformance tests cover padding, media skipping, extended and
+size-zero extents, later conflicting type declarations and both resource
+limits. These are parser checks, without native media claims. The native
+positive regression constructs a one-frame H.264 fragmented MP4 with a
+65536-byte leading `free` box, checks unchanged stream and timeline facts,
+and exercises actual strict decode plus Python and CLI verification. A separate
+native control verifies a final `mdat` whose size is zero (extends to EOF).
 
 It requires exactly one video and zero audio/subtitle/data/attachment streams;
 checks the explicit codec, container, pixel format, resolution, square samples,
