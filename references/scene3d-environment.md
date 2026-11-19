@@ -13,7 +13,29 @@ only lowercase ASCII letters, digits, and hyphens, and fit within 46 characters.
 Individual generators can impose shorter limits. The same recipe produces the same geometry and node IDs.
 `primitive` accepts `kind` and `dimensions`; the available kinds are box, plane,
 cylinder, cone, sphere, capsule, torus, stairs, ramp, pipe, beam, platform, door,
-window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygon), and curve (capped straight spans).
+window, polygon, extrude, and curve (capped straight spans).
+
+For `polygon` and `extrude`, `dimensions.points` is the outer XZ ring and
+optional `dimensions.holes` is a list of inner XZ rings. For example, these
+dimensions extrude a 4 m square floor with a 2 m square through-opening.
+
+```json
+{"points":[[0,0],[4,0],[4,4],[0,4]],"holes":[[[1,1],[3,1],[3,3],[1,3]]],"height":0.25}
+```
+
+Each ring has at least three corners, implicit closure and either winding.
+Convex and concave rings share a limit of 256 corners in total. Coordinates
+must be finite and between -10000 m and 10000 m. Repeated and collinear corners are
+rejected. Holes must lie strictly inside the outline. Touching, crossing,
+self-intersecting or nested rings fail validation. The planar polygon faces
+point up. Extrusion produces two caps and walls along every outline and hole
+edge. An empty or omitted hole list preserves legacy simple-outline OBJ bytes.
+
+The issue #61 tests in `test_rig_scene3d_environment` measure cap area, signed
+volume, opening clearance and manifold edge incidence. They also exercise the
+shared vertex budget, invalid ring relationships, persisted recipe and geometry
+reopening, and atomic rejection of an invalid edited recipe.
+
 `apply_recipes(source, destination, scene_path, recipes, offsets=None, parents=None)`
 prepares up to sixteen distinct named recipes and publishes one snapshot. A
 failure anywhere publishes nothing. Optional maps select recipe IDs: offsets are
@@ -107,5 +129,5 @@ report actual runtime versions and exact hashes.
 
 Remaining issue #61 acceptance: full architectural/themed catalogs, material
 assignment and terrain material blending through the lookdev owner, runtime
-LOD selection policies, polygon holes and richer layout policies still need implementation
+LOD selection policies and richer layout policies still need implementation
 and review. Neither these APIs nor the example claim whole-issue completion.

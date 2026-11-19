@@ -123,10 +123,10 @@ def revolve(profile, segments=24):
 def primitive(kind, **p):
     """All dimensions are meters. Unknown parameters fail instead of being ignored."""
     if kind == 'polygon':
-        require(set(p)=={'points'},'Polygon requires points.')
+        require('points' in p and not set(p)-{'points','holes'},'Invalid polygon parameters.')
         return polygon(**p)
     if kind == 'extrude':
-        require(not set(p)-{'points','height'} and 'points' in p,'Invalid extrusion parameters.')
+        require(not set(p)-{'points','height','holes'} and 'points' in p,'Invalid extrusion parameters.')
         return extrude(**p)
     if kind == 'curve':
         require(not set(p)-{'points','radius','segments'} and 'points' in p,'Invalid curve parameters.')
@@ -202,58 +202,190 @@ def wall(width, height, thickness, openings=()):
     return combine(parts)
 
 
-def polygon_triangles(points):
-    """Triangulate a bounded simple polygon with deterministic ear clipping."""
-    p=numeric_array(points,'points')
-    require(p.ndim==2 and p.shape[1]==2 and 3<=len(p)<=256 and (np.abs(p)<=10000).all(),'Polygon coordinates must fit the bounded 10000 meter profile.')
-    def cross(a,b,c):
-        u=b-a;v=c-a
-        return float(u[0]*v[1]-u[1]*v[0])
-    n=len(p);edges=np.roll(p,-1,axis=0)-p
-    require((np.linalg.norm(edges,axis=1)>1e-8).all(),'Polygon has repeated adjacent points.')
-    require(all(abs(cross(p[i-1],p[i],p[(i+1)%n]))>1e-10 for i in range(n)),
-            'Polygon has a collinear or repeated corner.')
-    def on(a,b,c):
-        return abs(cross(a,b,c))<=1e-10 and (np.minimum(a,b)-1e-10<=c).all() and (c<=np.maximum(a,b)+1e-10).all()
-    for i in range(n):
-        for j in range(i+1,n):
-            if j==i+1 or (i==0 and j==n-1):continue
-            a,b,c,d=p[i],p[(i+1)%n],p[j],p[(j+1)%n]
-            intersects=(cross(a,b,c)*cross(a,b,d)<0 and cross(c,d,a)*cross(c,d,b)<0) or any((on(a,b,c),on(a,b,d),on(c,d,a),on(c,d,b)))
-            require(not intersects,'Polygon profile self-intersects.')
-    area=sum(p[i,0]*p[(i+1)%n,1]-p[(i+1)%n,0]*p[i,1] for i in range(n))
-    require(abs(area)>1e-10,'Polygon profile has no area.')
-    indices=list(range(n)) if area>0 else list(reversed(range(n)))
-    faces=[]
-    while len(indices)>3:
-        found=False
+_POLYGON_EPS = 1e-10
+
+
+def _turn(a, b, c):
+    return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
+
+
+def _edges(ring):
+    return zip(ring, ring[1:]+ring[:1])
+
+
+def _on_segment(a, b, point):
+    return (abs(_turn(a, b, point)) <= _POLYGON_EPS
+            and all(min(x,y)-_POLYGON_EPS <= z <= max(x,y)+_POLYGON_EPS
+                    for x,y,z in zip(a,b,point)))
+
+
+def _intersects(a, b, c, d):
+    return ((_turn(a,b,c)*_turn(a,b,d) < 0 and _turn(c,d,a)*_turn(c,d,b) < 0)
+            or _on_segment(a,b,c) or _on_segment(a,b,d)
+            or _on_segment(c,d,a) or _on_segment(c,d,b))
+
+
+def _contains(ring, point):
+    # Boundaries are already disjoint. Half-open crossings count vertices once.
+    x, z = point
+    return sum((a[1] > z) != (b[1] > z)
+               and x < a[0] + (z-a[1])*(b[0]-a[0])/(b[1]-a[1])
+               for a,b in _edges(ring)) % 2 == 1
+
+
+def _signed_area2(ring):
+    return math.fsum(_turn(ring[0], a, b) for a,b in _edges(ring))
+
+
+def _profile_rings(points, holes):
+    require(isinstance(holes, (list, tuple)) and len(holes) <= (256-3)//3,
+            'Holes must be a bounded list of polygon rings.')
+    sources = [points, *holes]
+    require(all(isinstance(r, (list, tuple, np.ndarray)) and (not isinstance(r, np.ndarray) or r.ndim != 0)
+                and 3 <= len(r) <= 256 for r in sources)
+            and sum(map(len, sources)) <= 256, 'Polygon requires 3 to 256 total corners.')
+    rings = []
+    for source in sources:
+        require(all(isinstance(point, (list, tuple, np.ndarray)) and
+                    (not isinstance(point, np.ndarray) or point.ndim == 1) and
+                    len(point) == 2 and all(np.isscalar(x) for x in point) for point in source),
+                'Polygon corners must be XZ pairs.')
+        if rings:
+            require(all(isinstance(x, (int, float, np.integer, np.floating)) and
+                        not isinstance(x, (bool, np.bool_)) for point in source for x in point),
+                    'Polygon hole coordinates must be numbers.')
+        p = numeric_array(source, 'polygon ring')
+        require(p.shape == (len(source), 2) and (np.abs(p) <= 10000).all(),
+                'Polygon coordinates must fit the bounded 10000 meter profile.')
+        ring = p.tolist()
+        edges = list(_edges(ring))
+        for i,(a,b) in enumerate(edges):
+            require(math.dist(a,b) > 1e-8 and abs(_turn(ring[i-1],a,b)) > _POLYGON_EPS,
+                    'Polygon has a collinear or repeated corner.')
+            for j in range(i+2, len(edges)):
+                if i or j != len(edges)-1:
+                    require(not _intersects(a,b,*edges[j]), 'Polygon ring self-intersects.')
+        require(abs(_signed_area2(ring)) > _POLYGON_EPS, 'Polygon ring has no area.')
+        for previous in rings:
+            require(not any(_intersects(a,b,c,d) for a,b in edges for c,d in _edges(previous)),
+                    'Polygon rings touch or intersect.')
+        if rings:
+            require(_contains(rings[0], ring[0]), 'Polygon hole lies outside its outline.')
+            require(not any(_contains(hole,ring[0]) or _contains(ring,hole[0]) for hole in rings[1:]),
+                    'Polygon holes may not nest.')
+        rings.append(ring)
+    return rings
+
+
+def _in_sector(before, at, after, target):
+    # The interior lies to the left of this oriented boundary. At a duplicated
+    # bridge endpoint each occurrence has its own interior sector.
+    incoming = _turn(before,at,target) > _POLYGON_EPS
+    outgoing = _turn(at,after,target) > _POLYGON_EPS
+    if _turn(before,at,after) > 0:
+        return incoming and outgoing
+    return incoming or outgoing
+
+
+def _bridge_holes(vertices, boundaries):
+    # Connect each rightmost hole vertex to a visible vertex of the joined
+    # boundary. Duplicate only indices: each seam disappears in the final mesh.
+    boundary = boundaries[0].copy()
+    edges = [edge for ring in boundaries for edge in _edges(ring)]
+    holes = []
+    for ring in boundaries[1:]:
+        right = max(range(len(ring)), key=lambda i: vertices[ring[i]])
+        holes.append(ring[right:] + ring[:right])
+    for ring in sorted(holes, key=lambda r: vertices[r[0]], reverse=True):
+        tip = ring[0]
+        a = vertices[tip]
+        candidates = sorted(range(len(boundary)), key=lambda i: math.dist(a, vertices[boundary[i]]))
+        for i in candidates:
+            end = boundary[i]
+            b = vertices[end]
+            if not (_in_sector(vertices[ring[-1]],a,vertices[ring[1]],b)
+                    and _in_sector(vertices[boundary[i-1]],b,vertices[boundary[(i+1)%len(boundary)]],a)):
+                continue
+            for u,v in edges:
+                if u in (tip,end) or v in (tip,end):
+                    # A shared endpoint is valid, an overlapping edge is not.
+                    other = vertices[v if u in (tip,end) else u]
+                    if _on_segment(a,b,other):
+                        break
+                elif _intersects(a,b,vertices[u],vertices[v]):
+                    break
+            else:
+                boundary[i+1:i+1] = [*ring, tip, end]
+                edges.append((tip,end))
+                break
+        else:
+            require(False, 'Polygon hole cannot be connected without degeneracy.')
+    return boundary
+
+
+def _triangulate_profile(points, holes):
+    rings = _profile_rings(points, holes)
+    vertices = []
+    boundaries = []
+    for i,ring in enumerate(rings):
+        indices = list(range(len(vertices), len(vertices)+len(ring)))
+        vertices.extend(ring)
+        # CCW outer outline, CW hole outlines in the native XZ plane.
+        if (_signed_area2(ring) > 0) != (i == 0):
+            indices.reverse()
+        boundaries.append(indices)
+    indices = _bridge_holes(vertices, boundaries)
+    faces = []
+    while len(indices) > 3:
         for k,b in enumerate(indices):
-            a=indices[k-1];c=indices[(k+1)%len(indices)]
-            if cross(p[a],p[b],p[c])<=1e-10:continue
-            if any(all(cross(p[x],p[y],p[q])>=-1e-10 for x,y in ((a,b),(b,c),(c,a)))
-                   for q in indices if q not in (a,b,c)):continue
-            faces.append([a,b,c]);indices.pop(k);found=True;break
-        require(found,'Polygon cannot be triangulated without degeneracy.')
+            a, c = indices[k-1], indices[(k+1)%len(indices)]
+            pa, pb, pc = vertices[a], vertices[b], vertices[c]
+            if _turn(pa,pb,pc) <= _POLYGON_EPS:
+                continue
+            if any(_turn(pa,pb,vertices[q]) >= -_POLYGON_EPS
+                   and _turn(pb,pc,vertices[q]) >= -_POLYGON_EPS
+                   and _turn(pc,pa,vertices[q]) >= -_POLYGON_EPS
+                   for q in indices if q not in (a,b,c)):
+                continue
+            faces.append([a,b,c])
+            indices.pop(k)
+            break
+        else:
+            require(False, 'Polygon cannot be triangulated without degeneracy.')
+    require(_turn(*(vertices[i] for i in indices)) > 1e-12,
+            'Polygon cap has a degenerate final triangle.')
     faces.append(indices)
-    return p,faces
+    return vertices, faces, boundaries
 
 
-def polygon(points):
-    p,faces=polygon_triangles(points)
-    return Mesh([[x,0,z] for x,z in p],[[a,c,b] for a,b,c in faces]).validate()
+def polygon_triangles(points, holes=()):
+    """Triangulate a bounded XZ outline with optional disjoint hole rings."""
+    vertices, faces, _ = _triangulate_profile(points, holes)
+    return np.asarray(vertices), faces
 
 
-def extrude(points, height=1):
-    """Extrude a simple concave or convex XZ polygon into an actual closed solid."""
-    h=positive(height,'height');p,cap=polygon_triangles(points);n=len(p)
-    v=[[x,y,z] for y in (0,h) for x,z in p];f=[]
-    for a,b,c in cap:f.extend([[a,b,c],[n+a,n+c,n+b]])
-    area=sum(p[i,0]*p[(i+1)%n,1]-p[(i+1)%n,0]*p[i,1] for i in range(n))
-    for i in range(n):
-        j=(i+1)%n
-        sides=[[i,n+i,n+j],[i,n+j,j]]
-        f.extend(sides if area>0 else [list(reversed(face)) for face in sides])
-    return Mesh(v,f).validate()
+def polygon(points, holes=()):
+    vertices, faces = polygon_triangles(points, holes)
+    return Mesh([[x,0,z] for x,z in vertices], [[a,c,b] for a,b,c in faces]).validate()
+
+
+def extrude(points, height=1, holes=()):
+    """Extrude a bounded XZ profile with through-holes into a closed solid."""
+    h = positive(height, 'height')
+    points, cap, boundaries = _triangulate_profile(points, holes)
+    n = len(points)
+    vertices = [[x,y,z] for y in (0,h) for x,z in points]
+    faces = []
+    for a,b,c in cap:
+        faces.extend([[a,b,c], [n+a,n+c,n+b]])
+    # Keep the original edge order and triangle diagonal for legacy OBJ hashes.
+    for ring in boundaries:
+        forward = ring[0] < ring[-1]
+        ordered = ring if forward else ring[::-1]
+        for i,j in _edges(ordered):
+            sides = [[i,n+i,n+j], [i,n+j,j]]
+            faces.extend(sides if forward else [face[::-1] for face in sides])
+    return Mesh(vertices, faces).validate()
 
 
 def curve(points, radius=.1, segments=12):

@@ -1,4 +1,5 @@
 """Real generated geometry, spatial limits and immutable save/reopen regressions."""
+from collections import Counter
 from copy import deepcopy
 import json
 import hashlib
@@ -41,6 +42,88 @@ class GeometryTests(unittest.TestCase):
             volume=np.einsum('ij,ij->i',v[f[:,0]],np.cross(v[f[:,1]],v[f[:,2]])).sum()/6
             self.assertAlmostEqual(volume,10)
         with self.assertRaises(RigError):polygon([[0,0],[2,2],[0,2],[2,0]])
+
+    def test_polygon_holes_cut_through_concave_caps_and_form_closed_inner_walls(self):
+        outer = [[0,0],[12,0],[12,8],[8,8],[8,5],[0,5]]
+        elbow = [[1,1],[4,1],[4,2],[2,2],[2,4],[1,4]]
+        window = [[9,4],[11,4],[11,7],[9,7]]
+        offset = np.array([9500,-9000])
+        for rings in ((outer, elbow, window), (outer[::-1], window[::-1], elbow),
+                      (outer, elbow[::-1], window)):
+            points, *holes = [(ring + offset).tolist() for ring in rings]
+            planar = primitive('polygon', points=points, holes=holes)
+            solid = primitive('extrude', points=points, holes=holes, height=2)
+            vertices = np.array(solid.vertices) - [offset[0],0,offset[1]]
+            faces = np.array(solid.triangles)
+            tris = vertices[faces]
+            normals = np.cross(tris[:,1]-tris[:,0], tris[:,2]-tris[:,0])
+            for y, sign in ((0,-1), (2,1)):
+                cap = normals[(tris[:,:,1] == y).all(axis=1),1]
+                self.assertTrue((cap*sign > 0).all())
+                self.assertAlmostEqual(cap.sum()/2, sign*(72-5-6))
+            volume = np.einsum('ij,ij->i',tris[:,0],normals).sum()/6
+            self.assertAlmostEqual(volume, 122)
+            edges = Counter((a,b) for tri in faces for a,b in zip(tri, np.roll(tri,-1)))
+            for (a,b), uses in edges.items():
+                self.assertEqual((uses,edges[b,a]), (1,1))
+
+            # Shoot vertical rays through the cutouts, the notch, and solid cap.
+            cap = (np.array(planar.vertices)[:,[0,2]] - offset)[planar.triangles]
+            for pos, covered in (([1.5,3],False), ([3,1.5],False), ([10,6],False),
+                                 ([5,7],False), ([3,3],True), ([9,2],True)):
+                side = np.roll(cap,-1,axis=1) - cap
+                delta = pos-cap
+                crosses = side[:,:,0]*delta[:,:,1] - side[:,:,1]*delta[:,:,0]
+                self.assertEqual(bool((crosses <= 0).all(axis=1).any()), covered)
+
+    def test_polygon_hole_validation_and_shared_vertex_budget(self):
+        outer = [[0,0],[8,0],[8,8],[0,8]]
+        hole = [[2,2],[5,2],[5,5],[2,5]]
+        invalid = {
+            'list required': None, 'malformed corner': [[[1,1],[3],[1,3]]],
+            'nonfinite': [[[1,1],[float('inf'),1],[2,3]]],
+            'non-numeric': [[[1,1],['bad',1],[2,3]]],
+            'numeric string': [[[1,1],['3',1],[2,3]]],
+            'boolean': [[[True,1],[3,1],[2,3]]],
+            'large integer': [[[1,1],[10**400,1],[2,3]]],
+            'coordinate bound': [[[1,1],[10001,1],[2,3]]],
+            'self-crossing': [[[1,1],[4,4],[1,4],[4,1]]],
+            'collinear corner': [[[1,1],[2,1],[3,1],[2,3]]],
+            'repeated corner': [[[1,1],[2,1],[2,1],[2,3]]],
+            'outside': [[[9,1],[10,1],[10,3]]],
+            'outline vertex contact': [[[0,0],[2,1],[1,2]]],
+            'outline edge contact': [[[0,2],[2,2],[2,3]]],
+            'outline crossing': [[[1,1],[1,3],[-1,2]]],
+            'nested': [hole, [[3,3],[4,3],[4,4]]],
+            'enclosing existing hole': [[[3,3],[4,3],[4,4]], hole],
+            'overlapping holes': [hole, [[3,3],[6,3],[6,6]]],
+            'touching holes': [hole, [[5,5],[6,5],[6,6]]],
+            'coincident holes': [hole, hole],
+        }
+        # Each corner of this triangle is inside the concave outline, but an
+        # edge crosses its notch.
+        notch = [[0,0],[8,0],[8,8],[5,8],[5,3],[3,3],[3,8],[0,8]]
+        for kind in ('polygon','extrude'):
+            for case, holes in invalid.items():
+                with self.subTest(kind=kind, case=case), self.assertRaises(RigError):
+                    plan(recipe('primitive', kind=kind, dimensions=dict(points=outer, holes=holes)))
+            with self.assertRaises(RigError):
+                primitive(kind, points=notch, holes=[[[1,1],[7,6],[1,6]]])
+        for n in (253,254):
+            outline = [[10*math.cos(2*math.pi*i/n),10*math.sin(2*math.pi*i/n)] for i in range(n)]
+            if n == 253:
+                self.assertEqual(len(polygon(outline, holes=[[[0,0],[1,0],[0,1]]]).triangles), 256)
+            else:
+                with self.assertRaises(RigError):
+                    polygon(outline, holes=[[[0,0],[1,0],[0,1]]])
+
+    def test_empty_polygon_holes_preserve_legacy_obj_bytes(self):
+        outline = [[0,0],[3,0],[3,1],[1,1],[1,3],[0,3]]
+        cases = ((outline, '4bfc6eb6b7df86a2360f9117fdab5188c6b47630ab9e049be9d86cb901806b94'),
+                 (outline[::-1], 'e284f395e25c9b1cb4eb0b6ba7f1557feb357b0ea2b6f72a92c8cd37db1dc048'))
+        for points, expected in cases:
+            self.assertEqual(hashlib.sha256(extrude(points,2,holes=[]).obj()).hexdigest(), expected)
+            self.assertEqual(polygon(points,holes=[]).obj(), polygon(points).obj())
 
     def test_integer_json_vertices_emit_finite_unit_normals(self):
         mesh=Mesh([[0,0,0],[1,0,0],[0,1,0]],[[0,1,2]])
@@ -217,6 +300,30 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(RigError):plan(recipe(width=1,door_width=2))
         with self.assertRaises(RigError):plan(dict(recipe(),budget=2))
         with self.assertRaises(RigError):plan(recipe('caves'))
+
+    def test_saved_extrusion_retains_hole_recipe_and_reopened_mesh(self):
+        dimensions = dict(points=[[10,10],[18,10],[18,18],[10,18]],
+                          holes=[[[12,12],[16,12],[16,16],[12,16]]], height=2)
+        r = recipe('primitive', kind='extrude', dimensions=dimensions)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'saved'
+            create_environment(root, r)
+            bundle = load_project(root)
+            path = bundle['project']['scenes'][-1]['path']
+            scene = bundle['documents'][path]
+            stored = root / scene['metadata']['generator_recipe_test']
+            self.assertEqual(json.loads(stored.read_bytes()), r)
+            mesh = load_meshes(root, path)['test-mesh']
+            triangles = np.asarray(mesh['vertices'])[mesh['triangles']]
+            normals = np.cross(triangles[:,1]-triangles[:,0], triangles[:,2]-triangles[:,0])
+            self.assertAlmostEqual(np.einsum('ij,ij->i', triangles[:,0], normals).sum()/6, 96)
+            invalid = deepcopy(r)
+            invalid['parameters']['dimensions']['holes'][0][0] = [10,10]
+            destination = Path(temp) / 'invalid'
+            with self.assertRaises(RigError):
+                apply_recipe(root, destination, path, invalid)
+            self.assertFalse(destination.exists())
+            self.assertEqual(load_project(root)['inventory'], bundle['inventory'])
 
     def test_publication_requires_recipe_ids_that_fit_scene_metadata_and_nodes(self):
         r=recipe('primitive',kind='box',dimensions={})
