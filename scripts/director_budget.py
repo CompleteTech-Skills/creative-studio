@@ -20,6 +20,7 @@ import time
 
 from atomic_publish import _rename_no_replace
 from asset_library import _read_source_bytes
+from profile_spec import RESERVED_STATES, is_safe_slug
 from rig_errors import RigError, decode_json, job_lock, object_hash
 
 METRICS = ('provider_calls', 'input_tokens', 'output_tokens', 'cpu_seconds', 'gpu_seconds', 'storage_bytes', 'amount')
@@ -48,6 +49,31 @@ def _need(ok, code, message):
 def _id(value):
     _need(isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', value), 'INPUT', 'Invalid operation/provider identity.')
     return value
+
+
+def _native_job_id(value):
+    # A job is a profile state or Hatch's base job, not a ledger operation ID.
+    _need(is_safe_slug(value) and (value == 'base' or value not in RESERVED_STATES),
+          'INPUT', 'Invalid native profile state identity.')
+    return value
+
+
+def _validate_native_claim(claim):
+    """Use the same deterministic contract before and after native publication."""
+    _need(isinstance(claim, dict) and set(claim) == {
+              'reservation_id', 'operation_id', 'run_id', 'run_location_sha256',
+              'job', 'token', 'attempt', 'input_hashes', 'evidence'} and
+          type(claim['attempt']) is int and 1 <= claim['attempt'] <= 17 and
+          isinstance(claim['token'], str) and re.fullmatch(r'[0-9a-f]{32}', claim['token']) and
+          isinstance(claim['input_hashes'], dict), 'CORRUPT', 'Invalid native publication record.')
+    for field in ('reservation_id', 'operation_id', 'run_id'):
+        _id(claim[field])
+    _native_job_id(claim['job'])
+    _need(isinstance(claim['run_location_sha256'], str) and
+          re.fullmatch(r'[0-9a-f]{64}', claim['run_location_sha256']) and
+          all(isinstance(k, str) and isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v)
+              for k, v in claim['input_hashes'].items()), 'CORRUPT', 'Invalid native publication identity.')
+    _evidence(claim['evidence'])
 
 
 def _number(value, metric, *, maximum=10**15):
@@ -132,17 +158,7 @@ def _validate_state(state):
                   'CORRUPT', 'Native finalization receipt changed.')
         if event['action'] == 'native-claim':
             claim = event['payload']
-            _need(set(claim) == {'reservation_id', 'operation_id', 'run_id', 'run_location_sha256',
-                                'job', 'token', 'attempt', 'input_hashes', 'evidence'} and
-                  type(claim['attempt']) is int and 1 <= claim['attempt'] <= 17 and
-                  isinstance(claim['token'], str) and re.fullmatch(r'[0-9a-f]{32}', claim['token']) and
-                  isinstance(claim['input_hashes'], dict), 'CORRUPT', 'Invalid native publication record.')
-            for field in ('reservation_id', 'operation_id', 'run_id', 'job'):
-                _id(claim[field])
-            _need(isinstance(claim['run_location_sha256'], str) and
-                  re.fullmatch(r'[0-9a-f]{64}', claim['run_location_sha256']) and
-                  all(isinstance(k, str) and isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v)
-                      for k, v in claim['input_hashes'].items()), 'CORRUPT', 'Invalid native publication identity.')
+            _validate_native_claim(claim)
             _need(all(event['receipt'].get(k) == claim[k] for k in
                       ('reservation_id', 'operation_id', 'token', 'attempt')),
                   'CORRUPT', 'Native publication receipt changed.')
@@ -1354,12 +1370,23 @@ class NativeBudget:
         _need(operation['attempts'].index(token) < self.config['retry_allowance'] + 1,
               'EXCEEDED', 'Native retry allowance exhausted before publication.')
 
+    def _publication_payload(self, job, operation, token):
+        payload = dict(reservation_id=operation['reservation_id'],
+            operation_id=operation['operation_id'], run_id=self.data['run_id'],
+            run_location_sha256=self.config['run_location_sha256'], job=job['id'], token=token,
+            attempt=operation['attempts'].index(token) + 1,
+            input_hashes=deepcopy(operation['input_hashes']),
+            evidence=deepcopy(operation['reservation_request']['evidence']))
+        _validate_native_claim(payload)
+        return payload
+
     @_exact
     def preflight_publication(self, job, token):
         """Keep a known budget refusal pending; final publication rechecks it."""
         operation = self._check_claim_bindings(job)
         _need(not self.recovery and operation is not None and token in operation['attempts'],
               'BINDING', 'Publication preflight requires its admitted native token.')
+        self._publication_payload(job, operation, token)
         def check():
             with job_lock(self.ledger.root):
                 self._publication_capacity(self.ledger.snapshot()['state'], operation, token)
@@ -1378,12 +1405,7 @@ class NativeBudget:
         operation = self._check_claim_bindings(job)
         _need(operation is not None and job['status'] == 'running' and job.get('token') == token,
               'BINDING', 'Publication requires the exact durable native claim.')
-        payload = dict(reservation_id=operation['reservation_id'],
-            operation_id=operation['operation_id'], run_id=self.data['run_id'],
-            run_location_sha256=self.config['run_location_sha256'], job=job['id'], token=token,
-            attempt=operation['attempts'].index(token) + 1,
-            input_hashes=deepcopy(operation['input_hashes']),
-            evidence=deepcopy(operation['reservation_request']['evidence']))
+        payload = self._publication_payload(job, operation, token)
         def mutate(state):
             # A lock retry must still publish the durable running journal of
             # this admitted physical run, not a later journal at its name.
@@ -1620,6 +1642,7 @@ class NativeBudget:
         """Persist an intent and reserve before Hatch exposes its existing token."""
         _need(not self.recovery, 'STATE', 'Recovery cannot authorize new native work.')
         _need(any(item is job for item in self.data['jobs']), 'BINDING', 'Native admission requires this owner job.')
+        _native_job_id(job.get('id'))
         _need(isinstance(input_hashes, dict) and input_hashes.get('pet_request.json') == self.config['request_sha256'],
               'BINDING', 'Native admission inputs differ from original enrollment.')
         if (self.owner / 'project.json').is_file():
