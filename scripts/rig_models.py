@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections import Counter
+from copy import deepcopy
 import hashlib
 import io
 import json
@@ -81,12 +83,32 @@ class RigAsset:
     root: Path | None = None
     # Runtime admission data is deliberately outside the signed source manifest.
     resource_usage: dict | None = None
+    # References to the admitted record occurrences, never serialized. Retaining
+    # the objects distinguishes equal-valued observations through generic edits.
+    _anatomy_occurrences: list[tuple[dict, str | None]] = field(
+        default_factory=list, init=False, repr=False, compare=False)
 
     @property
     def skeleton(self) -> dict:
         require(self.manifest.get('skeleton') is not None, 'RIG_NO_SKELETON',
                 'Generate or import a skeleton before this operation.')
         return self.manifest['skeleton']
+
+
+class _AnatomyOccurrence(dict):
+    """An ordinary JSON record with a nonserialized, copy-stable origin."""
+    __slots__ = ('_origin',)
+
+    def __init__(self, value):
+        super().__init__(value)
+        self._origin = object()
+
+    def __deepcopy__(self, memo):
+        copied = type(self)({})
+        memo[id(self)] = copied
+        copied.update(deepcopy(dict(self), memo))
+        copied._origin = self._origin
+        return copied
 
 
 def _anatomy_binding_inputs(manifest):
@@ -110,20 +132,33 @@ def _anatomy_binding_inputs(manifest):
     return records, bindings, names
 
 
-def normalize_anatomy_bindings(manifest):
+def normalize_anatomy_bindings(manifest, *, occurrences=()):
     """Demote stale occurrence metadata; only an explicit fit may bind it."""
     records, bindings, names = _anatomy_binding_inputs(manifest)
     if not records and 'anatomy_uncertainty_bindings' not in manifest:
         return
-    # A generic caller which changed the occurrence count did not retain a
-    # positional correspondence. Never transfer a digest to an equal-looking
-    # record at a different position. Native edits update both arrays together.
-    if len(bindings) != len(records):
-        bindings = [None] * len(records)
-    manifest['anatomy_uncertainty_bindings'] = [
-        binding if binding is not None and binding == object_hash(issue) and
-        issue.get('element') in names else None
-        for issue, binding in zip(records, bindings)]
+    # Only records admitted by the loader or a native owner can carry bindings.
+    # A digest and array position alone cannot distinguish an opaque duplicate
+    # from the fitted occurrence that a generic caller removed or reordered.
+    admitted = {id(issue): (issue, binding) for issue, binding in occurrences}
+    origins = {issue._origin: (issue, binding) for issue, binding in occurrences
+               if isinstance(issue, _AnatomyOccurrence)}
+    if bindings != [binding for _, binding in occurrences]:
+        admitted = {}  # Editing metadata itself cannot create native ownership.
+        origins = {}
+    counts = Counter(id(issue) for issue in records)
+    copies = Counter(issue._origin for issue in records if isinstance(issue, _AnatomyOccurrence))
+    normalized = []
+    for issue in records:
+        owner, binding = admitted.get(id(issue), (None, None))
+        if owner is None and isinstance(issue, _AnatomyOccurrence) and copies[issue._origin] == 1:
+            # An unchanged one-to-one deepcopy retains its original occurrence.
+            # This never matches another observation by value or array position.
+            owner, binding = origins.get(issue._origin, (None, None))
+        normalized.append(binding if owner is not None and counts[id(issue)] == 1 and
+                          binding is not None and binding == object_hash(issue) and
+                          issue.get('element') in names else None)
+    manifest['anatomy_uncertainty_bindings'] = normalized
 
 
 def validate_anatomy_bindings(manifest):
@@ -135,6 +170,16 @@ def validate_anatomy_bindings(manifest):
         binding is None or binding == object_hash(issue) and issue.get('element') in names
         for issue, binding in zip(records, bindings)),
         'RIG_UNCERTAINTY_BINDING', 'Anatomy uncertainty bindings differ from their native occurrences.')
+
+
+def _retain_anatomy_occurrences(rig):
+    """Retain already validated native bindings to the actual record objects."""
+    validate_anatomy_bindings(rig.manifest)
+    rig.manifest['uncertainties'] = [
+        _AnatomyOccurrence(issue) if issue.get('code') == 'RIG_ANATOMY_UNCERTAIN' else issue
+        for issue in rig.manifest['uncertainties']]
+    records, bindings, _ = _anatomy_binding_inputs(rig.manifest)
+    rig._anatomy_occurrences = list(zip(records, bindings or [None] * len(records)))
 
 
 # Texture fields in the material extensions already supported by rig_gltf.
@@ -620,4 +665,6 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
         require(any(r.get('expected_sha256')==rig_signature(manifest) and r.get('reviewer_kind') in ('human','agent')
                     and set(r.get('dimensions',{}))==set(REVIEW_DIMENSIONS) and all(v['verdict']=='approved' for v in r['dimensions'].values()) for r in receipts),
                 'RIG_REVIEW_MISSING','Approved status requires a matching real visual review receipt.')
-    return RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    rig = RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    _retain_anatomy_occurrences(rig)
+    return rig

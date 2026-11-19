@@ -4,7 +4,7 @@ from copy import deepcopy
 from rig_contracts import validate_contract
 from rig_errors import atomic_json, object_hash, require, safe_path, sha256
 from rig_jobs import next_version, save_rig
-from rig_models import rig_signature
+from rig_models import normalize_anatomy_bindings, _retain_anatomy_occurrences, rig_signature
 from rig_skeleton import skeleton_from_heads, validate_skeleton
 from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
@@ -13,11 +13,14 @@ from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_sk
 _BONE_FIELDS = ('id', 'role', 'parent', 'head', 'tail', 'deform', 'mirror', 'roll')
 
 
-def replace_fit(manifest, fitted):
+def replace_fit(rig, fitted):
     """Refresh the fit-owned records, keeping every independent uncertainty."""
     from rig_contracts import definitions
+    manifest = rig.manifest
+    normalize_anatomy_bindings(manifest, occurrences=rig._anatomy_occurrences)
+    bindings = iter(manifest.get('anatomy_uncertainty_bindings', []))
     independent = [issue for issue in manifest['uncertainties']
-                   if issue['code'] != 'RIG_ANATOMY_UNCERTAIN']
+                   if issue['code'] != 'RIG_ANATOMY_UNCERTAIN' or next(bindings, None) is None]
     count = len(independent) + len(fitted['uncertainties'])
     limit = definitions()['Rig']['properties']['uncertainties']['maxItems']
     require(count <= limit, 'RIG_LIMIT_UNCERTAINTY',
@@ -25,12 +28,15 @@ def replace_fit(manifest, fitted):
             expected=limit, observed=count)
     bone_ids = {bone['id'] for bone in fitted['skeleton']['bones']}
     manifest['anatomy_uncertainty_bindings'] = [
+        None for issue in independent if issue['code'] == 'RIG_ANATOMY_UNCERTAIN'
+    ] + [
         object_hash(issue) if issue['element'] in bone_ids else None
         for issue in fitted['uncertainties'] if issue['code'] == 'RIG_ANATOMY_UNCERTAIN'
     ]
     for key in ('skeleton', 'controllers', 'attachments'):
         manifest[key] = fitted[key]
     manifest['uncertainties'] = independent + fitted['uncertainties']
+    _retain_anatomy_occurrences(rig)
 
 
 class _BoneEdits:
@@ -96,6 +102,14 @@ class _BoneEdits:
         facial_step = self.authored.get(('facial', None), 0)
         facial['eyes'] = [name for eye in facial['eyes']
                           if (name := resolve(eye, facial_step)) is not None]
+        if 'eyelids' in facial:
+            kept = []
+            for binding in facial['eyelids']:
+                name = resolve(binding['eye'], facial_step)
+                if name is not None:
+                    binding['eye'] = name
+                    kept.append(binding)
+            facial['eyelids'] = kept
         for key, expression in facial['expressions'].items():
             step = max(facial_step, self.authored.get(('expression', key), 0))
             expression['bones'] = {name: pose for bone, pose in expression['bones'].items()
@@ -153,6 +167,8 @@ def validate_correction_binding(rig, correction):
 def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
     validate_correction_binding(rig, correction)
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
+    normalize_anatomy_bindings(result.manifest, occurrences=result._anatomy_occurrences)
+    _retain_anatomy_occurrences(result)
     bones = _BoneEdits(result.skeleton['bones'] if result.manifest['skeleton'] else [])
     for step, edit in enumerate(correction['edits'], start=1):
         operation,target,value=edit['operation'],edit['target'],deepcopy(edit['value'])
@@ -247,6 +263,9 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
                 for key in stale:result.clips.pop(key)
                 invalidated.extend('clip:'+key for key in stale);result.manifest['state_mapping']={}
             if action=='remove':
+                if 'eyelids' in result.manifest['facial']:
+                    result.manifest['facial']['eyelids']=[binding for binding in result.manifest['facial']['eyelids']
+                        if (binding['mesh'],binding['morph'])!=(target,name)]
                 for expression in result.manifest['facial']['expressions'].values():
                     expression['morphs'].pop(target+'::'+name,None)
                     if not any(name in m.morphs for m in result.geometry.meshes):expression['morphs'].pop(name,None)
@@ -256,7 +275,7 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
             template=value['template'] if resolve_template is None else resolve_template(value['template'])
             fitted=generate_skeleton(result.geometry,template,landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
             bones.reconcile_references(result.manifest)
-            replace_fit(result.manifest, fitted)
+            replace_fit(result, fitted)
             bones = _BoneEdits(fitted['skeleton']['bones'])
             skeleton_changed = True
     if skeleton_changed:
@@ -264,12 +283,15 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
         skeleton=skeleton_from_heads(bones.specs,identifier=result.skeleton['id'],version=next_version(result.skeleton['version']))
         bones.reconcile_evidence(skeleton, result.manifest, correction)
         result.manifest['skeleton']=skeleton
+        _retain_anatomy_occurrences(result)
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
     validate_skeleton(result.skeleton,result.manifest['limits'])
     validate_controllers(result.skeleton,result.manifest['controllers'])
     bone_ids={b['id'] for b in result.skeleton['bones']}
     require(all(s['bone'] in bone_ids for s in result.manifest['attachments']),'RIG_ATTACHMENT_REFERENCE','Attachment bone is missing.')
     require(set(result.manifest['facial']['eyes']) <= bone_ids,'RIG_EYE_REFERENCE','Eye control bone is missing.')
+    from rig_facial import validate_eyelid_bindings
+    validate_eyelid_bindings(result)
     if persist:
         digest=object_hash(correction);atomic_json(safe_path(result.root,'rig/corrections/'+digest+'.json'),correction)
         save_rig(result,operation='manual-correction')

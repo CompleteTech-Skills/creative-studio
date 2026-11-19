@@ -1579,6 +1579,58 @@
             ]
           },
           "maxProperties": 128
+        },
+        "eyelids": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "eye": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+              },
+              "mesh": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+              },
+              "morph": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+              },
+              "up_weight": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "down_weight": {
+                "type": "number",
+                "minimum": -2,
+                "maximum": 2
+              },
+              "up_radians": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1.5707963267948966
+              },
+              "down_radians": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1.5707963267948966
+              }
+            },
+            "required": [
+              "eye",
+              "mesh",
+              "morph",
+              "up_weight",
+              "down_weight",
+              "up_radians",
+              "down_radians"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
         }
       },
       "required": [
@@ -4061,6 +4113,58 @@
                 ]
               },
               "maxProperties": 128
+            },
+            "eyelids": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "eye": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+                  },
+                  "mesh": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+                  },
+                  "morph": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+                  },
+                  "up_weight": {
+                    "type": "number",
+                    "minimum": -2,
+                    "maximum": 2
+                  },
+                  "down_weight": {
+                    "type": "number",
+                    "minimum": -2,
+                    "maximum": 2
+                  },
+                  "up_radians": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1.5707963267948966
+                  },
+                  "down_radians": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1.5707963267948966
+                  }
+                },
+                "required": [
+                  "eye",
+                  "mesh",
+                  "morph",
+                  "up_weight",
+                  "down_weight",
+                  "up_radians",
+                  "down_radians"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 128
             }
           },
           "required": [

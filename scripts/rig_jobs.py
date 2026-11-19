@@ -12,7 +12,7 @@ from atomic_publish import _rename_no_replace
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, valid_import_scale, validate_contract
 from rig_errors import (VERSION, RigError, atomic_bytes, atomic_json, job_lock,
                         object_hash, read_json, require, safe_path, sha256, slug, timestamp, normalize_root)
-from rig_models import (RigAsset, load_rig, normalize_anatomy_bindings, rig_signature,
+from rig_models import (RigAsset, load_rig, normalize_anatomy_bindings, _retain_anatomy_occurrences, rig_signature,
                         save_geometry, save_weights)
 
 
@@ -29,8 +29,10 @@ def save_rig(rig: RigAsset, *, bump=True, operation='save') -> dict:
     """Write immutable blobs first and atomically promote the one active manifest last."""
     require(rig.root is not None, 'RIG_RUN', 'The rig needs a run directory.')
     root = Path(rig.root);old = read_json(root/'rig.json') if (root/'rig.json').exists() else None
-    manifest = deepcopy(rig.manifest)
-    normalize_anatomy_bindings(manifest)
+    # Copy the manifest and occurrence references together so deepcopy preserves
+    # their shared object identities without copying geometry or weight buffers.
+    manifest, occurrences = deepcopy((rig.manifest, rig._anatomy_occurrences))
+    normalize_anatomy_bindings(manifest, occurrences=occurrences)
     if old and bump:
         manifest['version'] = next_version(old['version']);manifest['revision'] = old['revision']+1
         manifest['review'] = dict(status='pending', receipts=[]);manifest['validation'] = []
@@ -57,6 +59,7 @@ def save_rig(rig: RigAsset, *, bump=True, operation='save') -> dict:
         else:atomic_json(target, old)
     atomic_json(root/'rig.json', manifest)
     rig.manifest = manifest
+    _retain_anatomy_occurrences(rig)
     if (root/'job.json').exists():
         job=read_json(root/'job.json')
         if not any(s['status']=='running' for s in job['steps'].values()):
