@@ -541,7 +541,12 @@ def _unpack_transport(root):
         fail('INCOMPLETE', 'Transport has missing or extra members.')
     with tempfile.TemporaryDirectory(prefix='asset-parts-') as temporary:
         target = Path(temporary) / 'package'
-        restore_source_bundle(index_path, target)
+        try:
+            restore_source_bundle(index_path, target)
+        except RigError:
+            raise
+        except (OSError, ValueError) as exc:
+            fail('TRANSPORT', 'Transport parts cannot rebuild the package: ' + str(exc))
         yield target
 
 

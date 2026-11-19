@@ -174,8 +174,10 @@ class PackageTests(unittest.TestCase):
         for label in ['missing', 'corrupt']:
             if label == 'missing': part.unlink()
             else: part.write_bytes(b'Y' * len(content))
-            with self.assertRaises((RigError, ValueError)):
+            with self.assertRaises(RigError) as caught:
                 restore_transport(bundle, self.root / ('parts-' + label))
+            self.assertEqual(caught.exception.report['code'],
+                             'LIBRARY_PACKAGE_' + ('INCOMPLETE' if label == 'missing' else 'TRANSPORT'))
             self.assertFalse((self.root / ('parts-' + label)).exists())
             part.write_bytes(content)
         for label in ['order', 'whole-hash']:
@@ -184,7 +186,8 @@ class PackageTests(unittest.TestCase):
             if label == 'order': record['parts'] = list(reversed(record['parts']))
             else: record['sha256'] = 'f' * 64
             index_path.write_text(json.dumps(altered))
-            with self.assertRaises(ValueError): verify_transport(bundle)
+            with self.assertRaises(RigError) as caught: verify_transport(bundle)
+            self.assertEqual(caught.exception.report['code'], 'LIBRARY_PACKAGE_TRANSPORT')
             index_path.write_bytes(original_index)
         restored = restore_transport(bundle, self.root / 'parts-good')
         self.assertEqual(AssetLibrary(restored['library']).resolve(self.character), self.library.resolve(self.character))
