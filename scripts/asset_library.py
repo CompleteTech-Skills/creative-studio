@@ -15,7 +15,7 @@ from pathlib import Path
 import sqlite3
 import stat
 import sys
-from typing import Iterator, Literal, NoReturn, Protocol, TypeVar, cast
+from typing import Callable, Iterator, Literal, NoReturn, Protocol, TypeVar, cast
 
 from asset_library_types import (AssetAnnotations, AssetFile, AssetFormat, AssetRef, AssetVersion,
                                  SceneAssetReference)
@@ -287,7 +287,8 @@ class AssetLibrary:
             self.storage.ready()
 
     def register(self, manifest: AssetVersion, sources: dict[str, _SourcePathType], *,
-                 expected_identity_refs: list[AssetRef] | None = None) -> AssetRef:
+                 expected_identity_refs: list[AssetRef] | None = None,
+                 before_publish: Callable[[], None] | None = None) -> AssetRef:
         """Register all inventoried logical files from explicit source paths.
 
         Files are always re-read and hashed; a supplied manifest never certifies
@@ -295,6 +296,8 @@ class AssetLibrary:
         exact-byte store (optional dependency resolution is a later policy).
         Supply the identity's observed references to require that exact history
         at publication. An empty list requires a previously unused identity.
+        A trusted caller may raise from before_publish to cancel under the
+        writer lock, while all SQL writes can still be rolled back.
         """
         manifest = cast(AssetVersion, load_manifest(canonical_bytes(manifest)))
         if not isinstance(sources, dict):
@@ -378,6 +381,9 @@ class AssetLibrary:
                        (identity, version, 0, canonical_bytes(annotations)))
             if self.storage:
                 self.storage.check_projection(db, pending=(identity, version))
+            if before_publish is not None:
+                before_publish()
+            if self.storage:
                 self.storage.append(dict(schema_version=1, kind='version', value=manifest), payloads)
         return reference
 
