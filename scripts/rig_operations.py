@@ -253,7 +253,9 @@ def solve_operation(rig,parameters):
         # Bones the solve writes belong to IK, so a later release must keep
         # them. solve_ik also reruns the manifest constraints; carry gaze
         # ownership of every other bone through that pass as pose_operation does.
-        orientation=parameters.get('orientation',chain.get('orientation'))
+        # Mirror solve_ik: an explicit null still falls back to the chain goal.
+        orientation=parameters.get('orientation')
+        if orientation is None:orientation=chain.get('orientation')
         solved=chain['bones'] if orientation is not None else chain['bones'][:-1]
         rotations=result.pose['gaze_overrides']['rotations']
         for name in solved:rotations.pop(name,None)

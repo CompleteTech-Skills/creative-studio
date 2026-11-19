@@ -165,18 +165,25 @@ class FinalGazeEyelidTests(unittest.TestCase):
                                'head', axis_angle([0, 1, 0], -.26))
         chain = rig.manifest['controllers']['ik'][0]
         target = [.1, 1., 0.]
-        for extra in (dict(head_follow=.5), dict(orientation=axis_angle([0, 0, 1], math.pi / 4).tolist())):
-            with self.subTest(**extra):
+        goal = axis_angle([0, 0, 1], math.pi / 4).tolist()
+        cases = ((dict(head_follow=.5), None), (dict(orientation=goal), None),
+                 ({}, goal), (dict(orientation=None), goal))
+        for extra, chain_goal in cases:
+            with self.subTest(chain_orientation=chain_goal is not None, **extra):
+                chain.pop('orientation', None)
+                if chain_goal is not None:
+                    chain['orientation'] = chain_goal
+                oriented = (extra.get('orientation') or chain_goal) is not None
                 parameters = dict(pose=authored, chain='chain', target=target, **extra)
                 ungazed = solve_operation(rig, parameters)['pose']
                 gazed = solve_operation(rig, dict(parameters, gaze=gaze_target(.6)))['pose']
                 released = pose_operation(rig, {'pose': gazed, 'gaze': None})
                 endpoint = evaluate_fk(rig.skeleton, released)[chain['bones'][-1]][:3, 3]
                 self.assertLessEqual(np.linalg.norm(endpoint - target), chain['tolerance'])
-                solved = chain['bones'] if 'orientation' in extra else chain['bones'][:-1]
+                solved = chain['bones'] if oriented else chain['bones'][:-1]
                 for name in solved:
                     self.assertEqual(released['bones'][name], gazed['bones'][name])
-                if 'orientation' in extra:
+                if oriented:
                     self.assertEqual(released['bones']['eye.right'], ungazed['bones']['eye.right'])
 
     def test_no_gaze_preserves_authored_pose_overrides(self):
