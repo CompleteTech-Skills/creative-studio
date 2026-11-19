@@ -102,6 +102,40 @@ _MATERIAL_TEXTURE_SLOTS = {
 }
 
 
+def retained_extension_groups(materials, textures, samplers):
+    """Yield extension dictionaries at retained material-resource locations."""
+    from rig_gltf import MATERIAL_EXTENSIONS
+
+    def group(item):
+        extensions = item.get('extensions', {})
+        require(isinstance(extensions, dict), 'RIG_MATERIAL', 'Extensions must be an object.')
+        return extensions
+
+    for category, resources in (('textures', textures), ('samplers', samplers)):
+        for resource in resources:
+            yield category, group(resource)
+    for material in materials:
+        declared = group(material)
+        yield 'materials', declared
+        pbr = material.get('pbrMetallicRoughness', {})
+        yield 'pbrMetallicRoughness', group(pbr)
+        containers = [(material, ('normalTexture', 'occlusionTexture', 'emissiveTexture')),
+                      (pbr, ('baseColorTexture', 'metallicRoughnessTexture'))]
+        # Only known extension schemas define additional material containers.
+        # An unknown outer extension already marks the receipt partial.
+        for name, payload in declared.items():
+            if name in MATERIAL_EXTENSIONS and name != 'KHR_texture_transform':
+                yield 'material_extensions', group(payload)
+                containers.append((payload, _MATERIAL_TEXTURE_SLOTS.get(name, ())))
+        for container, slots in containers:
+            for slot in slots:
+                if slot in container:
+                    binding = group(container[slot])
+                    yield 'texture_bindings', binding
+                    if 'KHR_texture_transform' in binding:
+                        yield 'texture_transforms', group(binding['KHR_texture_transform'])
+
+
 def _material_number(value, label: str, *, minimum=None, maximum=None) -> None:
     # Compare ints before isfinite (which converts to float) so even malicious
     # huge native integers fail with a domain diagnostic rather than OverflowError.
@@ -407,12 +441,14 @@ def _check_load_headers(metadata, headers, limits, kind, descriptor, max_total_m
             require(isinstance(meshes, list) and 0 < len(meshes) <= 4096,
                     'RIG_GEOMETRY', 'Expected 1–4096 native mesh primitives.')
             vertices = triangles = total_morph_targets = 0
+            mesh_vertices = []
             for mesh in meshes:
                 v = headers[mesh['positions']][0]
                 t = headers[mesh['triangles']][0]
                 require(len(v) == len(t) == 2 and v[1] == t[1] == 3,
                         'RIG_BINARY', 'Invalid native mesh array shapes.')
                 vertices += v[0]
+                mesh_vertices.append(v[0])
                 triangles += t[0]
                 require(isinstance(mesh['morphs'], dict) and len(mesh['morphs']) <= limits['morphs'],
                         'RIG_LIMIT_MORPHS', 'Morph target count exceeds the load budget.')
@@ -422,6 +458,7 @@ def _check_load_headers(metadata, headers, limits, kind, descriptor, max_total_m
                         expected=max_total_morph_targets, observed=total_morph_targets)
             require(vertices <= limits['vertices'], 'RIG_LIMIT_VERTICES', 'Actual native vertex count exceeds the load budget.')
             require(triangles <= limits['triangles'], 'RIG_LIMIT_TRIANGLES', 'Actual native triangle count exceeds the load budget.')
+            return tuple(mesh_vertices), triangles
         elif kind == 'skin':
             require(len(metadata['joints']) <= limits['bones'], 'RIG_LIMIT_BONES', 'Native skin joint count exceeds the load budget.')
             for name in ('weights', 'indices'):
@@ -447,7 +484,7 @@ def _check_clip_load_limits(clip, limits, keyframes):
 
 
 def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_targets=None,
-                    captured_manifest_bytes=None):
+                    captured_manifest_bytes=None, inspect_admission=None):
     from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = LoadBudget(limits)
     budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)
@@ -461,15 +498,31 @@ def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_ta
         require(len(manifest['skeleton']['bones']) <= limits['bones'], 'RIG_LIMIT_BONES',
                 'Skeleton exceeds the caller/manifest bone budget.')
     require(len(manifest['animations']) <= limits['clips'], 'RIG_LIMIT_CLIPS', 'Animation count exceeds the load budget.')
+    inventory = {}
     for descriptor, kind in [(manifest['geometry'], 'geometry')] + [(d, 'skin') for d in manifest['skins']]:
         path = safe_path(root, descriptor['data']['path'], exists=True)
         meta, headers, _ = scan_bundle(path, limits, budget, descriptor['data']['sha256'])
-        _check_load_headers(meta, headers, limits, kind, descriptor, max_total_morph_targets)
-    keyframes = 0
+        shape = _check_load_headers(meta, headers, limits, kind, descriptor, max_total_morph_targets)
+        if inspect_admission is not None:
+            if kind == 'geometry':
+                mesh_vertices, triangles = shape
+                inventory.update(mesh_vertices=mesh_vertices, triangles=triangles,
+                                 materials=len(meta['materials']), images=len(meta['images']),
+                                 textures=len(meta['textures']), samplers=len(meta['samplers']),
+                                 extension_tokens=len(meta['extensions_used']) + sum(
+                                     len(group) for _, group in retained_extension_groups(
+                                         meta['materials'], meta['textures'], meta['samplers'])),
+                                 mesh_channels=sum(len(mesh['attributes']) + sum(map(len, mesh['morphs'].values()))
+                                                   for mesh in meta['meshes']))
+            else:
+                inventory['skin_joints'] = inventory.get('skin_joints', 0) + len(meta['joints'])
+    keyframes = channels = 0
     for descriptor in manifest['animations']:
         clip = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True),
                                  expected_hash=descriptor['sha256']), 'AnimationClip')
         keyframes = _check_clip_load_limits(clip, limits, keyframes)
+        if inspect_admission is not None:
+            channels += len(clip['tracks'])
     for descriptor in manifest['validation']:
         budget.file(safe_path(root, descriptor['path'], exists=True))
     for descriptor in manifest['review']['receipts']:
@@ -477,17 +530,24 @@ def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_ta
                                           expected_hash=descriptor['sha256'], hash_code='RIG_EVIDENCE_CHANGED'), 'RigReviewReceipt')
         for evidence in receipt['evidence']:
             budget.file(safe_path(root, evidence['path'], exists=True))
+    if inspect_admission is not None:
+        inventory.update(clip_channels=channels)
+        inspect_admission(frozenset(path.relative_to(root).as_posix() for path in budget.files),
+                          inventory, budget.report(), dict(limits))
     return budget.report()
 
 
 def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | None = None,
              expected_manifest_sha256: str | None = None,
-             max_total_morph_targets: int | None = None) -> RigAsset:
+             max_total_morph_targets: int | None = None, inspect_admission=None) -> RigAsset:
     """Load using restrictive caller caps without modifying source/review identity.
 
     Aggregate admission precedes every NumPy allocation. Limits cover native input
     loading, not an OS memory sandbox or subsequent evaluation/render operations.
     An optional manifest pin checks the exact captured JSON bytes before decoding.
+    A trusted inspection adapter may supply an admission callback to check the
+    consumed relative paths and reserve its own work from header counts before
+    materialization. The callback runs on the caller's immutable snapshot.
     """
     from rig_load_limits import LoadBudget, effective_limits
     if max_total_morph_targets is not None:
@@ -504,7 +564,7 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     captured_manifest_bytes = manifest_budget.json_bytes
     limits = effective_limits(manifest['limits'], limits)
     _preflight_load(root, manifest, limits, verify_source, max_total_morph_targets=max_total_morph_targets,
-                    captured_manifest_bytes=captured_manifest_bytes)
+                    captured_manifest_bytes=captured_manifest_bytes, inspect_admission=inspect_admission)
     budget = LoadBudget(limits)
     # Count the already parsed manifest in the live aggregate as well.
     budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)

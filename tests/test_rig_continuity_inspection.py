@@ -122,6 +122,283 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertEqual(d['hierarchy'][1]['skin'], 0)
         self.assertFalse(d['visual_approval']);self.assertEqual(d['semantic_equivalence'],'unverified')
 
+    def test_saved_and_restored_native_rig_inspection_is_read_only(self):
+        from rig_package import package_rig, restore_rig
+        from rig_test_helpers import fixture
+
+        rig = fixture(self.root)
+        archive = self.root / 'run.zip'
+        restored = self.root / 'restored'
+        package_rig(rig.root, archive)
+        restore_rig(archive, restored)
+        original, restored_request = (self.native_request(folder) for folder in (rig.root, restored))
+
+        before = {path.relative_to(self.root): path.read_bytes()
+                  for path in self.root.rglob('*') if path.is_file()}
+        self.assertNotIn(Path('.restored.rig.lock'), before)
+        comparison = compare_assets(self.root, original, restored_request)
+        self.assertEqual(before, {path.relative_to(self.root): path.read_bytes()
+                                  for path in self.root.rglob('*') if path.is_file()})
+        self.assertTrue(comparison['byte_identity'])
+        self.assertTrue(comparison['geometry_identity'])
+        self.assertTrue(comparison['material_identity'])
+        self.assertFalse(comparison['visual_approval'])
+        inspection = comparison['right']['inspection']
+        self.assertEqual(comparison['right']['sha256'], digest(inspection))
+        self.assertEqual(inspection['analysis']['vertices'], 4)
+        self.assertEqual(inspection['hierarchy'][1]['parent'], 'bone-0')
+        self.assertEqual(inspection['skins']['mesh-0']['weights']['shape'], [4, 4])
+        self.assertEqual(len(inspection['skins']['mesh-0']['inverse_bind_matrices']), 3)
+        self.assertTrue(inspection['source_features']['animation_channels'])
+        self.assertGreater(inspection['native_analysis_admission']['estimated_memory_bytes'],
+                           inspection['native_load_admission']['estimated_memory_bytes'])
+
+        request_file = self.root / 'inspect.json'
+        request_file.write_bytes(canonical_bytes(restored_request))
+        cli = subprocess.run([sys.executable, str(ROOT / 'scripts/continuity_inspection.py'),
+                              '--root', str(self.root), '--request', str(request_file)],
+                             capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(cli.stdout), comparison['right'])
+        self.assertFalse((self.root / '.restored.rig.lock').exists())
+
+    def test_saved_receipt_coordinates_do_not_alias_owner_or_other_receipts(self):
+        from unittest.mock import patch
+
+        from rig_contracts import COORDINATES
+        from rig_test_helpers import fixture
+
+        rig = fixture(self.root)
+        request = self.native_request(rig.root)
+        left = inspect_asset(self.root, **request)
+        right = inspect_asset(self.root, **request)
+        with patch.dict(COORDINATES):
+            left['inspection']['coordinates']['unit'] = 'edited-fixture-unit'
+            self.assertEqual(COORDINATES['unit'], 'meter')
+            self.assertEqual(right['inspection']['coordinates']['unit'], 'meter')
+            self.assertEqual(right['sha256'], digest(right['inspection']))
+
+    def test_saved_rig_requires_exact_consumed_inventory_and_analysis_budget(self):
+        from unittest.mock import patch
+        from rig_errors import RigError
+        from rig_test_helpers import fixture
+
+        rig = fixture(self.root, animated=False)
+        request = self.native_request(rig.root)
+        receipt = inspect_asset(self.root, **request)['inspection']
+        memory = receipt['native_analysis_admission']['estimated_memory_bytes']
+        note = rig.root / 'notes.txt'
+        note.write_text('Ordinary project notes outside the consumed rig files.')
+        with patch('rig_models._materialize_array', side_effect=AssertionError('materialized')):
+            with self.assertRaisesRegex(ValueError, 'CONTINUITY_INSPECTION_CLOSURE'):
+                inspect_asset(self.root, request['source'],
+                              dependencies=[*request['dependencies'], pointer(self.root, note)])
+            with self.assertRaises(RigError) as missing:
+                inspect_asset(self.root, request['source'], dependencies=[
+                    ref for ref in request['dependencies'] if not ref['path'].endswith('/identity.json')])
+            self.assertEqual(missing.exception.report['code'], 'RIG_MISSING_ASSET')
+            with self.assertRaises(RigError) as insufficient:
+                inspect_asset(self.root, **request, limits={'memory_bytes': memory - 1})
+            self.assertEqual(insufficient.exception.report['code'], 'RIG_LIMIT_MEMORY')
+            self.assertEqual(insufficient.exception.report['observed'], memory)
+
+    def test_native_comparison_rechecks_with_the_admitted_closure_limits(self):
+        from rig_errors import RigError
+        from rig_jobs import save_rig
+        from rig_test_helpers import fixture
+
+        rig = fixture(self.root)
+        original = rig.root / rig.manifest['source']['path']
+        original_limit = original.stat().st_size
+        rig.manifest['limits']['source_bytes'] = original_limit
+        save_rig(rig, operation='fixture-source-limit')
+        self.assertGreater((rig.root / 'rig.json').stat().st_size, original_limit)
+        request = self.native_request(rig.root)
+
+        direct = inspect_asset(self.root, **request)
+        comparison = compare_assets(self.root, request, request)
+        self.assertEqual(comparison['left'], direct)
+        self.assertEqual(comparison['right'], direct)
+        self.assertTrue(comparison['byte_identity'])
+        self.assertEqual(direct['inspection']['native_load_admission']['limits']['source_bytes'],
+                         original_limit)
+
+        rig.manifest['limits']['source_bytes'] = original_limit - 1
+        save_rig(rig, operation='fixture-source-limit-one-byte-below')
+        with self.assertRaises(RigError) as below:
+            inspect_asset(self.root, **self.native_request(rig.root))
+        self.assertEqual(below.exception.report['code'], 'RIG_LIMIT_BINARY')
+        self.assertEqual(below.exception.report['observed'], original_limit)
+
+    def test_material_identity_is_unknown_across_saved_rig_and_source_gltf(self):
+        from rig_test_helpers import fixture
+
+        rig = fixture(self.root)
+        saved = self.native_request(rig.root)
+        gltf_source = dict(source=pointer(self.root, rig.root / rig.manifest['source']['path']))
+        for left, right in ((saved, gltf_source), (gltf_source, saved)):
+            with self.subTest(left=left['source']['kind']):
+                comparison = compare_assets(self.root, left, right)
+                self.assertTrue(comparison['geometry_identity'])
+                source_left = comparison['left']['inspection']
+                source_right = comparison['right']['inspection']
+                for field in ('materials', 'textures', 'texture_bindings', 'samplers'):
+                    self.assertEqual(source_left[field], source_right[field])
+                self.assertIsNone(comparison['observed_material_identity'])
+                self.assertIsNone(comparison['material_identity'])
+                self.assertTrue(comparison['needs_visual_review'])
+
+    def test_retained_resource_extensions_leave_saved_material_identity_unknown(self):
+        from rig_jobs import create_run
+
+        extension = 'EXT_fixture_mode'
+        for location in ('textures', 'samplers', 'texture_bindings', 'pbrMetallicRoughness',
+                         'material_extensions', 'texture_transforms'):
+            requests = []
+            for mode in (1, 2):
+                folder = self.root / (location + str(mode))
+                folder.mkdir()
+                source, builder = gltf(folder)
+                body = builder.json
+                body['extensionsUsed'] = [extension]
+                body['samplers'] = [{}]
+                body['textures'][0]['sampler'] = 0
+                material = body['materials'][0]
+                pbr = material['pbrMetallicRoughness']
+                binding = pbr['baseColorTexture']
+                if location == 'material_extensions':
+                    body['extensionsUsed'].append('KHR_materials_unlit')
+                    material['extensions'] = {'KHR_materials_unlit': {}}
+                    target = material['extensions']['KHR_materials_unlit']
+                elif location == 'texture_transforms':
+                    body['extensionsUsed'].append('KHR_texture_transform')
+                    binding['extensions'] = {'KHR_texture_transform': {}}
+                    target = binding['extensions']['KHR_texture_transform']
+                else:
+                    target = {'textures': body['textures'][0], 'samplers': body['samplers'][0],
+                              'pbrMetallicRoughness': pbr, 'texture_bindings': binding}[location]
+                target['extensions'] = {extension: {'mode': mode}}
+                builder.write(source)
+                rig = create_run(source, folder / 'saved', identifier='fixture')
+                requests.append(self.native_request(rig.root))
+            with self.subTest(location=location):
+                comparison = compare_assets(self.root, *requests)
+                self.assertFalse(comparison['byte_identity'])
+                self.assertIsNone(comparison['material_identity'])
+                for side in ('left', 'right'):
+                    report = comparison[side]['inspection']
+                    self.assertEqual(report['material_coverage'], 'partial')
+                    self.assertIn(digest(location + '/' + extension), report['source_features']['unsupported_extensions'])
+                    self.assertNotIn(extension, json.dumps(report))
+
+    def test_saved_resource_extension_budget_counts_occurrences_before_array_load(self):
+        from rig_jobs import create_run
+        from unittest.mock import patch
+
+        source, builder = gltf(self.root)
+        names = ['EXT_fixture_' + str(index) for index in range(43)]
+        builder.json['extensionsUsed'] = names
+        group = {name: {} for name in names}
+        builder.json['samplers'] = [{'extensions': group}]
+        builder.json['textures'][0].update(sampler=0, extensions=group)
+        builder.json['materials'][0]['pbrMetallicRoughness']['baseColorTexture']['extensions'] = group
+        builder.write(source)
+        rig = create_run(source, self.root / 'saved', identifier='fixture')
+        request = self.native_request(rig.root)
+        with patch('rig_models._materialize_array', side_effect=AssertionError('materialized')):
+            with self.assertRaisesRegex(ValueError, 'CONTINUITY_INSPECTION_LIMIT'):
+                inspect_asset(self.root, **request)
+
+    def test_saved_image_is_decoded_before_material_comparison(self):
+        from rig_errors import RigError
+        from rig_jobs import create_run, save_rig
+
+        source, _ = gltf(self.root)
+        original = create_run(source, self.root / 'original-texture', identifier='original-texture')
+        unchanged = self.native_request(original.root)
+        self.assertTrue(compare_assets(self.root, unchanged, unchanged)['material_identity'])
+
+        for name, error in (('truncated', 'RIG_TEXTURE_DECODE'), ('wrong-mime', 'RIG_TEXTURE_FORMAT')):
+            malformed = create_run(source, self.root / name, identifier=name)
+            saved = malformed.geometry.images[0]
+            if name == 'truncated':
+                saved.data = saved.data[:33]
+            else:
+                saved.mime_type = 'image/jpeg'
+            save_rig(malformed, operation='fixture-change-saved-image')
+            with self.subTest(name=name), self.assertRaises(RigError) as caught:
+                compare_assets(self.root, unchanged, self.native_request(malformed.root))
+            self.assertEqual(caught.exception.report['code'], error)
+
+    def test_saved_image_uses_already_admitted_pixel_capacity(self):
+        from rig_errors import RigError
+        from rig_jobs import create_run, save_rig
+
+        path, builder = gltf(self.root)
+        image = io.BytesIO()
+        Image.new('RGB', (2048, 2048), (20, 40, 60)).save(image, format='PNG')
+        builder.json['images'] = [dict(mimeType='image/png', bufferView=builder.view(image.getvalue()))]
+        builder.write(path)
+        limits = dict(memory_bytes=80 * 1024**2)
+        rig = create_run(path, self.root / 'large-texture', identifier='large-texture')
+        rig.manifest['limits'].update(limits)
+        save_rig(rig, operation='fixture-limit-saved-image-admission')
+        request = self.native_request(rig.root)
+        default = inspect_asset(self.root, **request)['inspection']
+        explicit = inspect_asset(self.root, **request, limits=limits)['inspection']
+        self.assertEqual(explicit['native_analysis_admission'], default['native_analysis_admission'])
+        self.assertEqual(explicit['material_coverage'], 'supported-profile')
+        self.assertEqual(explicit['material_sha256'], default['material_sha256'])
+        lower = explicit['native_analysis_admission']['estimated_memory_bytes'] - 1
+        with self.assertRaises(RigError) as caught:
+            inspect_asset(self.root, **request, limits=dict(memory_bytes=lower))
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+
+    def test_saved_external_image_uses_dependency_cap(self):
+        from rig_jobs import create_run, save_rig
+
+        path, _ = gltf(self.root, name='external.gltf', external=True)
+        texture = self.root / 'texture.png'
+        channels = np.random.default_rng(557).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+        Image.fromarray(channels).save(texture)
+        rig = create_run(path, self.root / 'external-texture', identifier='external-texture')
+        original = rig.root / rig.manifest['source']['path']
+        source_limit = original.stat().st_size
+        self.assertGreater(texture.stat().st_size, source_limit)
+        rig.manifest['limits']['source_bytes'] = source_limit
+        save_rig(rig, operation='fixture-separate-texture-cap')
+        report = inspect_asset(self.root, **self.native_request(rig.root))['inspection']
+        self.assertEqual(report['native_load_admission']['limits']['source_bytes'], source_limit)
+        self.assertEqual(report['material_coverage'], 'supported-profile')
+
+    def test_material_change_is_measured_between_saved_rigs(self):
+        from rig_jobs import save_rig
+        from rig_test_helpers import fixture
+
+        original = fixture(self.root, name='original')
+        changed = fixture(self.root, name='material-variant')
+        changed.geometry.materials[0]['pbrMetallicRoughness'] = {'baseColorFactor': [1., .2, .3, 1.]}
+        save_rig(changed, operation='fixture-change-material')
+        comparison = compare_assets(self.root, self.native_request(original.root),
+                                    self.native_request(changed.root))
+        self.assertTrue(comparison['geometry_identity'])
+        self.assertFalse(comparison['observed_material_identity'])
+        self.assertFalse(comparison['material_identity'])
+
+    def native_request(self, folder):
+        manifest = json.loads((folder / 'rig.json').read_bytes())
+        dependencies = {'identity.json', manifest['geometry']['data']['path']}
+        dependencies.update(entry['path'] for entry in manifest['source']['dependencies'])
+        dependencies.update(entry['data']['path'] for entry in manifest['skins'])
+        dependencies.update(entry['path'] for entry in manifest['animations'] + manifest['validation'])
+        for receipt in manifest['review']['receipts']:
+            dependencies.add(receipt['path'])
+            decision = json.loads((folder / receipt['path']).read_bytes())
+            dependencies.update(entry['path'] for entry in decision['evidence'])
+        return dict(source=pointer(self.root, folder / 'rig.json', kind='hatch-3d-rig',
+                                   identity=manifest['id'], version=manifest['version']),
+                    dependencies=[pointer(self.root, folder / path, kind='native-dependency')
+                                  for path in sorted(dependencies)])
+
     def test_texture_coordinates_follow_transform_override_and_core_fallback(self):
         path, builder = gltf(self.root)
         attrs = builder.json['meshes'][0]['primitives'][0]['attributes']
