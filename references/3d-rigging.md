@@ -477,7 +477,9 @@ about its neighbour axis is no larger than a first-order rounding bound,
 Here `s` is the largest absolute coordinate of the joint and its two neighbours,
 `p` is the largest absolute coordinate of the previous joint and the pole, the
 axis and perpendicular lengths are Euclidean, and each cotangent is the along-axis
-component divided by the perpendicular length. This preserves matched seeds at
+component of the point or pole offset from the previous joint divided by its
+perpendicular length. A bound of one radian or more means a perpendicular is not
+resolved at all, so the joint is never steered by such an arbitrary angle. This preserves matched seeds at
 nested near-pi folds, where a single matching pole cannot be exactly consistent
 with the rounded seed geometry; at least twice the first-order estimate is needed
 there. A smaller request is left unsteered, and the solve still reports its
@@ -496,7 +498,8 @@ radians at fold gaps of `1e-3`, `1e-5` and `1e-7`; at a `1e-3` gap it is about
 `9e-10` and `9e-4` radians at translations of 0 and a thousand kilometres (and
 `9e-12`, `9e-9` and `9e-6` radians at 0, one kilometre and a thousand kilometres
 with a ten-meter axial offset). A pole nearly on the axis also raises it, to
-about `3e-8` radians at `1e-7` meters off-axis. The elbow motion left unsteered
+about `1e-8` to `4e-8` radians at `1e-7` meters off-axis, depending on the bend
+and the pole's position along the axis. The elbow motion left unsteered
 is the bound times the joint radius; an unconditional rotation would follow such
 requests. A single matching pole also cannot preserve folds that alternate sides
 of their neighbour axes, such as unequal nested gaps or 6+ joint zigzags; that

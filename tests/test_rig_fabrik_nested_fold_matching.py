@@ -89,6 +89,18 @@ class RigFabrikNestedFoldMatchingTests(unittest.TestCase):
         achieved = math.atan2(float(np.dot(perp, other)), float(np.dot(perp, bent)))
         return abs(achieved-angle)/angle
 
+    def test_nested_folds_just_above_the_axis_cutoff_preserve_matched_seed(self):
+        # Neighbour axes just above the 1e-8 m skip leave a perpendicular below
+        # its own rounding; its measured angle is arbitrary and must not steer.
+        for count in (4, 5):
+            skeleton = chain_skeleton(count)
+            for rotation in (quaternion([.3, .2, 1], .61), quaternion([1, -.4, .2], 2.3)):
+                for translation in (None, [3., -2., 5.]):
+                    for gap in (1.02e-8, 1.08e-8, 1.12e-8, 1.3e-8, 2e-8):
+                        with self.subTest(count=count, rotation=rotation, translation=translation, gap=gap):
+                            pose = zigzag_pose(skeleton, gap, root_rotation=rotation, root_translation=translation)
+                            self.assert_preserved(skeleton, pose, 1e-10)
+
     def test_measurable_pole_changes_still_steer_interior_joints(self):
         # Small but resolvable changes, including 1e-12 rad at exact
         # coordinates, must not be mistaken for rounding (see PR #529).

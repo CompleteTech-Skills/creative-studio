@@ -332,6 +332,8 @@ def _pole_perpendicular(direction, origin, pole):
 # Safety factor on first-order rounding of FABRIK steering directions. Point
 # rounding accumulates through FK, and an axis is a difference of two points.
 _STEERING_ROUNDING_FACTOR = 4.
+# First-order steering uncertainty at which a perpendicular carries no direction.
+_STEERING_UNRESOLVED_RADIANS = 1.
 
 
 def _pole_steering_unresolved(previous, point, following, pole):
@@ -369,6 +371,10 @@ def _pole_steering_unresolved(previous, point, following, pole):
     uncertainty = _STEERING_ROUNDING_FACTOR*(
         point_rounding/span*abs(current_along/current_norm-offset_along/pole_norm)
         +point_rounding/current_norm+pole_rounding/pole_norm)
+    # An uncertainty near a radian means a perpendicular is no longer resolved
+    # at all, so the measured angle is arbitrary anywhere in [0, pi].
+    if uncertainty >= _STEERING_UNRESOLVED_RADIANS:
+        return True
     # atan2 resolves small angles that acos(cos) would round to zero.
     angle = math.atan2(float(np.linalg.norm(np.cross(current_perp, pole_perp))),
                        float(np.dot(current_perp, pole_perp)))
