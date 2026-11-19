@@ -4942,7 +4942,8 @@
       "sha256": "e7222dfe1ab61a6fa3e0a3b443e44e9296eab9656ef65cfeca7e42f3d1f342b7",
       "purpose": "Exact bytes of the job-binding tests at the revision above, retained so test addresses resolve without that unmerged revision; validate.py also cross-checks git when the revision is available."
     },
-    "observed_focused_passed": 6,
+    "owner_reported_focused_passed": 6,
+    "owner_reported_run_status": "unverified by this retained audit",
     "scope": "Actual SQLite/native owner workflow, synthetic decoded PNG fixtures; not Blender/remote scheduling.",
     "remaining": "Integrate exact owner source, newly spawned whole-final-head review, current hosted and postmerge verification."
   },

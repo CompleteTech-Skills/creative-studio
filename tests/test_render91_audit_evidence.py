@@ -129,6 +129,32 @@ class Render91AuditEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, 'receipts differ'):
                 self.validate.verify_recorded_runs(self.audit, workflow)
 
+    def test_recorded_snapshot_adapters_match_their_cli_operations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = shutil.copytree(EVIDENCE, Path(directory) / 'evidence')
+            workflow = json.loads((out / 'source-workflow.json').read_bytes())
+            exchanges = (
+                ('native-source-snapshot', 'scene-source-snapshot'),
+                ('native-capture.stdout.json', 'scene-capture.stdout.json'),
+                ('native-relocated-verify.stdout.json', 'scene-verify.stdout.json'),
+            )
+            intermediate = out / 'swap'
+            for left, right in exchanges:
+                (out / left).rename(intermediate)
+                (out / right).rename(out / left)
+                intermediate.rename(out / right)
+            for row in workflow['artifacts']:
+                for left, right in exchanges:
+                    if row['path'] == left or row['path'].startswith(left + '/'):
+                        row['path'] = right + row['path'][len(left):]
+                        break
+                    if row['path'] == right or row['path'].startswith(right + '/'):
+                        row['path'] = left + row['path'][len(right):]
+                        break
+            with mock.patch.object(self.validate, 'out', out):
+                with self.assertRaisesRegex(AssertionError, 'adapter differs from recorded operation'):
+                    self.validate.verify_recorded_runs(self.audit, workflow)
+
     def test_snapshot_members_must_match_the_workflow_inventory_and_bytes(self):
         for member in ('native-source-snapshot/source/render91-fixture.glb',
                        'scene-source-snapshot/triangle.obj'):

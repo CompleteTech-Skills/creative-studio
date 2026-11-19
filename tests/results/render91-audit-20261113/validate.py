@@ -108,10 +108,12 @@ def verify_recorded_runs(data,workflow):
        'Hosted evidence does not record the claimed successful PR checks.')
 
  pairs=(
-  ('native_capture_relocated_verify_equal','native-capture','native-relocated-verify','native-source-snapshot/snapshot.json'),
-  ('scene_capture_verify_equal','scene-capture','scene-verify','scene-source-snapshot/snapshot.json'),
+  ('native_capture_relocated_verify_equal','native-capture','native-relocated-verify',
+   'native-source-snapshot/snapshot.json','native-rig-preview'),
+  ('scene_capture_verify_equal','scene-capture','scene-verify',
+   'scene-source-snapshot/snapshot.json','scene3d-project'),
  )
- expected_commands=[(name+'.stdout.json',name+'.stderr.txt') for _,first,second,_ in pairs for name in (first,second)]
+ expected_commands=[(name+'.stdout.json',name+'.stderr.txt') for _,first,second,_,_ in pairs for name in (first,second)]
  commands=workflow['commands']
  check(workflow['source_revision']==data['foundation_revision']
        and data['source_workflow']=='source-workflow.json'
@@ -123,14 +125,17 @@ def verify_recorded_runs(data,workflow):
  expected_paths={name for command in expected_commands for name in command}
  check(len(artifacts)==len(workflow['artifacts'])
        and expected_paths.issubset(artifacts)
-       and all(snapshot in artifacts for _,_,_,snapshot in pairs),
+       and all(snapshot in artifacts for _,_,_,snapshot,_ in pairs),
        'Retained workflow output is absent or duplicated in the verified artifact inventory.')
- for flag,first,second,snapshot in pairs:
+ for flag,first,second,snapshot,expected_adapter in pairs:
   captured=json.loads((out/(first+'.stdout.json')).read_bytes())
   verified=json.loads((out/(second+'.stdout.json')).read_bytes())
   retained=json.loads((out/snapshot).read_bytes())
   check(workflow[flag] is True and captured==verified==retained,
         'Retained capture and verification receipts differ.')
+  adapter=retained.get('adapter') if isinstance(retained,dict) else None
+  check(isinstance(adapter,dict) and adapter.get('id')==expected_adapter,
+        'Retained snapshot adapter differs from recorded operation.')
   expected_paths.update(verify_snapshot_inventory(snapshot,retained,artifacts))
  check(expected_paths==artifacts.keys(), 'Unexpected artifact in recorded source workflow.')
  for path,item in artifacts.items():
