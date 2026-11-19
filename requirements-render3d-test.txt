@@ -1,0 +1,4 @@
+# Optional independent Render3D decoder acceptance; kept outside the 2D environment.
+-r requirements-rig-test.txt
+OpenEXR==3.5.4
+pypng==0.20220715.0

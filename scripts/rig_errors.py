@@ -324,7 +324,8 @@ def safe_path(root: str | Path, name: str, *, exists: bool = False, profile: str
 
 
 @contextmanager
-def open_payload(root: str | Path, name: str, *, root_identity=None, profile: str = 'default'):
+def open_payload(root: str | Path, name: str, *, root_identity=None, profile: str = 'default',
+                 buffering: int = -1):
     """Open an admitted regular payload without following replaceable parents.
 
     Reads remain the caller's responsibility and must be bounded. Descriptor and
@@ -363,7 +364,7 @@ def open_payload(root: str | Path, name: str, *, root_identity=None, profile: st
             descriptor = os.open(parts[-1], flags | os.O_NOFOLLOW, dir_fd=descriptors[-1])
         else:
             descriptor = os.open(target, flags)
-        with os.fdopen(descriptor, 'rb') as stream:
+        with os.fdopen(descriptor, 'rb', buffering=buffering) as stream:
             before = os.fstat(stream.fileno())
             require(stat.S_ISREG(before.st_mode), 'RIG_PAYLOAD_TYPE',
                     'Payload must be a regular file.', asset=name)
