@@ -405,7 +405,9 @@ def _save_admitted(root, data):
 def _require_current_handoff(root, data):
     """A returned claim must still belong to its durable native journal."""
     with _pinned_journal_admission(root):
-        current = manifest(root, recovery=True)
+        # Equality with the admitted state is distinct from accounting recovery.
+        # Genuine migrated, unbudgeted histories predate modern claim hashes.
+        current = input_json(Path(root) / 'imagegen-jobs.json')
         if hash_object(current) != hash_object(data):
             raise ValueError('native claim differs from its current on-disk journal')
 

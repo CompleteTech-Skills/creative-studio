@@ -751,3 +751,28 @@ The unchanged passive observer in `tests/test_native_outer_handoff.py` checks
 actual input reads around the outer save. The unpublished-owner regression suite
 uses real temporary journals and ledgers with explicitly scheduled interruptions;
 it does not claim provider execution or arbitrary concurrent-process isolation.
+
+
+## Final production handoff and retained historical claims
+
+The final journal check compares the bounded, pinned on-disk journal with the
+already admitted claim state. It does not apply the stricter budget-recovery
+contract to unbudgeted histories that legitimately predate generation-profile
+projection hashes. Actual accounting recovery keeps its existing validation.
+The original schema-2 CLI comparison is preserved in
+`tests/independent/test_native_historical_retry.py`; run it from a checkout with
+the two pinned historical commits available using the supported Python. It
+executes the old CLI, migration and retries, without a provider. The automatic
+old-history regression is explicitly a synthetic retained-format fixture.
+
+For production acquisition, Hatch's canonical claim owner retains its exact
+captured-input validator through the outer production receipt. The production
+owner invokes that same validator before returning the handoff, while the
+original run admission is still held. This ephemeral internal callback adds no
+journal field or second identity store. It rechecks captured prompt/request/
+profile/settings bytes, attachment hashes, job descriptors and the durable
+journal; an absent optional settings file is also part of the identity.
+A refusal preserves the published running token and any ledger reservation for
+explicit reconciliation; it does not invent provider usage or refund a hold.
+The unchanged passive observer and actual disposable post-receipt mutations
+exercise both budgeted and unbudgeted paths.
