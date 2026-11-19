@@ -106,7 +106,14 @@ setup rejects the optical or render state after color setup, the adapter
 restores the prior scene color settings and affected camera bindings. A standalone
 `apply_camera` exposure change clears the scene and camera color hashes. An
 optics-only update to the same bound camera retains its binding when effective
-exposure stays the same. Switching cameras releases the former camera's binding.
+exposure stays the same. The adapter reads back the effective color settings
+after the view layer updates, while it can still restore the previous camera.
+Switching cameras releases the former camera's binding for the owning scene.
+Activation requires a camera object exclusive to that scene because it
+replaces the object's optics and pose. A scene-only profile change preserves
+another scene's camera tag, even when both scenes previously used the same
+profile. Older single-scene tags remain supported. A shared legacy tag with
+ambiguous ownership requires an exclusive camera before it can be invalidated.
 Use `apply_camera_with_color` to bind the replacement. Other renderers must provide
 an explicit color-management adapter. Browser white balance remains
 unsupported by this binding.

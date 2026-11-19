@@ -10,6 +10,9 @@ import math
 
 from camera3d_contracts import validate
 from camera3d_math import optical_gate, world_transform, blender_camera_transform, _matrix
+from lookdev_color import (CAMERA_COLOR_OWNER, COLOR_HASH, camera_is_shared, color_state,
+                           release_camera_color, restore_color_state, restore_property,
+                           verify_color_state)
 
 
 def camera_world(camera, *, parent_world=None, rig=None):
@@ -131,6 +134,9 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
             raise ValueError('camera3d requires an unparented, unanimated, unconstrained camera')
         if camera_object.name not in scene.objects:
             raise ValueError('camera3d camera must belong to the supplied scene')
+        owner = camera_object.get(CAMERA_COLOR_OWNER)
+        if camera_is_shared(scene, camera_object) or (owner is not None and owner != scene):
+            raise ValueError('camera3d cannot activate a shared camera object; supply an exclusive camera')
     aspect = render['pixel_aspect']['numerator'] / render['pixel_aspect']['denominator']
     render_values = dict(resolution_x=int(render['width']), resolution_y=int(render['height']),
                          resolution_percentage=100, pixel_aspect_x=max(1.0, aspect),
@@ -145,19 +151,20 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
     previous_active = scene.camera
     previous_data = None if camera_object is None else camera_object.data
     previous_pose = None if camera_object is None else camera_object.matrix_basis.copy()
-    hash_property = 'hatch_color_sha256'
-    previous_scene_hash = scene.get(hash_property)
+    previous_scene_hash = scene.get(COLOR_HASH)
+    previous_color = color_state(scene) if previous_scene_hash is not None else []
     if color_sha256 is not None:
         if color_sha256 != previous_scene_hash or not math.isclose(
                 previous_exposure, plan['exposure'], rel_tol=2e-6,
                 abs_tol=min(1e-7, abs(plan['exposure']) * 2e-6)):
             raise ValueError('camera3d shared color binding requires configured scene exposure and hash')
-    binding_owners = [scene]
+    binding_owners = []
     if previous_active is not None:
         binding_owners.append(previous_active)
     if camera_object is not None and camera_object != previous_active:
         binding_owners.append(camera_object)
-    previous_bindings = [(owner, owner.get(hash_property)) for owner in binding_owners]
+    previous_bindings = [(owner, key, owner.get(key)) for owner in binding_owners
+                         for key in (COLOR_HASH, CAMERA_COLOR_OWNER)]
     new_object = None
     camera = bpy.data.cameras.new(name)
     try:
@@ -171,8 +178,10 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
         # Finish the range-sensitive writes before swapping the active camera.
         for key, value in render_values.items():
             _set_exact(scene.render, key, value)
+        applied_exposure = previous_exposure
         if color_sha256 is None:
             _set_exact(scene.view_settings, 'exposure', plan['exposure'])
+            applied_exposure = scene.view_settings.exposure
         if camera_object is None:
             new_object = bpy.data.objects.new(name, camera)
             scene.collection.objects.link(new_object)
@@ -181,17 +190,32 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
             camera_object.data = camera
         camera_object.matrix_world = pose
         scene.camera = camera_object
-        bpy.context.view_layer.update()
-        if previous_active is not None and previous_active != camera_object and hash_property in previous_active:
-            del previous_active[hash_property]
-        if color_sha256 is not None:
-            camera_object[hash_property] = color_sha256
+        if bpy.context.scene == scene:
+            bpy.context.view_layer.update()
         else:
-            if scene.view_settings.exposure != previous_exposure and hash_property in scene:
-                del scene[hash_property]
-            if (camera_object != previous_active or camera_object.get(hash_property) != scene.get(hash_property)):
-                if hash_property in camera_object:
-                    del camera_object[hash_property]
+            for layer in scene.view_layers:
+                layer.update()
+        if scene.camera != camera_object:
+            raise ValueError('camera3d Blender changed the active camera during evaluation')
+        # The dependency graph can run handlers after the color authority's
+        # initial readback. Validate before releasing any previous camera data.
+        if previous_active is not None and previous_active != camera_object:
+            release_camera_color(scene, previous_active)
+        if color_sha256 is not None:
+            if scene.get(COLOR_HASH) != color_sha256:
+                raise ValueError('camera3d scene color binding changed during evaluation')
+            camera_object[CAMERA_COLOR_OWNER] = scene
+            camera_object[COLOR_HASH] = color_sha256
+        else:
+            if scene.view_settings.exposure != previous_exposure and COLOR_HASH in scene:
+                del scene[COLOR_HASH]
+            if camera_object != previous_active or camera_object.get(COLOR_HASH) != scene.get(COLOR_HASH):
+                release_camera_color(scene, camera_object)
+        if previous_color:
+            verify_color_state([(owner, field, applied_exposure if field == 'exposure' else original)
+                                for owner, field, original in previous_color])
+        elif scene.view_settings.exposure != applied_exposure:
+            raise ValueError('camera3d Blender changed exposure during evaluation')
     except Exception:
         if scene.camera != previous_active:
             scene.camera = previous_active
@@ -207,13 +231,11 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
                 setattr(scene.render, key, value)
         if scene.view_settings.exposure != previous_exposure:
             scene.view_settings.exposure = previous_exposure
-        for owner, original in previous_bindings:
-            if owner.get(hash_property) != original:
-                if original is None:
-                    del owner[hash_property]
-                else:
-                    owner[hash_property] = original
+        for owner, key, original in previous_bindings:
+            restore_property(owner, key, original)
+        restore_property(scene, COLOR_HASH, previous_scene_hash)
         bpy.data.cameras.remove(camera)
+        restore_color_state(previous_color)
         raise
     # Reclaiming an unused datablock is best-effort after camera activation.
     # The previous datablock must stay available until rollback is unnecessary.

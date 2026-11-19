@@ -30,6 +30,93 @@ def foreground_error(image, expected, tolerance):
     return error
 
 
+def check_binding_transactions(scene, optics, render, world_matrix, original):
+    import bpy
+    from camera3d_color import apply_camera_with_color
+    from lookdev_color import apply_configuration, configuration
+    from rig_errors import RigError
+
+    key = 'hatch_color_sha256'
+    camera = scene.camera
+    data = camera.data
+    other = bpy.data.scenes.new('Shared camera consumer')
+    other.render.engine = 'CYCLES'
+    other.camera = camera
+    # An unlinked active camera is legal in Blender and absent from users_scene.
+    try:
+        apply_camera_with_color(scene, optics, render, world_matrix=world_matrix,
+                                color_configuration=configuration(), camera_object=camera)
+    except ValueError as exc:
+        if 'shared camera' not in str(exc):
+            raise
+    else:
+        raise AssertionError('Explicit activation missed an unlinked active camera')
+    other.collection.objects.link(camera)
+    changed = configuration(view='Standard', exposure=1)
+    apply_configuration(other, original)
+    apply_configuration(other, changed)
+    if (camera.get(key), scene.get(key), other.get(key)) != (
+            original['sha256'], original['sha256'], changed['sha256']):
+        raise AssertionError('Scene-only update changed another scene\'s camera binding')
+    try:
+        apply_camera_with_color(other, optics, render, world_matrix=world_matrix,
+                                color_configuration=configuration(), camera_object=camera)
+    except ValueError as exc:
+        if 'shared camera' not in str(exc):
+            raise
+    else:
+        raise AssertionError('Explicit activation accepted a shared camera')
+    if (camera.data != data or scene.camera != camera or other.camera != camera
+            or camera.get(key) != original['sha256'] or scene.get(key) != original['sha256']
+            or other.get(key) != changed['sha256'] or other.view_settings.exposure != 1):
+        raise AssertionError('Rejected shared activation changed native state')
+    replacement, _ = apply_camera_with_color(other, optics, render, world_matrix=world_matrix,
+                                             color_configuration=changed)
+    if (other.camera != replacement or replacement.get(key) != changed['sha256']
+            or camera.get(key) != original['sha256'] or camera.data != data):
+        raise AssertionError('Switching away from a shared camera changed its owner binding')
+    bpy.data.scenes.remove(other)
+
+    def snapshot():
+        view = scene.view_settings
+        image = scene.render.image_settings
+        return (scene.camera, camera.data, camera.matrix_basis.copy(), len(bpy.data.cameras),
+                scene.get(key), camera.get(key), camera.get('hatch_color_scene'),
+                scene.display_settings.display_device, view.view_transform, view.look,
+                view.exposure, view.gamma, view.use_white_balance, view.white_balance_temperature,
+                view.white_balance_tint, view.use_curve_mapping, view.use_hdr_view,
+                image.color_management, image.file_format, image.color_depth, image.color_mode,
+                image.exr_codec, scene.render.resolution_x, scene.render.resolution_y)
+
+    before = snapshot()
+    observed = []
+
+    def change_exposure(updated, depsgraph):
+        if updated == scene and not observed:
+            before_exposure = updated.view_settings.exposure
+            updated.view_settings.exposure = 3
+            observed.extend((before_exposure, updated.view_settings.exposure))
+
+    bpy.app.handlers.depsgraph_update_post.append(change_exposure)
+    try:
+        try:
+            apply_camera_with_color(scene, optics, dict(render, width=128), world_matrix=world_matrix,
+                                    color_configuration=changed, camera_object=camera)
+        except RigError as exc:
+            if 'cannot represent exposure' not in str(exc):
+                raise
+        else:
+            raise AssertionError('Dependency-graph exposure change returned a stale receipt')
+    finally:
+        bpy.app.handlers.depsgraph_update_post.remove(change_exposure)
+    bpy.context.view_layer.update()
+    if observed != [1., 3.] or before != snapshot():
+        raise AssertionError('Dependency-graph rejection did not preserve native prestate')
+    return dict(shared_activation_rejected=True, scene_only_owner_preserved=True,
+                callback_exposure_before=observed[0], callback_exposure_after=observed[1],
+                restored_exposure=scene.view_settings.exposure)
+
+
 def main():
     import bpy
     import numpy as np
@@ -195,6 +282,8 @@ def main():
     if reopened.camera['hatch_color_sha256'] != receipts[-1]['configuration']['sha256'] or reopened['hatch_color_sha256'] != receipts[-1]['configuration']['sha256']:
         raise AssertionError('Hash binding did not survive native save/reopen')
     former = reopened.camera
+    transactions = check_binding_transactions(reopened, optics, render, world_matrix,
+                                              receipts[-1]['configuration'])
     linear_render = dict(render, output='exr', color_space='linear-srgb')
     apply_camera(reopened, optics, linear_render, world_matrix=world_matrix, camera_object=former, exposure=1)
     if former.get('hatch_color_sha256') != receipts[-1]['configuration']['sha256']:
@@ -210,9 +299,15 @@ def main():
         png_one_stop_mean_increase=exposure_difference, png_direct_foreground_errors=reference_errors,
         exr_expected_foreground_rgba=[.3, .3, .3, 1.], exr_foreground_errors=linear_errors,
         png_tint_mean_difference=tint_difference, linear_exr_maximum_difference=linear_difference,
-        source_material_and_lighting_unchanged=True, file_sha256=files,
-        source_sha256={name: hashlib.sha256((ROOT / 'scripts' / name).read_bytes()).hexdigest()
-            for name in ('camera3d_color.py', 'camera3d_blender.py', 'camera3d_math.py', 'lookdev_color.py', 'verify_camera3d_color.py')})
+        source_material_and_lighting_unchanged=True, binding_transactions=transactions, file_sha256=files,
+        source_sha256={path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in (
+            '.github/workflows/rig-3d.yml', 'tests/test_rig_camera3d_color.py',
+            'examples/camera3d/optics.json', 'examples/camera3d/render.json',
+            'requirements-rig-test.txt', 'requirements-rig.txt',
+            'scripts/verify_camera3d_color.py', 'scripts/camera3d_color.py', 'scripts/camera3d_blender.py',
+            'scripts/camera3d_math.py', 'scripts/camera3d_contracts.py', 'scripts/lookdev_color.py',
+            'scripts/lookdev_contracts.py', 'scripts/rig_errors.py', 'scripts/rig_math.py',
+            'scripts/rig_blender.py', 'scripts/rig_contracts.py')})
     (destination / 'acceptance.json').write_text(json.dumps(report, indent=2) + '\n')
 
 

@@ -57,6 +57,7 @@ Implementation: `camera3d_blender.optical_plan` and `apply_camera`;
 | Tampered color or nonrigid pose rejected before native mutation | `tests/test_rig_camera3d_color.py`: `test_rejects_tampered_color_before_touching_the_native_scene`, `test_rejects_nonrigid_pose_before_native_mutation` |
 | Synthetic backend failures preserve the previous state or the completed activation | `tests/test_rig_camera3d_color.py`: `test_native_color_rejections_preserve_existing_camera_and_scene`, `test_late_render_clamp_rolls_back_shared_color_and_render`, `test_late_camera_hash_failure_restores_existing_camera`, `test_old_camera_cleanup_failure_keeps_committed_camera_and_color` |
 | Silent color/output substitutions, late RNA changes and permitted float rounding | `tests/test_rig_camera3d_color.py`: `test_effective_color_fields_reject_silent_backend_substitutions`, `test_final_readback_detects_late_field_change_and_accepts_float32` |
+| Scene-owned camera tags, legacy shared tags and rejection of dependency-graph color changes with rollback | `tests/test_rig_camera3d_color.py`: `test_shared_camera_scene_only_and_explicit_activation`, `test_ambiguous_legacy_shared_tag_is_preserved`, `test_update_drift_restores_profile_camera_and_bindings`, `test_actual_camera_shared_white_balance` |
 | Standalone camera exposure or activation clears stale tags and rolls back all affected tags on failure | `tests/test_rig_camera3d_color.py`: `test_standalone_exposure_and_camera_switch_binding_lifecycle`, `test_standalone_invalidation_failure_restores_all_bindings` |
 | Foreground comparison rejects repeated transforms and identical incorrect linear radiance | `tests/test_rig_camera3d_color.py`: `test_foreground_probe_rejects_wrong_radiance_or_second_transform` |
 
@@ -81,6 +82,8 @@ Evidence is not committed to the repository. Each native gate writes its
 rendered files, the reopened `.blend`, `resolved-inputs.json` and an
 `acceptance.json` containing the observed pixel differences, projection errors,
 Blender version and the SHA-256 of every output file and of the source scripts.
+The color report also binds the invoking test, Blender workflow, fixture inputs,
+dependency requirements and local helpers used for validation and hashing.
 
 The schema-math gate runs the Camera3D and LookDev color test modules. The
 Blender 4.5.3 job in `.github/workflows/rig-3d.yml` enables both native gates
