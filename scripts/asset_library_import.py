@@ -114,11 +114,23 @@ _OBJ_PRECISION_BYTES_PER_TRIANGLE = 768
 _OBJ_PRECISION_EXACT_WORKSPACE = 16 * 1024
 
 
-def _has_exact_triangle_area(points):
+def _exact_obj_area_components(points):
     corners = [[Fraction(float(coordinate)) for coordinate in point] for point in points]
     left = [b - a for a, b in zip(corners[0], corners[1])]
     right = [c - a for a, c in zip(corners[0], corners[2])]
-    return any(left[i] * right[j] != left[j] * right[i] for i, j in ((0, 1), (1, 2), (2, 0)))
+    return tuple(left[i] * right[j] - left[j] * right[i] for i, j in ((0, 1), (1, 2), (2, 0)))
+
+
+def _obj_area_estimate(points):
+    """Signed XY, YZ, ZX areas and their cancellation scales, in float64."""
+    left = points[:, 1] - points[:, 0]
+    right = points[:, 2] - points[:, 0]
+    first = left * np.roll(right, -1, axis=1)
+    second = np.roll(left, -1, axis=1) * right
+    precision = np.finfo(np.float64)
+    # The floor also covers absolute rounding error in subnormal products.
+    scale = np.maximum(np.abs(first) + np.abs(second), precision.tiny / precision.eps)
+    return first - second, scale
 
 
 def _check_obj_float32_triangles(geometry):
@@ -134,18 +146,21 @@ def _check_obj_float32_triangles(geometry):
             if not changed.any():
                 continue
 
-            # The determinant test is performed in float64 on float32 inputs,
-            # so products neither underflow nor overflow. A conservative error
-            # bound identifies ambiguous results for exact dyadic arithmetic.
-            left = rounded[:, 1] - rounded[:, 0]
-            right = rounded[:, 2] - rounded[:, 0]
-            first = left * np.roll(right, -1, axis=1)
-            second = np.roll(left, -1, axis=1) * right
-            error = 8 * np.finfo(np.float64).eps * (np.abs(first) + np.abs(second))
-            certified = np.any(np.abs(first - second) > error, axis=1)
-            for index in np.flatnonzero(changed & ~certified):
-                require(_has_exact_triangle_area(rounded[index]) or not _has_exact_triangle_area(source[index]),
-                        'RIG_OBJ_PRECISION', 'Converting OBJ to glTF precision collapses a source triangle.')
+            # A positive dot product preserves the side of the source face.
+            # Each determinant's error is below 8 eps times its cancellation
+            # scale. Allow for both determinants and the final dot product.
+            precision = np.finfo(np.float64)
+            with np.errstate(under='ignore'):
+                original, original_scale = _obj_area_estimate(source)
+                target, target_scale = _obj_area_estimate(rounded)
+                dot = np.sum(original * target, axis=1)
+                error = 32 * precision.eps * np.sum(original_scale * target_scale, axis=1) + precision.tiny
+            for index in np.flatnonzero(changed & (dot <= error)):
+                original_exact = _exact_obj_area_components(source[index])
+                if any(original_exact):
+                    target_exact = _exact_obj_area_components(rounded[index])
+                    require(sum(a * b for a, b in zip(original_exact, target_exact)) > 0,
+                            'RIG_OBJ_PRECISION', 'Converting OBJ to glTF precision loses triangle orientation.')
 
 
 def _inspect_source(snapshot, limits):

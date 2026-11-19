@@ -246,6 +246,40 @@ class NativeImportTests(unittest.TestCase):
         reference = self.import_source(source)
         self.assertEqual(resolve_import(self.library, reference)['native_observation']['triangles'], 1)
 
+    def test_static_obj_rejects_winding_loss_before_publication(self):
+        source = self.root / 'winding.obj'
+
+        def stored_files():
+            return {p.relative_to(self.library_path): p.read_bytes()
+                    for p in self.library_path.rglob('*') if p.is_file()}
+
+        before = stored_files()
+        # The planar face goes from +1 to -2 in XY. The two tilted faces
+        # have respectively zero and slightly negative exact normal dots.
+        for third in ('3 0', '2.5 1', '2.5000000000000004 1'):
+            source.write_text(f'v 16777216 0 0\nv 16777217 1 0\nv 16777218 {third}\nf 1 2 3\n')
+            for operation in (self.pipeline.probe, self.import_source):
+                with self.subTest(third=third, operation=operation.__name__):
+                    with self.assertRaises(RigError) as error:
+                        operation(source)
+                    self.assertEqual(error.exception.report['code'], 'RIG_OBJ_PRECISION')
+                    self.assertEqual(stored_files(), before)
+
+    def test_static_obj_preserves_acute_winding_near_right_angle(self):
+        source = self.root / 'tilted.obj'
+        # Moving one binary64 step below 2.5 makes the 3D normal dot
+        # positive, even though the XY projection still reverses.
+        source.write_text('v 16777216 0 0\nv 16777217 1 0\nv 16777218 2.4999999999999996 1\nf 1 2 3\n')
+        self.assertTrue(self.pipeline.probe(source)['geometry_validated'])
+        reference = self.import_source(source)
+        normalized = self.root / 'tilted.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        primitive = document.json['meshes'][0]['primitives'][0]
+        points = document.accessor(primitive['attributes']['POSITION'])
+        self.assertEqual(points[document.accessor(primitive['indices']).ravel()].tolist(),
+                         [[16777216, 0, 0], [16777216, 1, 0], [16777218, 2.5, 1]])
+
     def test_static_obj_normalizes_finite_large_normals(self):
         source = self.root / 'large-normal.obj'
         source.write_bytes(STATIC_OBJ.replace(b'vn 0 0 1', b'vn 0 0 1e300'))
