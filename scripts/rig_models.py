@@ -96,18 +96,48 @@ class RigAsset:
 
 
 class _AnatomyOccurrence(dict):
-    """An ordinary JSON record with a nonserialized, copy-stable origin."""
-    __slots__ = ('_origin',)
+    """An ordinary JSON record with nonserialized occurrence metadata."""
+    __slots__ = ('_origin', '_scope')
 
     def __init__(self, value):
         super().__init__(value)
         self._origin = object()
+        self._scope = None
+
+    def __copy__(self):
+        return type(self)(self)
 
     def __deepcopy__(self, memo):
         copied = type(self)({})
         memo[id(self)] = copied
         copied.update(deepcopy(dict(self), memo))
+        # The owning array can carry the origin into its own copy.
         copied._origin = self._origin
+        return copied
+
+
+class _UncertaintyRecords(list):
+    """Keep ownership inside copies of an admitted uncertainty array."""
+    __slots__ = ('_scope',)
+
+    def __init__(self, records=(), *, scope=None):
+        super().__init__(records)
+        self._scope = object() if scope is None else scope
+
+    def __add__(self, records):
+        return type(self)(list.__add__(self, records), scope=self._scope)
+
+    def __radd__(self, records):
+        return type(self)(list.__add__(records, self), scope=self._scope)
+
+    def __deepcopy__(self, memo):
+        copied = type(self)()
+        memo[id(self)] = copied
+        for issue in self:
+            record = deepcopy(issue, memo)
+            if isinstance(issue, _AnatomyOccurrence) and issue._scope is self._scope:
+                record._scope = copied._scope
+            copied.append(record)
         return copied
 
 
@@ -149,14 +179,17 @@ def normalize_anatomy_bindings(manifest, *, occurrences=()):
     # edit. When the caller also edits the array, each surviving occurrence
     # must agree with its current entry as well as its admitted digest.
     bindings_edited = bindings != [binding for _, binding in occurrences]
-    counts = Counter(id(issue) for issue in records)
-    copies = Counter(issue._origin for issue in records if isinstance(issue, _AnatomyOccurrence))
+    current = manifest['uncertainties']
+    scope = current._scope if isinstance(current, _UncertaintyRecords) else None
+    counts = Counter(id(issue) for issue in current)
+    copies = Counter(issue._origin for issue in current
+                     if isinstance(issue, _AnatomyOccurrence) and issue._scope is scope)
     normalized = []
     for index, issue in enumerate(records):
         owner, binding = admitted.get(id(issue), (None, None))
-        if owner is None and isinstance(issue, _AnatomyOccurrence) and copies[issue._origin] == 1:
-            # An unchanged one-to-one deepcopy retains its original occurrence.
-            # This never matches another observation by value or array position.
+        if (owner is None and scope is not None and isinstance(issue, _AnatomyOccurrence)
+                and issue._scope is scope and copies[issue._origin] == 1):
+            # Only the exact array copy can carry a former occurrence.
             owner, binding = origins.get(issue._origin, (None, None))
         if bindings_edited and (index >= len(bindings) or bindings[index] != binding):
             binding = None
@@ -180,9 +213,13 @@ def validate_anatomy_bindings(manifest):
 def _retain_anatomy_occurrences(rig):
     """Retain already validated native bindings to the actual record objects."""
     validate_anatomy_bindings(rig.manifest)
-    rig.manifest['uncertainties'] = [
-        _AnatomyOccurrence(issue) if issue.get('code') == 'RIG_ANATOMY_UNCERTAIN' else issue
-        for issue in rig.manifest['uncertainties']]
+    retained = _UncertaintyRecords()
+    for issue in rig.manifest['uncertainties']:
+        if issue.get('code') == 'RIG_ANATOMY_UNCERTAIN':
+            issue = _AnatomyOccurrence(issue)
+            issue._scope = retained._scope
+        retained.append(issue)
+    rig.manifest['uncertainties'] = retained
     records, bindings, _ = _anatomy_binding_inputs(rig.manifest)
     rig._anatomy_occurrences = list(zip(records, bindings or [None] * len(records)))
 

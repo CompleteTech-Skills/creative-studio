@@ -16,11 +16,12 @@ from rig_errors import RigError, atomic_json, object_hash, timestamp
 from rig_gltf import export_geometry
 from rig_http import RigServer
 from rig_jobs import create_run, save_rig
+from rig_math import axis_angle
 from rig_models import Geometry, Mesh, load_rig, rig_signature
 from rig_operations import mutate
 from rig_package import package_rig, restore_rig
 from rig_retarget import build_retarget_profile, retarget_pose
-from rig_skeleton import evaluate_fk, neutral_pose
+from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone
 from rig_skinning import evaluate_deformation
 from rig_states import rig_capabilities
 from rig_templates import ROOT as TEMPLATE_ROOT, load_rig_template
@@ -182,6 +183,26 @@ class ReplacementArchetypeTests(unittest.TestCase):
         result, report = apply_rig_corrections(original, correction)
         self.assertTrue(report["source_preserved"])
         self.roundtrip(result, correction, retained)
+
+    def test_native_refit_invalidates_existing_skin_and_animation(self):
+        original = self.native_rig(template="humanoid")
+        self.assertEqual(mutate(original.root, "weights", {})["status"], "succeeded")
+        original = load_rig(original.root)
+        neutral = neutral_pose(original.skeleton)
+        moved = rotate_bone(original.skeleton, neutral, original.skeleton["root"], axis_angle([0, 0, 1], .25))
+        frames = [{"time": 0., "pose": neutral}, {"time": 1., "pose": moved}]
+        self.assertEqual(mutate(original.root, "animate", {"id": "existing", "keyframes": frames})["status"],
+                         "succeeded")
+        original = load_rig(original.root)
+        self.assertTrue(original.weights)
+        self.assertIn("existing", original.clips)
+        retained = self.retained_files(original)
+        replaced, _ = apply_rig_corrections(original, self.correction(original, "quadruped"))
+        for rig in (replaced, load_rig(original.root)):
+            self.assertEqual(rig.manifest["archetype"], "quadruped")
+            self.assertFalse(rig.weights)
+            self.assertFalse(rig.clips)
+            self.assert_retained(rig.root, retained)
 
     def test_http_save_reload_package_restore_and_downstream_selection(self):
         original = self.add_prior_correction(self.http_rig())

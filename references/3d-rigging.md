@@ -589,11 +589,12 @@ After validated loading or a native fit, the runtime retains references to the
 actual uncertainty objects alongside their admitted digests. Generic saves and
 direct corrections use those occurrence references before consuming bindings.
 Deleting, editing or reordering records cannot transfer ownership by equal
-contents or by array position; plain replacement records and ambiguous duplicate
-copies grant no extra ownership. A one-to-one deep copy retains a private runtime
-origin reference, including when the copied occurrence is opaque. These origin
-references are never JSON fields or serialized digests. An unchanged fitted occurrence still follows
-its own bone through rename and anatomical correction. Saving projects these
+contents or by array position. A deep copy of the full admitted array can carry
+its fitted occurrences and preserves which records are independent. Individual
+copies and records moved from a copied array have independent ownership. The
+runtime references stay outside JSON and serialized digests. An unchanged fitted
+occurrence still follows its bone through rename and anatomical correction.
+Saving projects these
 runtime references back into the existing bounded digest/null list, then
 refreshes the references to the saved records. No additional manifest field is
 introduced, and loading a historical manifest does not rewrite its bytes.
