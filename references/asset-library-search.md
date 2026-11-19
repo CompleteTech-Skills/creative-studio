@@ -23,6 +23,12 @@ storage replacement is required. Resolution verifies the local dependency
 payload closure. `rebuild(locations=[{'library': 'local', 'reference': exact_ref}])`
 indexes an explicit pinned selection. A full-catalog index becomes stale when
 the catalog changes; unrelated additions do not invalidate an explicit selection.
+For full-catalog rebuilds and queries, a native durable library checks that its
+SQLite version inventory agrees with its immutable commits. An interrupted
+publication can leave a committed version outside SQLite. In that state the
+library raises `LIBRARY_DURABILITY`; the existing search index and source are
+preserved. Call the library's `recover()` explicitly before rebuilding search.
+SQLite-only legacy libraries continue to enumerate their existing records.
 
 ## Consistency, filtering and ranking
 
@@ -60,7 +66,11 @@ Supplied collection owners must provide callable `collections(reference)`.
 The retained `versions` argument maps library aliases to those owners.
 Current `AssetVersions` supplies `collections` and `set_collections` through the
 canonical event store; pass `versions={'local': AssetVersions(library)}` to index
-that metadata. The original bounded history/promotion API from PR #460 alone
+that metadata. A native owner must refer to the library configured for its alias.
+A separately opened handle for the same library root is valid. A portable copy
+has its own mutable collection history even when its exact asset references
+match. Custom collection adapters remain responsible for the alias binding.
+The original bounded history/promotion API from PR #460 alone
 did not supply collections. Collection filtering requires an owner for every
 configured library. Changes invalidate the search snapshot until rebuild.
 A usage owner must provide callable `bindings(project_id)`; only explicitly

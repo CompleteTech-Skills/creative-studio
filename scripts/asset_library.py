@@ -419,9 +419,23 @@ class AssetLibrary:
                 self._verify_payloads(db, manifest)
             return manifest
 
-    def list_references(self, *, limit: int | float = MAX_VERSIONS) -> list[AssetRef]:
+    def list_references(self, *, limit: int | float = MAX_VERSIONS,
+                        verify_projection: bool = False) -> list[AssetRef]:
+        """List indexed references, optionally checking the complete durable inventory.
+
+        The inventory check joins the publication lock so a publisher's canonical
+        append cannot be mistaken for a crashed SQLite projection. It reads the
+        existing storage owner's records without repairing or publishing them.
+        """
         count = _bounded_integer(limit, 1, MAX_VERSIONS, code='LIMIT', label='Reference limit')
+        if type(verify_projection) is not bool:
+            _fail('REQUEST', 'verify_projection must be boolean.')
         with self._connect() as db:
+            if verify_projection:
+                db.execute('BEGIN IMMEDIATE')
+                self._refresh_mode(db)
+                if self.storage is not None:
+                    self.storage.check_projection(db)
             rows = db.execute('SELECT id,version,sha256 FROM versions ORDER BY id,version LIMIT ?', (count,)).fetchall()
             return [AssetRef(id=identity, version=version, sha256=digest)
                     for identity, version, digest in rows]

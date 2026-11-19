@@ -382,6 +382,109 @@ class SearchTests(unittest.TestCase):
             self.assertEqual(reopened_library.read_file(reference,path),payload)
 
 
+    def test_full_catalog_refuses_split_projection_until_explicit_recovery(self):
+        first = self.register('early')
+        self.index.rebuild()
+        subset = SearchIndex(self.root / 'subset', {'local': self.library}, create=True)
+        subset.rebuild([first])
+        earlier_projection = self.library.database.read_bytes()
+        second = self.register('later')
+        records = self.library.storage.root
+        immutable = {p: p.read_bytes() for directory in ('commits', 'blobs')
+                     for p in (records / directory).iterdir()}
+
+        # Model canonical publication surviving an uncommitted SQLite transaction.
+        self.library.database.write_bytes(earlier_projection)
+        cached = self.index.database.read_bytes()
+        for operation in (self.index.search, self.index.rebuild):
+            with self.assertRaises(RigError) as raised:
+                operation()
+            self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+            self.assertEqual(self.index.database.read_bytes(), cached)
+        self.assertEqual(subset.search()['results'][0]['location'], first)
+        self.assertEqual(subset.rebuild([first])['indexed'], 1)
+        self.assertEqual(self.library.database.read_bytes(), earlier_projection)
+
+        self.library.recover()
+        self.assertEqual(self.library.resolve(second['reference'])['manifest_sha256'],
+                         second['reference']['sha256'])
+        self.assert_code('STALE', self.index.search)
+        self.assertEqual(self.index.rebuild()['indexed'], 2)
+        self.assertEqual(self.index.search()['total'], 2)
+        self.assertEqual(immutable, {p: p.read_bytes() for directory in ('commits', 'blobs')
+                                    for p in (records / directory).iterdir()})
+
+    def test_verified_inventory_refreshes_legacy_handle_and_preserves_limits(self):
+        from asset_library import MAX_VERSIONS
+
+        first = self.register('early')
+        second = self.register('later')
+        # Retain the SQLite fixture in its legacy layout and open two handles.
+        self.library.storage.root.rename(self.root / 'original-records')
+        with closing(sqlite3.connect(self.library.database)) as db, db:
+            db.execute('DROP TABLE durability')
+        legacy = AssetLibrary(self.library.root)
+        migrator = AssetLibrary(self.library.root)
+        index = SearchIndex(self.root / 'legacy-search', {'local': legacy}, create=True)
+        self.assertEqual(index.rebuild()['indexed'], 2)
+        self.assertEqual(index.search()['total'], 2)
+        self.assertIsNone(legacy.storage)
+
+        migrator.upgrade_storage()
+        self.assertEqual(legacy.list_references(limit=1, verify_projection=True), [first['reference']])
+        self.assertIsNotNone(legacy.storage)
+        self.assertEqual(legacy.list_references(limit=MAX_VERSIONS, verify_projection=True),
+                         [first['reference'], second['reference']])
+        with self.assertRaises(RigError) as raised:
+            legacy.list_references(limit=MAX_VERSIONS + 1, verify_projection=True)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_LIMIT')
+        self.assertEqual(index.search()['total'], 2)
+
+        # Even a bounded first page verifies a missing commit projection beyond that page.
+        with closing(sqlite3.connect(legacy.database)) as db, db:
+            db.execute('DELETE FROM versions WHERE id=?', (second['reference']['id'],))
+        with self.assertRaises(RigError) as raised:
+            legacy.list_references(limit=1, verify_projection=True)
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_DURABILITY')
+
+    def test_native_collections_must_belong_to_alias_before_lookup_or_encoding(self):
+        from asset_library_versions import AssetVersions
+        from unittest.mock import Mock
+
+        selected = self.register('portable')
+        ref = selected['reference']
+        manifest = self.library.resolve(ref)
+        other = AssetLibrary(self.root / 'other', create=True)
+        sources = {f['path']: self.example / f['path'] for f in manifest['files']}
+        self.assertEqual(other.register(manifest, sources), ref)
+        wrong = AssetVersions(other)
+        wrong.set_collections(ref, expected_revision=0, collections=['other-only'])
+        destination = self.root / 'collections'
+        libraries = {'local': self.library}
+        self.assert_code('REQUEST', lambda: SearchIndex(
+            destination, libraries, create=True, versions={'local': wrong}))
+        self.assertFalse(destination.exists())
+
+        owner = AssetVersions(AssetLibrary(other.root / '..' / self.library.root.name))
+        owner.set_collections(ref, expected_revision=0, collections=['local-only'])
+        index = SearchIndex(destination, libraries, create=True, versions={'local': owner})
+        index.rebuild()
+        self.assertEqual(index.search(filters={'collections': ['local-only']})['total'], 1)
+        self.assertEqual(index.search(filters={'collections': ['other-only']})['total'], 0)
+        cached = index.database.read_bytes()
+        index.versions['local'] = wrong
+        provider = Mock(model_id='test', model_version='v1', runtime_available=True,
+                        requires_credentials=False, credentials_available=False, transmits_metadata=True)
+        registry = ProviderRegistry()
+        registry.register('test', provider)
+        for operation in (index.search, index.rebuild, lambda: index.rebuild([selected]),
+                          lambda: index.rebuild_embeddings(registry, 'test', enabled=True,
+                                                           authorize_private_metadata=True)):
+            self.assert_code('REQUEST', operation)
+            self.assertEqual(index.database.read_bytes(), cached)
+        provider.encode.assert_not_called()
+
+
 class LocalEmbeddingAdmissionTests(unittest.TestCase):
     def test_unknown_model_and_unpinned_revision_reject_before_runtime(self):
         from asset_search_embeddings import LocalSentenceTransformer

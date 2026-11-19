@@ -16,7 +16,9 @@ import sqlite3
 import stat
 from typing import Protocol
 
+from asset_library import AssetLibrary
 from asset_library_contracts import ID_PATTERN, canonical_bytes, validate
+from asset_library_versions import AssetVersions
 from rig_errors import RigError, decode_json, object_hash
 
 MAX_ASSETS = 4096
@@ -240,9 +242,14 @@ class SearchIndex:
             fail('CAPABILITY','Collection owners must map configured library aliases.')
         if self.project_ids and self.usage_resolver is None:
             fail('CAPABILITY','Project usage requires the native binding authority.')
-        for owner in self.versions.values():
+        for alias, owner in self.versions.items():
             if not callable(getattr(owner,'collections',None)):
                 fail('CAPABILITY','Collection owner requires collections(reference).')
+            library = self.libraries[alias]
+            if (isinstance(owner, AssetVersions) and isinstance(owner.library, AssetLibrary)
+                    and isinstance(library, AssetLibrary) and owner.library is not library
+                    and owner.library.root.resolve() != library.root.resolve()):
+                fail('REQUEST', 'Native collection owner belongs to a different library.')
         if self.usage_resolver is not None and not callable(getattr(self.usage_resolver,'bindings',None)):
             fail('CAPABILITY','Usage owner requires bindings(project_id).')
         if self.compatibility is not None and not callable(self.compatibility):
@@ -292,7 +299,11 @@ class SearchIndex:
         for name,library in self.libraries.items():
             if not callable(getattr(library,'list_references',None)):
                 fail('CAPABILITY','Library requires the native list_references API or an explicit rebuild selection.')
-            result.extend(dict(library=name,reference=r) for r in library.list_references(limit=MAX_ASSETS))
+            if isinstance(library, AssetLibrary):
+                references = library.list_references(limit=MAX_ASSETS, verify_projection=True)
+            else:
+                references = library.list_references(limit=MAX_ASSETS)
+            result.extend(dict(library=name,reference=r) for r in references)
         if len(result)>MAX_ASSETS: fail('LIMIT','Combined library catalog exceeds 4096 records.')
         return sorted(result,key=_key)
 
