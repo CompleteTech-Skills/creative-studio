@@ -16,9 +16,18 @@ MAX_TOKEN_CHARACTERS=4096
 
 class RigServer(ThreadingHTTPServer):
     daemon_threads=True
-    def __init__(self,root,intake,*,port=0,token=None,workers=2):
+    def __init__(self,root,intake,*,port=0,token=None,workers=2,continuity=None):
         self.root=Path(root).resolve();self.root.mkdir(parents=True,exist_ok=True)
         self.intake=Path(intake).resolve();require(self.intake.is_dir(),'RIG_API_INTAKE','Intake must be an existing directory.')
+        self.continuity = continuity
+        self.continuity_root = None
+        if continuity is not None:
+            from continuity_capabilities import Admission
+            require(isinstance(continuity, Admission), 'RIG_API_CONTINUITY',
+                    'Use a trusted configured Admission instance.')
+            require(continuity.root.is_dir() and continuity.root.is_relative_to(self.root),
+                    'RIG_API_CONTINUITY_ROOT', 'Continuity project must remain inside the server root.')
+            self.continuity_root = continuity.root
         self.token=secrets.token_urlsafe(32) if token is None else token
         require(isinstance(self.token,str) and 24<=len(self.token)<=MAX_TOKEN_CHARACTERS
                 and all(0x21<=ord(character)<=0x7e for character in self.token),
@@ -65,11 +74,24 @@ class RigHandler(BaseHTTPRequestHandler):
             self._respond(400,dict(ok=False,error=RigError('RIG_API_INPUT',str(exc)).report))
         finally:self.server.budget.release()
     def _dispatch(self):
+        route=urlsplit(self.path);require(not route.query,'RIG_API_ROUTE','Queries are not accepted on these JSON endpoints.')
+        parts=route.path.strip('/').split('/');require(len(parts)>=2 and parts[0]=='v1','RIG_API_NOT_FOUND','Unknown endpoint.')
+        if (self.command, parts) in (('GET', ['v1', 'continuity', 'capabilities']),
+                                     ('POST', ['v1', 'continuity', 'admit'])):
+            admission = self.server.continuity
+            require(admission is not None, 'RIG_API_CONTINUITY_UNAVAILABLE',
+                    'No trusted continuity owner and policy have been configured.')
+            root = self.server.continuity_root
+            require(admission.root == root and root.is_dir() and root.resolve() == root
+                    and root.is_relative_to(self.server.root),
+                    'RIG_API_CONTINUITY_ROOT', 'Continuity project root binding changed.')
+            if self.command == 'GET':
+                from continuity_capabilities import discover
+                return discover()
+            return admission.run(self._body())
         from rig_jobs import create_run,status
         from rig_models import load_rig
         from rig_operations import mutate,pose_operation,solve_operation,export_operation
-        route=urlsplit(self.path);require(not route.query,'RIG_API_ROUTE','Queries are not accepted on these JSON endpoints.')
-        parts=route.path.strip('/').split('/');require(len(parts)>=2 and parts[0]=='v1','RIG_API_NOT_FOUND','Unknown endpoint.')
         if self.command=='POST' and parts==['v1','rig-jobs']:
             body=self._body();require(set(body)<={'model','id','scale','fixture','origin','attribution'} and 'model'in body,'RIG_API_SCHEMA','Import fields are model, id, scale, fixture, origin and attribution.')
             model=safe_path(self.server.intake,body['model'],exists=True);identifier=body.get('id','rig-'+uuid.uuid4().hex[:12])

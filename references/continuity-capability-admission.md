@@ -17,7 +17,7 @@ capability can be admitted.
 `python scripts/continuity_capabilities.py admit --root ROOT --request REQUEST`
 validates a request and returns availability and integrity results using the
 default closed policy. Use the trusted Python API to register local owners and
-authorize resource reservations. Authenticated RigServer integration is pending.
+authorize resource reservations.
 
 ```python
 from continuity_capabilities import Admission, Policy
@@ -26,8 +26,15 @@ from continuity_capability_owners import RigOwner
 # project_root contains a native rig and a caller-owned evidence directory.
 owner = RigOwner(project_root, 'rig/rig.json', 'evidence', 'geometry-inspection')
 policy = Policy(asset_rights=True, allowed_owners=frozenset({'hatch-rig'}))
-result = Admission(project_root, policy=policy, owners=[owner]).run(request)
+admission = Admission(project_root, policy=policy, owners=[owner])
+result = admission.run(request)
 ```
+
+To enable the authenticated loopback routes, construct
+`RigServer(server_root, intake, continuity=admission)` with the host-configured
+`Admission` instance. Its project root must be within the server root. Use the
+server's bearer token for `GET /v1/continuity/capabilities` and
+`POST /v1/continuity/admit`. The POST body is the admission request JSON.
 
 Include `owner.bound` in the check's `inputs` and provide an exact project
 revision pointer. This rig adapter uses input type `hatch-3d-rig`, output type
