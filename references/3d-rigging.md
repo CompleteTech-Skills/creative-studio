@@ -376,7 +376,10 @@ FK-to-IK matching accepts fully folded chains whose endpoint coincides with
 their root, using the already evaluated first joint position as its matching pole.
 A matching pole preserves an already closed authoritative seed and its evaluated
 joint transforms and bound geometry. Ordinary matches retain their original
-reach-based pole distance. Closure is tested within `1e-9` meters, the matched
+reach-based pole distance. When that reach is at most `1e-6` meters, the matching pole is placed `1e-6`
+meters along the same bend direction; a reach-distance pole below the solver's
+`1e-8` meter pole-degeneracy cutoff would otherwise be replaced by an arbitrary
+axis and move the elbow of a valid near-closed seed. Closure is tested within `1e-9` meters, the matched
 endpoint must also meet the chain's residual tolerance, and normalized pole/first
 segment directions must differ by at most eight machine epsilons in unit-vector
 distance. Comparing the vector difference avoids a dot product rounding a
