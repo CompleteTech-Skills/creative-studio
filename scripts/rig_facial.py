@@ -46,16 +46,33 @@ def _local_eye_pitch(bone, override, parent_rest):
     """Measure the final rotation of the rest gaze direction in parent space."""
     rest = bone['rest']['rotation']
     posed = override.get('rotation', rest)
+    canonical_rest = quaternion(rest)
     # A constraint can normalize a rest quaternion without changing the FK
     # rotation. Exact matrix equality keeps even the smallest distinct motion.
-    if np.array_equal(qmatrix(posed), qmatrix(rest)):
+    if (np.array_equal(posed, canonical_rest) or np.array_equal(posed, -canonical_rest)
+            or np.array_equal(qmatrix(posed), qmatrix(rest))):
         return 0.
 
-    forward = unit(np.linalg.solve(parent_rest, [0., 0., 1.]))
-    up = np.linalg.solve(parent_rest, [0., 1., 0.])
-    up = unit(up - forward * np.dot(up, forward))
+    # Work with directions, whose arbitrary lengths must not trigger the
+    # geometry helper's absolute zero-length threshold. Column balancing and
+    # exponent-relative reconstruction avoid overflow in inverse scales.
+    columns = np.max(np.abs(parent_rest), axis=0)
+    require(np.all(columns > 0), 'RIG_SINGULAR_TRANSFORM', 'Eye parent frame must be invertible.')
+    balanced = parent_rest / columns
+    inverse_forward = np.linalg.solve(balanced, [0., 0., 1.])
+    mantissa, exponent = np.frexp(inverse_forward)
+    column_mantissa, column_exponent = np.frexp(columns)
+    exponent = exponent - column_exponent
+    scale = np.max(exponent[inverse_forward != 0])
+    forward = unit(np.ldexp(mantissa / column_mantissa, exponent - scale))
+    # The inverse Y/Z plane has normal proportional to the first row of the
+    # forward matrix. This avoids subtracting nearly parallel inverse rays.
+    right = unit(parent_rest[0] / np.max(np.abs(parent_rest[0])))
+    sign = np.linalg.slogdet(balanced)[0]
+    require(sign != 0, 'RIG_SINGULAR_TRANSFORM', 'Eye parent frame must be invertible.')
+    up = unit(np.cross(forward, right)) * sign
 
-    rest, posed = quaternion(rest), quaternion(posed)
+    rest, posed = canonical_rest, quaternion(posed)
     scalar = np.dot(posed, rest)
     if scalar < 0:
         posed, scalar = -posed, -scalar

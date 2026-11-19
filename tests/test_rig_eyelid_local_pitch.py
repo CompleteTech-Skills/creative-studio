@@ -1,5 +1,9 @@
 """Gaze-owned lids measure the final eye rotation in the parent's rest frame."""
 import unittest
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 import numpy as np
 
@@ -32,6 +36,13 @@ def oriented_fixture(parent_scale, eye_rotation):
 
 
 class EyelidLocalPitchTests(unittest.TestCase):
+    def test_independent_normalized_rest_and_scaled_parent_controls(self):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run([sys.executable, str(root / 'tests/independent/test_rig_eyelid_owner_edges.py')],
+            cwd=root, env=dict(os.environ, PYTHONPATH=os.pathsep.join((str(root / 'scripts'), str(root / 'tests')))),
+            capture_output=True, text=True, timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_omitted_explicit_and_antipodal_rest_return_exact_default(self):
         rest = axis_angle([2, 3, -1], .7)
         rig, _ = oriented_fixture([1., 1., 1.], rest)
