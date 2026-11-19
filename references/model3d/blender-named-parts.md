@@ -36,7 +36,7 @@ reopened exports carry it as the `hatchFixture` custom property.
 | `reopened-source.glb` | A fresh Blender process opens the first project and exports the pre-edit state. |
 | `edited.blend` | The same process changes the named mesh vertices and shader base color, then saves to a new project. |
 | `edited.glb` | A third Blender process opens the edited project and exports its scene. |
-| `receipt.json` | The host independently decodes both reopened GLBs and verifies all parts, coordinates, oriented faces, material names, RGBAs, roughness and metallic factors. It records input and output SHA-256 values and the effective edit. |
+| `receipt.json` | The host independently decodes both reopened GLBs and verifies all parts, coordinates, oriented faces, exact boolean fixture markers and the supported material profile bound to each raw GLB primitive, including names, RGBAs, roughness and metallic factors. It records input and output SHA-256 values and the effective edit. |
 
 The geometry profile supports at most 64 named triangle parts, 16,384 vertices
 and 32,768 triangles in total. It accepts static positions within 10,000 meters,
@@ -51,6 +51,12 @@ faces that collapse or reverse during conversion or the translated edit.
 Verification permits exporter vertex renumbering and normal splits while
 checking every oriented triangle and its owning part. The color and scalar
 material tolerance is 1e-6.
+The raw output material check rejects textures, double-sided rendering,
+non-opaque alpha modes, emission and shader extensions, even when the name
+and numeric factors still match. Explicit default opaque/single-sided/zero
+emission values and inert extras are accepted. This verifies the bounded
+material profile; it does not establish full renderer or arbitrary material
+interoperability.
 
 Run the two-part synthetic fixture and its boundary controls from repository
 root, with the rig Python requirements available:
@@ -64,6 +70,10 @@ The native tests exercise both shared and private materials. The controls
 reject a missing target, invalid edit vectors, unsupported attributes, an
 unchanged edit and an existing destination. They also exercise missing-runtime
 cleanup and challenge the verifier with pre-edit geometry, reversed winding
-and an incorrect sibling material. These checks cover the named-part authoring
+and an incorrect sibling material. Additional synthetic mutations of actual
+native outputs challenge both parts in both exports with five texture slots,
+sidedness, alpha mode, emission, unlit and unknown extensions, plus JSON 0/1
+fixture markers. The independent reader admits every mutated control before
+the named-part verifier rejects it. These checks cover the named-part authoring
 slice. Full #48 integration and #49's provider, multiformat export validation
 and interactive review requirements remain open.

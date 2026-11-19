@@ -107,7 +107,8 @@ def _verify(path, geometry, part, delta, color, material_name, fixture):
     nodes = document['nodes']
     by_id = geometry.by_id()
     require(len(nodes) == len(by_id) and {n.get('name') for n in nodes} == set(by_id)
-            and all('mesh' in n and n.get('extras', {}).get('hatchFixture') == fixture for n in nodes),
+            and all('mesh' in n and type(n.get('extras', {}).get('hatchFixture')) is bool
+                    and n['extras']['hatchFixture'] == fixture for n in nodes),
             'MODEL3D_BLENDER_VERIFY', 'Exported node identity or fixture provenance changed.')
     decoded = load_character_model(path).geometry
     require(set(decoded.by_id()) == set(by_id), 'MODEL3D_BLENDER_VERIFY', 'Reopened mesh IDs changed.')
@@ -122,8 +123,25 @@ def _verify(path, geometry, part, delta, color, material_name, fixture):
                 'MODEL3D_BLENDER_VERIFY', 'Exported part identity or oriented triangles changed.', asset=source.id)
         old = geometry.materials[source.material]
         expected = old.get('pbrMetallicRoughness', {})
-        actual_mat = decoded.materials[actual.material]
+        # Follow the raw primitive binding: factor/name equality alone does not
+        # establish appearance when textures, sidedness or shader extensions
+        # are present. The importer supplies geometry, not this profile check.
+        primitives = document['meshes'][nodes[actual.source_node]['mesh']]['primitives']
+        materials = document.get('materials', [])
+        index = primitives[0].get('material') if len(primitives) == 1 else None
+        require(type(index) is int and 0 <= index < len(materials),
+                'MODEL3D_BLENDER_VERIFY', 'Exported part material binding changed.', asset=source.id)
+        actual_mat = materials[index]
         pbr = actual_mat.get('pbrMetallicRoughness', {})
+        require(not set(actual_mat) - {'name', 'pbrMetallicRoughness', 'alphaMode', 'alphaCutoff',
+                                       'doubleSided', 'emissiveFactor', 'extensions', 'extras'}
+                and not set(pbr) - {'baseColorFactor', 'metallicFactor', 'roughnessFactor', 'extras'}
+                and actual_mat.get('alphaMode', 'OPAQUE') == 'OPAQUE'
+                and actual_mat.get('doubleSided', False) is False
+                and actual_mat.get('emissiveFactor', [0, 0, 0]) == [0, 0, 0]
+                and not actual_mat.get('extensions'),
+                'MODEL3D_BLENDER_VERIFY', 'Exported part material exceeds the supported opaque, untextured profile.',
+                asset=source.id)
         expected_color = color if source.id == part else expected.get('baseColorFactor', [1]*4)
         require(actual_mat.get('name') == (material_name if source.id == part else old['name'])
                 and np.allclose(pbr.get('baseColorFactor', [1]*4), expected_color, rtol=0, atol=1e-6)

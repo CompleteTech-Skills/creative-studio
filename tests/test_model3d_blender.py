@@ -1,5 +1,9 @@
+import base64
+import io
+import json
 import os
 from pathlib import Path
+import struct
 import sys
 import tempfile
 import unittest
@@ -10,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 
 from model3d_blender import roundtrip_named_part, _verify
 from rig_errors import RigError, read_json, sha256
+from rig_gltf import read_gltf
+from rig_import import load_character_model
 from rig_models import Geometry, Mesh
 
 
@@ -20,6 +26,48 @@ def fixture_geometry():
                      Mesh('fin', points / 2 + [2, 0, 1], faces.copy(), name='Fin mesh', region='side')],
                     [{'name': 'Clay', 'pbrMetallicRoughness': {
                         'baseColorFactor': [.5, .25, .125, 1], 'metallicFactor': .2, 'roughnessFactor': .75}}])
+
+
+def mutate_glb(source, destination, mutate):
+    """Change native-output JSON without re-exporting through the authoring code."""
+    document = read_gltf(source)
+    binary = bytearray(document.buffers[0])
+    mutate(document.json, binary)
+    document.json['buffers'][0]['byteLength'] = len(binary)
+    encoded = json.dumps(document.json, separators=(',', ':')).encode()
+    encoded += b' ' * (-len(encoded) % 4)
+    binary += b'\0' * (-len(binary) % 4)
+    payload = struct.pack('<II', len(encoded), 0x4E4F534A) + encoded
+    payload += struct.pack('<II', len(binary), 0x004E4942) + binary
+    destination.write_bytes(struct.pack('<4sII', b'glTF', 2, len(payload) + 12) + payload)
+
+
+def material_for_part(document, part):
+    node, = (n for n in document['nodes'] if n['name'] == part)
+    primitive, = document['meshes'][node['mesh']]['primitives']
+    return document['materials'][primitive['material']], primitive
+
+
+def add_texture(document, binary, primitive):
+    # A real decodable texture and vertex-aligned UVs ensure that rejection is
+    # about this authoring profile, rather than a broken texture fixture.
+    from PIL import Image
+    image = io.BytesIO()
+    Image.new('RGBA', (1, 1), (255, 0, 0, 255)).save(image, format='PNG')
+    document['images'] = [{'uri': 'data:image/png;base64,' + base64.b64encode(image.getvalue()).decode()}]
+    document['textures'] = [{'source': 0}]
+    for mesh in document['meshes']:
+        for bound in mesh['primitives']:
+            if bound['material'] != primitive['material']:
+                continue
+            count = document['accessors'][bound['attributes']['POSITION']]['count']
+            binary += b'\0' * (-len(binary) % 4)
+            view = len(document['bufferViews'])
+            document['bufferViews'].append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': count * 8})
+            binary += bytes(count * 8)
+            bound['attributes']['TEXCOORD_0'] = len(document['accessors'])
+            document['accessors'].append({'bufferView': view, 'componentType': 5126, 'count': count, 'type': 'VEC2'})
+    return {'index': 0}
 
 
 class NamedBlenderPartTests(unittest.TestCase):
@@ -109,3 +157,54 @@ class NamedBlenderPartTests(unittest.TestCase):
         result = roundtrip_named_part(self.geometry, self.dest, **self.args)
         self.assertFalse(result['edit']['copy_material'])
         self.assertEqual(result['edit']['material_name'], 'Clay')
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST') == '1', 'Enable pinned Blender integration.')
+    def test_native_output_material_and_fixture_negative_controls(self):
+        roundtrip_named_part(self.geometry, self.dest, **self.args)
+        changed = self.dest.parent / 'changed.glb'
+        delta = np.array(self.args['offset_m'])
+        for filename, edited_part in [('reopened-source.glb', None), ('edited.glb', 'fin')]:
+            source = self.dest / filename
+            for part in ('body', 'fin'):
+                for mutation in ('baseColorTexture', 'metallicRoughnessTexture', 'normalTexture',
+                                 'occlusionTexture', 'emissiveTexture', 'doubleSided', 'unlit',
+                                 'alphaMode', 'emissiveFactor', 'unknown-extension'):
+                    with self.subTest(export=filename, part=part, mutation=mutation):
+                        def mutate(document, binary):
+                            material, primitive = material_for_part(document, part)
+                            if mutation.endswith('Texture'):
+                                target = material['pbrMetallicRoughness'] if mutation in (
+                                    'baseColorTexture', 'metallicRoughnessTexture') else material
+                                target[mutation] = add_texture(document, binary, primitive)
+                            elif mutation == 'doubleSided':
+                                material['doubleSided'] = True
+                            elif mutation == 'alphaMode':
+                                material['alphaMode'] = 'MASK'
+                            elif mutation == 'emissiveFactor':
+                                material['emissiveFactor'] = [1, 0, 0]
+                            else:
+                                extension = 'KHR_materials_unlit' if mutation == 'unlit' else 'TEST_material_appearance'
+                                material['extensions'] = {extension: {}}
+                                document['extensionsUsed'] = [extension]
+                        mutate_glb(source, changed, mutate)
+                        # The independent reader must actually admit each control.
+                        self.assertEqual(set(load_character_model(changed).geometry.by_id()), {'body', 'fin'})
+                        with self.assertRaisesRegex(RigError, 'material'):
+                            _verify(changed, self.geometry, edited_part, delta,
+                                    self.args['base_color'], 'edited.fin', True)
+            for number, fixture in ((0, False), (1, True)):
+                with self.subTest(export=filename, fixture=number):
+                    def mutate(document, binary):
+                        for node in document['nodes']:
+                            node['extras']['hatchFixture'] = number
+                    mutate_glb(source, changed, mutate)
+                    with self.assertRaisesRegex(RigError, 'fixture provenance'):
+                        _verify(changed, self.geometry, edited_part, delta,
+                                self.args['base_color'], 'edited.fin', fixture)
+
+            def defaults(document, binary):
+                for material in document['materials']:
+                    material.update(alphaMode='OPAQUE', doubleSided=False,
+                                    emissiveFactor=[0, 0, 0], alphaCutoff=.5, extras={'note': 'metadata'})
+            mutate_glb(source, changed, defaults)
+            _verify(changed, self.geometry, edited_part, delta, self.args['base_color'], 'edited.fin', True)
