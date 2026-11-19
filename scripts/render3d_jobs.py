@@ -4,7 +4,7 @@ SQLite owns lifecycle state; immutable cache directories own verified bytes.
 Expired heartbeats never authorize taking work from a live owner process.
 """
 from __future__ import annotations
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from copy import deepcopy
 from fractions import Fraction
 import json
@@ -15,13 +15,15 @@ import shutil
 import socket
 import sqlite3
 import stat
+import sys
 import tempfile
 import time
 import uuid
 
-from atomic_publish import _rename_no_replace
-from rig_errors import RigError, atomic_bytes, atomic_json, decode_json, object_hash, safe_path, sha256
-from render3d_contracts import Render3DError, require, validate, make_frame_spec, frame_times, rational, open_regular
+from atomic_publish import _rename_no_replace, pinned_directory_fd, private_stage_fd, windows_private_stage
+from rig_errors import (RigError, atomic_bytes, atomic_json, decode_json, directory_capability,
+                        object_hash, open_payload, open_payload_at, safe_path, sha256)
+from render3d_contracts import Render3DError, require, validate, make_frame_spec, frame_times, rational, open_regular, MAX_RESULT_JSON_BYTES
 
 VERSION = 1
 TERMINAL = ('complete', 'cancelled', 'failed')
@@ -43,6 +45,26 @@ def _metadata(path):
 
 
 def _alive(pid):
+    if type(pid) is not int or not 1 <= pid <= 0x7fffffff:
+        return True
+    if os.name == 'nt':
+        # A zero-time wait on a synchronization handle only observes process exit.
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            return ctypes.get_last_error() != 87  # ERROR_INVALID_PARAMETER: absent PID
+        try:
+            return kernel.WaitForSingleObject(handle, 0) != 0  # WAIT_OBJECT_0: exited
+        finally:
+            kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
@@ -69,6 +91,102 @@ def _copy_artifact(source, target, ref):
         out.flush();os.fsync(out.fileno())
     require(count==ref['bytes'] and digest.hexdigest()==ref['sha256'],
             'corrupt-output','Artifact changed during publication.')
+
+
+def _identity(info):
+    return _dump([info.st_dev,info.st_ino])
+
+
+def _delivery_files(result):
+    return [image['file'] for image in result['images']]+result['logs']+[result['manifest'],result['verification']['evidence']]
+
+
+def _check_delivery_inventory(directory,refs):
+    # Stop at the first unlisted entry, including an empty directory. Open only
+    # expected descendants from the same directory authority used for readback.
+    expected={}
+    for path in ['result.json',*(ref['path'] for ref in refs)]:
+        parts=path.split('/')
+        for index,name in enumerate(parts):
+            expected.setdefault(tuple(parts[:index]),{})[name]=index+1<len(parts)
+    def inspect(parent,parts):
+        children=expected[parts]
+        with os.scandir(parent.path if os.name=='nt' else parent) as entries:
+            for entry in entries:
+                require(entry.name in children and
+                        (entry.is_dir(follow_symlinks=False) if children[entry.name] else entry.is_file(follow_symlinks=False)),
+                        'ownership','Published delivery inventory differs.')
+        for name,is_dir in children.items():
+            if is_dir:
+                with ExitStack() as stack:
+                    if os.name=='nt':
+                        child=stack.enter_context(parent.pin_child(name))
+                    else:
+                        child=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent)
+                        stack.callback(os.close,child)
+                    inspect(child,(*parts,name))
+    inspect(directory,())
+
+
+@contextmanager
+def _delivery_parent(path):
+    ancestor=path
+    while not ancestor.exists() and ancestor!=ancestor.parent:
+        ancestor=ancestor.parent
+    with ExitStack() as stack:
+        if os.name=='nt':
+            from atomic_windows import pinned_directory
+            parent=stack.enter_context(pinned_directory(ancestor))
+            for name in path.relative_to(ancestor).parts:
+                try:(parent.path/name).mkdir()
+                except FileExistsError:pass
+                parent=stack.enter_context(parent.pin_child(name))
+            yield parent,_identity(parent.path.stat())
+        else:
+            parent=stack.enter_context(pinned_directory_fd(ancestor))
+            for name in path.relative_to(ancestor).parts:
+                try:os.mkdir(name,dir_fd=parent)
+                except FileExistsError:pass
+                parent=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent)
+                stack.callback(os.close,parent)
+            yield parent,_identity(os.fstat(parent))
+
+
+@contextmanager
+def _delivery_stage(parent, destination):
+    """Lend a private writer path and publish the same payload through its pinned parent."""
+    with ExitStack() as stack:
+        if os.name=='nt':
+            stage=stack.enter_context(windows_private_stage(parent.path))
+            yield stage.path,_identity(stage.path.stat()),lambda result,receipt:stage.publish_to(destination)
+            return
+        wrapper=stack.enter_context(private_stage_fd(parent))
+        os.mkdir('delivery', mode=0o700, dir_fd=wrapper)
+        payload=os.open('delivery',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=wrapper)
+        stack.callback(os.close,payload)
+        identity=_identity(os.fstat(payload))
+        if sys.platform.startswith('linux'):
+            stage=stack.enter_context(directory_capability(payload)).path
+        else:
+            # Path-based verifiers need an ordinary private workspace on macOS.
+            # Only exact checked files are copied to the descriptor-relative payload.
+            stage=Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        def publish(result,receipt):
+            if not sys.platform.startswith('linux'):
+                from atomic_publish import _copy_verified_file
+                from scene3d_snapshot import _stage_directory
+                for ref in [*_delivery_files(result),receipt]:
+                    with open_payload(stage,ref['path']) as (source,_):
+                        *parts,name=ref['path'].split('/')
+                        with _stage_directory(payload,parts,create=True) as directory:
+                            fd=os.open(name,os.O_RDWR|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+                            with os.fdopen(fd,'r+b') as target:
+                                _copy_verified_file(source.fileno(),target.fileno(),ref['sha256'],ref['bytes'])
+            require(_identity(os.stat('delivery',dir_fd=wrapper,follow_symlinks=False))==identity,
+                    'ownership','Staged delivery changed before publication.')
+            _rename_no_replace('delivery',destination.name,source_dir_fd=wrapper,destination_dir_fd=parent)
+            os.fsync(parent)
+        yield stage,identity,publish
 
 
 class JobStore:
@@ -123,6 +241,14 @@ class JobStore:
                        'stage TEXT PRIMARY KEY, bytes INTEGER NOT NULL, pid INTEGER NOT NULL)')
             if 'job' not in {row['name'] for row in db.execute('PRAGMA table_info(storage_reservations)')}:
                 db.execute('ALTER TABLE storage_reservations ADD COLUMN job TEXT')
+
+            db.execute('CREATE INDEX IF NOT EXISTS jobs_priority ON jobs(priority DESC,created,id) '
+                       "WHERE cancel=0 AND state IN ('queued','running')")
+            db.execute('CREATE INDEX IF NOT EXISTS frames_by_state ON frames(state,job,frame)')
+            db.execute('CREATE TABLE IF NOT EXISTS delivery_intents('
+                       'destination TEXT PRIMARY KEY, job TEXT NOT NULL, revision INTEGER NOT NULL, '
+                       'parent TEXT NOT NULL, payload TEXT NOT NULL, result_sha256 TEXT NOT NULL, '
+                       'result_bytes INTEGER NOT NULL)')
 
     @contextmanager
     def _transaction(self):
@@ -294,6 +420,16 @@ class JobStore:
         return sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes(
             active_tokens=active_tokens,reserved_stages=reserved_stages)
 
+    def _active_reservations(self,db):
+        active=[]
+        for row in db.execute('SELECT j.*,f.token FROM frames f JOIN jobs j ON j.id=f.job '
+                              'WHERE f.state="running" LIMIT ?', (self.capacity['workers']+1,)):
+            require(len(active)<self.capacity['workers'],'ownership','Running claims exceed store capacity.')
+            request,backend=self._checked_request(row)
+            active.append(dict(resources=request['settings']['resources'],gpu=backend['device']!='cpu',
+                               token=row['token']))
+        return active
+
     def _storage_reserved(self, db, live):
         reservations=[]
         for row in db.execute('SELECT * FROM storage_reservations').fetchall():
@@ -302,7 +438,7 @@ class JobStore:
                 # The bytes remain evidence; only the dead owner's reservation
                 # is released. Physical leftovers are then counted below.
                 db.execute('DELETE FROM storage_reservations WHERE stage=?',(row['stage'],))
-        reserved=sum(json.loads(row['request'])['settings']['resources']['storage_bytes'] for row in live)
+        reserved=sum(row['resources']['storage_bytes'] for row in live)
         reserved+=sum(row['bytes'] for row in reservations)
         return reserved+self._stored_output_bytes(active_tokens=[row['token'] for row in live],
             reserved_stages=[row['stage'] for row in reservations])
@@ -336,38 +472,74 @@ class JobStore:
             return dict(applied=apply,entries=selected)
 
     def _refresh(self, db, job):
-        states=[row[0] for row in db.execute('SELECT state FROM frames WHERE job=?',(job,))]
+        states={row[0] for row in db.execute('SELECT DISTINCT state FROM frames WHERE job=?',(job,))}
         cancel=db.execute('SELECT cancel FROM jobs WHERE id=?',(job,)).fetchone()[0]
         state=('running' if 'running' in states else 'cancelled' if cancel else
-               'complete' if all(s=='complete' for s in states) else
+               'complete' if states=={'complete'} else
                'failed' if 'failed' in states and 'queued' not in states else 'queued')
         db.execute('UPDATE jobs SET state=? WHERE id=?',(state,job))
 
     def claim(self, job=None):
         """Claim one priority-ordered frame only when global reservations permit."""
         with self._transaction() as db:
-            live=list(db.execute('SELECT j.request,j.backend,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
-            used={name:sum(json.loads(r['request'])['settings']['resources'][name] for r in live)
-                  for name in ('workers','memory_bytes','storage_bytes')}
+            live=self._active_reservations(db)
+            used={name:sum(row['resources'][name] for row in live) for name in ('workers','memory_bytes')}
+            gpu_used=sum(row['gpu'] for row in live)
             used['storage_bytes']=self._storage_reserved(db,live)
-            gpu_used=sum(json.loads(r['backend'])['device']!='cpu' for r in live)
-            query='SELECT f.*,j.request,j.backend,j.snapshot FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="queued" AND j.cancel=0'
+            if used['workers']>=self.capacity['workers']:
+                return None
+            # Each job has a single frame budget. Let SQLite select one fitting
+            # job, probing the indexed queue once per job regardless of frame count.
+            query="""SELECT j.*, (SELECT frame FROM frames WHERE state='queued' AND job=j.id
+                                 ORDER BY frame LIMIT 1) AS candidate
+                     FROM jobs j WHERE j.cancel=0 AND j.state IN ('queued','running')
+                     AND candidate IS NOT NULL"""
             args=[]
-            if job is not None:query+=' AND j.id=?';args.append(job)
-            query+=' ORDER BY j.priority DESC,j.created,f.frame'
-            for row in db.execute(query,args).fetchall():
-                request=json.loads(row['request']);backend=json.loads(row['backend'])
-                budget=request['settings']['resources'];gpu=backend['device']!='cpu'
-                if any(used[n]+budget[n]>self.capacity[n] for n in used):continue
-                if gpu and gpu_used>=self.capacity['gpu_workers']:continue
-                token=uuid.uuid4().hex
-                db.execute('UPDATE frames SET state="running",attempts=attempts+1,token=?,pid=?,heartbeat=? WHERE job=? AND frame=?',
-                           (token,os.getpid(),self.clock(),row['job'],row['frame']))
-                self._event(db,row['job'],'claimed',{'frame':row['frame'],'token':token})
-                self._refresh(db,row['job'])
-                return dict(job=row['job'],frame=row['frame'],token=token,request=request,backend=backend,
-                            snapshot=row['snapshot'],cache_key=row['cache_key'],spec=json.loads(row['spec']))
-        return None
+            if job is not None:
+                query+=' AND j.id=?'
+                args.append(job)
+            else:
+                # Malformed JSON must reach the canonical validator. These
+                # predicates only select a candidate, never authorize a lease.
+                query+=""" AND CASE WHEN json_valid(request) AND json_valid(backend) THEN
+                         coalesce(json_extract(request,'$.settings.resources.workers') <= ? AND
+                                  json_extract(request,'$.settings.resources.memory_bytes') <= ? AND
+                                  json_extract(request,'$.settings.resources.storage_bytes') <= ? AND
+                                  (json_extract(backend,'$.device')='cpu' OR ?),1) ELSE 1 END"""
+                args.extend(max(-1,min(self.capacity[name]-used[name],2**63-1))
+                            for name in ('workers','memory_bytes','storage_bytes'))
+                args.append(gpu_used<self.capacity['gpu_workers'])
+            query+=' ORDER BY j.priority DESC,j.created,candidate,j.id LIMIT 1'
+            candidate=db.execute(query,args).fetchone()
+            if candidate is None:
+                return None
+            request,backend=self._checked_request(candidate)
+            budget=request['settings']['resources']
+            if (any(used[n]+budget[n]>self.capacity[n] for n in used) or
+                    backend['device']!='cpu' and gpu_used>=self.capacity['gpu_workers']):
+                return None
+            row=db.execute('SELECT * FROM frames WHERE job=? AND frame=?',
+                           (candidate['id'],candidate['candidate'])).fetchone()
+            span=request['frame_range']
+            length=span['end']-span['start']
+            partition=db.execute("""SELECT count(*),min(frame),max(frame),min(typeof(frame)='integer'
+                                       AND state IN ('queued','running','complete','cancelled','failed'))
+                                    FROM (SELECT frame,state FROM frames WHERE job=? LIMIT ?)""",
+                                 (candidate['id'],length+1)).fetchone()
+            require(tuple(partition)==(length,span['start'],span['end']-1,1)
+                    and type(row['attempts']) is int
+                    and 0<=row['attempts']<request['max_attempts'],
+                    'ownership','Persisted frame partition or attempt differs from the request.')
+            spec=make_frame_spec(request,row['frame'],Path(candidate['snapshot'])/'snapshot.json')
+            require(row['spec']==_dump(spec) and row['cache_key']==object_hash(dict(frame=spec['cache_key'],backend=backend)),
+                    'ownership','Persisted frame plan or cache key differs from the request.')
+            token=uuid.uuid4().hex
+            db.execute('UPDATE frames SET state="running",attempts=attempts+1,token=?,pid=?,heartbeat=? WHERE job=? AND frame=?',
+                       (token,os.getpid(),self.clock(),row['job'],row['frame']))
+            self._event(db,row['job'],'claimed',{'frame':row['frame'],'token':token})
+            self._refresh(db,row['job'])
+            return dict(job=row['job'],frame=row['frame'],token=token,request=request,backend=backend,
+                        snapshot=candidate['snapshot'],cache_key=row['cache_key'],spec=spec)
 
     def _owned(self, db, lease):
         row=db.execute('SELECT * FROM frames WHERE job=? AND frame=?',(lease['job'],lease['frame'])).fetchone()
@@ -403,23 +575,26 @@ class JobStore:
 
     def recover(self, job=None):
         """Requeue dead-process claims; retain live claims despite old heartbeats."""
-        recovered=[]
         with self._transaction() as db:
-            query='SELECT f.*,j.request,j.cancel FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'
-            args=[]
-            if job is not None:query+=' AND f.job=?';args.append(job)
-            for row in db.execute(query,args).fetchall():
-                if _alive(row['pid']):continue
-                state='cancelled' if row['cancel'] else 'queued' if row['attempts']<json.loads(row['request'])['max_attempts'] else 'failed'
-                db.execute('UPDATE frames SET state=?,token=NULL,pid=NULL,heartbeat=NULL,error="Owner process exited" WHERE job=? AND frame=?',
-                           (state,row['job'],row['frame']))
-                recovered.append((row['job'],row['frame']))
-                self._event(db,row['job'],'owner-exited',{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
+            return self._recover(db,job)
+
+    def _recover(self, db, job):
+        recovered=[]
+        query='SELECT f.*,j.request,j.cancel FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'
+        args=[]
+        if job is not None:query+=' AND f.job=?';args.append(job)
+        for row in db.execute(query,args).fetchall():
+            if _alive(row['pid']):continue
+            state='cancelled' if row['cancel'] else 'queued' if row['attempts']<json.loads(row['request'])['max_attempts'] else 'failed'
+            db.execute('UPDATE frames SET state=?,token=NULL,pid=NULL,heartbeat=NULL,error="Owner process exited" WHERE job=? AND frame=?',
+                       (state,row['job'],row['frame']))
+            recovered.append((row['job'],row['frame']))
+            self._event(db,row['job'],'owner-exited',{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
         return recovered
 
     def resume(self, job, *, retry_failed=False, expected_revision=None, verifier=None):
-        self.recover(job)
         snapshot=self.status(job)
+        require(expected_revision is None or expected_revision==snapshot['revision'],'ownership','Stale job revision.')
         completed=[frame for frame in snapshot['frames'] if frame['state']=='complete']
         require(not completed or verifier is not None,'verification-failed',
                 'Resuming completed frames requires an independent verifier.')
@@ -435,6 +610,7 @@ class JobStore:
             require(row is not None,'invalid-input','Unknown render job.')
             require(expected_revision is None or row['revision']==expected_revision,'ownership','Stale job revision.')
             require(row['revision']==snapshot['revision'],'ownership','Job changed during resume verification.')
+            self._recover(db,job)
             require(not db.execute('SELECT 1 FROM frames WHERE job=? AND state="running"',(job,)).fetchone(),
                     'ownership','Cannot resume while a live worker owns a frame.')
             db.execute('UPDATE jobs SET cancel=0 WHERE id=?',(job,))
@@ -442,6 +618,9 @@ class JobStore:
             for state in states:
                 db.execute('UPDATE frames SET state="queued",error=NULL WHERE job=? AND state=? AND attempts<?',
                            (job,state,json.loads(row['request'])['max_attempts']))
+            # Cancelled attempts that consumed the retry budget cannot run again.
+            db.execute('UPDATE frames SET state="failed" WHERE job=? AND state="cancelled" AND attempts>=?',
+                       (job,snapshot['request']['max_attempts']))
             for frame in invalid:
                 db.execute('UPDATE frames SET state=CASE WHEN attempts<? THEN "queued" ELSE "failed" END,error="Cached frame failed verification" WHERE job=? AND frame=?',
                            (json.loads(row['request'])['max_attempts'],job,frame))
@@ -527,7 +706,7 @@ class JobStore:
             self._owned(db,lease)
             require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                     'cancelled','Cancellation requested before cache admission.')
-            live=list(db.execute('SELECT j.request,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
+            live=self._active_reservations(db)
             require(self._storage_reserved(db,live)+reserve<=self.capacity['storage_bytes'],
                     'storage-exhaustion','Complete cache stage exceeds unreserved store capacity.')
             db.execute('INSERT INTO storage_reservations(stage,bytes,pid,job) VALUES(?,?,?,?)',
@@ -614,78 +793,168 @@ class JobStore:
         """
         state=self.status(job)
         require(state['state']=='complete','incomplete-output','Job is not complete.')
-        request=state['request'];backend=state['backend']
         destination=Path(destination).absolute()
-        require(not destination.exists() and not destination.is_symlink(),
-                'ownership','Delivery destination already exists.')
+        require(destination.name not in ('','.','..') and '..' not in destination.parts,
+                'ownership','Delivery destination contains parent traversal.')
         require(not destination.parent.resolve().is_relative_to(self.root),
                 'ownership','Delivery destination cannot be inside the job store.')
-        destination.parent.mkdir(parents=True,exist_ok=True)
-        stage=Path(tempfile.mkdtemp(prefix='.render3d-delivery-',dir=destination.parent))
-        try:
-            images=[];logs=[];total=0
-            budget=request['settings']['resources']['storage_bytes']
-            def write_metadata(name,value):
-                nonlocal total
-                payload=(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
-                require(len(payload)<=budget-total,'storage-exhaustion',
-                        'Delivery metadata exceeds request storage budget.')
-                atomic_bytes(safe_path(stage,name),payload)
-                total+=len(payload)
-            for frame in state['frames']:
-                spec=make_frame_spec(request,frame['frame'],Path(state['snapshot'])/'snapshot.json')
-                lease=dict(request=request,frame=frame['frame'],cache_key=frame['cache_key'],
-                           spec=spec,backend=backend)
-                record=self._verify_cache(lease,verifier)
-                source=safe_path(self.root,'cache/'+frame['cache_key'])
-                for image in record['result']['images']:
-                    image=deepcopy(image);old=image['file']
-                    suffix=request['settings']['output']['format']
-                    newpath=(f'frames/{image["frame"]:06d}.{suffix}' if image['pass_name']=='combined'
-                             else f'passes/{image["pass_name"]}/{image["frame"]:06d}.{suffix}')
-                    src=safe_path(source,old['path'],exists=True);dst=safe_path(stage,newpath)
-                    dst.parent.mkdir(parents=True,exist_ok=True)
-                    total+=old['bytes']
-                    require(total<=request['settings']['resources']['storage_bytes'],
-                            'storage-exhaustion','Delivery exceeds request storage budget.')
-                    _copy_artifact(src,dst,old)
-                    image['file']=dict(old,path=newpath);images.append(image)
-                provenance='provenance/'+format(frame['frame'],'08d')+'.json'
-                target=safe_path(stage,provenance);write_metadata(provenance,record)
-                logs.append(dict(path=provenance,sha256=sha256(target),bytes=target.stat().st_size))
-            manifest=dict(version=1,job=job,request_sha256=object_hash(request),backend=backend,
-                          images=images,provenance=logs)
-            write_metadata('manifest.json',manifest)
-            manifest_ref=dict(path='manifest.json',sha256=sha256(stage/'manifest.json'),bytes=(stage/'manifest.json').stat().st_size)
-            indices=[frame['frame'] for frame in state['frames']]
-            result=dict(schema_version=1,kind='render3d-result',job=job,request_sha256=object_hash(request),
-                        snapshot_sha256=spec['snapshot_sha256'],backend=backend,status='partial',
-                        requested_frames=indices,successful=indices,failed=[],skipped=[],reused=[],
-                        images=images,diagnostics=[],usage=dict(elapsed_seconds=None,peak_memory_bytes=None,
-                        output_bytes=total,measurement='unavailable'),logs=logs,manifest=manifest_ref,
-                        verification=dict(status='not-run',verifier=None,evidence=None))
-            report=verifier(request,result,stage)
-            require(isinstance(report,dict) and isinstance(report.get('verifier'),dict),
-                    'verification-failed','Verifier did not return its identity.')
-            write_metadata('verification.json',report)
-            result['verification']=dict(status='passed',verifier=report['verifier'],evidence=dict(
-                path='verification.json',sha256=sha256(stage/'verification.json'),bytes=(stage/'verification.json').stat().st_size))
-            result['status']='complete';validate(result,'RenderResult')
-            # Include the result's own bytes in its truthful output usage.
-            for _ in range(8):
-                payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
-                actual=total+len(payload)
-                if result['usage']['output_bytes']==actual:break
-                result['usage']['output_bytes']=actual
-            else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
-            require(actual<=budget,'storage-exhaustion','Complete delivery exceeds request storage budget.')
-            atomic_bytes(stage/'result.json',payload)
-            with self._transaction() as db:
-                live=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
-                require(live['revision']==state['revision'] and live['state']=='complete',
-                        'ownership','Job changed while delivering frames.')
-                _rename_no_replace(stage,destination)
-                self._event(db,job,'delivery-published',dict(destination=str(destination),result_sha256=sha256(destination/'result.json')))
+        if os.name=='nt':
+            from atomic_windows import validate_destination
+            destination=validate_destination(destination)
+        with _delivery_parent(destination.parent) as (parent,parent_id):
+            if destination.exists() or destination.is_symlink():
+                return self._reconcile_delivery(state,destination,parent,parent_id)
+            with _delivery_stage(parent,destination) as (stage,payload_id,publish):
+                result,receipt=self._build_delivery(state,stage,verifier)
+                digest=receipt['sha256']
+                intent=(str(destination),job,state['revision'],parent_id,payload_id,digest,receipt['bytes'])
+                with self._transaction() as db:
+                    current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
+                    require(current['revision']==state['revision'] and current['state']=='complete',
+                            'ownership','Job changed while delivering frames.')
+                    require(not destination.exists() and not destination.is_symlink(),
+                            'ownership','Delivery destination already exists.')
+                    # Pre-rename interruption leaves no published destination. Replace
+                    # that abandoned intent; exclusive rename also fences concurrent writers.
+                    prepared=db.execute('SELECT job,parent FROM delivery_intents WHERE destination=?',
+                                        (str(destination),)).fetchone()
+                    require(prepared is None or (prepared['job'],prepared['parent'])==(job,parent_id),
+                            'ownership','Another job or parent owns the pending delivery.')
+                    db.execute('INSERT OR REPLACE INTO delivery_intents VALUES(?,?,?,?,?,?,?)',intent)
+                with self._transaction() as db:
+                    pending=db.execute('SELECT * FROM delivery_intents WHERE destination=?',(str(destination),)).fetchone()
+                    current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
+                    require(pending is not None and tuple(pending)==intent and current['revision']==state['revision']
+                            and current['state']=='complete','ownership','Delivery changed before publication.')
+                    require(_identity(destination.parent.stat())==parent_id,'ownership','Delivery parent changed.')
+                    publish(result,receipt)
+                    require(_identity(destination.parent.stat())==parent_id and
+                            _identity(destination.stat(follow_symlinks=False))==payload_id,
+                            'ownership','Delivery location changed during publication.')
+                    self._finish_delivery(db,job,destination,digest)
+                return result
+
+    def _finish_delivery(self,db,job,destination,digest):
+        self._event(db,job,'delivery-published',dict(destination=str(destination),result_sha256=digest))
+        db.execute('DELETE FROM delivery_intents WHERE destination=?',(str(destination),))
+
+    def _reconcile_delivery(self,state,destination,parent,parent_id):
+        """Only complete an interrupted publication from the recorded inode and exact bytes."""
+        job=state['id']
+        with self._transaction() as db, ExitStack() as stack:
+            pending=db.execute('SELECT * FROM delivery_intents WHERE destination=?',(str(destination),)).fetchone()
+            require(pending is not None and pending['job']==job and pending['parent']==parent_id
+                    and not destination.is_symlink() and destination.is_dir(),
+                    'ownership','Delivery destination already exists.')
+            current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
+            require(current['revision']==state['revision'] and current['state']=='complete',
+                    'ownership','Job changed while reconciling delivery.')
+            if os.name=='nt':
+                payload=stack.enter_context(parent.pin_child(destination.name))
+                identity=_identity(payload.path.stat())
+                reader=lambda name:open_payload(payload.path,name)
+            else:
+                payload=os.open(destination.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent)
+                stack.callback(os.close,payload)
+                identity=_identity(os.fstat(payload))
+                reader=lambda name:open_payload_at(payload,name)
+            require(identity==pending['payload'],'ownership','Published directory differs from the prepared delivery.')
+            with reader('result.json') as (stream,info):
+                require(info.st_size==pending['result_bytes'] and info.st_size<=MAX_RESULT_JSON_BYTES,
+                        'ownership','Published result size differs from its intent.')
+                data=stream.read(info.st_size+1)
+            require(hashlib.sha256(data).hexdigest()==pending['result_sha256'],'ownership','Published result digest differs.')
+            result=validate(decode_json(data,max_bytes=MAX_RESULT_JSON_BYTES),'RenderResult')
+            require(result['job']==job and result['request_sha256']==state['request_sha256']
+                    and result['backend']==state['backend'] and result['status']=='complete',
+                    'ownership','Published result identity differs.')
+            refs=_delivery_files(result)
+            _check_delivery_inventory(payload,refs)
+            for ref in refs:
+                with reader(ref['path']) as (stream,info):
+                    require(info.st_size==ref['bytes'],'ownership','Published artifact size differs.')
+                    digest=hashlib.sha256()
+                    remaining=ref['bytes']
+                    while remaining:
+                        chunk=stream.read(min(1024**2,remaining))
+                        if not chunk:break
+                        remaining-=len(chunk)
+                        digest.update(chunk)
+                    require(not remaining and not stream.read(1) and digest.hexdigest()==ref['sha256'],
+                            'ownership','Published artifact differs from prepared delivery.')
+            require(_identity(destination.parent.stat())==parent_id and
+                    _identity(destination.stat(follow_symlinks=False))==identity,
+                    'ownership','Delivery location changed while reconciling.')
+            if os.name!='nt':os.fsync(parent)
+            self._finish_delivery(db,job,destination,pending['result_sha256'])
             return result
-        finally:
-            if stage.exists():shutil.rmtree(stage)
+
+    def _build_delivery(self,state,stage,verifier):
+        request=state['request'];backend=state['backend'];job=state['id']
+        reused=set()
+        with self._transaction() as db:
+            for row in db.execute('SELECT event,detail FROM events WHERE job=? AND event IN '
+                                  '("frame-published","cache-reused") ORDER BY seq',(job,)):
+                frame=decode_json(row['detail'])['frame']
+                if row['event']=='cache-reused':reused.add(frame)
+                else:reused.discard(frame)
+        images=[];logs=[];total=0
+        budget=request['settings']['resources']['storage_bytes']
+        def write_metadata(name,value):
+            nonlocal total
+            payload=(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+            require(len(payload)<=budget-total,'storage-exhaustion',
+                    'Delivery metadata exceeds request storage budget.')
+            atomic_bytes(safe_path(stage,name),payload)
+            total+=len(payload)
+        for frame in state['frames']:
+            spec=make_frame_spec(request,frame['frame'],Path(state['snapshot'])/'snapshot.json')
+            lease=dict(request=request,frame=frame['frame'],cache_key=frame['cache_key'],
+                       spec=spec,backend=backend)
+            record=self._verify_cache(lease,verifier)
+            source=safe_path(self.root,'cache/'+frame['cache_key'])
+            for image in record['result']['images']:
+                image=deepcopy(image);old=image['file']
+                suffix=request['settings']['output']['format']
+                newpath=(f'frames/{image["frame"]:06d}.{suffix}' if image['pass_name']=='combined'
+                         else f'passes/{image["pass_name"]}/{image["frame"]:06d}.{suffix}')
+                src=safe_path(source,old['path'],exists=True);dst=safe_path(stage,newpath)
+                dst.parent.mkdir(parents=True,exist_ok=True)
+                total+=old['bytes']
+                require(total<=request['settings']['resources']['storage_bytes'],
+                        'storage-exhaustion','Delivery exceeds request storage budget.')
+                _copy_artifact(src,dst,old)
+                image['file']=dict(old,path=newpath);images.append(image)
+            provenance='provenance/'+format(frame['frame'],'08d')+'.json'
+            target=safe_path(stage,provenance);write_metadata(provenance,record)
+            logs.append(dict(path=provenance,sha256=sha256(target),bytes=target.stat().st_size))
+        manifest=dict(version=1,job=job,request_sha256=object_hash(request),backend=backend,
+                      images=images,provenance=logs)
+        write_metadata('manifest.json',manifest)
+        manifest_ref=dict(path='manifest.json',sha256=sha256(stage/'manifest.json'),bytes=(stage/'manifest.json').stat().st_size)
+        indices=[frame['frame'] for frame in state['frames']]
+        result=dict(schema_version=1,kind='render3d-result',job=job,request_sha256=object_hash(request),
+                    snapshot_sha256=spec['snapshot_sha256'],backend=backend,status='partial',
+                    requested_frames=indices,successful=[i for i in indices if i not in reused],failed=[],skipped=[],
+                    reused=[i for i in indices if i in reused],
+                    images=images,diagnostics=[],usage=dict(elapsed_seconds=None,peak_memory_bytes=None,
+                    output_bytes=total,measurement='unavailable'),logs=logs,manifest=manifest_ref,
+                    verification=dict(status='not-run',verifier=None,evidence=None))
+        report=verifier(request,result,stage)
+        require(isinstance(report,dict) and isinstance(report.get('verifier'),dict),
+                'verification-failed','Verifier did not return its identity.')
+        write_metadata('verification.json',report)
+        result['verification']=dict(status='passed',verifier=report['verifier'],evidence=dict(
+            path='verification.json',sha256=sha256(stage/'verification.json'),bytes=(stage/'verification.json').stat().st_size))
+        result['status']='complete';validate(result,'RenderResult')
+        # Include the result's own bytes in its truthful output usage.
+        for _ in range(8):
+            payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+            actual=total+len(payload)
+            if result['usage']['output_bytes']==actual:break
+            result['usage']['output_bytes']=actual
+        else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
+        require(len(payload)<=MAX_RESULT_JSON_BYTES,'storage-exhaustion','Delivery result exceeds its read bound.')
+        require(actual<=budget,'storage-exhaustion','Complete delivery exceeds request storage budget.')
+        atomic_bytes(stage/'result.json',payload)
+        return result,dict(path='result.json',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())

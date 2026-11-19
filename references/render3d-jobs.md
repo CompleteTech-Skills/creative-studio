@@ -40,6 +40,16 @@ be enforced by its supervisor. `resume(job, verifier=...)` rechecks existing
 completed outputs and source snapshots; invalid cached outputs return to the
 queue if attempts remain. A stale expected revision rejects the mutation.
 
+Admission checks the stored request, backend and priority against the canonical
+job ID in the lease transaction. Running leases supply checked resource
+reservations. SQLite selects one fitting job in priority order using an
+indexed lookup of the first queued frame per job. Before granting the lease, it checks the selected
+frame's bounds, attempt, snapshot-derived plan and cache key. On Windows the
+owner probe opens a synchronization handle and performs a zero-time wait.
+Resume checks its expected revision before recovering dead workers and commits
+the recovery and resume together. A cancelled frame with no remaining attempts
+settles as failed when the operator resumes the job.
+
 Outputs are independently verified before and after copying into private cache
 staging, then published through the repository's exclusive native rename.
 Copying is bounded by declared bytes and checks the same bytes written; changed
@@ -69,6 +79,18 @@ verification and result JSON, counts against the request storage budget. Output
 usage reports the complete directory size. Existing destinations remain untouched. Store/cache metadata uses bounded nonblocking regular-file reads and strict JSON
 decoding. The full request, manifest, result and verifier identity are
 hash-bound; the output is not a claim of artistic approval.
+
+Delivery records the latest native completion of each frame. Frames fulfilled
+from the verified cache appear in `reused`; newly rendered frames appear in
+`successful`. This uses the full per-job event history, including older stores.
+Before an exclusive directory rename, SQLite commits a delivery intent binding
+the destination parent, verified payload directory, result size and digest.
+If the process exits after rename and before the event commits, retry
+`materialize()` with the same job and destination. Recovery checks the physical
+directory identities, result, and every image and metadata reference before
+recording one publication event. A completed receipt or an unrelated existing
+destination still rejects a second publication. Private staging can leave an
+empty wrapper on the destination filesystem.
 
 `list_jobs(limit=..., offset=...)` and `status(event_limit=...)` bound query output.
 `cache_inventory()` marks every frame key referenced by any retained job as
