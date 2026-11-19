@@ -32,7 +32,8 @@ point up. Extrusion produces two caps and walls along every outline and hole
 edge. An empty or omitted hole list preserves legacy simple-outline OBJ bytes.
 
 The issue #61 tests in `test_rig_scene3d_environment` measure cap area, signed
-volume, opening clearance and manifold edge incidence. They also exercise the
+volume, opening clearance and manifold edge incidence, including a 40 µm square
+with a 36 µm through-hole and a cap area of 304 µm². They also exercise the
 shared vertex budget, invalid ring relationships, persisted recipe and geometry
 reopening, and atomic rejection of an invalid edited recipe.
 

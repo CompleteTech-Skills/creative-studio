@@ -1,5 +1,6 @@
 """Bounded, deterministic Y-up mesh construction for editable Scene3D assets."""
 from dataclasses import dataclass
+from fractions import Fraction
 import math
 import numpy as np
 from scene3d_graph import require
@@ -209,6 +210,18 @@ def _turn(a, b, c):
     return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])
 
 
+def _oriented_area2(a, b, c):
+    """Signed double area for triangulation decisions on validated float coordinates."""
+    left = (b[0]-a[0])*(c[1]-a[1])
+    right = (b[1]-a[1])*(c[0]-a[0])
+    det = left-right
+    # Bound rounding in the coordinate differences, products and subtraction.
+    # Near cancellation, recompute from the original binary coordinates.
+    if abs(det) > 8 * math.ulp(abs(left)+abs(right)):
+        return det
+    return _turn(tuple(map(Fraction, a)), tuple(map(Fraction, b)), tuple(map(Fraction, c)))
+
+
 def _edges(ring):
     return zip(ring, ring[1:]+ring[:1])
 
@@ -280,9 +293,9 @@ def _profile_rings(points, holes):
 def _in_sector(before, at, after, target):
     # The interior lies to the left of this oriented boundary. At a duplicated
     # bridge endpoint each occurrence has its own interior sector.
-    incoming = _turn(before,at,target) > _POLYGON_EPS
-    outgoing = _turn(at,after,target) > _POLYGON_EPS
-    if _turn(before,at,after) > 0:
+    incoming = _oriented_area2(before,at,target) > 0
+    outgoing = _oriented_area2(at,after,target) > 0
+    if _oriented_area2(before,at,after) > 0:
         return incoming and outgoing
     return incoming or outgoing
 
@@ -336,15 +349,20 @@ def _triangulate_profile(points, holes):
         boundaries.append(indices)
     indices = _bridge_holes(vertices, boundaries)
     faces = []
+    # Preserve simple-outline OBJ face order. A bridge introduces new local
+    # turns unrelated to the validated ring's minimum corner area.
+    area2 = _oriented_area2 if holes else _turn
+    min_ear_area2 = 1e-12 if holes else _POLYGON_EPS
+    edge_tolerance = 0 if holes else _POLYGON_EPS
     while len(indices) > 3:
         for k,b in enumerate(indices):
             a, c = indices[k-1], indices[(k+1)%len(indices)]
             pa, pb, pc = vertices[a], vertices[b], vertices[c]
-            if _turn(pa,pb,pc) <= _POLYGON_EPS:
+            if area2(pa,pb,pc) <= min_ear_area2:
                 continue
-            if any(_turn(pa,pb,vertices[q]) >= -_POLYGON_EPS
-                   and _turn(pb,pc,vertices[q]) >= -_POLYGON_EPS
-                   and _turn(pc,pa,vertices[q]) >= -_POLYGON_EPS
+            if any(area2(pa,pb,vertices[q]) >= -edge_tolerance
+                   and area2(pb,pc,vertices[q]) >= -edge_tolerance
+                   and area2(pc,pa,vertices[q]) >= -edge_tolerance
                    for q in indices if q not in (a,b,c)):
                 continue
             faces.append([a,b,c])
@@ -352,7 +370,7 @@ def _triangulate_profile(points, holes):
             break
         else:
             require(False, 'Polygon cannot be triangulated without degeneracy.')
-    require(_turn(*(vertices[i] for i in indices)) > 1e-12,
+    require(area2(*(vertices[i] for i in indices)) > 1e-12,
             'Polygon cap has a degenerate final triangle.')
     faces.append(indices)
     return vertices, faces, boundaries

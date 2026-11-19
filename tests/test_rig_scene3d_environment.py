@@ -76,6 +76,45 @@ class GeometryTests(unittest.TestCase):
                 crosses = side[:,:,0]*delta[:,:,1] - side[:,:,1]*delta[:,:,0]
                 self.assertEqual(bool((crosses <= 0).all(axis=1).any()), covered)
 
+    def test_micrometer_through_hole_preserves_cap_area_and_closed_volume(self):
+        outer = [[0,0], [40e-6,0], [40e-6,40e-6], [0,40e-6]]
+        hole = [[2e-6,2e-6], [38e-6,2e-6], [38e-6,38e-6], [2e-6,38e-6]]
+        area = 3.04e-10
+        height = 20e-6
+        for kind in ('polygon', 'extrude'):
+            with self.subTest(kind=kind):
+                dimensions = {'height': height} if kind == 'extrude' else {}
+                mesh = primitive(kind, points=outer, holes=[hole], **dimensions)
+                triangles = np.asarray(mesh.vertices)[mesh.triangles]
+                normals = np.cross(triangles[:,1]-triangles[:,0], triangles[:,2]-triangles[:,0])
+                caps = [(0,1)] if kind == 'polygon' else [(0,-1), (height,1)]
+                for y, sign in caps:
+                    cap = normals[(triangles[:,:,1] == y).all(axis=1),1]
+                    self.assertEqual(len(cap), 8)
+                    self.assertTrue((sign*cap > 0).all())
+                    self.assertTrue(math.isclose(sign*sum(cap)/2, area, rel_tol=1e-12))
+                if kind == 'extrude':
+                    self.assertEqual(len(triangles), 32)
+                    edges = Counter((a,b) for face in mesh.triangles
+                                    for a,b in zip(face, face[1:]+face[:1]))
+                    for (a,b), uses in edges.items():
+                        self.assertEqual((uses, edges[b,a]), (1,1))
+                    volume = np.einsum('ij,ij->i', triangles[:,0], normals).sum()/6
+                    self.assertTrue(math.isclose(volume, area*height, rel_tol=1e-12))
+
+    def test_triangulation_distinguishes_turns_lost_to_roundoff(self):
+        from scene3d_geometry import _oriented_area2
+        # The two cross-product terms round to the same float, although their
+        # exact difference is one square grid unit.
+        n, step = 2**27, 2.0**-18
+        a = (0., 0.)
+        b = ((n+1)*step, n*step)
+        c = (n*step, (n-1)*step)
+        self.assertEqual(b[0]*c[1], b[1]*c[0])
+        self.assertEqual(_oriented_area2(a,b,c), -step**2)
+        self.assertEqual(_oriented_area2(a,c,b), step**2)
+        self.assertEqual(_oriented_area2(a,b,(2*b[0],2*b[1])), 0)
+
     def test_polygon_hole_validation_and_shared_vertex_budget(self):
         outer = [[0,0],[8,0],[8,8],[0,8]]
         hole = [[2,2],[5,2],[5,5],[2,5]]
