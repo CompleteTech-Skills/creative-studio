@@ -535,6 +535,10 @@ pitch. Parent motion does not become an eyelid command. Each exact mesh/morph
 channel has one gaze owner; missing, inert or multiply owned targets reject.
 Releasing gaze removes only its owned morph overrides so authored defaults can
 resume. Existing expressions and unrelated morph channels keep their ownership.
+Public pose and IK operations resample only gaze-owned channels after their
+last constraint or IK pass, including the pose embedded in the IK report.
+Operations without active gaze preserve existing morph overrides and released
+channels instead of inferring gaze ownership from the bone pose.
 
 Native correction remaps an eyelid eye when its bone is renamed and removes
 only dependencies on an eye or exact mesh/morph that was removed. The completed

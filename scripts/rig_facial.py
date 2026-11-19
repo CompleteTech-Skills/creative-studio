@@ -66,6 +66,19 @@ def _gaze_eyelids(rig, pose, bindings, rest):
     return pose
 
 
+def refresh_gaze_eyelids(rig, pose: dict) -> dict:
+    """Resample gaze-owned morphs after the caller finishes all bone solving.
+
+    Call only while gaze is active: a pose alone carries no gaze ownership or
+    release state. No constraints or expression mixing run here, so unrelated
+    morphs and the final solved bones keep their existing values.
+    """
+    bindings = validate_eyelid_bindings(rig)
+    if not bindings:
+        return pose
+    return _gaze_eyelids(rig, deepcopy(pose), bindings, evaluate_fk(rig.skeleton))
+
+
 def apply_expressions(rig, pose: dict, expressions: dict[str, float], *, reset=True) -> dict:
     available = rig.manifest['facial']['expressions']
     require(set(expressions) <= set(available), 'RIG_EXPRESSION_UNAVAILABLE', 'An expression has no authored facial controls.',

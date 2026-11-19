@@ -97,7 +97,7 @@ def pose_operation(rig,parameters):
     from rig_contracts import validate_contract
     from rig_skeleton import neutral_pose
     from rig_animation import evaluate_animation,save_pose
-    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls
+    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls,refresh_gaze_eyelids
     from rig_constraints import apply_constraints
     pose=deepcopy(parameters['pose']) if isinstance(parameters.get('pose'),dict) else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
     validate_contract(pose,'Pose')
@@ -107,16 +107,19 @@ def pose_operation(rig,parameters):
     if parameters.get('fingers'):pose=finger_controls(rig,pose,**parameters['fingers'])
     if parameters.get('appendages'):pose=appendage_controls(rig,pose,**parameters['appendages'])
     pose,_=apply_constraints(rig.skeleton,pose,rig.manifest['controllers']['constraints'])
+    if parameters.get('gaze'):pose=refresh_gaze_eyelids(rig,pose)
     validate_contract(pose,'Pose')
     return pose
 
 
 def solve_operation(rig,parameters):
     from rig_ik import solve_ik
+    from rig_facial import refresh_gaze_eyelids
     chain=next((c for c in rig.manifest['controllers']['ik'] if c['id']==parameters['chain']),None)
     require(chain is not None,'RIG_IK_CHAIN','Requested IK chain does not exist.')
     result=solve_ik(rig.skeleton,pose_operation(rig,parameters),chain,parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'],orientation=parameters.get('orientation'))
+    if parameters.get('gaze'):result.pose=refresh_gaze_eyelids(rig,result.pose)
     return dict(pose=result.pose,report=result.report())
 
 
