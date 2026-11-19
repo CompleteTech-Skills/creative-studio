@@ -469,6 +469,8 @@ def inputs(root, job, *, _reader=None):
     paths += [x['path'] for x in job['input_images']]
     if job.get('derived_from'):
         paths.append(f"decoded/{job['derived_from']}.png")
+    if '@generation-profile' in paths:
+        raise ValueError('generation input name is reserved for the profile projection')
     hashes = {}
     for path in paths:
         inside(root, path)  # Preserve the native containment policy.

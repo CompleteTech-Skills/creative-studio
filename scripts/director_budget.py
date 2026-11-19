@@ -379,7 +379,10 @@ class BudgetLedger:
                      event['payload']['reservation_id'] == reservation_id]
         _need(outcome != 'unstarted' or not (row['attempts'] or published),
               'STATE', 'Started or published work cannot be released as unstarted.')
-        if published:
+        intent = _row_native_intent(self, state, row)
+        # A durable native observation can precede the first ledger publication
+        # when publication was interrupted. Its outstanding usage still owns the hold.
+        if published or (intent is not None and 'publication_protocol' in intent and row['attempts']):
             _require_native_finalization(state, row)
             _require_generic_reconciliation(self, row)
             owner_verified = native_run is not None
@@ -390,10 +393,11 @@ class BudgetLedger:
                     _need(any(event['key'] == key and event['evidence'] == evidence and
                               event['payload']['outcome'] == outcome for event in operation['events']),
                           'BINDING', 'Native cancellation differs from its durable owner intent.')
-            _need(not _native_pending_usage(self, row, owner_verified=owner_verified) and
-                  _native_remainder_known(self, row, published[-1]['token'], owner_verified=owner_verified), 'UNCERTAIN',
-                  'The latest published native attempt needs reconciled usage before cancellation.')
-        intent = _row_native_intent(self, state, row)
+            _need(not _native_pending_usage(self, row, owner_verified=owner_verified), 'UNCERTAIN',
+                  'Resolve every token-bound native unknown before cancellation.')
+            if published:
+                _need(_native_remainder_known(self, row, published[-1]['token'], owner_verified=owner_verified),
+                      'UNCERTAIN', 'The latest published native attempt needs reconciled usage before cancellation.')
         if intent is not None and 'publication_protocol' not in intent:
             _need(outcome == 'canceled-known' and check_legacy is not None, 'STATE',
                   'Historical cancellation requires explicit reconciliation by its native owner.')
@@ -1308,6 +1312,9 @@ class NativeBudget:
             input_hashes=deepcopy(operation['input_hashes']),
             evidence=deepcopy(operation['reservation_request']['evidence']))
         def mutate(state):
+            # A lock retry must still publish the durable running journal of
+            # this admitted physical run, not a later journal at its name.
+            self._require_current_journal()
             self._publication_capacity(state, operation, token)
             previous = [event['payload'] for event in state['events'] if
                         event['action'] == 'native-claim' and

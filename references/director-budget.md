@@ -710,6 +710,14 @@ append a capacity marker retroactively, or delete its ledger/history. Published
 or uncertain historical work must follow its measured recovery and explicit
 owner attestation instead.
 
+The generation-profile projection owns the exact `@generation-profile` input
+key. A file with that exact relative name is refused before claim admission;
+a descendant path remains an ordinary attachment. Cancellation also checks
+native token-bound uncertainty after an interrupted first publication, before
+any native-claim event exists. Generic retry accounting cannot clear that
+unknown; a matching native observation must reconcile it. The independent
+admission-identity regressions run in the operations/archive gate.
+
 A returned native claim now rechecks its complete durable journal after ledger
 publication and after its final input checks. A production claim retains every
 bound run's original native admission and directory pin from the first binding
