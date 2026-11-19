@@ -6,7 +6,7 @@ import math
 import numpy as np
 from rig_constraints import apply_constraints
 from rig_errors import require
-from rig_math import axis_angle, qmul, unit
+from rig_math import axis_angle, qmul, quaternion, unit
 from rig_skeleton import evaluate_fk, hierarchy_order, rotate_bone
 
 
@@ -42,21 +42,44 @@ def validate_eyelid_bindings(rig):
     return bindings
 
 
+def _local_eye_pitch(bone, override, parent_rest):
+    """Measure the final rotation of the rest gaze direction in parent space."""
+    forward = unit(np.linalg.solve(parent_rest, [0., 0., 1.]))
+    up = np.linalg.solve(parent_rest, [0., 1., 0.])
+    up = unit(up - forward * np.dot(up, forward))
+
+    rest = np.asarray(bone['rest']['rotation'])
+    posed = np.asarray(override.get('rotation', rest))
+    scalar = np.dot(posed, rest)
+    if scalar < 0:
+        posed, scalar = -posed, -scalar
+    # The vector part of rest * conjugate(rest) is zero. Subtract rest
+    # before multiplying so cancellation cannot erase a small eye rotation.
+    # Normalize the relative rotation only after taking this difference.
+    relative = qmul(posed - rest, rest * [-1., -1., -1., 1.])
+    relative[3] = scalar
+    relative = quaternion(relative)
+    vector = relative[:3]
+    cross = np.cross(vector, forward)
+    change = 2 * (relative[3] * cross + np.cross(vector, cross))
+    # Project the change: the rest direction has exactly zero elevation.
+    vertical = np.dot(change, up)
+    horizontal = math.hypot(1 + np.dot(change, forward), np.dot(change, np.cross(up, forward)))
+    return math.atan2(vertical, horizontal)
+
+
 def _gaze_eyelids(rig, pose, bindings, rest):
     """Set owned channels from final constrained eye pitch relative to its parent."""
-    world = evaluate_fk(rig.skeleton, pose)
+    # Retain FK validation of all authored pose overrides. Only the local
+    # quaternion below contributes to the eye rotation measurement.
+    evaluate_fk(rig.skeleton, pose)
     bones = {bone['id']:bone for bone in rig.skeleton['bones']}
     meshes = rig.geometry.by_id()
     for binding in bindings:
-        eye = binding['eye'];parent = bones[eye]['parent']
-        parent_rest = rest[parent][:3,:3] if parent else np.eye(3)
-        parent_world = world[parent][:3,:3] if parent else np.eye(3)
-        forward = unit(np.linalg.solve(parent_rest, [0.,0.,1.]))
-        up = np.linalg.solve(parent_rest, [0.,1.,0.])
-        up = unit(up-forward*np.dot(up,forward))
-        eye_forward = np.linalg.solve(rest[eye][:3,:3], [0.,0.,1.])
-        direction = unit(np.linalg.solve(parent_world, world[eye][:3,:3] @ eye_forward))
-        pitch = math.asin(float(np.clip(np.dot(direction, up), -1., 1.)))
+        eye = bones[binding['eye']]
+        parent = eye['parent']
+        parent_rest = rest[parent][:3, :3] if parent else np.eye(3)
+        pitch = _local_eye_pitch(eye, pose['bones'].get(eye['id'], {}), parent_rest)
         mesh = meshes[binding['mesh']]
         default = mesh.morph_defaults.get(binding['morph'], 0.)
         end = binding['up_weight'] if pitch >= 0 else binding['down_weight']
