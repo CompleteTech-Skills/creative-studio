@@ -95,9 +95,18 @@ changing the representative decoded-pixel comparison contract.
 Independent verification copies the encoded bytes into another private snapshot
 so a mutable source pathname cannot switch between probe and decode. It runs:
 
-- unfiltered `ffprobe -count_frames -show_streams -show_format -of json`;
+- `ffprobe -count_frames -show_entries` for verifier-owned stream and format
+  fields, without filtering the stream inventory;
 - actual frame enumeration with integer presentation timestamps;
 - `ffmpeg -xerror -err_detect explode` decoding of the complete video.
+
+All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
+families and protocols to local files. They still detect the actual container;
+an edit list disguised as a supported media file is refused before following
+its referenced inputs. Failure transcripts exclude unrelated metadata and
+replace command-owned paths, including a path cut at a UTF-8 capture boundary.
+Their matching spellings also cover POSIX filesystem bytes that decode to
+replacement characters in a native tool's transcript.
 
 It requires exactly one video and zero audio/subtitle/data/attachment streams;
 checks the explicit codec, container, pixel format, resolution, square samples,
@@ -272,3 +281,130 @@ PY
 [profiles]: https://github.com/CompleteTech-Skills/creative-studio/issues/236
 [color]: https://github.com/CompleteTech-Skills/creative-studio/issues/237
 [profile-pr]: https://github.com/CompleteTech-Skills/creative-studio/pull/417
+
+## Failed verification evidence
+
+Failure evidence retains the artifact, request and source-manifest hashes and
+`verified: false`. Once a media process starts, a failed command retains its
+argument list, observed exit status, stdout and stderr under `command_failure`
+and its verifier stage (`probe`, `timeline` or `decode`). An OS launch refusal
+instead records the command
+aliases and numeric OS error code with `started: false`, empty capture buffers
+and no exit status. Empty buffers do not claim that a process ran; prior
+completed verification stages and available identity hashes remain attached.
+Each transcript stays
+within the request's `max_log_bytes` byte limit, including UTF-8 replacement.
+
+Failure aliases for encoding and verification use the logical `ffmpeg` or
+`ffprobe` role, including when an installed executable symlink resolves to a
+privately named binary. They do not expose the resolved filename in command
+arrays or known command-path text. Generic local subprocess helpers retain
+their existing basename contract; this is not a general sanitizer for arbitrary
+substituted executable output. Source-frame descriptor errors also omit caller
+filenames. If the artifact cannot be captured at all, failure evidence retains
+only the request and source-manifest hashes; it does not invent an artifact
+hash, byte count or tool execution record.
+
+Independent regressions reproduced private executable and unreadable-source
+names in both Python and CLI on `db3e36bc`, using a byte-identical copy of actual
+ffprobe and real POSIX permission failures. An additional root-authored native
+case covers unreadable artifact capture and its available identity fields.
+The corrected optional native suite ran 78 cases in 143.717 seconds, exit 0,
+zero skips, on unprivileged Linux with FFmpeg/ffprobe 7.1.5. Its cases include
+inherited portable checks; this is not 78 distinct codec executions. The new
+permission checks explicitly skip where real unprivileged POSIX semantics
+cannot be exercised. Existing test methods and earlier negative evidence remain.
+Truncated streams carry an explicit truncation flag; timeout failures carry
+`timed_out: true` and the observed terminated-process status.
+If the operating system cannot launch a media executable, the attempted command
+instead carries `started: false`, `launch_error.errno` and empty stdout/stderr.
+It has no `exit_status`: no media executable returned a status. Earlier completed
+probe or timeline observations remain available, including stream counts only
+when the actual probe established them. The launch summary omits the operating
+system exception's filename and retains the same bounded path aliases.
+Failed exported records replace absolute executable and temporary-directory
+paths with stable tool/work-directory aliases in commands, transcripts and the
+error message. Per-stream byte limits apply after this replacement. Capture
+also suppresses a partial known path cut at the retained byte boundary.
+Partial-path suppression uses the same left token boundary as complete paths.
+A rational value cut immediately after its slash remains observed probe data;
+that slash alone does not establish a command-owned absolute path. CLI request
+intake also converts numeric overflow during structural validation into the
+fixed JSON refusal, without an interpreter traceback or caller filename.
+Stale source diagnostics identify the frame index rather than its caller-chosen
+directory or filename. Error summaries do not copy unsanitized transcript tails.
+Strict decode requires complete diagnostics and rejects a truncated stderr transcript,
+including one whose retained prefix contains only whitespace.
+
+Successful raw command results are retained before JSON or stream interpretation.
+Malformed ffprobe output therefore leaves inspectable raw evidence. If probing
+or timeline parsing exceeds the JSON parser's nesting limit, the failure retains
+the same structured evidence. If probing
+cannot establish stream counts, the failure does not invent video/audio counts.
+The ffprobe query inventories all streams but requests only fields consumed by
+the verifier; arbitrary tags and unrelated container metadata are not requested.
+Missing or unknown stream types reject before any counts are reported. Receipt
+comparison checks the entire parsed current raw probe result. A recorded
+historical query using both `-show_streams` and `-show_format`, without
+`-show_entries`, triggers an additional full native probe of the same private
+exact-byte snapshot. Comparison binds every parsed historical observation,
+including tags, disposition, bitrate and empty-container presence. Only
+`format.filename` is excluded because the verifier uses a new snapshot path.
+Historical full-probe output stays private; accepted receipts return fresh
+field-limited evidence. JSON nesting and digest numeric/nesting refusals retain
+the primary verification evidence and fixed error text, without exporting
+historical metadata. Current and historical installed-tool regressions retain
+unchanged evidence and reject changed, missing or added observations.
+File-identity checks remain mandatory.
+Bounded process diagnostics do not promise general
+sanitization of arbitrary output from a substituted tool executable.
+Python exceptions expose this evidence, and the existing
+`verify-export --require-silent` CLI includes it in its JSON failure response.
+These records are failure diagnostics, never successful export receipts.
+
+The caller's artifact is reread after snapshot verification. A changed, oversized,
+missing or unsafe caller artifact still fails and retains completed snapshot
+observations. Failure records label `artifact_sha256_scope: verification-snapshot`
+and retain `artifact_bytes` for that captured snapshot; the hash never claims to
+identify revised caller bytes. The request and source-manifest hashes retain
+their existing identities.
+
+Portable regressions simulate launch errors at every verifier stage and final
+caller changes, including missing/oversized files and unchanged controls. These
+fixtures are contract checks, not native decode evidence. The optional native
+suite uses real six-frame synthetic H.264 media: an executable-format failure
+occurs after two successful installed ffprobe commands, with no started FFmpeg
+decode executable or observed decode exit status. Another case changes the
+caller bytes after capture while installed ffprobe and FFmpeg successfully
+verify the original snapshot; a local CLI wrapper performs actual FFmpeg decode
+before changing the caller fixture. Both Python and CLI reject, retain the
+snapshot hashes and command results, and omit synthetic private path markers.
+Successful unchanged native verification remains a control. These synthetic
+media checks do not establish production rendering or artistic acceptance.
+
+
+### Unambiguous probe facts and native child diagnostics
+
+Probe and frame-timeline JSON reject duplicate object members before deriving
+counts or timestamps. Bounded raw transcripts and observed command/status
+remain in failure evidence. Malformed transcripts do not manufacture stream
+or frame facts; facts established by an earlier unambiguous stage remain.
+Portable transcript simulations are separate from actual codec execution.
+
+Native media children exclude dynamic-loader overrides (`LD_*`, `DYLD_*`,
+`_RLD_*`) and locale/instrumentation path-report controls, plus FFREPORT and
+forced colors. Loader startup diagnostics therefore cannot inherit those
+unrelated instrumentation paths. Ordinary environment configuration and the
+parent environment remain unchanged. Configured executables must resolve
+dependencies without those inherited overrides; a startup refusal remains a
+failure with bounded evidence. The unchanged independent control uses actual
+installed ffprobe, a synthetic corrupt movie and a nonexistent synthetic
+instrumentation library through both public interfaces.
+
+Fresh, current-receipt and historical-receipt probe comparisons use the same
+strict JSON admission: duplicate members and nonstandard NaN/Infinity constants
+are refused before facts or equivalence are derived. Native controls compare
+current and historical-format receipts against the actual six-frame synthetic
+movie. The unchanged independent `tests/independent/test_silent_video_receipt_parser.py`
+also invokes the pinned older runtime when `SILENT_RECEIPT_BASE` names its
+checkout; the automatic full-probe-format test does not claim old-runtime execution.
