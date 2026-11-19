@@ -102,6 +102,72 @@ class SphereSweepTests(unittest.TestCase):
         np.testing.assert_allclose(hit['center'], tangent, atol=1e-10, rtol=0)
         self.assertIsNone(index.sweep_sphere(tangent - travel, tangent + travel, math.nextafter(5., 0.)))
 
+    def test_axis_aligned_vertex_tangent_rejects_the_next_smaller_radius(self):
+        index = self.index(vertices=[[0, 0, 0], [0, -1, 0], [0, 0, -1]])
+        start, end = [-10, 3, 4], [10, 3, 4]
+        tangent = index.sweep_sphere(start, end, 5)
+        self.assertIsNotNone(tangent)
+        self.assertEqual(tangent['fraction'], .5)
+        self.assertEqual(tangent['center'], [0, 3, 4])
+        self.assertIsNone(index.sweep_sphere(start, end, math.nextafter(5, 0)))
+
+    def test_long_sweep_preserves_small_offsets_on_both_sides_of_contact(self):
+        radius = 2**-20
+        for x, y, expected in (
+                (2**-14 + 2**-30, 2**-14 - 2**-30, True),
+                (2**-16, 2**-18, False)):
+            distance = (x - y) / math.sqrt(2)
+            self.assertEqual(distance < radius, expected)
+            index = self.index(vertices=[[x, y, 0], [x+1, y, 0], [x, y-1, 0]])
+            for length in (1, 2**39):
+                with self.subTest(expected=expected, length=length):
+                    hit = index.sweep_sphere([-length, -length, 0], [length, length, 0], radius)
+                    self.assertEqual(hit is not None, expected)
+                    if hit is not None:
+                        # The approach reaches the vertical edge at x before
+                        # it reaches the corner's contact circle.
+                        entry = x - radius
+                        np.testing.assert_allclose(hit['center'], [entry, entry, 0], atol=1e-17, rtol=0)
+                        np.testing.assert_allclose(hit['point'], [x, entry, 0], atol=1e-17, rtol=0)
+                        self.assertAlmostEqual(math.dist(hit['point'], hit['center']), radius, places=16)
+
+    def test_first_contact_keeps_order_when_public_fractions_round_equal(self):
+        from copy import deepcopy
+        from fractions import Fraction
+
+        base = [[0, 0, 0], [0, 1, 0], [0, 0, 1]]
+        index = self.index(vertices=base)
+        added = deepcopy(index.graph.document()['nodes'][1])
+        added.update(id='a-later', name='Later triangle')
+        index.graph.create(added)
+        later = [[2**-20, y, z] for _, y, z in base]
+        index = SpatialIndex(index.graph, {
+            'mesh': dict(vertices=base, triangles=[[0, 1, 2]]),
+            'a-later': dict(vertices=later, triangles=[[0, 1, 2]])})
+        length = 2**39
+        early = (length - Fraction(1, 8)) / (2 * length)
+        late = early + Fraction(1, 2**20) / (2 * length)
+        self.assertLess(early, late)
+        self.assertEqual(float(early), float(late))
+        hit = index.sweep_sphere([-length, .25, .25], [length, .25, .25], .125)
+        self.assertEqual(hit['node'], 'mesh')
+        self.assertEqual(hit['point'], [0, .25, .25])
+
+    def test_disconnected_closed_sweep_does_not_rescan_unvisited_faces(self):
+        from unittest.mock import patch
+        vertices, triangles = [], []
+        faces = [[0, 2, 1], [0, 1, 3], [1, 2, 3], [2, 0, 3]]
+        for number in range(6):
+            x, start = number * 3, len(vertices)
+            vertices.extend([[x, 0, 0], [x+1, 0, 0], [x, 1, 0], [x, 0, 1]])
+            triangles.extend([[start+i for i in face] for face in faces])
+        index = self.index(vertices=vertices, triangles=triangles)
+        with patch('scene3d_sweep.min', wraps=min, create=True) as minimum:
+            hit = index.sweep_sphere([-1, 0, 0], [17, 0, 0], .125)
+        self.assertIsNotNone(hit)
+        self.assertFalse(any(call.args and isinstance(call.args[0], set)
+                             for call in minimum.call_args_list))
+
     def test_bounds_only_and_false_positive_triangle_region_do_not_hit(self):
         index=self.index()
         self.assertIsNone(index.sweep_sphere([.9,1,.9],[.9,-1,.9],.05))

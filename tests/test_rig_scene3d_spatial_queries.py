@@ -144,6 +144,26 @@ class SpatialQueryTests(unittest.TestCase):
         self.assertEqual(SpatialIndex(graph,meshes).mesh_overlap('mesh')[0]['relation'],'surface')
 
 
+    def test_mesh_overlap_distinguishes_tiny_gap_at_large_coordinates(self):
+        graph = self.graph()
+        graph.set_transform('mesh', dict(translation=[0, 0, 0], rotation=[0, 0, 0, 1], scale=[1, 1, 1]))
+        other = deepcopy(graph.document()['nodes'][1])
+        other.update(id='other', name='other')
+        graph.create(other)
+        large = float(10**12)
+        middle = large / 2
+        meshes = {'mesh': dict(vertices=[[0, 0, 0], [large, 0, 0], [0, large, 0]], triangles=[[0, 1, 2]])}
+        gap = 2 ** -10
+        for shift, expected in ((gap, False), (0, True), (-gap, True)):
+            with self.subTest(shift=shift):
+                y = middle + shift
+                meshes['other'] = dict(vertices=[[middle, y, 0], [middle + 1, y, 0], [middle, y + 1, 0]],
+                                       triangles=[[0, 1, 2]])
+                index = SpatialIndex(graph, meshes)
+                self.assertIn('other', index.overlap(index.bounds('mesh')))
+                for identifier in ('mesh', 'other'):
+                    self.assertEqual(bool(index.mesh_overlap(identifier)), expected)
+
     def test_exact_closed_mesh_overlap_detects_containment_and_touch(self):
         graph = self.graph()
         graph.set_transform('mesh',dict(translation=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1]))
@@ -215,6 +235,15 @@ class SpatialQueryTests(unittest.TestCase):
                 above = index.nearest([point[0], .05, point[2]])
                 self.assertAlmostEqual(above['distance'], .05, places=15)
                 np.testing.assert_allclose(above['point'], point, rtol=0, atol=1e-20)
+
+    def test_grid_snapping_preserves_full_precision_at_ties_and_existing_grid_points(self):
+        below = math.nextafter(.5, 0)
+        above = math.nextafter(.5, 1)
+        large = float(2**52 + 1)
+        self.assertEqual(snap_grid([below, .5, above], 1), [0, 1, 1])
+        self.assertEqual(snap_grid([-below, -.5, -above], 1), [0, -1, -1])
+        self.assertEqual(snap_grid([large, -large, 0], 1), [large, -large, 0])
+        self.assertEqual(snap_grid([math.nextafter(1.5, 1), 1.5, 1.5], 1, origin=[1, 1, 2]), [1, 2, 1])
 
     def test_grid_and_scale_snapping_refuse_unrepresentable_result(self):
         for snap in (snap_grid, snap_scale):

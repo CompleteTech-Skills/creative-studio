@@ -6,6 +6,7 @@ point. Open meshes are two-sided surfaces; closed meshes also reject initial
 solid containment. Work is bounded by the spatial owner's query budget.
 """
 from fractions import Fraction
+from itertools import combinations
 import math
 import numpy as np
 
@@ -20,9 +21,9 @@ def _roots(offset, velocity, radius):
     # sweep started thousands of radii away from the vertex or edge.
     perpendicular = math.hypot(*np.cross(offset, direction))
     roundoff = 8 * np.finfo(float).eps * max(radius, perpendicular, abs(along))
-    if abs(perpendicular - radius) <= roundoff and abs(along) > radius and np.count_nonzero(velocity) > 1:
-        # On a long oblique tangent, even the cross product can subtract
-        # nearly equal terms. Resolve the sign using the exact input floats.
+    if abs(perpendicular - radius) <= roundoff:
+        # A rounded distance can conceal a small positive gap, including on
+        # an axis-aligned path. Resolve the chord sign from the input floats.
         origin = [Fraction(x) for x in offset]
         motion = [Fraction(x) for x in velocity]
         speed_squared = sum(x*x for x in motion)
@@ -33,10 +34,9 @@ def _roots(offset, velocity, radius):
             return []
         half_chord = radius * math.sqrt(chord_ratio)
     else:
-        tolerance = 8 * np.finfo(float).eps * max(radius, perpendicular)
-        if perpendicular > radius + tolerance:
+        if perpendicular > radius:
             return []
-        half_chord = math.sqrt(max(0., radius - perpendicular)) * math.sqrt(radius + perpendicular)
+        half_chord = math.sqrt(radius - perpendicular) * math.sqrt(radius + perpendicular)
     if half_chord == 0:
         return [-along / speed]
     far_root = -along - math.copysign(half_chord, along)
@@ -47,17 +47,33 @@ def _roots(offset, velocity, radius):
     return sorted((near_root / speed, far_root / speed))
 
 
-def _triangle_hit(start, delta, radius, triangle):
+def _local_sweep_origin(start, end, anchor, delta, radius):
+    if math.hypot(*delta) <= math.ldexp(radius, 18):
+        return start - anchor, None
+    # Compute the nearest point on the segment to the triangle anchor before
+    # rounding to floats. Small contact offsets can vanish when subtracting the
+    # anchor from a distant endpoint and then traversing most of that segment.
+    start_values = [Fraction(float(value)) for value in start]
+    motion = [Fraction(float(value)) - initial for value, initial in zip(end, start_values)]
+    origin = [initial - Fraction(float(value)) for initial, value in zip(start_values, anchor)]
+    projection = sum(a * b for a, b in zip(origin, motion))
+    pivot = max(0, min(1, -projection / sum(component**2 for component in motion)))
+    local = np.array([float(a + pivot * b) for a, b in zip(origin, motion)])
+    return local, pivot
+
+
+def _triangle_hit(start, end, delta, radius, triangle):
     from scene3d_spatial import _closest_triangle, _triangle_frame
     # Keep contact validation and normals in the triangle's own frame.
-    # Adding a world translation to a computed point can round away a gap.
     anchor = triangle[0]
     triangle = triangle - anchor
-    start = start - anchor
+    initial_center = start - anchor
+    start, pivot = _local_sweep_origin(start, end, anchor, delta, radius)
+    lower, upper = (0., 1.) if pivot is None else (-float(pivot), float(1 - pivot))
     frame = _triangle_frame(triangle)
-    nearest = _closest_triangle(start, triangle, frame=frame)
-    gap=float(np.linalg.norm(start-nearest))
-    candidates = [(0., False)] if gap <= radius else []
+    nearest = _closest_triangle(initial_center, triangle, frame=frame)
+    gap = math.hypot(*(initial_center - nearest))
+    candidates = [(lower, False)] if gap <= radius else []
     a,b,c=triangle
     normal = frame[3]
     if np.any(normal):
@@ -79,11 +95,17 @@ def _triangle_hit(start, delta, radius, triangle):
             if 0 <= along <= 1:
                 candidates.append((t, False))
     for t, face_only in sorted(candidates):
-        if not 0 <= t <= 1:
+        if not lower <= t <= upper:
             continue
-        t=min(1.,max(0.,float(t)))
+        t = float(t)
         travel = delta*t
         center = start + travel
+        if t == lower:
+            center, time = initial_center, 0.
+        elif t == upper:
+            center, time = end - anchor, 1.
+        else:
+            time = t if pivot is None else max(0, min(1, pivot + Fraction(t)))
         point = _closest_triangle(center, triangle, frame=frame, face_only=face_only)
         if point is None:
             continue  # A plane crossing outside the triangle is never a face hit.
@@ -99,7 +121,8 @@ def _triangle_hit(start, delta, radius, triangle):
             outward=-delta/np.linalg.norm(delta)
         else:
             outward=np.array([1.,0.,0.])
-        return dict(fraction=t,normal=outward.tolist(),point=(point+anchor).tolist(),center=(center+anchor).tolist())
+        return time, dict(fraction=float(time), normal=outward.tolist(),
+                          point=(point+anchor).tolist(), center=(center+anchor).tolist())
     return None
 
 
@@ -111,9 +134,13 @@ def _solid_domain(triangles, indices, require, budget):
     for i,face in enumerate(indices):
         for a,b in zip(face,np.roll(face,-1)):
             edges.setdefault(tuple(sorted((int(a),int(b)))),[]).append(i)
-    unseen=set(range(len(indices)));boxes=[]
-    while unseen:
-        first=min(unseen);unseen.remove(first);component=[first];pending=[first]
+    unseen = set(range(len(indices)))
+    boxes = []
+    for first in range(len(indices)):
+        if first not in unseen:
+            continue
+        unseen.remove(first)
+        component, pending = [first], [first]
         while pending:
             face=indices[pending.pop()]
             for a,b in zip(face,np.roll(face,-1)):
@@ -123,11 +150,10 @@ def _solid_domain(triangles, indices, require, budget):
         boxes.append((vertices.min(axis=0),vertices.max(axis=0)))
     pair_work=len(boxes)*(len(boxes)-1)//2
     require(pair_work<=budget,'Closed sweep component budget exceeded.','SCENE3D_SPATIAL_LIMIT')
-    for i,(lo,hi) in enumerate(boxes):
-        for other_lo,other_hi in boxes[i+1:]:
-            require(not (np.all(lo<other_hi) and np.all(other_lo<hi)),
-                    'Sphere sweep does not support nested or interior-overlapping closed component bounds.',
-                    'SCENE3D_SPATIAL')
+    for (lo, hi), (other_lo, other_hi) in combinations(boxes, 2):
+        require(not (np.all(lo < other_hi) and np.all(other_lo < hi)),
+                'Sphere sweep does not support nested or interior-overlapping closed component bounds.',
+                'SCENE3D_SPATIAL')
     return pair_work
 
 
@@ -159,7 +185,8 @@ def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
     require(radius<=1e12 and np.max(np.abs(start))<=1e12 and np.max(np.abs(end))<=1e12,
             'Sphere sweep exceeds supported 1e12 metre numeric domain.', 'SCENE3D_SPATIAL')
     delta=end-start;low=np.minimum(start,end)-radius;high=np.maximum(start,end)+radius
-    best=None;tested=0
+    best, best_order = None, (math.inf, "", -1)
+    tested = 0
     for node,record in index._chosen(exclude,visibility,triangles=True):
         lo,hi=_box(record['box'])
         if np.any(high<lo) or np.any(low>hi):
@@ -200,16 +227,20 @@ def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
                 normal=(normal/length*(1 if contained else -1) if length>boundary_ulp else outward)
                 hit=dict(fraction=0.,normal=normal.tolist(),point=(anchor+point).tolist(),center=start.tolist(),
                          node=node,triangle=triangle_id,revision=index._revision,initial_containment=contained)
-                if best is None or (hit['fraction'],node,triangle_id)<(best['fraction'],best['node'],best['triangle']):
-                    best=hit
+                order = (0., node, triangle_id)
+                if order < best_order:
+                    best, best_order = hit, order
                 break
             else:
                 require(not contained,'Closed sweep has no unambiguous material escape boundary.','SCENE3D_SPATIAL')
-            if best is not None and best['fraction']==0:continue
+            if best_order[0] == 0:
+                continue
         for triangle_id,triangle in enumerate(triangles):
-            hit=_triangle_hit(start,delta,radius,triangle)
-            if hit is not None:
-                hit.update(node=node,triangle=triangle_id,revision=index._revision)
-                if best is None or (hit['fraction'],node,triangle_id)<(best['fraction'],best['node'],best['triangle']):
-                    best=hit
+            result = _triangle_hit(start, end, delta, radius, triangle)
+            if result is not None:
+                time, hit = result
+                order = (time, node, triangle_id)
+                if order < best_order:
+                    hit.update(node=node, triangle=triangle_id, revision=index._revision)
+                    best, best_order = hit, order
     return best

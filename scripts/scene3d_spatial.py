@@ -158,31 +158,65 @@ def _closest_triangle(point, triangle, *, frame=None, face_only=False):
     return closest
 
 
+def _triangle_axes(left, right):
+    def edges(vertices):
+        return [tuple(b - a for a, b in zip(vertex, vertices[(index + 1) % 3]))
+                for index, vertex in enumerate(vertices)]
+
+    def cross(a, b):
+        return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+    left_edges, right_edges = edges(left), edges(right)
+    left_normal = cross(left_edges[0], left_edges[1])
+    right_normal = cross(right_edges[0], right_edges[1])
+    # Coplanar triangles also need the in-plane normals of their edges.
+    return ([left_normal, right_normal] +
+            [cross(a, b) for a in left_edges for b in right_edges] +
+            [cross(left_normal, edge) for edge in left_edges] +
+            [cross(right_normal, edge) for edge in right_edges])
+
+
+def _exact_triangle_overlap(left, right):
+    # Binary float denominators are powers of two. Scale all six vertices to
+    # one integer lattice so normals, axes and projection signs stay exact.
+    ratios = [[float(value).as_integer_ratio() for value in point] for point in (*left, *right)]
+    unit = max(denominator for point in ratios for _, denominator in point)
+    vertices = [tuple(numerator * (unit // denominator) for numerator, denominator in point)
+                for point in ratios]
+    left, right = vertices[:3], vertices[3:]
+    for axis in _triangle_axes(left, right):
+        if any(axis):
+            projected = [sum(a * b for a, b in zip(point, axis)) for point in vertices]
+            a, b = projected[:3], projected[3:]
+            if max(a) < min(b) or max(b) < min(a):
+                return False
+    return True
+
+
 def _triangle_intersects(left, right):
     """Separating-axis triangle intersection, including coplanar triangles."""
     anchor = left[0]
-    combined = np.concatenate([left-anchor,right-anchor])
-    scale = float(np.max(np.abs(combined)))
-    if scale == 0:
-        return True
-    left, right = (left-anchor)/scale, (right-anchor)/scale
-    e = [left[1]-left[0],left[2]-left[1],left[0]-left[2]]
-    f = [right[1]-right[0],right[2]-right[1],right[0]-right[2]]
-    n = np.cross(e[0],e[1]); m = np.cross(f[0],f[1])
-    # Caller rejects degenerate triangles. Coplanar edge normals are necessary:
-    # the 9 edge-cross-edge axes alone only test the shared plane normal.
-    axes = [n,m]+[np.cross(a,b) for a in e for b in f]
-    axes += [np.cross(n,a) for a in e]+[np.cross(m,b) for b in f]
-    for axis in axes:
-        magnitude = float(np.max(np.abs(axis)))
+    with np.errstate(over='ignore'):
+        relative_left, relative_right = left - anchor, right - anchor
+    scale = max(float(np.max(np.abs(relative_left))), float(np.max(np.abs(relative_right))))
+    if scale == 0 or not math.isfinite(scale):
+        return _exact_triangle_overlap(left, right)
+    normalized_left, normalized_right = relative_left / scale, relative_right / scale
+    uncertain = False
+    for axis in _triangle_axes(normalized_left, normalized_right):
+        magnitude = max(map(abs, axis))
         if magnitude == 0:
+            uncertain = True
             continue
-        axis = axis/magnitude
-        a,b = left@axis,right@axis
-        tolerance = 32*np.finfo(float).eps*max(1.,float(np.max(np.abs(a))),float(np.max(np.abs(b))))
-        if a.max() < b.min()-tolerance or b.max() < a.min()-tolerance:
+        axis = np.asarray(axis) / magnitude
+        a, b = normalized_left @ axis, normalized_right @ axis
+        tolerance = 32 * np.finfo(float).eps * max(1., float(np.max(np.abs(a))), float(np.max(np.abs(b))))
+        gap = max(float(b.min() - a.max()), float(a.min() - b.max()))
+        if gap > tolerance:
             return False
-    return True
+        if gap >= -tolerance:
+            uncertain = True
+    return _exact_triangle_overlap(left, right) if uncertain else True
 
 
 def _closed(indices):
@@ -561,13 +595,20 @@ class SpatialIndex:
 
 def snap_grid(value, step, *, origin=(0,0,0)):
     """Nearest world/local grid point, halves away from zero deterministically."""
-    step = _positive(step,'grid step')
-    origin = _vec(origin,'grid origin')
-    with np.errstate(over='ignore', invalid='ignore'):
-        scaled = (_vec(value)-origin)/step
-        result = origin + np.sign(scaled)*np.floor(np.abs(scaled)+0.5)*step
-    require(np.isfinite(result).all(), 'Grid computation overflow.', 'SCENE3D_SPATIAL')
-    return result.tolist()
+    spacing = Fraction(_positive(step, 'grid step'))
+    half = Fraction(1, 2)
+    snapped = []
+    for position, base in zip(_vec(value), _vec(origin, 'grid origin')):
+        anchor = Fraction(float(base))
+        offset = (Fraction(float(position)) - anchor) / spacing
+        nearest = math.floor(abs(offset) + half)
+        if offset < 0:
+            nearest = -nearest
+        try:
+            snapped.append(float(anchor + nearest * spacing))
+        except OverflowError:
+            require(False, 'Grid computation overflow.', 'SCENE3D_SPATIAL')
+    return snapped
 
 
 def snap_scale(value, step):
