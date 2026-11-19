@@ -118,17 +118,24 @@ The primary weight method diffuses segment-distance seeds over actual mesh adjac
 The correction envelope is strict and contains `rig_id`, `rig_version`, `expected_sha256`, author, reason, timestamp and ordered edits. Supported edits cover bone add/remove/update/rename/reparent, limits and IK chains, sockets, facial controllers/expressions, weights and template replacement. Bone changes invalidate active skins, animations, state mappings and reviews while preserving their old files. Weight changes retain compatible channels but invalidate deformation evidence and review.
 
 An anatomical correction changes a bone's head, tail, parent or rest roll, or
-adds a new bone. Renaming, role labels, mirror pairing and deform flags alone
-do not establish a landmark correction or promote its confidence. Anatomical
-edits resolve only that bone's `RIG_ANATOMY_UNCERTAIN` records; unrelated
-uncertainty codes retain their prior resolutions. Template replacement refreshes
-fit-owned anatomy records while preserving other uncertainty records. Edits
-that return anatomy to its original state in one correction retain its original
-evidence, including when metadata changes remain or the same bone is removed
-and restored under its original identity. Final-state reconciliation retains
-the complete original uncertainty record for an identical restoration; a real
-anatomical replacement is still a correction, and genuine removal still clears
-obsolete bone references.
+adds a new bone. A rename, role label, mirror pairing or deform flag alone
+preserves the original landmark confidence. A child keeps its evidence when
+its parent is renamed. Reparenting to a different bone resolves the child's
+anatomy uncertainty even if the new parent later takes the old parent's name.
+
+Within one correction, removing and restoring a bone under the same ID retains
+its identity even if another bone temporarily uses that ID. If several bones
+are removed under one ID, successive adds restore them in reverse removal
+order as each occupant moves away. Restoring the original anatomy preserves the bone's evidence and complete uncertainty records.
+Authored IK, constraints, sockets, mirror pairs, eyes and expression bindings
+follow the bones they reference. Explicit reference edits take effect in order.
+Active references to a permanently removed bone are cleared, including when
+another bone takes its ID.
+
+Anatomical edits resolve only that bone's `RIG_ANATOMY_UNCERTAIN` records.
+Both a template correction and `auto --replace` refresh the fit-owned anatomy
+records and preserve independent uncertainty records and their resolutions.
+A pending independent record keeps the replacement job in `needs-correction`.
 
 ```bash
 python scripts/rig.py review-ui --run-dir output/character --destination output/review

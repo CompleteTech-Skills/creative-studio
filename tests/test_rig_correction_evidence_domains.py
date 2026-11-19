@@ -254,7 +254,7 @@ class RigCorrectionEvidenceDomainTests(unittest.TestCase):
         self.assertEqual(self.rig.manifest['uncertainties'],
                          [u for u in self.before_issues if u['element'] != self.target])
 
-    def test_genuine_removal_cleans_anatomy_and_controller_facial_attachment_references(self):
+    def seed_leaf_references(self):
         controllers = self.rig.manifest['controllers']
         chain = dict(schema_version=1, id='synthetic-jaw-chain',
                      bones=['elbow', 'gripper', self.target], solver='two-bone',
@@ -270,6 +270,10 @@ class RigCorrectionEvidenceDomainTests(unittest.TestCase):
         self.rig.manifest['facial']['eyes'] = [self.target, self.other]
         self.rig.manifest['facial']['expressions']['blink']['bones'] = {
             self.target: {'rotation': [0, 0, 0, 1]}, self.other: {}}
+        return chain, attachment
+
+    def test_genuine_removal_cleans_anatomy_and_controller_facial_attachment_references(self):
+        chain, attachment = self.seed_leaf_references()
         independent = self.save_independent_uncertainties(first=True)
         before = deepcopy(self.rig.manifest)
         self.apply(self.remove())
@@ -359,3 +363,99 @@ class RigCorrectionEvidenceDomainTests(unittest.TestCase):
         self.assertEqual(anatomy, [u for u in self.before_issues
                                   if u['code'] == 'RIG_ANATOMY_UNCERTAIN'])
         self.assertEqual(self.bones(), self.before_bones)
+
+    def test_restoration_after_alias_preserves_both_lineages_and_authored_references(self):
+        self.seed_leaf_references()
+        self.save_independent_uncertainties(first=True)
+        self.apply(self.edit({'mirror': self.other}), self.edit({'mirror': self.target}, self.other))
+        self.before_bones = deepcopy(self.bones())
+        before = deepcopy(self.rig.manifest)
+        self.apply(self.remove(), self.edit({'id': self.target}, self.other),
+                   self.edit({'id': self.other}), self.restore())
+        self.assertEqual(self.bones(), self.before_bones)
+        self.assertEqual(self.rig.manifest['uncertainties'], before['uncertainties'])
+        for field in ('attachments', 'facial', 'controllers'):
+            self.assertEqual(self.rig.manifest[field], before[field])
+
+    def test_nested_remove_restore_at_one_alias_retains_each_displaced_owner(self):
+        self.seed_leaf_references()
+        self.save_independent_uncertainties(first=True)
+        before = deepcopy(self.rig.manifest)
+        temporary = self.restore()
+        temporary['value'] = {key: deepcopy(self.before_bones[self.other][key])
+                              for key in temporary['value']}
+        self.apply(self.remove(), self.edit({'id': self.target}, self.other),
+                   self.remove(), temporary, self.edit({'id': self.other}), self.restore())
+        self.assertEqual(self.bones(), self.before_bones)
+        for field in ('uncertainties', 'attachments', 'facial', 'controllers'):
+            self.assertEqual(self.rig.manifest[field], before[field])
+
+    def test_reference_authored_during_alias_follows_occupant_after_restoration(self):
+        chain, socket = self.seed_leaf_references()
+        self.save_independent_uncertainties()
+        blink = deepcopy(self.rig.manifest['facial']['expressions']['blink'])
+        blink['bones'] = {self.target: {'translation': [0, 0, .01]}}
+        amended_socket = dict(socket, role='explicit edit during temporary rename')
+        self.apply(self.remove(), self.edit({'id': self.target}, self.other),
+                   dict(operation='attachment', target=socket['id'], value=amended_socket),
+                   dict(operation='ik', target=chain['id'], value=None),
+                   dict(operation='expression', target='blink', value=blink),
+                   self.edit({'id': self.other}), self.restore())
+        manifest = self.rig.manifest
+        self.assertIn(dict(amended_socket, bone=self.other), manifest['attachments'])
+        self.assertNotIn(chain['id'], [item['id'] for item in manifest['controllers']['ik']])
+        self.assertEqual(manifest['facial']['expressions']['blink']['bones'],
+                         {self.other: {'translation': [0, 0, .01]}})
+        self.assertEqual(manifest['facial']['eyes'], [self.target, self.other])
+        self.assert_pending()
+
+    def test_permanent_replacement_cleans_old_references_and_keeps_explicit_rebindings(self):
+        chain, socket = self.seed_leaf_references()
+        self.save_independent_uncertainties()
+        facial = deepcopy(self.rig.manifest['facial'])
+        facial['eyes'] = [self.target]
+        facial['expressions']['blink']['bones'] = {self.target: {}}
+        self.apply(self.remove(), self.edit({'id': self.target}, self.other),
+                   dict(operation='facial', target='face', value=facial),
+                   dict(operation='attachment', target=socket['id'], value=socket))
+        manifest = self.rig.manifest
+        self.assertIn(socket, manifest['attachments'])
+        self.assertEqual(manifest['facial'], facial)
+        self.assertNotIn(chain['id'], [item['id'] for item in manifest['controllers']['ik']])
+        self.assertFalse(any(c['id'].startswith('synthetic-jaw-')
+                             for c in manifest['controllers']['constraints']))
+        self.assertEqual(self.bones()[self.target]['evidence'],
+                         self.before_bones[self.other]['evidence'])
+
+    def test_parent_rename_preserves_child_evidence_and_replacement_parent_corrects_it(self):
+        self.apply(self.edit({'id': 'renamed-gripper'}, 'gripper'))
+        self.assert_pending()
+        # Both jaws end up with the same parent ID spelling as at the start
+        # of this second correction, but a different parent and local rest.
+        self.apply(self.edit({'parent': 'elbow'}), self.edit({'parent': 'elbow'}, self.other),
+                   self.remove('renamed-gripper'), self.edit({'id': 'renamed-gripper'}, 'elbow'))
+        expected = deepcopy(self.before_issues)
+        for issue in expected:
+            issue['resolution'] = 'corrected'
+        self.assertEqual(self.rig.manifest['uncertainties'], expected)
+        for name in (self.target, self.other):
+            self.assertEqual(self.bones()[name]['parent'], 'renamed-gripper')
+            self.assertNotEqual(self.bones()[name]['rest'], self.before_bones[name]['rest'])
+            self.assertEqual(self.bones()[name]['evidence']['confidence'], 1.)
+
+    def test_public_auto_refit_preserves_independent_records_and_reports_pending_work(self):
+        independent = self.save_independent_uncertainties(first=True)
+        history = {p: p.read_bytes() for p in (self.rig.root / 'rig/revisions').glob('*.json')}
+        _, _, confident, _ = make_geometry('robotic')
+        result = mutate(self.rig.root, 'auto', dict(replace=True, template='robotic',
+            landmarks=dict(source_sha256=self.source_record['sha256'], landmarks=confident)))
+        self.rig = load_rig(self.rig.root)
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertEqual(result['result']['uncertainties'], len(independent))
+        self.assertEqual(result['job_status'], 'needs-correction')
+        self.assertEqual(read_json(self.rig.root / 'job.json')['status'], 'needs-correction')
+        self.assertEqual(self.rig.manifest['uncertainties'], independent)
+        self.assertEqual(self.rig.manifest['source'], self.source_record)
+        self.assertEqual((self.rig.root / self.source_record['path']).read_bytes(),
+                         self.original_source)
+        self.assertEqual({p: p.read_bytes() for p in history}, history)
