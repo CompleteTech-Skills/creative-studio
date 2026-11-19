@@ -848,16 +848,21 @@ class SceneServiceTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256((self.root/'portable'/path).read_bytes()).hexdigest(), info['sha256'])
 
     def test_snapshot_racing_destination_and_stale_source_are_preserved(self):
-        import scene3d_snapshot
-        original = scene3d_snapshot._rename_no_replace
         destination = self.root/'race'
         inode = []
+        if os.name == 'nt':
+            from atomic_windows import PrivateStage
+            publisher, operation = PrivateStage, 'publish_to'
+        else:
+            publisher, operation = scene3d_snapshot, '_rename_no_replace'
+        original = getattr(publisher, operation)
+
         def race(stage, target, **publication):
             selected = destination if publication else target
             selected.mkdir()
             inode.append(selected.stat().st_ino)
             return original(stage, target, **publication)
-        with patch.object(scene3d_snapshot, '_rename_no_replace', race), self.assertRaises(OSError) as caught:
+        with patch.object(publisher, operation, race), self.assertRaises(OSError) as caught:
             snapshot_project(self.root/'source', destination)
         import errno
         self.assertEqual(caught.exception.errno, errno.EEXIST)
