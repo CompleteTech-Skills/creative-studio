@@ -1,5 +1,12 @@
 name: Windows handle-pinned private publication
-on: [push, pull_request, workflow_dispatch]
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 defaults:
@@ -19,6 +26,11 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest discover -s tests -p test_atomic_windows.py -v 2>&1 | tee windows-portable.log
       - run: python -m unittest discover -s tests/optional -p test_atomic_windows_native.py -v 2>&1 | tee windows-native.log
+      - run: python -m pip install -r requirements-rig.txt Pillow==13.0.0
+      - name: Scene3D native Windows snapshot publication
+        run: python -m unittest discover -s tests/optional -p test_scene3d_snapshot_publication_windows.py -v 2>&1 | tee windows-scene3d-snapshot.log
+        env:
+          HATCH_SCENE3D_WINDOWS_SNAPSHOT: '1'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -26,5 +38,6 @@ jobs:
           path: |
             windows-portable.log
             windows-native.log
+            windows-scene3d-snapshot.log
           if-no-files-found: error
           retention-days: 30

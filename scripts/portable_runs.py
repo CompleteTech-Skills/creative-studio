@@ -138,6 +138,10 @@ def restore_run(archive_path, destination):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(archive.read(name))
         data = hatch.read(stage / 'imagegen-jobs.json')
+        jobs = data.get('jobs')
+        if 'director_budget' in data or (isinstance(jobs, list) and any(
+                isinstance(job, dict) and 'budget_operation' in job for job in jobs)):
+            raise ValueError('budgeted acquisitions cannot be restored without an explicit accounting reconciliation transaction')
         if data.get('schema_version') == 2:
             migrate(stage)
             data = hatch.manifest(stage)

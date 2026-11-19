@@ -53,9 +53,11 @@ def sample_time(index, total_frames, fps):
 
 def shot_time(global_time, start_frame, duration_frames, fps, *, terminal=False):
     position = frame_position(global_time)
-    require(type(start_frame) is int and type(duration_frames) is int and start_frame >= 0 and duration_frames > 0,
+    require(type(start_frame) is int and type(duration_frames) is int
+            and 0 <= start_frame < start_frame + duration_frames <= MAX_FRAMES,
             'ANIMATION_SHOT', 'Invalid shot interval.')
+    require(type(terminal) is bool, 'ANIMATION_SHOT', 'Terminal flag must be a boolean.')
     local = position - start_frame
-    require(0 <= local < duration_frames or terminal and local == duration_frames,
+    require(0 <= local < duration_frames or (terminal and local == duration_frames),
             'ANIMATION_SHOT', 'Time is outside the shot half-open interval.')
     return local / rate(fps)
