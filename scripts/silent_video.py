@@ -37,6 +37,7 @@ MAX_FRAME_BYTES = 64 * 1024**2
 MAX_PIXELS = 4096 * 2160
 MAX_CONTAINER_HEADER_BYTES = 64 * 1024
 MAX_CONTAINER_BOXES = 4096
+MAX_FRAGMENT_BOXES = 2 * MAX_FRAMES
 DEFAULT_LIMITS = {'timeout_seconds': 300, 'max_output_bytes': 512 * 1024**2,
                   'max_log_bytes': 4 * 1024**2}
 PROFILES = {
@@ -664,31 +665,46 @@ def _mp4_file_matches(stream, file_size):
     offset = 0
     read_bytes = 0
     boxes = 0
+    fragment_boxes = 0
     found_type = False
 
-    def read_at(position, length):
+    def read_at(position, length, *, metadata=True):
         nonlocal read_bytes
-        if length > MAX_CONTAINER_HEADER_BYTES - read_bytes:
+        if metadata and length > MAX_CONTAINER_HEADER_BYTES - read_bytes:
             return None
         stream.seek(position)
         data = stream.read(length)
-        read_bytes += len(data)
+        if metadata:
+            read_bytes += len(data)
         return data if len(data) == length else None
 
     while offset < file_size:
-        if boxes >= MAX_CONTAINER_BOXES or file_size - offset < 8:
+        if file_size - offset < 8:
             return False
-        boxes += 1
-        header = read_at(offset, 8)
+        if not fragment_boxes and (boxes >= MAX_CONTAINER_BOXES or read_bytes + 8 > MAX_CONTAINER_HEADER_BYTES):
+            return False
+        header = read_at(offset, 8, metadata=False)
         if header is None:
             return False
         size = int.from_bytes(header[:4], 'big')
         kind = header[4:8]
+        # A fragmented export can carry one moof/mdat pair per frame. Only
+        # those box headers use the additional allowance. Their bodies are skipped.
+        fragment = found_type and (kind == b'moof' or (fragment_boxes > 0 and kind == b'mdat'))
+        if fragment:
+            fragment_boxes += 1
+            if fragment_boxes > MAX_FRAGMENT_BOXES:
+                return False
+        else:
+            boxes += 1
+            read_bytes += 8
+            if boxes > MAX_CONTAINER_BOXES or read_bytes > MAX_CONTAINER_HEADER_BYTES:
+                return False
         payload = offset + 8
         if size == 1:
             if file_size - payload < 8:
                 return False
-            extended = read_at(payload, 8)
+            extended = read_at(payload, 8, metadata=not fragment)
             if extended is None:
                 return False
             size = int.from_bytes(extended, 'big')

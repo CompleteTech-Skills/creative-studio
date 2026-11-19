@@ -104,10 +104,11 @@ All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
 families and protocols to local files. The verifier also checks the private
 snapshot's file type. WebM reads at most the first 64 KiB and requires the EBML
 document type `webm`. MP4 walks all top-level box extents on one open snapshot
-descriptor, entering at most 4096 boxes and reading at most 64 KiB total of
-headers and file-type data. Payloads of padding and media boxes are skipped by
-seeking, so legitimate large leading `free`/`skip`/`wide` boxes and large media
-payloads do not consume the read budget. Extents must fit the captured file;
+descriptor. The metadata budget is 4096 boxes and 64 KiB of headers and
+file-type data. After MP4 identification, a separate allowance covers one
+`moof`/`mdat` pair per supported frame, including 64-bit box extents.
+A rejected fragmented file may require an eight-byte lookahead to classify
+the next box. The walk seeks past padding and media payloads. Extents must fit the captured file;
 extended sizes and a final size-zero box extending to EOF retain their defined
 meaning. Partial headers, invalid extents, exhausted budgets and repeated
 `ftyp` declarations fail. Exactly one `ftyp` is required, with a major brand of `mp41` or

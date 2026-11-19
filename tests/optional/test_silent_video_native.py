@@ -171,6 +171,30 @@ class SilentMedia(core.SilentContracts):
         self.assert_receipt(receipt, output)
         self.assertEqual(receipt['decode']['exit_status'], 0)
 
+    def test_native_per_frame_fragmented_mp4_exceeding_base_box_budget(self):
+        count = 2048
+        frame = self.root / 'fragment-template.png'
+        Image.new('RGB', (32, 32), 'black').save(frame)
+        pixels = frame.read_bytes()
+        paths = []
+        for index in range(count):
+            name = f'fragment-{index:06d}.png'
+            (self.root / name).write_bytes(pixels)
+            paths.append(name)
+        source = video.build_source(self.root, paths,
+                                    fps={'numerator': 24, 'denominator': 1}, origin='synthetic')
+        request = video.make_request(source)
+        output = self.root / 'fragmented.mp4'
+        self.ffmpeg('-framerate', '24', '-i', self.root / 'fragment-%06d.png',
+                    '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-vf', 'setsar=1', '-bf', '0',
+                    '-movflags', 'empty_moov+default_base_moof+frag_every_frame', output)
+        probe = self.independent_probe(output)
+        self.assertEqual(len(probe['streams']), 1)
+        self.assertEqual(int(probe['streams'][0]['nb_read_frames']), count)
+        self.independent_decode(output)
+        self.assert_receipt(video.verify_export(output, request, root=self.root), output)
+
     def test_distinct_containers_with_shared_probe_family_are_rejected(self):
         cases = (('vp9-webm', '.webm', 'matroska', '.mkv'),
                  ('h264-mp4', '.mp4', 'mov', '.mov'),

@@ -162,6 +162,16 @@ class SilentContracts(unittest.TestCase):
                 if label == 'skipped-media':
                     self.assertEqual(stream.reads, [(0, 8), (8, 12), (20, 8)])
 
+    def test_mp4_fragment_headers_preserve_the_independent_metadata_budget(self):
+        fragment = mp4_box(b'moof', extended=True) + mp4_box(b'mdat', extended=True)
+        full = SIMULATED_MP4_FTYP + fragment * video.MAX_FRAMES
+        self.assertTrue(video._mp4_header_matches(full))
+        self.assertFalse(video._mp4_header_matches(full + mp4_box(b'moof')))
+        self.assertFalse(video._mp4_header_matches(full + SIMULATED_MP4_FTYP))
+        padding = mp4_box(b'free') * (video.MAX_CONTAINER_BOXES - 1)
+        self.assertTrue(video._mp4_header_matches(full + padding))
+        self.assertFalse(video._mp4_header_matches(full + padding + mp4_box(b'free')))
+
     def _simulated_verification_records(self):
         # Portable contract fixtures: these records do not establish real media
         # probing or decoding. The optional suite executes those processes.
