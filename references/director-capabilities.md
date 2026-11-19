@@ -27,8 +27,9 @@ The complete parent inventory additionally has explicit identifiers:
   observations from policy ceilings. Resource admission checks both the observed
   bytes and policy. A workload estimate for memory or storage automatically
   includes the corresponding measurement when its entry exists in the snapshot.
-  Admission verifies the measurement receipt even when only a workload operation
-  was requested. Observations can become stale and do not reserve resources,
+  Admission verifies that receipt and applies its policy ceiling to the matching
+  byte estimate. Each requested workload remains subject to its full policy.
+  Observations can become stale and do not reserve resources,
   establish per-user quota availability, or replace native worker enforcement.
   Missing supported memory APIs produce explicit unavailable evidence.
 - `blender.engines`: starts Blender and checks accepted render-engine settings;
@@ -89,8 +90,10 @@ followed by up to 127 ASCII letters, digits, periods, underscores, colons or
 hyphens. A known price requires a currency of three uppercase ASCII letters.
 Invalid descriptors raise `DIRECTOR_CAPABILITY_CONFIG` before staging.
 
-Worker probes have a separate timeout, bounded output, one compute thread,
-no stdin and a minimal environment without secrets. On POSIX they also have
+Each worker phase receives the smaller of the configured timeout and the time
+remaining until the request deadline. Once the deadline expires, pending phases
+are refused. Workers have bounded output, one compute thread, no stdin and a
+minimal environment without secrets. On POSIX they also have
 process-group termination and CPU/output/core limits. The controller observes
 leader exit without reaping it, kills its original group, and checks for
 remaining live members before reading output. On Windows each worker

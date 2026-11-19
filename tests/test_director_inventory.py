@@ -564,6 +564,40 @@ class MissingDependencyTests(unittest.TestCase):
             self.assertIn('--disable-autoexec', calls[0])
             self.assertEqual(calls[1][-1], 'probe.py')
 
+    def test_blend_phases_share_the_absolute_request_deadline(self):
+        import sys
+        start = datetime.now(timezone.utc)
+        deadline = start + timedelta(seconds=2)
+        for elapsed, expected in [(1.75, [('author.py', 2), ('probe.py', .25)]),
+                                  (2, [('author.py', 2)])]:
+            with self.subTest(elapsed=elapsed), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(cap, '_native_importer_discovered', return_value=True), \
+                    patch.object(cap, 'datetime', wraps=datetime) as clock:
+                clock.now.return_value = start
+                calls = []
+                def worker(argv, scratch, timeout):
+                    phase = Path(argv[-1]).name
+                    calls.append((phase, timeout))
+                    if phase == 'author.py':
+                        (Path(scratch)/'triangle.blend').write_bytes(b'BLENDER fixture')
+                        clock.now.return_value = start + timedelta(seconds=elapsed)
+                        return {'success': True}, 'DIRECTOR_PROBE={"version":"4.5.3"}'
+                    return {'success': True}, 'DIRECTOR_PROBE={"vertices":3,"triangles":1,"importing_blender_version":"4.5.3"}'
+
+                root = Path(directory).resolve()/'evidence'
+                value = request(['importer.blend'], ['importer.blend'])
+                value['context']['deadline'] = deadline.isoformat()
+                with patch.object(cap, '_worker', side_effect=worker):
+                    if elapsed == 2:
+                        with self.assertRaises(RigError) as error:
+                            cap.probe(value, root, configuration={'blender': sys.executable})
+                        self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_DEADLINE')
+                        self.assertFalse(root.exists())
+                    else:
+                        result = cap.probe(value, root, configuration={'blender': sys.executable})
+                        self.assertTrue(self.receipts(root, result)['importer.blend']['execution_verified'])
+                self.assertEqual(calls, expected)
+
     def test_blend_import_failures_are_typed(self):
         import sys
         for failing, reason in ((1, 'blend-authoring-failed'), (2, 'native-blend-import-failed')):

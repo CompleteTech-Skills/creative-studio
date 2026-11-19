@@ -194,6 +194,7 @@ def _stop_group(process):
 
 def _worker(argv, directory, timeout):
     """Bound output/runtime; do not persist subprocess text or inherited secrets."""
+    deadline=time.monotonic()+timeout
     env={key:value for key,value in os.environ.items() if key in
          ('PATH','SYSTEMROOT','WINDIR','LD_LIBRARY_PATH','DISPLAY','CUDA_VISIBLE_DEVICES')}
     env.update(PYTHONPATH=str(ROOT/'scripts'),
@@ -202,9 +203,9 @@ def _worker(argv, directory, timeout):
         import resource
         resource.setrlimit(resource.RLIMIT_CORE,(0,0))
         resource.setrlimit(resource.RLIMIT_FSIZE,(16*1024**2,16*1024**2))
-        resource.setrlimit(resource.RLIMIT_CPU,(timeout,timeout+1))
+        cpu_seconds=math.ceil(timeout)
+        resource.setrlimit(resource.RLIMIT_CPU,(cpu_seconds,cpu_seconds+1))
     process=None;reason=None
-    deadline=time.monotonic()+timeout
     try:
         with tempfile.TemporaryDirectory(prefix='director-worker-env-') as scratch, \
                 tempfile.TemporaryFile(dir=scratch) as stream, ExitStack() as cleanup:
@@ -212,7 +213,9 @@ def _worker(argv, directory, timeout):
             env.update(HOME=scratch, TMPDIR=scratch, TEMP=scratch, TMP=scratch)
             if os.name=='nt':
                 env.update(USERPROFILE=scratch, APPDATA=scratch, LOCALAPPDATA=scratch)
-            if os.name=='nt':
+            if time.monotonic()>=deadline:
+                reason='timeout'
+            elif os.name=='nt':
                 from director_worker_windows import WindowsJob
                 try:
                     job=cleanup.enter_context(WindowsJob())
@@ -247,7 +250,7 @@ def _worker(argv, directory, timeout):
     return {'success':True,'reason':None,'exit_code':0},raw.decode('utf-8','replace')
 
 
-def _blender_probe(executable, operation, directory, timeout):
+def _blender_probe(executable, operation, directory, run_worker):
     script=Path(directory)/'probe.py'
     gpu=operation=='blender.gpu'
     script.write_text('''import bpy,json
@@ -279,8 +282,8 @@ s.cycles.device='GPU'
 bpy.ops.render.render(write_still=True)
 print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string,'rendered':True,'device':s.cycles.device}))
 ''',encoding='utf-8')
-    outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec',
-                          '--threads','1','--python-exit-code','1','--python',script],directory,timeout)
+    outcome,text=run_worker([executable,'--background','--factory-startup','--disable-autoexec',
+                             '--threads','1','--python-exit-code','1','--python',script],directory)
     if outcome['success']:
         from PIL import Image
         payload=_worker_bytes(Path(directory)/'probe.png')
@@ -298,14 +301,14 @@ print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string,'rendered':
     return outcome
 
 
-def _codec_probe(ffmpeg, ffprobe, operation, directory, timeout):
+def _codec_probe(ffmpeg, ffprobe, operation, directory, run_worker):
     codec={'codec.h264':('libx264','mp4'),'codec.vp9':('libvpx-vp9','webm'),'codec.av1':('libaom-av1','webm')}[operation]
     output=Path(directory)/('probe.'+codec[1])
-    result,_=_worker([ffmpeg,'-v','error','-nostdin','-f','lavfi','-i','color=red:s=16x16:r=24',
-        '-frames:v','1','-an','-c:v',codec[0],'-threads','1','-pix_fmt','yuv420p','-y',output],directory,timeout)
+    result,_=run_worker([ffmpeg,'-v','error','-nostdin','-f','lavfi','-i','color=red:s=16x16:r=24',
+        '-frames:v','1','-an','-c:v',codec[0],'-threads','1','-pix_fmt','yuv420p','-y',output],directory)
     if result['success']:
         payload=_worker_bytes(output)
-        verified,text=_worker([ffprobe,'-v','error','-count_frames','-show_streams','-of','json',output],directory,timeout)
+        verified,text=run_worker([ffprobe,'-v','error','-count_frames','-show_streams','-of','json',output],directory)
         if not verified['success']:return verified
         report=decode_json(text)
         streams=report.get('streams') if isinstance(report,dict) else None
@@ -331,12 +334,12 @@ def _marker(text, fields):
     return value
 
 
-def _blend_import_probe(executable, directory, timeout):
+def _blend_import_probe(executable, directory, run_worker):
     """Blender authors one triangle; the native importer decodes it via rig_blender."""
     directory=Path(directory)
     author=directory/'author.py';author.write_text(inventory.BLEND_AUTHOR,encoding='utf-8')
-    outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1',
-                          '--python-exit-code','1','--python',author],directory,timeout)
+    outcome,text=run_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1',
+                             '--python-exit-code','1','--python',author],directory)
     if not outcome['success']:return _phase_failure(outcome,'blend-authoring-failed')
     _check_outputs(directory, {'author.py','triangle.blend'})
     author_version=_marker(text,{'version'})['version']
@@ -346,7 +349,7 @@ def _blend_import_probe(executable, directory, timeout):
     reader=directory/'probe.py'
     with reader.open('x',encoding='utf-8') as script:
         script.write(inventory.blend_reader(executable))
-    outcome,text=_worker([sys.executable,reader],directory,timeout)
+    outcome,text=run_worker([sys.executable,reader],directory)
     if not outcome['success']:return _phase_failure(outcome,'native-blend-import-failed')
     value=_marker(text,{'vertices','triangles','importing_blender_version'})
     _triangle(value)
@@ -364,11 +367,11 @@ def _phase_failure(outcome, reason):
     return {**outcome,'reason':reason}
 
 
-def _init_probe(operation, directory, timeout):
+def _init_probe(operation, directory, run_worker):
     """Fresh-interpreter import plus one dry constructor; never execution evidence."""
     script=Path(directory)/'probe.py'
     script.write_text(inventory.initializer_script(operation,MODULES[operation]),encoding='utf-8')
-    outcome,text=_worker([sys.executable,script],directory,timeout)
+    outcome,text=run_worker([sys.executable,script],directory)
     if not outcome['success']:
         return _phase_failure(outcome,'initialization-timeout' if outcome['reason']=='timeout' else 'initialization-failed')
     acquisition=operation=='native.acquisition'
@@ -392,7 +395,7 @@ def _triangle(value):
           'GEOMETRY','Importer did not decode triangle geometry.')
 
 
-def _import_probe(operation,directory,timeout):
+def _import_probe(operation,directory,run_worker):
     suffix=operation.split('.')[1]
     _need(suffix!='blend','INPUT','Blender project import uses its own probe.')
     # A real triangle in each supported interchange format, decoded by the native owner.
@@ -416,7 +419,7 @@ def _import_probe(operation,directory,timeout):
     source_hash=sha256(source)
     script=Path(directory)/'probe.py'
     script.write_text("from rig_import import load_character_model\nimport json\na=load_character_model("+repr(str(source))+ ")\nprint(json.dumps({'vertices':a.geometry.vertex_count,'triangles':a.geometry.triangle_count}))\n",encoding='utf-8')
-    outcome,text=_worker([sys.executable,script],directory,timeout)
+    outcome,text=run_worker([sys.executable,script],directory)
     if outcome['success']:
         value=decode_json(text,max_bytes=1024)
         _need(isinstance(value,dict) and set(value)=={'vertices','triangles'},'WORKER','Unexpected importer result fields.')
@@ -425,7 +428,7 @@ def _import_probe(operation,directory,timeout):
     return outcome
 
 
-def _inventory_probe(operation, executable, directory, timeout, usage):
+def _inventory_probe(operation, executable, directory, run_worker, usage):
     if operation in ('runtime.python', 'resource.memory', 'resource.storage'):
         return inventory.measure(operation, usage)
     script = inventory.worker_script(operation)
@@ -436,7 +439,7 @@ def _inventory_probe(operation, executable, directory, timeout, usage):
     argv = ([executable, '--background', '--factory-startup', '--disable-autoexec',
              '--threads', '1', '--python-exit-code', '1', '--python', path] if operation == 'blender.engines'
             else [sys.executable, path])
-    outcome, text = _worker(argv, directory, timeout)
+    outcome, text = run_worker(argv, directory)
     if not outcome['success']:
         return outcome
     fields={'blender.engines':{'engines','rendered'},'format.image':{'formats','decoded_pixels'},
@@ -461,9 +464,9 @@ def _inventory_probe(operation, executable, directory, timeout, usage):
         _check_outputs(Path(directory), {'probe.py','probe.glb'})
         # Decode with the native importer inside the same process/time bounds as
         # other probes. The verifier reports the digest of the bytes it decoded.
-        check,report=_worker([sys.executable,'-P','-c',
-                              'from director_capabilities import _verify_robot; _verify_robot()'],
-                             directory,timeout)
+        check,report=run_worker([sys.executable,'-P','-c',
+                                 'from director_capabilities import _verify_robot; _verify_robot()'],
+                                directory)
         if not check['success']:
             return check
         geometry=_marker(report,{'vertices','triangles','output_sha256'})
@@ -680,12 +683,19 @@ def probe(request, evidence_root, *, configuration=None):
     expected_parent = _destination_parent(destination.parent)
     _need(not destination.exists() and not destination.is_symlink(),'DESTINATION','Evidence destination must be new.')
     stamp=datetime.now(timezone.utc)
-    _need(_date(request['context']['deadline'])>stamp,'DEADLINE','Operation deadline has expired.')
+    deadline=_date(request['context']['deadline'])
+    _need(deadline>stamp,'DEADLINE','Operation deadline has expired.')
+    worker_timeout=config.get('timeout_seconds',45)
+    def run_worker(argv, directory):
+        remaining=(deadline-datetime.now(timezone.utc)).total_seconds()
+        _need(remaining>0,'DEADLINE','Operation deadline expired before worker launch.')
+        return _worker(argv,directory,min(worker_timeout,remaining))
+
     records=[];diagnostics=[];refs=[]
     with _evidence_stage(destination, expected_parent) as pinned_stage:
         stage=pinned_stage.path;(stage/'receipts').mkdir();(stage/'payloads').mkdir()
         for operation in sorted(ops):
-            _need(_date(request['context']['deadline'])>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
+            _need(deadline>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
             payloads=[]
             record={'schema_version':1,'operation':operation,'discovered':False,'initialized':False,'execution_verified':False,
                     'status':'unavailable','reason':'unsupported-operation','dependencies':{'probe_source':sha256(Path(__file__))},'fallback':None}
@@ -750,14 +760,13 @@ def probe(request, evidence_root, *, configuration=None):
                     if operation in allowed:
                         # Worker scratch stays outside the pinned stage: subprocesses
                         # never receive a procfd pathname or the stage descriptor.
-                        timeout=config.get('timeout_seconds',45)
                         with tempfile.TemporaryDirectory(prefix='director-worker-') as worker:
-                            if operation in inventory.INITIALIZED:outcome=_init_probe(operation,worker,timeout)
-                            elif operation in inventory.OPERATIONS:outcome=_inventory_probe(operation,executable,worker,timeout,pinned_stage.usage)
-                            elif operation in ('blender.cpu','blender.gpu'):outcome=_blender_probe(executable,operation,worker,timeout)
-                            elif operation in ('codec.h264','codec.vp9','codec.av1'):outcome=_codec_probe(executable,verifier,operation,worker,timeout)
-                            elif operation=='importer.blend':outcome=_blend_import_probe(executable,worker,timeout)
-                            elif operation.startswith('importer.'):outcome=_import_probe(operation,worker,timeout)
+                            if operation in inventory.INITIALIZED:outcome=_init_probe(operation,worker,run_worker)
+                            elif operation in inventory.OPERATIONS:outcome=_inventory_probe(operation,executable,worker,run_worker,pinned_stage.usage)
+                            elif operation in ('blender.cpu','blender.gpu'):outcome=_blender_probe(executable,operation,worker,run_worker)
+                            elif operation in ('codec.h264','codec.vp9','codec.av1'):outcome=_codec_probe(executable,verifier,operation,worker,run_worker)
+                            elif operation=='importer.blend':outcome=_blend_import_probe(executable,worker,run_worker)
+                            elif operation.startswith('importer.'):outcome=_import_probe(operation,worker,run_worker)
                             else:outcome={'success':False,'reason':'native-execution-adapter-unavailable'}
                             initialized=bool(outcome['success'])
                             executed=initialized and not outcome.get('initialization_only',False)
@@ -773,6 +782,8 @@ def probe(request, evidence_root, *, configuration=None):
                         if executed:
                             record['supported_formats'] = outcome.get('formats', record['supported_formats'])
             except (OSError,ValueError,ImportError) as error:
+                if isinstance(error,RigError) and error.report['code']=='DIRECTOR_CAPABILITY_DEADLINE':
+                    raise
                 record.update(status='unavailable',reason='local-probe-failed')
                 record['failure_type']=type(error).__name__ # no raw error/path/credentials
             if operation in REMOTE_OPERATIONS and record.get('price_availability')=='unknown':
@@ -797,7 +808,7 @@ def probe(request, evidence_root, *, configuration=None):
             records.append(dict(operation=operation,version=version,status=record['status'],limits=deepcopy(record['policy_limits']),
                                 probe_evidence=[reference],execution_verified=record['execution_verified']))
             if record['status']!='available':diagnostics.append(_diagnostic('CAPABILITY_'+record['reason'].upper().replace('-','_'),operation,record['reason']))
-        _need(_date(request['context']['deadline'])>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
+        _need(deadline>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
         value=dict(capabilities=records,expires_at=(stamp+timedelta(hours=1)).isoformat(),digest='0'*64)
         value['digest']=object_hash({k:v for k,v in value.items() if k!='digest'})
         result=dict(schema_version=1,kind='director-result',method='CapabilityRegistry.probe',status='succeeded',
@@ -851,9 +862,11 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
     by_op={item['operation']:item for item in value['capabilities']}
     _need(len(by_op)==len(value['capabilities']),'DUPLICATE','Duplicate capability entries.')
     operations=list(required_operations)
+    measurement_resources={}
     for key, measurement in (('max_memory_bytes','resource.memory'),('max_storage_bytes','resource.storage')):
         if key in (resources or {}) and measurement in by_op and measurement not in operations:
             operations.append(measurement)
+            measurement_resources[measurement]={key:resources[key]}
     for operation in operations:
         item=by_op.get(operation)
         _need(item is not None and item['status']=='available' and item['execution_verified'],'UNAVAILABLE','Required capability is unverified: '+operation)
@@ -885,7 +898,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                           'POLICY','Executed provider receipt requires a valid provider identity.')
                     receipt_providers.append(provider)
                     receipt_prices.append(_provider_receipt_price(evidence,item['limits']))
-        for resource,amount in (resources or {}).items():
+        for resource,amount in measurement_resources.get(operation,resources or {}).items():
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
             maximum=item['limits'][resource]
             _need(maximum is not None and amount<=maximum,'RESOURCE','Resource estimate exceeds capability bound: '+resource)

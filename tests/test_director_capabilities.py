@@ -100,6 +100,13 @@ class CapabilityTests(unittest.TestCase):
             self.assertFalse(result['success']);self.assertEqual(result['reason'],'timeout');self.assertEqual(text,'')
             self.assertFalse((Path(directory).resolve()/'worker-output.txt').exists())
 
+    def test_worker_accepts_fractional_remaining_time(self):
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            result, text = cap._worker([sys.executable, '-c', 'print("ready")'], directory, 3.5)
+            self.assertTrue(result['success'], result)
+            self.assertEqual(text.strip(), 'ready')
+
     def test_failed_gpu_explicit_cpu_fallback(self):
         import sys
         with tempfile.TemporaryDirectory() as directory,patch.object(cap,'_blender_probe',return_value={'success':False,'reason':'worker-failed'}):
@@ -130,6 +137,61 @@ class CapabilityTests(unittest.TestCase):
 
 class ProviderPricingContractTests(unittest.TestCase):
     """Exact-file engineering fixtures validate admission; no provider is executed."""
+    def test_provider_workload_uses_only_matching_measurement_bounds(self):
+        from contextlib import nullcontext
+        import director_contracts
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            def entry(operation, limits, **fields):
+                receipt = dict(operation=operation, status='available', execution_verified=True,
+                               policy_limits=limits, version='fixture', payloads=[], **fields)
+                path = root/(operation+'.json')
+                path.write_text(json.dumps(receipt), encoding='utf-8')
+                return dict(operation=operation, status='available', execution_verified=True,
+                            limits=limits, version='fixture', probe_evidence=[cap._reference(path, root)])
+
+            provider = entry('planning.provider', {**cap.LIMITS, 'max_provider_calls': 1,
+                             'max_memory_bytes': 96, 'currency': 'USD', 'max_amount': 1},
+                             provider_id='fixture', price_availability='known', price_per_call=1,
+                             currency='USD')
+            memory = entry('resource.memory', {**cap.LIMITS, 'max_storage_bytes': 0},
+                           execution={'available_bytes': 128})
+            storage = entry('resource.storage', {**cap.LIMITS, 'max_storage_bytes': 80,
+                            'max_memory_bytes': 0}, execution={'available_bytes': 72})
+            estimates = dict(max_provider_calls=1, max_memory_bytes=64, max_storage_bytes=64)
+            def admit(entries, operations=('planning.provider',), **changes):
+                snapshot = dict(capabilities=entries,
+                                expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
+                snapshot['digest'] = object_hash(snapshot)
+                return cap.assert_admission(snapshot, operations, evidence_root=root, resources={**estimates, **changes},
+                           network_policy='allow-configured', allowed_providers=['fixture'],
+                           budget_reservation_id='fixture', budget_currency='USD', budget_amount=1, paid_policy='bounded')
+
+            entries = [provider, memory, storage]
+            reader = nullcontext() if director_contracts.artifact_reads_supported() else patch.object(
+                director_contracts, '_read_artifact', side_effect=lambda base, ref: (base/ref['path']).read_bytes())
+            with reader:
+                admit([provider])  # Older snapshots can omit the measurement entries.
+                admit(entries)
+                for changes, failure in [
+                    ({'max_provider_calls': 2}, 'capability bound: max_provider_calls'),
+                    ({'max_memory_bytes': 97}, 'capability bound: max_memory_bytes'),
+                    ({'max_storage_bytes': 73}, 'measured available capacity: max_storage_bytes'),
+                ]:
+                    with self.subTest(changes=changes), self.assertRaisesRegex(RigError, failure):
+                        admit(entries, **changes)
+                with self.assertRaisesRegex(RigError, 'capability bound: max_provider_calls'):
+                    admit(entries, operations=('planning.provider', 'resource.memory'))
+                with self.assertRaisesRegex(RigError, 'unverified'):
+                    admit([provider, {**memory, 'status': 'untested', 'execution_verified': False}, storage])
+                with self.assertRaisesRegex(RigError, 'nonempty retained evidence'):
+                    admit([provider, {**memory, 'probe_evidence': []}, storage])
+                limited = entry('resource.storage', {**cap.LIMITS, 'max_storage_bytes': 63},
+                                execution={'available_bytes': 128})
+                with self.assertRaisesRegex(RigError, 'capability bound: max_storage_bytes'):
+                    admit([provider, memory, limited])
+
     def test_receipt_bound_known_unknown_and_invalid_provider_prices(self):
         from rig_errors import sha256
         with tempfile.TemporaryDirectory() as directory:
