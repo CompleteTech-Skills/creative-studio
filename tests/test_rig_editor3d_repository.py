@@ -700,6 +700,25 @@ repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
                 self.assertEqual(self.mesh_x(reopened.apply(0, self.move(8), 'after-discard')), 8)
         self.assertEqual((outside / 'keep.txt').read_bytes(), b'keep')
 
+    def test_discard_without_fd_safe_rmtree_removes_links_without_following(self):
+        import editor3d_repository
+        outside = self.root / 'fallback-target'
+        outside.mkdir()
+        (outside / 'keep.txt').write_bytes(b'keep')
+        stage = self.root / 'fallback-revisions' / '.editor-revision-fallback'
+        (stage / 'nested').mkdir(parents=True)
+        (stage / 'nested' / 'Part.obj').write_bytes(b'a')
+        (stage / 'nested' / 'part.obj').write_bytes(b'b')
+        try:
+            (stage / 'escape').symlink_to(outside, target_is_directory=True)
+            (stage / 'nested' / 'file-link').symlink_to(outside / 'keep.txt')
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f'symlinks unavailable: {exc}')
+        with patch.object(shutil.rmtree, 'avoids_symlink_attacks', False):
+            editor3d_repository._discard_private_stage(stage, stage.parent)
+        self.assertFalse(os.path.lexists(stage))
+        self.assertEqual((outside / 'keep.txt').read_bytes(), b'keep')
+
     def test_discard_refuses_a_stage_replaced_by_a_link(self):
         outside = self.root / 'link-target'
         outside.mkdir()

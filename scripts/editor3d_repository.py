@@ -369,13 +369,37 @@ def _validate_revision_record(value, revision, limits):
     _check_id(value['transaction_id'])
     return value
 
+def _remove_entry_no_follow(path):
+    """Remove one link, file or directory tree without traversing links."""
+    info = os.lstat(path)
+    linked = stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400
+    if stat.S_ISDIR(info.st_mode) and not linked:
+        with os.scandir(path) as entries:
+            children = [entry.path for entry in entries]
+        for child in children:
+            _remove_entry_no_follow(child)
+        os.rmdir(path)
+        return
+    try:
+        os.unlink(path)
+    except (IsADirectoryError, PermissionError):
+        if stat.S_ISDIR(info.st_mode):
+            # A Windows directory junction or directory symlink is removed
+            # with rmdir; its target is never entered.
+            os.rmdir(path)
+        else:
+            os.chmod(path, stat.S_IWRITE)
+            os.unlink(path)
+
+
 def _discard_private_stage(stage, revisions):
     """Delete a private, never-published revision stage without following links.
 
     The journal admits only ``.editor-revision-*`` names, so the stage can never
     name a published revision. The stage must be a real directory directly
-    under ``revisions`` (not a link or junction), and deletion requires a
-    symlink-attack-safe ``rmtree`` so entries inside are never followed.
+    under ``revisions`` (not a link or junction). Platforms whose ``rmtree``
+    is symlink-attack-safe use it; others (Windows) use an lstat walk that
+    removes links and junctions themselves without entering them.
     """
     _require(re.fullmatch(r'\.editor-revision-[a-zA-Z0-9_-]+', stage.name) is not None
              and stage.parent == revisions, 'RECOVERY', 'Private stage path is not a revision stage.')
@@ -383,9 +407,14 @@ def _discard_private_stage(stage, revisions):
     _require(stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)
              and not getattr(info, 'st_file_attributes', 0) & 0x400,
              'PATH', 'Private stage is not a real directory.')
-    _require(shutil.rmtree.avoids_symlink_attacks, 'RECOVERY',
-             'This platform cannot delete a private stage without following links.')
-    shutil.rmtree(stage)
+    try:
+        if shutil.rmtree.avoids_symlink_attacks:
+            shutil.rmtree(stage)
+        else:
+            _remove_entry_no_follow(stage)
+    except OSError as exc:
+        raise RigError('EDITOR3D_FILE', 'Private stage could not be removed: ' + str(exc),
+                       stage='editor3d-repository') from exc
     _sync_directory(revisions)
 
 
