@@ -1,6 +1,5 @@
 """Optional authenticated loopback API; paths and work budgets stay local and bounded."""
 from __future__ import annotations
-from functools import partial
 import hmac
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import json
@@ -13,21 +12,6 @@ from rig_errors import RigError,decode_json,require,safe_path,sha256,slug
 
 
 MAX_TOKEN_CHARACTERS=4096
-
-
-def _installed_template(identifier):
-    """Resolve an exact installed public ID without passing user paths to the loader."""
-    from rig_templates import ROOT,load_rig_template
-    require(isinstance(identifier,str),
-            'RIG_API_TEMPLATE','Use an exact installed template ID, not a template object or file path.')
-    installed={}
-    for path in sorted(ROOT.glob('*.json')):
-        if not path.is_file() or path.is_symlink():continue
-        canonical=load_rig_template(path)['id']
-        require(canonical not in installed,'RIG_API_TEMPLATE','Installed template IDs must be unambiguous.')
-        installed[canonical]=path.resolve()
-    require(identifier in installed,'RIG_API_TEMPLATE','Use an exact installed template ID, not a template object or file path.')
-    return str(installed[identifier])
 
 
 class RigServer(ThreadingHTTPServer):
@@ -61,7 +45,8 @@ class RigHandler(BaseHTTPRequestHandler):
         require(identifier==slug(identifier) and len(identifier)<=128,'RIG_API_ID','Invalid job identifier.')
         root=safe_path(self.server.root,identifier);require(root.is_dir(),'RIG_API_NOT_FOUND','Job does not exist.');return root
     def _run(self):
-        authorized=self.headers.get('Authorization','')
+        fields=self.headers.get_all('Authorization', [])
+        authorized=fields[0] if len(fields)==1 else None
         valid_authorization=(isinstance(authorized,str) and len(authorized)<=MAX_TOKEN_CHARACTERS+7
                              and authorized.isascii() and hmac.compare_digest(authorized,'Bearer '+self.server.token))
         if not valid_authorization:
@@ -100,21 +85,15 @@ class RigHandler(BaseHTTPRequestHandler):
             return dict(artifacts=[dict(path=p.relative_to(root).as_posix(),bytes=p.stat().st_size,sha256=sha256(p)) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()])
         body=self._body()
         if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:
-            edits=body.get('edits')
-            if isinstance(edits,list):
-                for edit in edits:
-                    if isinstance(edit,dict) and edit.get('operation')=='template':
-                        value=edit.get('value')
-                        require(isinstance(value,dict) and 'template' in value,'RIG_API_TEMPLATE',
-                                'Template corrections require an exact installed template ID.')
-                        value['template']=_installed_template(value['template'])
-            return mutate(root,'correct',dict(correction=body))
+            return mutate(root,'correct',dict(correction=body,template_source='installed'))
         require(self.command=='POST' and len(parts)==4,'RIG_API_NOT_FOUND','Unsupported route or method.')
         operation=parts[3]
         aliases={'generate':'auto','skin':'weights','test-motion':'test-motion','validate':'validate','analyze':'analyze','state-map':'state-map','animate':'animate','configure':'configure'}
         if operation in aliases:
-            # Template paths are deliberately restricted to installed IDs in HTTP.
-            if operation=='generate':body['template']=_installed_template(body.get('template','humanoid'))
+            if operation=='generate':
+                require('template_source' not in body,'RIG_OPERATION_SCHEMA','Template source is selected by the server.')
+                body.setdefault('template','humanoid')
+                body['template_source']='installed'
             return mutate(root,aliases[operation],body)
         if operation=='pose':return pose_operation(rig,body)
         if operation=='solve-ik':return solve_operation(rig,body)
