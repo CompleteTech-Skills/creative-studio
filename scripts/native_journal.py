@@ -11,6 +11,7 @@ from functools import wraps
 import inspect
 import os
 from pathlib import Path
+import threading
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,33 @@ class AdmittedRoot:
 
 
 _ADMISSIONS = ContextVar('native_journal_admissions', default=())
+_OWNERSHIPS = ContextVar('native_journal_ownerships', default=())
+
+
+@dataclass
+class _HeldOwnership:
+    path: str
+    process: int
+    thread: int
+    active: bool = True
+
+
+@contextmanager
+def held_ownership(root):
+    """Record an already acquired Hatch kernel lock, never serialized authority."""
+    witness = _HeldOwnership(str(Path(root)), os.getpid(), threading.get_ident())
+    token = _OWNERSHIPS.set((*_OWNERSHIPS.get(), witness))
+    try:
+        yield
+    finally:
+        witness.active = False
+        _OWNERSHIPS.reset(token)
+
+
+def owns(root):
+    return any(item.active and item.path == str(Path(root)) and
+               item.process == os.getpid() and item.thread == threading.get_ident()
+               for item in _OWNERSHIPS.get())
 
 
 @contextmanager

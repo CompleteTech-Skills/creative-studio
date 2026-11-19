@@ -5,7 +5,7 @@ uncertain outcomes retain capacity, and reported usage never becomes approval.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from decimal import Decimal, InvalidOperation, localcontext
 from functools import wraps
@@ -349,13 +349,11 @@ class BudgetLedger:
             if outcome != 'uncertain' and native is not None:
                 _require_generic_reconciliation(self, row)
             if intent is not None and outcome in ('complete', 'failed'):
-                # Record direct expenditure, including overruns, while preserving an active native owner.
-                # Historical owners have no publication log that can prove
-                # closure. Direct measurements retain their hold until the
-                # enrolled owner supplies genuine terminal evidence.
-                keep_native_open = native is None and (
-                    'publication_protocol' not in intent or not _native_publications(state, row)
-                    or _unfinished_native(state, row))
+                # A finalized publication cannot prove that a later native
+                # claim or observation is absent. Direct meters retain the
+                # remainder; the original owner supplies terminal usage or
+                # a separately admitted known cancellation.
+                keep_native_open = native is None
                 _need(not _native_pending_usage(self, row, native, owner_verified=owner_verified), 'UNCERTAIN',
                       'Resolve every token-bound native unknown before final ledger settlement.')
             for key in METRICS:
@@ -371,7 +369,8 @@ class BudgetLedger:
                     'over_budget':any(Decimal(row['spent'][key]) > Decimal(row['reserved'][key]) for key in METRICS)}
         return self._change(expected_revision,idempotency_key,'settle',payload,mutate)
 
-    def _release_row(self, state, reservation_id, outcome, *, check_legacy=None, native_run=None, native_event=None):
+    def _release_row(self, state, reservation_id, outcome, *, check_legacy=None, native_run=None,
+                     native_event=None, generic_owner=None):
         """One eligibility check for preflight and the locked ledger mutation."""
         _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
         row = state['reservations'][reservation_id]
@@ -381,15 +380,17 @@ class BudgetLedger:
               'STATE', 'Started or published work cannot be released as unstarted.')
         intent = _row_native_intent(self, state, row)
         current_native = intent is not None and 'publication_protocol' in intent
-        _need(not current_native or published or native_run is not None, 'STATE',
-              'Unpublished native cancellation requires its original owner journal.')
+        if current_native and native_run is None:
+            _need(generic_owner is not None, 'STATE',
+                  'Native cancellation requires its original owner journal.')
+            _verify_generic_native_closure(self, state, row, generic_owner)
         # A durable native observation can precede the first ledger publication
         # when publication was interrupted. Its outstanding usage still owns the hold.
         if published or current_native:
             _require_native_finalization(state, row)
             _require_generic_reconciliation(self, row)
-            owner_verified = native_run is not None
-            if owner_verified:
+            owner_verified = native_run is not None or generic_owner is not None
+            if native_run is not None:
                 operation = _verified_owner_operation(self, row, native_run)
                 if native_event is not None:
                     key, evidence = native_event
@@ -417,12 +418,14 @@ class BudgetLedger:
         _need(outcome in ('unstarted','canceled-known'), 'INPUT', 'Release requires known nonexecuted remainder.')
         proof = _evidence(evidence);_need(bool(proof), 'EVIDENCE', 'Release requires evidence that remaining work is not running.')
         payload=dict(reservation_id=reservation_id,outcome=outcome,evidence=proof)
-        def mutate(state):
-            row = self._release_row(state, reservation_id, outcome, check_legacy=check_legacy,
-                                    native_run=native_run, native_event=(idempotency_key, proof))
-            row['state']='released';row['held']={key:'0' for key in METRICS}
-            return {'reservation_id':reservation_id,'state':'released','spent':deepcopy(row['spent'])}
-        return self._change(expected_revision,idempotency_key,'release',payload,mutate)
+        with _generic_release_admission(self, reservation_id, native_run) as generic_owner:
+            def mutate(state):
+                row = self._release_row(state, reservation_id, outcome, check_legacy=check_legacy,
+                                        native_run=native_run, native_event=(idempotency_key, proof),
+                                        generic_owner=generic_owner)
+                row['state']='released';row['held']={key:'0' for key in METRICS}
+                return {'reservation_id':reservation_id,'state':'released','spent':deepcopy(row['spent'])}
+            return self._change(expected_revision,idempotency_key,'release',payload,mutate)
 
 
 def _evidence(evidence):
@@ -791,6 +794,65 @@ def _verified_owner_operation(ledger, row, root):
     _need(False, 'BINDING', 'Native observation lacks its original admitted owner operation.')
 
 
+def _native_intent_root(ledger, intent):
+    """Resolve a portable locator only against its retained canonical path hash."""
+    from pathlib import PurePosixPath
+    policy = intent['policy']
+    relative = intent['run_relative_path']
+    ledger_relative = policy.get('ledger_path')
+    for value in (relative, ledger_relative):
+        _need(isinstance(value, str) and 0 < len(value) <= 1024 and
+              '\\' not in value and ':' not in value and
+              not PurePosixPath(value).is_absolute() and '..' not in PurePosixPath(value).parts and
+              PurePosixPath(value).as_posix() == value, 'PATH', 'Native owner locator is not portable.')
+    ledger_parts = PurePosixPath(ledger_relative).parts
+    run_parts = PurePosixPath(relative).parts
+    _need(ledger_parts and len(ledger_parts) < len(ledger.root.parents) and
+          type(policy.get('owner_depth')) is int and policy['owner_depth'] == len(run_parts),
+          'PATH', 'Native owner locator differs from its retained owner depth.')
+    owner = ledger.root.parents[len(ledger_parts) - 1]
+    root = owner.joinpath(*run_parts)
+    _need(owner.joinpath(*ledger_parts) == ledger.root and
+          object_hash(str(root)) == policy.get('run_location_sha256'),
+          'BINDING', 'Native owner locator differs from its admitted canonical location.')
+    return root
+
+
+@contextmanager
+def _generic_release_admission(ledger, reservation_id, native_run):
+    """Take native ownership before the ledger lock when a generic caller cancels."""
+    snapshot = ledger.snapshot()['state']
+    row = snapshot['reservations'].get(reservation_id)
+    intent = _row_native_intent(ledger, snapshot, row) if row is not None else None
+    if (native_run is not None or row is None or row['state'] != 'reserved' or intent is None or
+            'run_relative_path' not in intent):
+        yield None
+        return
+    import hatch
+    from native_journal import admission, owns, pinned_admission
+    root = _native_intent_root(ledger, intent)
+    _need(root.resolve() == root, 'BINDING', 'Native owner location no longer names its admitted directory.')
+    with admission(root) as canonical:
+        with (nullcontext() if owns(canonical) else hatch.ownership(canonical)):
+            with pinned_admission(canonical):
+                yield canonical
+
+
+def _verify_generic_native_closure(ledger, state, row, root):
+    """A completed older publication cannot hide a newer current native owner."""
+    import hatch
+    operation = _verified_owner_operation(ledger, row, root)
+    data = hatch.manifest(root, recovery=True)
+    job = next(item for item in data['jobs'] if
+               item.get('budget_operation', {}).get('operation_id') == row['operation_id'])
+    _need(job['status'] != 'running' and 'token' not in job, 'UNCERTAIN',
+          'Finalize the current native owner before canceling its reservation.')
+    accounted = {event['idempotency_key'] for event in state['events'] if event['action'] == 'settle'}
+    _need(all(event['key'] in accounted for event in operation['events'] if
+              'usage' in event['payload']), 'UNCERTAIN',
+          'Replay every durable native usage observation before cancellation.')
+
+
 def _native_remainder_known(ledger, row, token, *, owner_verified=False):
     observations = [(proof, owner_verified or attempt.get('native_owner_verified') is True)
                     for attempt in row['attempts']
@@ -822,7 +884,9 @@ def _read_native_intent(ledger, reference, identifier):
           'BINDING', 'Retained native admission evidence changed.')
     intent = decode_json(encoded)
     fields = {'kind', 'run_id', 'job', 'fixture', 'operation_id', 'input_hashes', 'policy'}
-    _need(isinstance(intent, dict) and set(intent) in (fields, fields | {'publication_protocol', 'handoff_hashes'}) and
+    current_fields = fields | {'publication_protocol', 'handoff_hashes'}
+    _need(isinstance(intent, dict) and set(intent) in (fields, current_fields,
+          current_fields | {'run_relative_path'}) and
           intent['kind'] == 'native-budget-intent' and isinstance(intent['policy'], dict),
           'BINDING', 'Retained native admission cannot be authenticated.')
     handoff = intent.get('handoff_hashes')
@@ -834,6 +898,8 @@ def _read_native_intent(ledger, reference, identifier):
                                     intent['fixture'], intent['policy'], handoff)
     _need(intent['operation_id'] == identifier == expected,
           'BINDING', 'Retained native intent differs from its admitted operation.')
+    if 'run_relative_path' in intent:
+        _native_intent_root(ledger, intent)
     return intent
 
 
@@ -1569,6 +1635,8 @@ class NativeBudget:
                                         operation['operation_id'])
             _need(intent.get('publication_protocol') == 1, 'BINDING',
                   'Historical admission has unknown publication status; reconcile without issuing more work.')
+            _need('run_relative_path' in intent, 'BINDING',
+                  'Historical admission lacks current owner lookup; reconcile without issuing more work.')
             _need(operation.get('handoff_hashes') == handoff == intent['handoff_hashes'],
                   'BINDING', 'Budgeted handoff settings changed; preserve the original pending intent.')
         self.reconcile()
@@ -1581,11 +1649,14 @@ class NativeBudget:
                            evidence=deepcopy(self.config['evidence']))
             operation = dict(operation_id=identifier, input_hashes=deepcopy(input_hashes), handoff_hashes=deepcopy(handoff),
                              reservation_request=request, attempts=[], events=[])
-            request['evidence'].append(self._proof({
+            intent = {
                 'kind': 'native-budget-intent', 'run_id': self.data['run_id'], 'job': job['id'],
                 'fixture': self.data['fixture_mode'], 'operation_id': identifier,
                 'input_hashes': input_hashes, 'policy': self.config,
-                'publication_protocol': 1, 'handoff_hashes': handoff}))
+                'publication_protocol': 1, 'handoff_hashes': handoff,
+                'run_relative_path': self.root.relative_to(self.owner).as_posix()}
+            _native_intent_root(self.ledger, intent)
+            request['evidence'].append(self._proof(intent))
             job['budget_operation'] = operation
             self._save()
         receipt = self._reserve(operation)

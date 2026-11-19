@@ -271,7 +271,9 @@ def ownership(root, *, resolve_leaf=True):
         except OSError as exc:
             raise ValueError('run is owned by another controller') from exc
         try:
-            yield
+            from native_journal import held_ownership
+            with held_ownership(root):
+                yield
         finally:
             handle.seek(0)
             if os.name == 'nt':

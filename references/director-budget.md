@@ -752,6 +752,23 @@ actual input reads around the outer save. The unpublished-owner regression suite
 uses real temporary journals and ledgers with explicitly scheduled interruptions;
 it does not claim provider execution or arbitrary concurrent-process isolation.
 
+Current native intents also retain the run locator relative to the already
+retained owner. It must resolve to the existing canonical location hash and
+owner depth; it is not independent authority or a new owner registry. A direct
+known cancellation takes the original Hatch kernel ownership before the ledger
+writer lock, retains that directory admission through publication, and verifies
+the current nonrunning journal and all saved usage. This preserves ordinary
+known cancellation while refusing a later unpublished running retry. Nested
+owner operations reuse only a live in-process lock witness, scoped to its
+original process and thread. No lock witness is serialized into a receipt.
+
+Generic complete/failed meters retain native capacity even after an earlier
+publication finalized. The original native owner can report terminal usage, or
+a separately admitted known cancellation can release the remainder. Earlier
+intents without a locator remain recovery-only and require the original owner
+for cancellation; their bytes and measured accounting are unchanged. Existing
+final release receipts remain idempotently replayable without reopening work.
+
 
 ## Final production handoff and retained historical claims
 
