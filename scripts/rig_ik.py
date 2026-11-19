@@ -498,12 +498,20 @@ def _matching_bend(root, first, end, reach):
     direction = unit(end-root)
     delta = first-root
     raw = delta-direction*np.dot(delta, direction)
-    rounding = 64*np.finfo(float).eps*max(float(np.abs(root).max()), float(np.abs(first).max()),
-                                           float(np.abs(end).max()))
     length = float(np.linalg.norm(raw))
+    if length > 0:
+        bend = raw/length
+        # The first-order change in the signed bend magnitude projects joint
+        # coordinate errors along bend, including endpoint-direction error
+        # amplified by first-segment length / reach. A large transverse world
+        # coordinate must not suppress a resolved bend in the other components.
+        coordinate_scale = np.maximum.reduce((np.abs(root), np.abs(first), np.abs(end)))
+        rounding = 64*np.finfo(float).eps*np.dot(np.abs(bend), coordinate_scale)
+    else:
+        rounding = 0.
     if length > rounding*(1.+np.linalg.norm(delta)/reach):
         # Resolved, but possibly below unit()'s absolute 1e-10 floor.
-        return raw/length
+        return bend
     return _pole_perpendicular(direction, root, first)
 
 

@@ -388,9 +388,13 @@ neighbor axes. At the equal-length two-segment fold, either solver can also
 construct the elbow along that pole from an open seed.
 The matching bend direction is taken from the first joint's measured
 perpendicular to the root-to-endpoint direction whenever that perpendicular
-exceeds its own first-order rounding, `64*eps*s*(1 + |first segment|/reach)`,
-where `s` is the largest absolute coordinate of the root, first joint and
-endpoint; otherwise the previous degenerate fallback is kept. A valid chain whose
+exceeds its own first-order rounding, `64*eps*dot(abs(b), s)*(1 + |first segment|/reach)`,
+where `b` is that perpendicular's unit direction and each component of `s` is
+the largest absolute corresponding coordinate of the root, first joint and
+endpoint. Projecting component-wise coordinate uncertainty along the measured
+bend prevents a large transverse world translation from concealing a resolved
+bend in the other coordinates; the reach factor accounts for endpoint-direction
+conditioning. Otherwise the previous degenerate fallback is kept. A valid chain whose
 segments exceed the `1e-8` meter validity threshold can have a shorter
 perpendicular, which the solver's absolute `1e-8` meter cutoff replaced by an
 arbitrary axis. Matching poles are unchanged whenever that perpendicular exceeds

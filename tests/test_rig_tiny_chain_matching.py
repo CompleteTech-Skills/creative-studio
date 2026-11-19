@@ -34,8 +34,9 @@ def bent_pose(skeleton, bend, *, translation=None):
 
 
 class RigTinyChainMatchingTests(unittest.TestCase):
-    def assert_preserved(self, skeleton, pose, solver, segment):
-        declaration = dict(boundaries.chain(len(skeleton['bones'])), solver=solver, tolerance=1e-13*segment/1e-8)
+    def assert_preserved(self, skeleton, pose, solver, segment, *, tolerance=None):
+        declaration = dict(boundaries.chain(len(skeleton['bones'])), solver=solver,
+                           tolerance=1e-13*segment/1e-8 if tolerance is None else tolerance)
         before = evaluate_fk(skeleton, pose)
         saved = deepcopy(pose)
         targets = match_fk_to_ik(skeleton, pose, declaration)
@@ -77,6 +78,22 @@ class RigTinyChainMatchingTests(unittest.TestCase):
                     moved = max(float(np.linalg.norm(after[name][:3, 3]-before[name][:3, 3])) for name in before)
                     # Two-bone conditioning of a near-straight unit chain, as on main.
                     self.assertLessEqual(moved, 1e-7)
+
+    def test_transverse_world_translation_preserves_resolved_tiny_bends(self):
+        # All joint X coordinates are identical: their large common translation
+        # cannot obscure a measured bend entirely within the Y/Z plane.
+        segment = 1.5e-8
+        skeleton = scaled_chain(segment)
+        for translation in (1e6, -1e6, 1e12):
+            for bend in (-1., 1., -1e-3):
+                pose = neutral_pose(skeleton)
+                pose['bones']['b0'] = dict(translation=[translation, 0, 0])
+                pose['bones']['b1'] = dict(rotation=quaternion([1, 0, 0], bend))
+                before = evaluate_fk(skeleton, pose)
+                self.assertTrue(all(matrix[0, 3] == translation for matrix in before.values()))
+                for solver in ('two-bone', 'fabrik'):
+                    with self.subTest(translation=translation, bend=bend, solver=solver):
+                        self.assert_preserved(skeleton, pose, solver, segment, tolerance=1e-13)
 
     def test_ordinary_scale_matching_poles_are_unchanged(self):
         skeleton = scaled_chain(1.)
