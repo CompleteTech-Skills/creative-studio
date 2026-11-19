@@ -206,6 +206,17 @@ checks and fresh independent review remain required.
 
 ## Historical receipt integrity and caller aliases
 
+The portable raw-transcript fixtures retain their original path spellings and
+assertions alongside the added POSIX/Windows lexical controls. The legacy
+non-UTF-8 privacy case now
+uses the transparent completed-process schedule for both Python and public CLI
+dispatch: the installed ffprobe finishes, and its same process object, actual
+exit status and output files are passed to ordinary capture. This retains its
+exit-1 assertion without racing the production log-budget kill. The adjacent
+unscheduled termination test still exercises ordinary bounded capture and
+records the actual termination outcome. Neither schedule fabricates output or
+process status, and both keep their independent fixture timeout.
+
 The six-method optional
 [`test_silent_video_historical_receipt_native.py`](../tests/optional/test_silent_video_historical_receipt_native.py)
 module executes the installed full-probe protocol on six synthetic H.264 frames.

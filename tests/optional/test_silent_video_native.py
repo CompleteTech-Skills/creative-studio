@@ -704,6 +704,19 @@ class SilentMedia(core.SilentContracts):
                 self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
 
     def test_filesystem_byte_workdir_is_private_in_python_and_cli(self):
+        from test_silent_video_diagnostic_boundaries_native import completed_process_capture_schedule
+
+        # This case asserts the actual completed probe's exit 1. Let that real
+        # child finish before bounded capture, so overflow cannot race it into
+        # SIGKILL. The adjacent termination case retains the ordinary schedule.
+        completed_cli = self.root / 'completed-byte-path-cli.py'
+        completed_cli.write_text(
+            'import sys\n'
+            'sys.path.insert(0, %r)\n' % str(Path(__file__).resolve().parent) +
+            'from test_silent_video_diagnostic_boundaries_native import '
+            'completed_process_capture_schedule, video\n'
+            'with completed_process_capture_schedule():\n'
+            '    video.main()\n', encoding='utf-8')
         marker = 'SYNTHETIC_NON_UTF8_WORKDIR'
         # POSIX exercises an actual non-UTF-8 filename byte. Windows uses its
         # actual Unicode replacement-character filename as a native control.
@@ -721,13 +734,14 @@ class SilentMedia(core.SilentContracts):
                     private /= str(index) + 'x' * 180
             private.mkdir(parents=True)
             with self.subTest(long_path=long_path):
-                with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                with completed_process_capture_schedule(), \
+                        patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
                     video.verify_export(artifact, request)
                 self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
                 self.assertEqual(failed.exception.evidence['probe']['exit_status'], 1)
                 self.assertEqual(bool(failed.exception.evidence['probe'].get('stderr_truncated')), long_path)
                 self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
-                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                result = subprocess.run([sys.executable, str(completed_cli), 'verify-export',
                     str(artifact), '--request', str(request_path), '--require-silent'],
                     env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
                     capture_output=True, text=True, timeout=30)
