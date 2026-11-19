@@ -1,5 +1,6 @@
 """Offline continuity capability and fallback contracts."""
 import copy
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -8,12 +9,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from continuity_capabilities import Admission, CapabilityRefusal, Policy, MATRIX, schemas, validate, discover
+from continuity_capabilities import Admission, CapabilityRefusal, Policy, MATRIX, MANDATORY_FIELDS, OwnerAdapter, schemas, validate, discover
 from continuity_capability_owners import RigOwner, ImageMastersOwner, pointer
 from continuity_contracts import VERSION, canonical_bytes, digest
 from rig_errors import RigError
@@ -206,6 +209,23 @@ class CapabilityTest(unittest.TestCase):
                 max_memory_bytes=1),'resource-memory_bytes')):
             result=Admission(self.root,policy=policy,owners=[owner]).run(request)
             self.assertEqual(result['outcome'],'failed');self.assertIn(gate,result['checks'][0]['unsatisfied_gates'])
+
+    def test_native_peak_memory_measurement_and_windows_independent_baseline(self):
+        from continuity_capabilities import _peak_memory_bytes
+        peak = _peak_memory_bytes()
+        print('Native process lifetime peak bytes:',peak,flush=True)
+        self.assertIsNotNone(peak)
+        self.assertGreater(peak,0)
+        if sys.platform == 'win32':
+            import os
+            import subprocess
+            # .NET Process exposes the OS peak independently of our ctypes
+            # declarations; query this Python PID, not the PowerShell child.
+            baseline = int(subprocess.check_output(['powershell','-NoProfile','-Command',
+                '(Get-Process -Id '+str(os.getpid())+').PeakWorkingSet64'],text=True).strip())
+            print('Independent Windows .NET process peak bytes:',baseline,flush=True)
+            self.assertGreater(baseline,0)
+            self.assertLess(abs(peak-baseline),64*1024*1024)
 
     def test_schema_or_type_mismatch_never_admitted(self):
         owner, request=self.bound('geometry-inspection')
@@ -490,3 +510,325 @@ class CapabilityTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(json.loads(completed.stdout)['code'], 'CONTINUITY_REFERENCE_MISSING')
         self.assertNotIn(str(self.root), completed.stdout + completed.stderr)
+
+    def test_source_bound_probe_cannot_run_on_different_rig(self):
+        owner, request=self.bound('geometry-inspection');request['checks'][0]['inputs']=[]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('canonical-reference',result['checks'][0]['unsatisfied_gates'])
+
+    def test_aggregate_budget_is_not_reset_per_check(self):
+        request=self.request('geometry-inspection','visual-reference','physics-continuation')
+        with self.assertRaisesRegex(ValueError,'aggregate'):
+            Admission(self.root,policy=Policy()).run(request)
+
+    def test_failed_owner_does_not_suppress_independent_check(self):
+        owner, request=self.bound('geometry-inspection')
+        request['checks'].append(self.request('visual-reference')['checks'][0])
+        request['checks'][1]['id']='visual'
+        class Broken(type(owner)):
+            def snapshot(self): raise ValueError('broken owner schema')
+        broken=object.__new__(Broken)
+        result=self.engine(broken,owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertEqual(len(result['checks']),2)
+        self.assertEqual(result['checks'][0]['outcome'],'partial')
+        self.assertEqual(result['checks'][1]['unsatisfied_gates'],['owner-contract'])
+
+    def test_measured_memory_limit_blocks_before_owner_execution(self):
+        owner, request=self.bound('geometry-inspection')
+        request['checks'][0]['resources']['memory_bytes']=1
+        with patch.object(owner, 'execute', wraps=owner.execute) as execute:
+            result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('resource-memory_bytes',result['checks'][0]['unsatisfied_gates'])
+        execute.assert_not_called()
+
+    def test_network_policy_is_never_a_fallback(self):
+        owner, request=self.bound('geometry-inspection')
+        owner._snap['offline']=False
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('network-policy',result['checks'][0]['unsatisfied_gates'])
+
+    def test_nullable_snapshot_integer_fields_normalize_on_copy(self):
+        owner,request=self.bound('geometry-inspection')
+        result=self.engine(owner).run(request)
+        result['checks'][0]['snapshot']['limits']['memory_bytes']=float(result['checks'][0]['snapshot']['limits']['memory_bytes'])
+        parsed=validate(result,'result')
+        self.assertIs(type(parsed['checks'][0]['snapshot']['limits']['memory_bytes']),int)
+        self.assertIs(type(result['checks'][0]['snapshot']['limits']['memory_bytes']),float)
+
+    def test_native_lock_collision_is_not_missing_backend(self):
+        from rig_errors import job_lock
+
+        owner, request = self.bound('geometry-inspection')
+        with job_lock(self.root / 'rig'):
+            result = self.engine(owner).run(request)
+
+        self.assertEqual(result['outcome'], 'failed')
+        row = result['checks'][0]
+        self.assertEqual(row['unsatisfied_gates'], ['ownership'])
+        self.assertEqual(row['error'].partition(':')[0], 'RIG_BUSY')
+
+    def test_standalone_probe_rejects_omitted_capability(self):
+        import continuity_capability_probe as probe
+
+        destination = self.root / 'probe'
+        with patch.dict(probe.MATRIX):
+            del probe.MATRIX['historical-media']
+            with self.assertRaisesRegex(AssertionError, r"matrix capability mismatch: missing=\['historical-media'\]"):
+                probe.run(destination)
+        self.assertFalse((destination / 'report.json').exists())
+
+    def policy_owner(self, capability, *, malformed=None, execute=None, expiry=None):
+        # This explicitly synthetic in-process adapter tests policy invariants,
+        # not real production backend or artistic acceptance. Real native adapter
+        # coverage is tested separately above.
+        test=self
+        if not (self.root/'rig').exists():shutil.copytree(REPO/'examples/rig-3d/robotic',self.root/'rig')
+        native=pointer(self.root,self.root/'rig/rig.json',kind='hatch-3d-rig')
+        class Fixture(OwnerAdapter):
+            def __init__(self):self.lock=threading.Lock();self.calls=0
+            def snapshot(self):
+                return dict(schema_version=VERSION,kind='continuity-capability-snapshot',
+                    capability_id=capability,implementation_id=MATRIX[capability][0][0],
+                    owner='hatch-rig',backend='policy-fixture',backend_version='1.0.0',contract_version=VERSION,
+                    input_types=['hatch-3d-rig'],output_types=['native-inspection'],operations=[capability],
+                    status='available',discovered=True,tested_operations=[capability],evidence=[test.project],
+                    limits=dict(memory_bytes=512*1024*1024,disk_bytes=64*1024*1024,cpu_seconds=60,gpu_bytes=0,concurrency=1),
+                    offline=True,asset_rights_required=True,
+                    expires_at=expiry or '2099-01-01T00:00:00Z',limitations=[])
+            @contextmanager
+            def reserve(self,check):
+                with self.lock:yield
+            def execute(self,check):
+                self.calls+=1
+                payload=(test.root/'project.json').read_bytes()
+                result=dict(outcome='executed',evidence=[test.project],
+                    measurements=dict(fixture=True,source_sha256=hashlib.sha256(payload).hexdigest(),model_invoked=False,device='cpu'),
+                    verified_fields=list(MANDATORY_FIELDS[capability])+['source-conversion-binding'],limitations=[])
+                if malformed:result.update(malformed)
+                if execute:execute(result)
+                return result
+        return Fixture(),native
+
+    def test_all_thirteen_categorical_matrix_invariants(self):
+        for cap in MATRIX:
+            with self.subTest(cap=cap):
+                owner,native=self.policy_owner(cap)
+                request=self.request(cap);request['checks'][0].update(inputs=[native],input_types=['hatch-3d-rig'],output_types=['native-inspection'])
+                result=self.engine(owner).run(request)
+                check=result['checks'][0]
+                self.assertEqual(owner.calls,1)
+                self.assertFalse(result['visual_approval'])
+                if cap in ('graphical-editor','video-encoding','historical-media'):
+                    self.assertEqual(check['outcome'],'partial')
+                    self.assertTrue(check['missing_fields'])
+                elif cap=='visual-comparison':self.assertEqual(check['outcome'],'needs_visual_review')
+                else:self.assertEqual(check['outcome'],'supported_fallback',check)
+
+    def test_batch_and_reservation_expiry_are_current(self):
+        current=[datetime(2026,10,24,tzinfo=timezone.utc)]
+        def advance(result):current[0]+=timedelta(seconds=2)
+        owner,native=self.policy_owner('geometry-inspection',execute=advance,expiry='2026-10-24T00:00:01Z')
+        request=self.request('geometry-inspection','geometry-inspection')
+        for check in request['checks']:check['inputs']=[native]
+        engine=self.engine(owner);engine.clock=lambda:current[0]
+        result=engine.run(request)
+        self.assertEqual(owner.calls,1)
+        self.assertEqual(result['checks'][1]['outcome'],'blocked_missing_capability')
+
+    def test_unavailable_snapshot_can_have_unknown_version(self):
+        owner,native=self.policy_owner('geometry-inspection')
+        snapshot=owner.snapshot();snapshot.update(status='unavailable',backend_version=None,tested_operations=[],evidence=[])
+        self.assertIsNone(validate(snapshot,'snapshot')['backend_version'])
+        snapshot['status']='available'
+        with self.assertRaises(ValueError):validate(snapshot,'snapshot')
+
+    def test_painted_input_cannot_replace_geometry_or_3d_reference(self):
+        owner,native=self.policy_owner('visual-reference')
+        request=self.request('visual-reference');request['checks'][0]['inputs']=[self.project]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('canonical-reference',result['checks'][0]['unsatisfied_gates'])
+        self.assertEqual(owner.calls,0)
+
+    def test_owner_required_review_records_missing_field_and_gate(self):
+        owner,native=self.policy_owner('visual-reference',malformed=dict(outcome='needs_visual_review'))
+        request=self.request('visual-reference');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'needs_visual_review')
+        self.assertIn('visual-approval',result['checks'][0]['missing_fields'])
+        self.assertIn('visual-approval',result['checks'][0]['unsatisfied_gates'])
+
+    def test_whole_process_resource_measurement_is_explicit(self):
+        owner, request=self.bound('geometry-inspection')
+        result=self.engine(owner).run(request)
+        m=result['checks'][0]['measurements']['admission_resources']
+        self.assertGreaterEqual(m['process_cpu_seconds'],0)
+        self.assertIn(m['rss_status'],('measured','unavailable'))
+
+    def test_invalid_source_hash_blocks_all_checks_even_without_backend(self):
+        request=self.request('historical-media','visual-reference')
+        request['project_revision']['sha256']='0'*64
+        result=self.engine().run(request)
+        self.assertEqual(result['outcome'],'failed');self.assertEqual(result['integrity'],'failed')
+        self.assertTrue(all(x['unsatisfied_gates']==['integrity'] for x in result['checks']))
+
+    def test_missing_canonical_file_is_integrity_failure(self):
+        request=self.request('physics-continuation');(self.root/'project.json').unlink()
+        result=self.engine().run(request)
+        self.assertEqual(result['outcome'],'failed');self.assertEqual(result['integrity'],'failed')
+
+    def test_symlink_source_never_waived(self):
+        try:(self.root/'alias.json').symlink_to(self.root/'project.json')
+        except OSError:self.skipTest('host symlink creation unavailable')
+        request=self.request('historical-media');request['project_revision']['path']='alias.json'
+        self.assertEqual(self.engine().run(request)['outcome'],'failed')
+
+    def test_unknown_fields_duplicate_checks_and_paths_rejected(self):
+        request=self.request('geometry-inspection')
+        for change in (lambda r:r.update(command='sh'),lambda r:r['checks'].append(copy.deepcopy(r['checks'][0])),
+                       lambda r:r['project_revision'].update(path='../secret')):
+            value=copy.deepcopy(request);change(value)
+            with self.assertRaises(ValueError):validate(value,'request')
+
+    def test_wrong_native_filename_is_rejected_before_probe(self):
+        self.rig('geometry-inspection')
+        with self.assertRaisesRegex(ValueError,'rig.json'):
+            RigOwner(self.root,'rig/identity.json','evidence','geometry-inspection')
+
+    def test_project_change_is_global_integrity_failure(self):
+        owner,request=self.bound('geometry-inspection')
+        changed=False
+        def change():
+            nonlocal changed
+            if not changed:
+                (self.root/'project.json').write_bytes(b'{"changed":true}')
+                changed=True
+            return False
+        result=self.engine(owner).run(request,canceled=change)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertEqual(result['integrity'],'failed')
+        self.assertIn('integrity',result['checks'][0]['unsatisfied_gates'])
+
+    @patch('continuity_capabilities._peak_memory_bytes', lambda: 64 * 1024 * 1024)
+    def test_oversized_native_and_combined_reports_are_bounded_failures(self):
+        # Each individual response is valid JSON; size limits apply before final
+        # report serialization, preserving all check outcomes.
+        owner,native=self.policy_owner('geometry-inspection',malformed=dict(measurements={'large':'x'*1048577}))
+        request=self.request('geometry-inspection','physics-continuation');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(owner.calls, 1)
+        self.assertEqual(result['outcome'], 'failed')
+        geometry, physics = result['checks']
+        self.assertEqual(geometry['outcome'], 'failed')
+        self.assertEqual(geometry['error'], 'CONTINUITY_CAPABILITY_REPORT_LIMIT: Native result exceeds the one MiB check limit')
+        self.assertEqual(geometry['unsatisfied_gates'], ['resource-admission'])
+        self.assertEqual(physics['outcome'], 'blocked_missing_capability')
+
+        owner,native=self.policy_owner('geometry-inspection',malformed=dict(measurements={'large':'x'*700000}))
+        request=self.request(*(['geometry-inspection']*8))
+        for check in request['checks']:check['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(owner.calls, 8)
+        self.assertEqual(result['outcome'], 'failed')
+        checks = result['checks']
+        self.assertEqual([check['outcome'] for check in checks], ['supported_fallback'] * 5 + ['failed'] * 3)
+        for check in checks[5:]:
+            self.assertEqual(check['error'], 'CONTINUITY_CAPABILITY_REPORT_LIMIT: Complete result exceeds the four MiB report limit')
+            self.assertEqual(check['unsatisfied_gates'], ['resource-admission'])
+        self.assertLessEqual(len(canonical_bytes(result)), 4 * 1024 * 1024)
+
+    def test_opaque_measurement_maps_are_not_reference_objects(self):
+        metadata=dict(id='opaque',version='not-a-version',path='../opaque-user-string',sha256='not-a-hash',kind='note')
+        owner,native=self.policy_owner('geometry-inspection',malformed=dict(measurements={'metadata':metadata}))
+        request=self.request('geometry-inspection');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['checks'][0]['outcome'],'supported_fallback')
+        self.assertEqual(result['checks'][0]['measurements']['metadata'],metadata)
+
+    @patch('continuity_capabilities._peak_memory_bytes', lambda: 64 * 1024 * 1024)
+    def test_duplicate_probe_and_input_hashing_is_linear_in_unique_bytes(self):
+        import continuity_capabilities as module
+        original=module.verify_references
+        records=[]
+        def counted(*args,**kwargs):
+            start=time.process_time()
+            result=original(*args,**kwargs)
+            records.append(dict(seconds=time.process_time()-start,bytes=result['total_bytes']))
+            return result
+        owner,native=self.policy_owner('geometry-inspection')
+        request=self.request(*(['geometry-inspection']*16))
+        for check in request['checks']:check['inputs']=[native]
+        with patch.object(module,'verify_references',counted):result=self.engine(owner).run(request)
+        self.assertEqual(len(records),2,records)  # initial unique closure and final fresh closure
+        self.assertEqual(sum(r['bytes'] for r in records),2*((self.root/'project.json').stat().st_size+(self.root/'rig/rig.json').stat().st_size))
+        self.assertGreaterEqual(result['admission_resources']['process_cpu_seconds'],sum(r['seconds'] for r in records))
+        self.assertEqual(owner.calls, 16)
+        self.assertEqual([check['outcome'] for check in result['checks']], ['supported_fallback'] * 16)
+
+    def test_budget_includes_validation_and_hashing_not_only_owner_calls(self):
+        import continuity_capabilities as module
+        owner,native=self.policy_owner('geometry-inspection')
+        request=self.request('geometry-inspection');request['checks'][0].update(inputs=[native])
+        request['checks'][0]['resources']['cpu_seconds']=1
+        original=module.verify_references
+        def expensive(*args,**kwargs):
+            result=original(*args,**kwargs)
+            until=time.process_time()+.55
+            while time.process_time()<until:pass
+            return result
+        with patch.object(module,'verify_references',expensive):result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('resource-admission',result['checks'][0]['unsatisfied_gates'])
+        self.assertGreater(result['admission_resources']['process_cpu_seconds'],1)
+
+    def test_final_hash_pass_detects_changes_despite_unreliable_fingerprint(self):
+        import continuity_capabilities as module
+        owner,native=self.policy_owner('geometry-inspection')
+        request=self.request('geometry-inspection');request['checks'][0]['inputs']=[native]
+        def change(result):(self.root/'project.json').write_bytes(b'{"changed":true}')
+        owner.execute=lambda check:(change({}) or dict(outcome='executed',evidence=[],measurements={},verified_fields=[],limitations=[]))
+        # Simulate a platform reporting an unchanged metadata fingerprint. Final
+        # hash verification must still catch the changed canonical project bytes.
+        with patch.object(module.ReferencePass,'_fingerprint',return_value=(1,2,3,4,5)):
+            result=self.engine(owner).run(request)
+        self.assertEqual(result['integrity'],'failed')
+        self.assertEqual(result['outcome'],'failed')
+
+    def test_exhausted_probe_or_reservation_never_starts_native_execution(self):
+        import continuity_capabilities as module
+        for stage in ('probe','reserve'):
+            owner,native=self.policy_owner('geometry-inspection')
+            request=self.request('geometry-inspection');request['checks'][0]['inputs']=[native]
+            request['checks'][0]['resources']['cpu_seconds']=1
+            fake_cpu=[0.]
+            if stage=='probe':
+                (self.root/'new-probe.json').write_bytes(b'{"fixture":true}')
+                proof=pointer(self.root,self.root/'new-probe.json')
+                original_snapshot=owner.snapshot
+                def snapshot():
+                    value=original_snapshot();value['evidence']=[proof];return value
+                owner.snapshot=snapshot
+                original_verify=module.verify_references
+                def verify(*args,**kwargs):
+                    result=original_verify(*args,**kwargs)
+                    if any(x['path']=='new-probe.json' for x in result['files']):fake_cpu[0]=2.
+                    return result
+                context=patch.object(module,'verify_references',verify)
+            else:
+                original_reserve=owner.reserve
+                @contextmanager
+                def reserve(check):
+                    with original_reserve(check):
+                        fake_cpu[0]=2.
+                        yield
+                owner.reserve=reserve
+                context=nullcontext()
+            with context,patch.object(module.time,'process_time',side_effect=lambda:fake_cpu[0]):
+                result=self.engine(owner).run(request)
+            self.assertEqual(owner.calls,0,stage)
+            self.assertEqual(result['outcome'],'failed')
+            self.assertIn('resource-admission',result['checks'][0]['unsatisfied_gates'])
