@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hatch-pet.local/physics-softbody-cache.schema.json",
+  "title": "Native soft-body cache v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "world_sha256",
+    "files",
+    "backend",
+    "fixture",
+    "review_status",
+    "usage"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "hatch-softbody-cache"
+    },
+    "world_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1125899906842624
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ]
+      }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "blender",
+            "pybullet"
+          ]
+        },
+        "adapter_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "solver_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "solver_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "application_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "precision": {
+          "enum": [
+            "float32",
+            "float64",
+            "mixed"
+          ]
+        },
+        "device": {
+          "enum": [
+            "cpu",
+            "gpu"
+          ]
+        },
+        "executable_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "adapter_version",
+        "solver_name",
+        "solver_version",
+        "application_version",
+        "platform",
+        "precision",
+        "device",
+        "executable_sha256"
+      ]
+    },
+    "fixture": {
+      "type": "boolean"
+    },
+    "review_status": {
+      "const": "unreviewed"
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000.0
+        },
+        "peak_memory_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1125899906842624
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1125899906842624
+        },
+        "solver_steps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      },
+      "required": [
+        "elapsed_seconds",
+        "peak_memory_bytes",
+        "output_bytes",
+        "solver_steps"
+      ]
+    }
+  }
+}
