@@ -500,8 +500,10 @@ def _matching_bend(root, first, end, reach):
     raw = delta-direction*np.dot(delta, direction)
     rounding = 64*np.finfo(float).eps*max(float(np.abs(root).max()), float(np.abs(first).max()),
                                            float(np.abs(end).max()))
-    if np.linalg.norm(raw) > rounding*(1.+np.linalg.norm(delta)/reach):
-        return unit(raw)
+    length = float(np.linalg.norm(raw))
+    if length > rounding*(1.+np.linalg.norm(delta)/reach):
+        # Resolved, but possibly below unit()'s absolute 1e-10 floor.
+        return raw/length
     return _pole_perpendicular(direction, root, first)
 
 

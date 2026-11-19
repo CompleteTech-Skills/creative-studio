@@ -377,14 +377,7 @@ joint transforms and bound geometry. Ordinary matches retain their original
 reach-based pole distance. When that reach is at most `1e-6` meters, the matching pole is placed `1e-6`
 meters along the same bend direction; a reach-distance pole below the solver's
 `1e-8` meter pole-degeneracy cutoff would otherwise be replaced by an arbitrary
-axis and move the elbow of a valid near-closed seed. The matching bend direction is
-taken from the first joint's measured perpendicular whenever that exceeds its own
-first-order rounding, `64*eps*s*(1 + |first segment|/reach)` with `s` the largest
-absolute coordinate of the root, first joint and endpoint, rather than the
-solver's absolute `1e-8` meter cutoff; a valid chain whose segments exceed the
-`1e-8` meter validity threshold can have a shorter perpendicular, which the
-absolute cutoff replaced by an arbitrary axis. Ordinary-scale matching poles are
-unchanged. Closure is tested within `1e-9` meters, the matched
+axis and move the elbow of a valid near-closed seed. Closure is tested within `1e-9` meters, the matched
 endpoint must also meet the chain's residual tolerance, and normalized pole/first
 segment directions must differ by at most eight machine epsilons in unit-vector
 distance. Comparing the vector difference avoids a dot product rounding a
@@ -393,6 +386,16 @@ direction must exceed `1e-9` meters. An explicitly changed pole reorients a clos
 seed's existing shape, including backfolded multisegment chains with degenerate
 neighbor axes. At the equal-length two-segment fold, either solver can also
 construct the elbow along that pole from an open seed.
+The matching bend direction is taken from the first joint's measured
+perpendicular to the root-to-endpoint direction whenever that perpendicular
+exceeds its own first-order rounding, `64*eps*s*(1 + |first segment|/reach)`,
+where `s` is the largest absolute coordinate of the root, first joint and
+endpoint; otherwise the previous degenerate fallback is kept. A valid chain whose
+segments exceed the `1e-8` meter validity threshold can have a shorter
+perpendicular, which the solver's absolute `1e-8` meter cutoff replaced by an
+arbitrary axis. Matching poles are unchanged whenever that perpendicular exceeds
+`1e-8` meters; below it, a resolved perpendicular is now used even when shorter
+than the `1e-10` floor of ordinary direction normalisation.
 Runtime segment-length checks, joint limits, endpoint orientation, actual
 residuals and bounded convergence reporting remain authoritative.
 

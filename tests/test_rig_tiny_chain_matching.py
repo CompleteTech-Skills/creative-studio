@@ -56,6 +56,28 @@ class RigTinyChainMatchingTests(unittest.TestCase):
                     with self.subTest(segment=segment, bend=bend, solver=solver):
                         self.assert_preserved(skeleton, bent_pose(skeleton, bend), solver, segment)
 
+    def test_nearly_straight_chains_match_without_rejecting_resolved_bends(self):
+        # A resolved perpendicular can be shorter than unit()'s absolute 1e-10
+        # floor; matching must normalise it rather than reject a valid chain.
+        for segment, bend in ((1.5e-8, 1e-3), (1e-7, 1e-3), (1e-6, 1e-4)):
+            skeleton = scaled_chain(segment)
+            for solver in ('two-bone', 'fabrik'):
+                with self.subTest(segment=segment, bend=bend, solver=solver):
+                    self.assert_preserved(skeleton, bent_pose(skeleton, bend), solver, segment)
+        skeleton = scaled_chain(1.)
+        for bend in (1e-8, 1e-11, 1e-13):
+            for solver in ('two-bone', 'fabrik'):
+                with self.subTest(segment=1., bend=bend, solver=solver):
+                    pose = bent_pose(skeleton, bend)
+                    declaration = dict(boundaries.chain(3), solver=solver)
+                    before = evaluate_fk(skeleton, pose)
+                    result = solve_ik(skeleton, pose, declaration, **match_fk_to_ik(skeleton, pose, declaration))
+                    after = evaluate_fk(skeleton, result.pose)
+                    self.assertTrue(result.converged, result.report())
+                    moved = max(float(np.linalg.norm(after[name][:3, 3]-before[name][:3, 3])) for name in before)
+                    # Two-bone conditioning of a near-straight unit chain, as on main.
+                    self.assertLessEqual(moved, 1e-7)
+
     def test_ordinary_scale_matching_poles_are_unchanged(self):
         skeleton = scaled_chain(1.)
         for bend in (.3, 1., 2.):
