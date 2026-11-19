@@ -151,6 +151,10 @@ def main():
     job_path=Path(sys.argv[sys.argv.index('--')+1]);job=json.loads(job_path.read_text())
     if bpy.app.version[:2]!=(4,5):raise ValueError('Supported Blender version is 4.5 LTS')
     mode=job['mode']
+    if mode in ('model3d-create', 'model3d-edit', 'model3d-export'):
+        from runpy import run_path
+        worker = run_path(str(Path(__file__).with_name('model3d_blender_worker.py')))
+        return worker['run'](job, blender, export_glb)
     if mode=='create':
         bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False)
         bpy.context.scene.render.fps=job.get('fps',24);bpy.context.scene.frame_start=0
