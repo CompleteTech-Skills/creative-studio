@@ -15,7 +15,12 @@ from rig_errors import RigError,atomic_json,sha256
 from rig_gltf import export_gltf,export_geometry,read_gltf,GltfBuilder
 from rig_import import load_character_model
 from rig_interop import compare_imported,validate_gltf
-from rig_models import TextureImage
+from rig_models import TextureImage, RigAsset
+from rig_jobs import create_run, save_rig
+from rig_contracts import DEFAULT_LIMITS
+from rig_skinning import generate_skin_weights, evaluate_deformation
+from rig_skeleton import neutral_pose
+from test_rig_skinning import pruning_fixture
 
 
 class RigInterchangeTests(unittest.TestCase):
@@ -73,6 +78,101 @@ class RigInterchangeTests(unittest.TestCase):
         self.assertIs(report['issues']['truncated'], False)
         self.assertEqual(report['asset_sha256'], sha256(path))
         gltf=GLTF2().load(str(path));self.assertGreater(len(gltf.skins[0].joints),0);self.assertGreater(len(gltf.animations[0].channels),0)
+
+
+    def eight_influence_rig(self):
+        geometry, skeleton = pruning_fixture()
+        parent = Path(self.temp.name)
+        source = parent/'eight-source.glb'
+        export_geometry(geometry, source, provenance={'fixture': True})
+        rig = create_run(source, parent/'eight-fixture', identifier='eight-fixture',
+                         fixture=True, limits={**DEFAULT_LIMITS, 'influences': 8})
+        rig.manifest['skeleton'] = skeleton
+        rig.weights = generate_skin_weights(rig.geometry, skeleton, method='distance',
+                                             limits=rig.manifest['limits'])
+        save_rig(rig, operation='eight-influence-test-fixture')
+        return rig
+
+    def test_eight_influence_sets_roundtrip_with_actual_second_set_deformation(self):
+        rig = self.eight_influence_rig()
+        source = rig.root/rig.manifest['source']['path']
+        source_hash = sha256(source)
+        expected_indices = [1, 4, 8, 0, 2, 3, 5, 6]
+        expected_weights = np.array([2, 2, 2, 1, 1, 1, 1, 1])/11
+        for extension in ('glb', 'gltf'):
+            with self.subTest(format=extension):
+                path = Path(self.temp.name)/('eight.'+extension)
+                export_gltf(rig, path)
+                document = read_gltf(path)
+                attributes = document.json['meshes'][0]['primitives'][0]['attributes']
+                self.assertTrue({'JOINTS_0', 'WEIGHTS_0', 'JOINTS_1', 'WEIGHTS_1'} <= set(attributes))
+                for influence_set in (0, 1):
+                    start = 4*influence_set
+                    np.testing.assert_array_equal(
+                        document.accessor(attributes['JOINTS_'+str(influence_set)]),
+                        np.tile(expected_indices[start:start+4], (3, 1)))
+                    np.testing.assert_allclose(
+                        document.accessor(attributes['WEIGHTS_'+str(influence_set)]),
+                        np.tile(expected_weights[start:start+4], (3, 1)), atol=1e-7)
+                # The ordinary four-influence consumer profile must reject extra sets.
+                with self.assertRaises(RigError) as caught:
+                    load_character_model(path)
+                self.assertEqual(caught.exception.report['code'], 'RIG_INFLUENCE_PROFILE')
+                imported = load_character_model(path, limits=rig.manifest['limits'])
+                skin = imported.weights['pruning']
+                np.testing.assert_array_equal(skin.indices, np.tile(expected_indices, (3, 1)))
+                np.testing.assert_allclose(skin.weights, np.tile(expected_weights, (3, 1)), atol=1e-7)
+                rebound = RigAsset({'skeleton': imported.skeleton}, imported.geometry, imported.weights)
+                np.testing.assert_allclose(evaluate_deformation(rebound)['pruning']['positions'],
+                                           rig.geometry.meshes[0].positions, atol=1e-7)
+                pose = neutral_pose(imported.skeleton)
+                translation = next(b['rest']['translation'] for b in imported.skeleton['bones'] if b['id'] == 'j6')
+                pose['bones']['j6'] = {'translation': [translation[0]+11, translation[1], translation[2]]}
+                # j6 is the LAST slot in WEIGHTS_1 and contributes 1/11.
+                np.testing.assert_allclose(evaluate_deformation(rebound, pose)['pruning']['positions'],
+                                           rig.geometry.meshes[0].positions+[1, 0, 0], atol=1e-6)
+                if extension == 'glb':
+                    # Decode actual exported bytes independently of the native accessor reader.
+                    payload = path.read_bytes()
+                    self.assertEqual(payload[:4], b'glTF')
+                    json_length, json_kind = struct.unpack_from('<II', payload, 12)
+                    self.assertEqual(json_kind, 0x4e4f534a)
+                    raw = json.loads(payload[20:20+json_length])
+                    binary_start = 20+json_length+8
+                    for semantic, expected, format_code in (
+                        ('JOINTS_1', expected_indices[4:], 'H'),
+                        ('WEIGHTS_1', expected_weights[4:], 'f'),
+                    ):
+                        accessor = raw['accessors'][attributes[semantic]]
+                        view = raw['bufferViews'][accessor['bufferView']]
+                        offset = binary_start+view.get('byteOffset', 0)+accessor.get('byteOffset', 0)
+                        actual = struct.unpack_from('<'+format_code*12, payload, offset)
+                        np.testing.assert_allclose(np.array(actual).reshape(3, 4),
+                                                   np.tile(expected, (3, 1)), atol=1e-7)
+        self.assertEqual(sha256(source), source_hash)
+        invalid = deepcopy(rig)
+        invalid.manifest['limits']['influences'] = 4
+        with self.assertRaises(RigError) as caught:
+            export_gltf(invalid, Path(self.temp.name)/'four-profile.glb')
+        self.assertEqual(caught.exception.report['code'], 'RIG_SKIN_SHAPE')
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_INTEROP_TEST')=='1',
+                         'Enable HATCH_RIG_INTEROP_TEST=1 for independent optional validators.')
+    def test_khronos_and_pygltflib_accept_eight_influence_export(self):
+        from pygltflib import GLTF2
+        rig = self.eight_influence_rig()
+        path = Path(self.temp.name)/'eight-independent.glb'
+        export_gltf(rig, path)
+        report = validate_gltf(path)
+        self.assertTrue(report['ok'])
+        self.assertEqual(report['issues']['numErrors'], 0)
+        self.assertIs(report['issues']['truncated'], False)
+        self.assertEqual(report['asset_sha256'], sha256(path))
+        gltf = GLTF2().load(str(path))
+        attributes = gltf.meshes[0].primitives[0].attributes
+        self.assertIsNotNone(attributes.JOINTS_1)
+        self.assertIsNotNone(attributes.WEIGHTS_1)
+        self.assertEqual(len(gltf.skins[0].joints), 10)
 
 
 class KhronosReportTests(unittest.TestCase):

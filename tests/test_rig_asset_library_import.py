@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import shutil
 import tempfile
+from types import SimpleNamespace
 import traceback
 import unittest
 from unittest.mock import patch
@@ -230,4 +231,106 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(error.exception.report['code'], 'RIG_VALIDATOR_MISSING')
         self.assertNotIn(marker, json.dumps(error.exception.report))
         self.assertTrue(error.exception.__suppress_context__)
+        self.assertEqual(self.library.list_references(), [])
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit',
+    )
+    def test_blender_fixture_retains_original_and_two_verified_derivatives(self):
+        with patch('asset_import_blender.os.killpg', wraps=os.killpg) as signal_group:
+            reference = self.pipeline.import_blender_fixture(
+                identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        signal_group.assert_not_called()
+        reopened = AssetLibrary(self.library_path)
+        manifest = reopened.resolve(reference)
+        provenance = manifest['provenance']
+        report = resolve_import(reopened, reference)
+        original = provenance['sources'][0]
+        blender, normalization = provenance['conversions']
+        self.assertTrue(provenance['fixture'])
+        self.assertEqual(original['path'], 'source/fixture.blend')
+        self.assertEqual(original['role'], 'source')
+        self.assertEqual(original['format'], 'binary')
+        self.assertEqual(blender['inputs'], [original])
+        self.assertEqual(normalization['inputs'], blender['outputs'])
+        self.assertEqual(report['blender']['inspection']['build'], '67807e1800cc')
+        self.assertEqual(report['blender']['inspection']['external_dependencies'], 0)
+        for stage in ('create', 'reopen'):
+            process = report['blender'][stage]
+            self.assertEqual(process['peak_rss_source'], 'linux-wait4')
+            self.assertGreater(process['peak_rss_bytes'], 0)
+            self.assertLessEqual(process['peak_rss_bytes'], process['resident_budget_bytes'])
+            self.assertEqual(process['status'], 'completed')
+            self.assertEqual(process['exit_code'], 0)
+            self.assertEqual(process['argv'][-4:], ['--python', '<worker>', '--', stage])
+            self.assertIn('<blender>', process['argv'])
+            self.assertEqual(process['cwd'], '<workspace>')
+        self.assertNotIn(b'asset-gltf-import-', reopened.read_file(reference, original['path']))
+        self.assertEqual(report['native_observation']['triangles'], 1)
+        self.assertEqual(report['native_observation']['vertices'], 3)
+        for record, digest, magic in (
+            (original, report['blender']['source_sha256'], b'BLENDER'),
+            (blender['outputs'][0], report['blender']['derivative_sha256'], b'glTF'),
+            (normalization['outputs'][0], report['normalized_sha256'], b'glTF'),
+        ):
+            payload = reopened.read_file(reference, record['path'])
+            self.assertTrue(payload.startswith(magic))
+            self.assertEqual(hashlib.sha256(payload).hexdigest(), record['sha256'])
+            self.assertEqual(record['sha256'], digest)
+        for name in ('source-khronos.json', 'normalized-khronos.json'):
+            validation = json.loads(reopened.read_file(reference, name))
+            self.assertEqual(validation['validator'], '2.0.0-dev.3.10')
+            self.assertTrue(validation['ok'])
+
+    def test_regular_import_rejects_blender_paths_without_worker(self):
+        with patch('asset_import_blender.create_fixture') as worker:
+            with self.assertRaises(RigError) as error:
+                self.import_source(self.root / 'unknown.blend', fixture=True)
+            self.assertEqual(error.exception.report['code'], 'SCENE3D_IMPORT_FORMAT')
+            worker.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit and wait4',
+    )
+    def test_blender_final_peak_rss_is_admitted_before_publication(self):
+        system_wait4 = os.wait4
+        budget = self.pipeline.limits['memory_bytes']
+
+        def excessive_peak(pid, flags):
+            child, status, usage = system_wait4(pid, flags)
+            if child == pid:
+                usage = SimpleNamespace(ru_maxrss=budget // 1024 + 1)
+            return child, status, usage
+
+        with patch('asset_import_blender.os.wait4', side_effect=excessive_peak):
+            with self.assertRaises(RigError) as error:
+                self.pipeline.import_blender_fixture(
+                    identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assertEqual(error.exception.report['observed'], budget + 1024)
+        self.assertEqual(self.library.list_references(), [])
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit and wait4',
+    )
+    def test_blender_already_reaped_child_is_never_signaled(self):
+        system_wait4 = os.wait4
+
+        def child_reaped_elsewhere(pid, flags):
+            result = system_wait4(pid, flags)
+            if result[0] == pid:
+                raise ChildProcessError('Child already reaped')
+            return result
+
+        with (patch('asset_import_blender.os.wait4', side_effect=child_reaped_elsewhere),
+              patch('asset_import_blender.os.killpg', wraps=os.killpg) as signal_group):
+            with self.assertRaises(RigError) as error:
+                self.pipeline.import_blender_fixture(
+                    identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        self.assertEqual(error.exception.report['code'], 'ASSET_BLENDER_RSS')
+        signal_group.assert_not_called()
         self.assertEqual(self.library.list_references(), [])
