@@ -81,14 +81,18 @@ is selected and both original histories remain available.
 `temporal_snapshot` always revalidates native dependencies and replays from the
 verified source; query order cannot influence results. Snapshots retain project
 revision, world, timeline, branch, scene, shot, frame, exact coordinates, effective
-native dependency digest, immutable head hash, evaluator code/runtime-version hash, evaluated
-entities, minimal facts and applied event IDs. Unknown animation, physics, pose,
+native dependency digest, immutable head hash, loaded evaluator code and runtime
+version hash, evaluated entities, minimal facts and applied event IDs. A source
+file replaced on disk cannot change the fingerprint of an evaluator already
+running. Every declared registered identity must resolve on replay, including on
+a timeline without captured project-wide bindings. Unknown animation, physics, pose,
 costume, ownership and visual-approval fields are explicitly listed as unavailable.
 
 Cached snapshots are derived rows in the same registry. A cached row is accepted
 only when its canonical bytes and hash match a fresh evaluation. Corruption or
-changed evaluator dependencies reject stale rows. `discard_temporal_cache`
-removes only cache rows, after which replay rebuilds them. Immutable revisions
+changed evaluator dependencies reject stale rows. A row or SQLite page quota
+leaves a newly computed snapshot uncached. `discard_temporal_cache` removes only derived rows,
+after which replay rebuilds them. Immutable revisions
 remain addressable by SHA-256, including after process restart and branch merge;
 all reachable parent contents are hash-checked on history reads. SQLite FULL
 synchronous transactions, existing size limits and expected-head checks protect

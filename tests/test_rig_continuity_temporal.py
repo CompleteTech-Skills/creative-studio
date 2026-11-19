@@ -264,7 +264,7 @@ class TemporalTests(unittest.TestCase):
                          continuity_bytes([first, later]))
         self.assertEqual(self.snap(frame=3)['snapshot']['entities'][0]['transform'], native_before)
 
-    def test_evaluator_fingerprint_tracks_decoder_and_graph_implementation(self):
+    def test_evaluator_fingerprint_is_stable_when_only_disk_bytes_change(self):
         document = dict(plan=self.plan, events=[])
         original = TemporalEngine(self.root, document).evaluator_sha256
         source = Path(__file__).resolve().parents[1] / 'scripts'
@@ -277,7 +277,48 @@ class TemporalTests(unittest.TestCase):
                 return data
 
             with self.subTest(source=name), patch.object(Path, 'read_bytes', changed):
-                self.assertNotEqual(TemporalEngine(self.root, document).evaluator_sha256, original)
+                self.assertEqual(TemporalEngine(self.root, document).evaluator_sha256, original)
+
+    def test_new_process_identifies_the_evaluator_code_it_actually_loaded(self):
+        document = dict(plan=self.plan, events=[])
+        expected = TemporalEngine(self.root, document).evaluator_sha256
+        sandbox = Path(self.temp.name) / 'evaluator'
+        sandbox.mkdir()
+        source = Path(__file__).resolve().parents[1] / 'scripts'
+        plan = sandbox / 'plan.json'
+        plan.write_bytes(continuity_bytes(document))
+        program = '''
+import importlib
+import json
+from pathlib import Path
+import sys
+scratch, scripts, root, path, name = sys.argv[1:]
+sys.path[:0] = [scratch, scripts]
+module = importlib.import_module(name)
+from continuity_temporal import TemporalEngine
+document = json.loads(Path(path).read_bytes())
+print(json.dumps([TemporalEngine(Path(root), document).evaluator_sha256,
+                  getattr(module, 'EVALUATOR_FIXTURE_SENTINEL', None)]))
+'''
+
+        for name in ('rig_errors', 'scene3d_graph'):
+            with self.subTest(module=name):
+                captured = (source / (name + '.py')).read_bytes()
+                target = sandbox / (name + '.py')
+
+                def run():
+                    result = subprocess.run([sys.executable, '-B', '-c', program, str(sandbox),
+                                             str(source), str(self.root), str(plan), name],
+                                            capture_output=True, text=True, timeout=40, check=True)
+                    return json.loads(result.stdout)
+
+                target.write_bytes(captured)
+                self.assertEqual(run(), [expected, None])
+                target.write_bytes(captured + b'\nEVALUATOR_FIXTURE_SENTINEL = 1\n')
+                changed, sentinel = run()
+                self.assertEqual(sentinel, 1)
+                self.assertNotEqual(changed, expected)
+                target.unlink()
 
     def test_plan_and_events_share_one_immutable_path_closure(self):
         source = self.plan['shots'][0]['shot']
@@ -607,6 +648,52 @@ class TemporalTests(unittest.TestCase):
                     self.registry.merge_timeline(left_id, right_id, expected_sha256=left, source_sha256=right)
                 self.assertEqual(self.registry.temporal_history(left_id)['sha256'], left)
                 self.assertEqual(self.registry.temporal_history(right_id)['sha256'], right)
+
+    def test_full_derived_cache_preserves_fresh_snapshot_queries(self):
+        with patch('continuity_registry.MAX_RECORDS', 1):
+            retained = self.snap(frame=0)
+            direct = self.snap(frame=1, use_cache=False)
+            self.assertEqual(self.snap(frame=1), direct)
+            self.assertEqual(self.snap(frame=0), retained)
+        self.assertEqual(self.registry.db.execute('SELECT count(*) FROM temporal_cache').fetchone()[0], 1)
+
+    def test_full_sqlite_page_budget_preserves_fresh_snapshot_queries(self):
+        facts = [event(f'fact-{i:02}', 1001, target=f'fact-{i:02}', after='x' * 4000)
+                 for i in range(12)]
+        self.append(facts)
+        expected = self.snap(frame=1, use_cache=False)
+        self.assertGreater(len(continuity_bytes(expected)), 48000)
+        pages = self.registry.db.execute('PRAGMA page_count').fetchone()[0]
+        free = self.registry.db.execute('PRAGMA freelist_count').fetchone()[0]
+        self.assertLess(free, 8)
+        self.assertEqual(self.registry.db.execute('PRAGMA max_page_count=' + str(pages)).fetchone()[0], pages)
+        self.assertEqual(self.snap(frame=1), expected)
+        self.assertEqual(self.registry.db.execute('SELECT count(*) FROM temporal_cache').fetchone()[0], 0)
+        self.assertEqual(self.registry.temporal_history('main')['events'], facts)
+
+    def test_unpinned_registered_identity_is_verified_after_restore(self):
+        write_assets(self.root)
+        self.registry.create_identity(sample('identity'))
+        plan = dict(deepcopy(self.plan), timeline_id='identity-check')
+        for scene in plan['scenes']:
+            scene['entities'][0]['identity_id'] = 'robot'
+        self.registry.create_timeline(plan, events=[event('witness', 1001)])
+        self.assertIsNone(self.registry.temporal_history('identity-check')['bindings_sha256'])
+
+        def frame():
+            return self.registry.temporal_snapshot('identity-check', 'shot-0', 1)
+
+        def boundary():
+            return self.registry.temporal_event_snapshot('identity-check', 'witness')
+
+        for query in (frame, boundary):
+            identities = {item['entity_id']: item['identity_id'] for item in query()['snapshot']['entities']}
+            self.assertEqual(identities['aster'], 'robot')
+        self.registry.db.execute('DELETE FROM identities WHERE id=?', ('robot',))
+        for query in (frame, boundary):
+            with self.subTest(query=query.__name__), self.assertRaisesRegex(ValueError, 'unknown identity'):
+                query()
+        self.assertIsNone(self.snap()['snapshot']['entities'][0]['identity_id'])
 
     def test_stale_cache_native_mutation_recovery_and_restart(self):
         expected=self.snap()

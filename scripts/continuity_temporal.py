@@ -6,11 +6,22 @@ Snapshots are always derived and caches are checked against a fresh replay.
 """
 from __future__ import annotations
 
+from sys import _getframe as _loaded_module_frame
+
+_EVALUATOR_MODULE_CODE = _loaded_module_frame().f_code
+del _loaded_module_frame
+
 from copy import deepcopy
 from fractions import Fraction
+from functools import lru_cache
+from importlib import import_module, metadata
 from pathlib import Path
+from types import CodeType
 import hashlib
+import marshal
 import math
+import platform
+import sqlite3
 
 from continuity_contracts import (MAX_BYTES, MAX_ITEMS, canonical_bytes, decode_json, definitions, digest,
     validate_document, verify_references)
@@ -22,6 +33,27 @@ EVALUATOR_SOURCES = (
     'scene3d_graph.py', 'scene3d_math.py', 'rig_math.py', 'rig_errors.py',
     'portable_paths.py', 'production_contracts.py', 'asset_contracts.py',
 )
+
+
+def _portable_code(code):
+    # Source filenames can differ between workers with the same loaded code.
+    constants = tuple(_portable_code(value) if isinstance(value, CodeType) else value
+                      for value in code.co_consts)
+    return code.replace(co_filename='<loaded evaluator>', co_consts=constants)
+
+
+@lru_cache(maxsize=1)
+def _evaluator_fingerprint():
+    import numpy
+    modules = {}
+    for filename in EVALUATOR_SOURCES:
+        loaded = import_module(filename.removesuffix('.py'))._EVALUATOR_MODULE_CODE
+        # Marshal without reference or interning tags so process import order
+        # cannot change the digest of equivalent compiled code.
+        modules[filename] = hashlib.sha256(marshal.dumps(_portable_code(loaded), 2)).hexdigest()
+    return digest(dict(format='loaded-evaluator-v1', modules=modules,
+                       python=platform.python_version(), numpy=numpy.__version__,
+                       jsonschema=metadata.version('jsonschema')))
 
 
 def fail(code, message):
@@ -312,14 +344,7 @@ class TemporalEngine:
         if manifest.get('bindings_sha256') is not None:
             dependencies['bindings_sha256'] = manifest['bindings_sha256']
         self.dependencies_sha256 = digest(dependencies)
-        # Changes to the implementation invalidate persisted snapshot caches.
-        import importlib.metadata
-        import platform
-        self.evaluator_sha256 = digest(dict(
-            sources={name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                     for name in EVALUATOR_SOURCES},
-            python=platform.python_version(), numpy=importlib.metadata.version('numpy'),
-            jsonschema=importlib.metadata.version('jsonschema')))
+        self.evaluator_sha256 = _evaluator_fingerprint()
 
     def snapshot(self, shot_id, frame, *, boundary='after', event_id=None, head_sha256):
         _integer(frame, 'frame')
@@ -437,6 +462,11 @@ class TemporalRegistryMixin:
         return checksum
 
     def _validate_temporal_bindings(self, record):
+        plan = record['plan']
+        declared = {binding['identity_id'] for scene in plan['scenes']
+                    for binding in scene['entities'] if binding['identity_id'] is not None}
+        for identity_id in sorted(declared):
+            self.identity(identity_id)
         checksum = record.get('bindings_sha256')
         if checksum is None:
             return
@@ -448,7 +478,6 @@ class TemporalRegistryMixin:
         bindings = validate_document(decode_json(row[0]), 'bindings')
         if canonical_bytes(bindings) != row[0]:
             fail('HASH', 'corrupted temporal bindings')
-        plan = record['plan']
         if (bindings['project_id'] != plan['project_id'] or
                 bindings['project_revision'] != plan['project_revision']):
             fail('REFERENCE', 'temporal bindings disagree with exact project revision')
@@ -474,12 +503,6 @@ class TemporalRegistryMixin:
         current = self.db.execute('SELECT hash FROM temporal_heads WHERE id=?', (identifier,)).fetchone()
         if (current[0] if current else None) != expected:
             fail('CONFLICT', 'stale temporal revision')
-        # Verify persistent identity binding where one is declared. The native
-        # scene/node mapping remains explicit; no new identity is minted here.
-        for scene in plan['scenes']:
-            for binding in scene['entities']:
-                if binding['identity_id'] is not None:
-                    self.identity(binding['identity_id'])
         self._validate_temporal_bindings(record)
         TemporalEngine(self.asset_root, record)
         checksum = digest(record)
@@ -577,14 +600,22 @@ class TemporalRegistryMixin:
         checksum = digest(result)
         key = digest(dict(head=record['sha256'], shot=shot_id, frame=frame, boundary=boundary, event=event_id))
         if use_cache:
-            with self._transaction():
-                cached = self.db.execute('SELECT document,hash FROM temporal_cache WHERE key=?', (key,)).fetchone()
-                if cached:
-                    if cached[1] != checksum or cached[0] != canonical_bytes(result):
-                        fail('STALE_CACHE', 'cached snapshot disagrees with fresh native replay')
-                else:
-                    self._limit('temporal_cache')
-                    self.db.execute('INSERT INTO temporal_cache VALUES (?,?,?)', (key, canonical_bytes(result), checksum))
+            encoded = canonical_bytes(result)
+            inserting = False
+            try:
+                with self._transaction():
+                    cached = self.db.execute('SELECT document,hash FROM temporal_cache WHERE key=?', (key,)).fetchone()
+                    if cached:
+                        if cached != (encoded, checksum):
+                            fail('STALE_CACHE', 'cached snapshot disagrees with fresh native replay')
+                    elif self._has_table_room('temporal_cache'):
+                        inserting = True
+                        self.db.execute('INSERT INTO temporal_cache VALUES (?,?,?)', (key, encoded, checksum))
+            except sqlite3.OperationalError as exc:
+                # A budget failure while storing a cache miss leaves the fresh
+                # result usable. The transaction rolls back any partial insert.
+                if not inserting or getattr(exc, 'sqlite_errorcode', None) != sqlite3.SQLITE_FULL:
+                    raise
         return dict(snapshot=result, sha256=checksum)
 
     def temporal_event_snapshot(self, timeline_id, event_id, *, boundary='after', revision=None):

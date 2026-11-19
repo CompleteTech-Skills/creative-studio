@@ -133,9 +133,12 @@ class IdentityRegistry(TemporalRegistryMixin):
         self.db.execute('INSERT INTO history(action,subject,details) VALUES (?,?,?)',
                         (action, subject, canonical_bytes(details)))
 
+    def _has_table_room(self, table):
+        # Table names come from fixed callers.
+        return self.db.execute('SELECT count(*) FROM ' + table).fetchone()[0] < MAX_RECORDS
+
     def _limit(self, table):
-        # All table names are fixed callers, never input SQL.
-        if self.db.execute('SELECT count(*) FROM ' + table).fetchone()[0] >= MAX_RECORDS:
+        if not self._has_table_room(table):
             raise ValueError('CONTINUITY_LIMIT: too many registry records')
 
     def create_identity(self, document):

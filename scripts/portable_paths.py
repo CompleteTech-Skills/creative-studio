@@ -3,6 +3,11 @@
 Transport and native workers use this single authority; importing it does not
 load image, geometry or optional runtime dependencies.
 """
+
+from sys import _getframe as _loaded_module_frame
+
+_EVALUATOR_MODULE_CODE = _loaded_module_frame().f_code
+del _loaded_module_frame
 from pathlib import PurePosixPath
 import re
 import unicodedata

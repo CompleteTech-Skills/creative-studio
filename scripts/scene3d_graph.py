@@ -7,6 +7,11 @@ native references for the animation owner to evaluate.
 """
 from __future__ import annotations
 
+from sys import _getframe as _loaded_module_frame
+
+_EVALUATOR_MODULE_CODE = _loaded_module_frame().f_code
+del _loaded_module_frame
+
 from copy import deepcopy
 from itertools import product
 import hashlib
