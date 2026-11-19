@@ -117,11 +117,15 @@ from the verified cache appear in `reused`; newly rendered frames appear in
 Before an exclusive directory rename, SQLite commits a delivery intent binding
 the original job revision, destination parent, verified payload directory, result size and digest.
 If the process exits after rename and before the event commits, retry
-`materialize()` with the same job and destination. Recovery checks the physical
-job revision, directory identities, result, and every image and metadata reference before
-recording one publication event. A completed receipt or an unrelated existing
-destination still rejects a second publication. Private staging can leave an
-empty wrapper on the destination filesystem.
+`materialize()` with the same job and destination. Recovery checks that the
+only job events since the intent are other deliveries, then the directory
+identities, result, and every image and metadata reference before recording
+one publication event. After a resume, re-render, recovery or cache rebinding
+since the intent, the stranded directory is refused and must be removed before
+delivering again. A completed receipt or an
+unrelated existing destination still rejects a second publication. After a
+hard stop before the rename, private staging can leave a wrapper holding a
+staged delivery on the destination filesystem.
 
 `list_jobs(limit=..., offset=...)` and `status(event_limit=...)` bound query output.
 `cache_inventory()` marks every frame key referenced by any retained job as
