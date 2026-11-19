@@ -40,8 +40,12 @@ def idle():
 try:
     ready()
     if role == 'supervisor':
+        # A Windows venv redirector adds a process, so Popen.pid would name
+        # the launcher rather than the grandchild that records os.getpid().
+        # This stdlib-only fixture can use the base interpreter directly.
+        executable = sys._base_executable if os.name == 'nt' else sys.executable
         child = subprocess.Popen(
-            [sys.executable, __file__, str(root), mode, 'grandchild'],
+            [executable, __file__, str(root), mode, 'grandchild'],
             stdin=subprocess.DEVNULL)
         while not (root / 'grandchild.pid').exists() and not stopped():
             time.sleep(.01)
