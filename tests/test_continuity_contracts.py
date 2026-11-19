@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from continuity_contracts import (KINDS, MAX_BYTES, canonical_bytes, definitions, digest,
-    generate, load_document, portable_path, references, schemas, validate_document, verify_references)
+    TEMPORAL_KINDS, generate, load_document, portable_path, references, schemas, temporal_schemas,
+    validate_document, verify_references)
 from continuity_registry import IdentityRegistry
 from continuity_test_helpers import pointer, sample, write_assets, review_for
 
@@ -176,9 +177,40 @@ function visit(value) {
 visit(schemas);
 if (!patterns) throw new Error('No generated patterns exercised');
 """
-        result = subprocess.run([node, '-e', source], input=json.dumps(schemas()),
+        result = subprocess.run([node, '-e', source], input=json.dumps({**schemas(), **temporal_schemas()}),
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_temporal_kinds_are_additive_and_strictly_discriminated(self):
+        import struct
+        self.assertEqual(set(schemas()), set(KINDS))
+        self.assertEqual(set(temporal_schemas()), set(TEMPORAL_KINDS))
+        self.assertFalse(set(KINDS) & set(TEMPORAL_KINDS))
+        for kind in ('event', 'snapshot'):
+            validate_document(sample(kind))
+        q = struct.unpack('f', struct.pack('f', 2 ** -0.5))[0]
+        transform = dict(translation=[0, 0, 0], rotation=[0, q, 0, q], scale=[1, 1, 1])
+        event = dict(schema_version='1.0.0', kind='continuity-temporal-event', event_id='move',
+            tick=1001, priority=0, prerequisites=[], sources=[], author='synthetic', revision=1,
+            operations=[dict(event_type='relocate', entity_id='aster',
+                             before=deepcopy(transform), after=deepcopy(transform)),
+                        dict(event_type='set-fact', fact_id='door', before=None, after=True)])
+        self.assertEqual(validate_document(event)['tick'], 1001)
+        self.assertIsInstance(validate_document(event)['tick'], int)
+        bad = deepcopy(event); bad['operations'][0]['after']['rotation'] = [0, q * 1.001, 0, q]
+        with self.assertRaisesRegex(ValueError, 'quaternion'):
+            validate_document(bad)
+        for mutate in (lambda op: op.update(event_type='teleport'),
+                       lambda op: op.update(path='arbitrary/path'),
+                       lambda op: op.pop('entity_id')):
+            bad = deepcopy(event); mutate(bad['operations'][0])
+            with self.assertRaises(ValueError):
+                validate_document(bad)
+        bad = deepcopy(event); bad['tick'] = 1.5
+        with self.assertRaises(ValueError):
+            validate_document(bad)
+        with self.assertRaisesRegex(ValueError, 'CONTINUITY_KIND'):
+            validate_document(dict(event, kind='continuity-temporal-scene'))
 
     def test_native_float32_unit_quaternions_and_nested_constraint_ids(self):
         import struct

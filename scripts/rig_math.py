@@ -5,6 +5,11 @@ explicitly transposes matrices to column-major. No incremental pose integration.
 """
 from __future__ import annotations
 
+from sys import _getframe as _loaded_module_frame
+
+_EVALUATOR_MODULE_CODE = _loaded_module_frame().f_code
+del _loaded_module_frame
+
 import math
 from typing import Sequence
 import numpy as np

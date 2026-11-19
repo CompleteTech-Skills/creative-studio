@@ -5,6 +5,11 @@ Its public data model is versioned independently of legacy hatch-pet manifests.
 """
 from __future__ import annotations
 
+from sys import _getframe as _loaded_module_frame
+
+_EVALUATOR_MODULE_CODE = _loaded_module_frame().f_code
+del _loaded_module_frame
+
 import argparse
 from contextlib import contextmanager, nullcontext
 import copy

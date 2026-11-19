@@ -6,6 +6,11 @@ No function in this module implies rendering or visual/production approval.
 """
 from __future__ import annotations
 
+from sys import _getframe as _loaded_module_frame
+
+_EVALUATOR_MODULE_CODE = _loaded_module_frame().f_code
+del _loaded_module_frame
+
 import argparse
 from copy import deepcopy
 from datetime import datetime
