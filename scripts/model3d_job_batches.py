@@ -176,6 +176,9 @@ def run_batch(root, *, retry_failed=False, poll_seconds=.05):
                         item['status']='interrupted';item['error']=dict(code='MODEL3D_BATCH_START_UNKNOWN',
                             message='Worker startup ownership is unknown; no duplicate was launched. Inspect this reservation before retrying.')
                         continue
+                    # A supervisor that died without cleanup may leave its engine
+                    # running past its limits; reap it before deciding the outcome.
+                    worker.reap_orphaned_engine(folder,owned.get('request_sha256'))
                     # The supervisor may have just published terminal state before
                     # releasing its lock. Reload after proving it is no longer live.
                     record=worker.state(folder)

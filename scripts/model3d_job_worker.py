@@ -204,6 +204,59 @@ def _descendants(identity):
     return known
 
 
+def _group_members(identity):
+    """Live members of the engine's own session/group born no earlier than it.
+
+    The engine leads a new session, so its group and session IDs equal its PID.
+    A group ID cannot be reused while any member is alive; the start-time bound
+    excludes an unrelated later leader that might reuse the PID afterwards.
+    """
+    if not isinstance(identity,dict):return []
+    members=[]
+    for entry in os.scandir('/proc'):
+        if not entry.name.isdigit():continue
+        try:
+            text=(Path(entry.path)/'stat').read_text()
+        except (FileNotFoundError,ProcessLookupError,PermissionError):continue
+        fields=text[text.rfind(')')+2:].split()
+        if (int(fields[2])==identity['group'] and int(fields[3])==identity['group']
+                and int(fields[19])>=int(identity['start'])):
+            members.append(int(entry.name))
+    return members
+
+
+def _kill_group_remnants(identity):
+    """After the engine leader exits, its surviving descendants are still owned."""
+    for _ in range(50):
+        if not _group_members(identity):return
+        try:os.killpg(identity['group'],signal.SIGKILL)
+        except ProcessLookupError:return
+        time.sleep(.02)
+    raise RigError('MODEL3D_WORKER_OWNERSHIP','Owned worker descendants could not be terminated.')
+
+
+def reap_orphaned_engine(root, request_sha256=None):
+    """Terminate an engine whose supervisor died without cleanup."""
+    try:record=state(root)
+    except (RigError,OSError,ValueError):return False
+    identity=record.get('process_identity') if isinstance(record,dict) else None
+    if not isinstance(identity,dict) or set(identity)!={'pid','start','group'}:return False
+    if not _group_members(identity):return False
+    _kill_group_remnants(identity)
+    return True
+
+
+def _set_parent_death_signal():
+    # Linux: the engine is killed if its supervisor dies without cleanup.
+    import ctypes
+    try:ctypes.CDLL(None,use_errno=True).prctl(1,signal.SIGKILL)
+    except (OSError,AttributeError):pass
+
+
+def _terminate_supervisor(signum,frame):
+    raise SystemExit(128+signum)
+
+
 def _stop(process, identity, root, known=None, request_sha256=None):
     """Signal only a process group with a live, birth-checked owned member."""
     known={} if known is None else dict(known)
@@ -282,6 +335,8 @@ def _execute(root,expected_hash):
 def _guard(root,expected_hash):
     import resource
     value=_request(root,expected_hash)
+    # Stopping the supervisor must still run the owned-tree cleanup below.
+    for number in (signal.SIGTERM,signal.SIGHUP):signal.signal(number,_terminate_supervisor)
     with job_lock(root):
         atomic_json(root/'state.json',dict(schema_version=1,token=value['token'],status='running',
                     supervisor_identity=_identity(os.getpid()),started_at=timestamp()))
@@ -289,7 +344,8 @@ def _guard(root,expected_hash):
         process=subprocess.Popen([sys.executable,'-I',str(Path(__file__).resolve()),'execute','--root',str(root),
                                   '--request-hash',expected_hash],
                     cwd=str(Path(__file__).resolve().parents[1]),stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True,close_fds=True)
+                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True,close_fds=True,
+                    preexec_fn=_set_parent_death_signal)
         identity=_identity(process.pid); started=time.monotonic(); reason=None
         running=dict(schema_version=1,token=value['token'],status='running',pid=process.pid,
                      started_at=timestamp(),started_epoch=time.time(),limits=value['limits'],process_identity=identity,
@@ -320,7 +376,10 @@ def _guard(root,expected_hash):
                 if leader_finished is not None and selector.get_map() and time.monotonic()-leader_finished>.5:
                     reason=reason or 'resource-exhausted';_stop(process,identity,root,known,expected_hash)
                     for key in list(selector.get_map().values()):selector.unregister(key.fileobj);key.fileobj.close()
-            code=process.wait();after=resource.getrusage(resource.RUSAGE_CHILDREN)
+            code=process.wait()
+            # The leader is gone; any surviving member of its group is an owned orphan.
+            if identity:_kill_group_remnants(identity)
+            after=resource.getrusage(resource.RUSAGE_CHILDREN)
             result=read_json(root/'result.json') if (root/'result.json').exists() else None
             error=read_json(root/'error.json') if (root/'error.json').exists() else None
             succeeded=code==0 and isinstance(result,dict) and result.get('token')==value['token'] and result.get('status')=='completed'
@@ -335,6 +394,7 @@ def _guard(root,expected_hash):
             atomic_json(root/'state.json',final)
         finally:
             if process.poll() is None:_stop(process,identity,root,known,expected_hash)
+            if identity:_kill_group_remnants(identity)
             selector.close()
             for stream in logs.values():stream.close()
 

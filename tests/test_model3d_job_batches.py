@@ -136,6 +136,49 @@ class BatchTests(unittest.TestCase):
         else:self.fail('owned descendant still executing after cancellation')
         self.assertIsNone(job_status(job)['current_revision'])
 
+    def gone(self,pid,timeout=3.):
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            if worker._identity(pid) is None:return True
+            try:
+                text=(Path('/proc')/str(pid)/'stat').read_text()
+                if text[text.rfind(')')+2:].split()[0]=='Z':return True
+            except FileNotFoundError:return True
+            time.sleep(.02)
+        return False
+
+    def started_tree(self):
+        root,job=self.make_worker('tree')
+        deadline=time.monotonic()+30
+        while not (root/'diagnostic-child.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+        child=read_json(root/'diagnostic-child.json')['pid'];record=worker.state(root)
+        self.addCleanup(lambda:worker._kill_group_remnants(record['process_identity']))
+        return root,child,record
+
+    def test_engine_exit_kills_its_surviving_owned_descendants(self):
+        root,child,record=self.started_tree()
+        os.kill(record['pid'],signal.SIGKILL)
+        self.assertEqual(self.wait_worker(root)['status'],'resource-exhausted')
+        self.assertTrue(self.gone(child),'descendant outlived its engine leader')
+
+    def test_supervisor_termination_still_cleans_up_the_owned_tree(self):
+        root,child,record=self.started_tree()
+        os.kill(record['supervisor_identity']['pid'],signal.SIGTERM)
+        self.assertTrue(self.gone(record['pid']));self.assertTrue(self.gone(child))
+        self.assertFalse(worker.alive(root))
+
+    def test_killed_supervisor_engine_dies_and_scheduler_reaps_descendants(self):
+        root,child,record=self.started_tree()
+        os.kill(record['supervisor_identity']['pid'],signal.SIGKILL)
+        # The parent-death signal stops the engine leader with its supervisor.
+        self.assertTrue(self.gone(record['pid']))
+        deadline=time.monotonic()+5
+        while worker.alive(root) and time.monotonic()<deadline:time.sleep(.02)
+        # The scheduler reaps the orphaned group before deciding the outcome.
+        self.assertTrue(worker.reap_orphaned_engine(root) or self.gone(child,0.))
+        self.assertTrue(self.gone(child))
+        self.assertFalse(worker.reap_orphaned_engine(root))
+
     def test_inventory_exhaustion_still_kills_real_owned_leader(self):
         root,job=self.make_worker('sleep')
         deadline=time.monotonic()+30;state=None
