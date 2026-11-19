@@ -166,10 +166,12 @@ def _pose_parameters(parameters, *, solve=False):
         if 'curl' in fingers:_number(fingers['curl'], 0, 1, 'fingers.curl')
         if 'spread' in fingers:_number(fingers['spread'], -1, 1, 'fingers.spread')
         if 'fingers' in fingers:
+            from rig_facial import validate_finger_names
             names=fingers['fingers']
             require(isinstance(names, list) and 1 <= len(names) <= 32
                     and all(isinstance(name, str) and 0 < len(name) <= 128 for name in names)
                     and len(set(names)) == len(names), 'RIG_OPERATION_SCHEMA', 'Finger names must be a bounded, nonempty unique list.')
+            validate_finger_names(names)
     if 'appendages' in parameters:
         values=parameters['appendages'];_object(values, {'time','tail_curl','tail_wag','wing_flap','wing_fold','wing_twist','wing_side','seed','secondary'}, 'appendages')
         for name in ('tail_curl','tail_wag','wing_flap','wing_fold','wing_twist','secondary'):
@@ -211,12 +213,16 @@ def pose_operation(rig,parameters):
     if parameters.get('clip') is not None:require(parameters['clip'] in rig.clips, 'RIG_CLIP', 'Requested clip does not exist.')
     pose=deepcopy(parameters['pose']) if 'pose' in parameters else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
     _check_pose(rig, pose)
+    gaze = parameters.get('gaze')
+    head_follow = parameters.get('head_follow', 0.)
+    if 'gaze' in parameters and gaze is None:
+        pose = gaze_at(rig, pose, None, head_follow=head_follow)
     if parameters.get('expressions'):pose=apply_expressions(rig,pose,parameters['expressions'])
-    if 'gaze' in parameters:pose=gaze_at(rig,pose,parameters['gaze'],head_follow=parameters.get('head_follow',0.))
+    if gaze is not None:pose=gaze_at(rig,pose,gaze,head_follow=head_follow)
     if parameters.get('fingers'):pose=finger_controls(rig,pose,**parameters['fingers'])
     if parameters.get('appendages'):pose=appendage_controls(rig,pose,**parameters['appendages'])
     pose,_=apply_constraints(rig.skeleton,pose,rig.manifest['controllers']['constraints'])
-    if parameters.get('gaze'):pose=refresh_gaze_eyelids(rig,pose)
+    if gaze is not None:pose=refresh_gaze_eyelids(rig,pose)
     _check_pose(rig, pose)
     return pose
 

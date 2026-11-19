@@ -130,6 +130,27 @@ class RigOperationAdmissionTests(unittest.TestCase):
         self.assertGreater(np.max(np.abs(evaluate_deformation(self.rig,pose)['strip']['positions']-neutral)),.1)
         self.assertEqual(pose,before)
 
+    def test_gaze_release_preserves_a_fresh_blink_in_pose_and_ik(self):
+        seed = rotate_bone(self.rig.skeleton, neutral_pose(self.rig.skeleton),
+                           'b2', axis_angle([1, 0, 0], .2))
+        seed['morphs'] = {'strip': {'blink': .8}}
+        original = deepcopy(seed)
+        for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+            with self.subTest(operation=operation.__name__):
+                controls = {'pose': seed, 'gaze': None, **extra}
+                clear = operation(self.rig, controls)
+                blink = operation(self.rig, {**controls, 'expressions': {'blink': 1.}})
+                if operation is solve_operation:
+                    clear, blink = clear['pose'], blink['pose']
+                expected = deepcopy(clear)
+                expected['morphs']['strip'] = {'blink': 1.}
+                self.assertEqual(blink['morphs'].get('strip'), {'blink': 1.})
+                no_blink = evaluate_deformation(self.rig, clear)['strip']['positions']
+                actual = evaluate_deformation(self.rig, blink)['strip']['positions']
+                self.assertGreater(np.max(np.abs(actual - no_blink)), .1)
+                np.testing.assert_allclose(actual, evaluate_deformation(self.rig, expected)['strip']['positions'])
+        self.assertEqual(seed, original)
+
     def test_solve_filters_owned_fields_and_honors_explicit_pole(self):
         first=solve_operation(self.rig,{'chain':'arm','target':[1,1,0],'pole':[0,0,1],'orientation':None,'clip':None,'time':0})
         other=solve_operation(self.rig,{'chain':'arm','target':[1,1,0],'pole':[0,0,-1]})
@@ -325,6 +346,34 @@ class RigOperationAdmissionTests(unittest.TestCase):
                     self.assertEqual(refused.exception.report['code'], 'RIG_FINGER_UNAVAILABLE')
                     self.assertEqual(neutral, original)
                     self.assertEqual(asset.skeleton, before)
+
+    def test_unsupported_finger_names_refuse_before_sampling_or_fk(self):
+        for asset, name, side in ((self.rig, 'eye', 'left'), (articulated_rig(), 'wing-root', 'right')):
+            seed = neutral_pose(asset.skeleton)
+            for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+                with self.subTest(operation=operation.__name__, digit=name), \
+                        patch('rig_animation.evaluate_animation', return_value={'pose': seed}) as sample, \
+                        patch('rig_skeleton.evaluate_fk', wraps=evaluate_fk) as fk:
+                    with self.assertRaises(RigError) as refused:
+                        operation(asset, {'clip': 'bend', 'time': .5, **extra,
+                                          'fingers': {'side': side, 'fingers': [name]}})
+                    self.assertEqual(refused.exception.report['code'], 'RIG_FINGER_UNAVAILABLE')
+                    sample.assert_not_called()
+                    fk.assert_not_called()
+
+    def test_finger_spread_keeps_each_digit_angle_across_selections(self):
+        rig = articulated_rig()
+        rest = evaluate_deformation(rig, neutral_pose(rig.skeleton))['index.1.left']['positions']
+        for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+            with self.subTest(operation=operation.__name__):
+                poses = [operation(rig, {**extra, 'fingers': {'side': 'left', 'spread': 1., 'fingers': names}})
+                         for names in (['index'], ['index', 'middle'], ['middle', 'index'])]
+                if operation is solve_operation:
+                    poses = [result['pose'] for result in poses]
+                geometries = [evaluate_deformation(rig, pose)['index.1.left']['positions'] for pose in poses]
+                self.assertGreater(np.max(np.abs(geometries[0] - rest)), .01)
+                for vertices in geometries[1:]:
+                    np.testing.assert_allclose(vertices, geometries[0], rtol=0., atol=1e-12)
 
     def test_ik_default_pole_and_unit_orientation_use_native_solver(self):
         parameters={'chain':'arm','target':[1,1,0]}

@@ -243,6 +243,11 @@ Job status and portable archives record the canonical ID and the operation's `te
 
 Pose and IK parameters are shared with `rig_operations.py` and use closed admission. Pose fields are `pose`, `clip`, `time`, `expressions`, `gaze`, `head_follow`, `fingers` and `appendages`; IK adds `chain`, `target`, optional `pole` and optional unit-quaternion `orientation`. Unknown fields, malformed supplied objects, booleans used as numbers, nonfinite/oversized numbers and unavailable pose references fail before evaluation. A null clip preserves the neutral default; an explicitly supplied `gaze: null` releases gaze and its owned eyelid overrides. `time` is nonnegative seconds within the numeric contract bound, and supplied controls retain their documented ranges. IK-only fields do not pass through the pose admission boundary.
 
+An explicit gaze release runs before any expressions in the same request, so
+a new blink can still use a released eyelid channel. Both operations reject
+unsupported digit names before sampling animation. Finger spread uses the fixed
+thumb-to-pinky ordering, and a selected digit keeps its angle across subsets.
+
 ## Resource limits, jobs and recovery
 
 Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one million vertices, two million triangles, 256 bones, four influences, 128 morph targets per mesh, 64 clips, 250,000 total authored keys, 120 seconds per clip, 60 FPS, two GiB estimated processing memory, 128 solver iterations, 300 seconds per external/render operation and three attempts for a failed step.
