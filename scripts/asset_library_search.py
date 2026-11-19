@@ -6,7 +6,7 @@ review or distribution approval. Every query rechecks its exact source snapshot.
 from __future__ import annotations
 
 import base64
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import hashlib
 import math
 import os
@@ -391,7 +391,7 @@ class SearchIndex:
                 *m['compatibility']['animation_channels']]
         return ' '.join(values)
 
-    def _current(self,db):
+    def _current(self,db,*,write_transaction=False):
         row=db.execute("SELECT value FROM state WHERE key='snapshot'").fetchone()
         if not row: fail('INDEX','Index is empty; rebuild it from verified sources.')
         state=decode_json(row[0])
@@ -416,9 +416,22 @@ class SearchIndex:
                 fail('INDEX','Derived row differs from source snapshot; rebuild it.')
         words=db.execute('SELECT rowid,text FROM words ORDER BY rowid').fetchall()
         if words!=[(r[0],r[2]) for r in stored]:fail('INDEX','Derived lexical rows differ; rebuild it.')
-        # FTS5 checks its inverted postings against its own verified content.
-        # This command checks consistency; it does not rebuild or repair rows.
-        db.execute("INSERT INTO words(words, rank) VALUES('integrity-check', 1)")
+        # FTS5's consistency command acquires a writer lock even without changing
+        # rows. Readers check a bounded copy of their existing SQLite snapshot;
+        # they must not hold that lock through compatibility/provider callbacks.
+        check = "INSERT INTO words(words, rank) VALUES('integrity-check', 1)"
+        if write_transaction:
+            db.execute(check)  # An existing BEGIN IMMEDIATE already owns writes.
+        else:
+            page_size=db.execute('PRAGMA page_size').fetchone()[0]
+            pages=db.execute('PRAGMA page_count').fetchone()[0]
+            if pages*page_size>MAX_INDEX_BYTES:
+                fail('LIMIT','Derived snapshot exceeds the index byte limit.')
+            with closing(sqlite3.connect(':memory:')) as snapshot:
+                snapshot.execute('PRAGMA trusted_schema=OFF')
+                snapshot.execute('PRAGMA page_size='+str(page_size))
+                db.backup(snapshot)
+                snapshot.execute(check)
         return expected,state
 
     def rebuild_embeddings(self,registry,name,*,enabled=False,authorize_private_metadata=False):
@@ -440,7 +453,7 @@ class SearchIndex:
                       vector_sha256=object_hash([[r[0],v] for r,v in zip(rows,vectors)]))
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            current,_=self._current(db)
+            current,_=self._current(db,write_transaction=True)
             if current!=revision: fail('STALE','Index changed during embedding computation.')
             db.execute('DELETE FROM vectors')
             db.executemany('INSERT INTO vectors VALUES(?,?)',[(r[0],canonical_bytes(v)) for r,v in zip(rows,vectors)])
@@ -537,19 +550,19 @@ class SearchIndex:
                     v=_vectors([raw],1)[0]
                     if len(v)!=len(q):fail('EMBEDDING','Stored vector dimensions differ.')
                     vector_scores[number]=sum(a*b for a,b in zip(q,v))
-            retrieval_revision=object_hash(dict(index=revision,embedding=embedding_identity,query_vector=query_vector_sha256))
+            token=None
             if cursor is not None:
                 try:
                     if not isinstance(cursor,str) or len(cursor)>2048:raise ValueError()
                     token=decode_json(base64.b64decode(cursor,validate=True))
                     if set(token)!={'revision','request','offset'}:raise ValueError()
-                    if token['revision']!=retrieval_revision or token['request']!=request_hash:fail('CURSOR','Cursor belongs to a different snapshot/query.')
+                    if token['request']!=request_hash:fail('CURSOR','Cursor belongs to a different snapshot/query.')
                     offset=_integer(token['offset'],0,MAX_ASSETS)
                 except (ValueError,TypeError) as exc:
                     if isinstance(exc,RigError):raise
                     fail('CURSOR','Malformed pagination cursor.')
-            results=[]
-            for number,blob,_ in db.execute('SELECT id,document,text FROM entries'):
+            results=[];compatibility_decisions=[]
+            for number,blob,_ in db.execute('SELECT id,document,text FROM entries ORDER BY id'):
                 entry=decode_json(blob)
                 if not self._matches(entry,filters):continue
                 if parsed['tokens'] and number not in lexical and provider is None:continue
@@ -559,6 +572,9 @@ class SearchIndex:
                         comp=self._graph_compatibility(self.dependency_graph,entry['location'],compatibility,native_path=native_path)
                     else:
                         comp=self.compatibility(entry['location'],compatibility)
+                    if not isinstance(comp,dict) or type(comp.get('compatible')) is not bool:
+                        fail('CAPABILITY','Compatibility authority must return an explicit boolean decision.')
+                    compatibility_decisions.append([number,comp['compatible']])
                     if not comp['compatible']:continue
                 lexical_score=-lexical.get(number,0)
                 score=lexical_score+vector_scores.get(number,0)+1+(1 if comp is not None else 0)
@@ -576,6 +592,12 @@ class SearchIndex:
                 from datetime import datetime
                 results.sort(key=lambda r:(datetime.fromisoformat(r['created_at'].replace('Z','+00:00')),_key(r['location'])))
             else:results.sort(key=lambda r:(r[sort].casefold(),_key(r['location'])))
+            retrieval=dict(index=revision,embedding=embedding_identity,query_vector=query_vector_sha256)
+            if compatibility is not None:
+                retrieval['compatibility_decisions']=compatibility_decisions
+            retrieval_revision=object_hash(retrieval)
+            if token is not None and token['revision']!=retrieval_revision:
+                fail('CURSOR','Cursor belongs to a different snapshot/query or compatibility decision set.')
             page=results[offset:offset+limit];next_cursor=None
             if offset+limit<len(results):
                 next_cursor=base64.b64encode(canonical_bytes(dict(revision=retrieval_revision,request=request_hash,offset=offset+limit))).decode()

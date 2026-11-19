@@ -82,6 +82,22 @@ callable `closure`/`inspect` methods. It also requires the native module
 base. Its integration and native compatibility evidence remain deferred. An
 explicit callable compatibility adapter remains supported for existing native
 consumers; adapters retain responsibility for genuine compatibility checks.
+Their result must be an object containing a genuine boolean `compatible` value;
+truthy strings, integers, nulls and incomplete replies cannot grant eligibility.
+Pagination binds the observed true and false decisions for every otherwise
+matching exact asset. Changed eligibility invalidates an existing cursor instead
+of silently advancing its offset through a different result set. The callable
+remains responsible for evaluating its native requirements consistently; this
+decision snapshot is not a new compatibility owner or production approval.
+
+SQLite FTS5 integrity checks use an INSERT command that can acquire a writer
+lock. Search readers run that command against a bounded in-memory copy of their
+current SQLite read snapshot, keeping the shared derived index read-only while
+callbacks execute. The copy is limited to the existing 64 MiB index bound and is
+discarded after verification. Explicit embedding publication already holds its
+writer transaction and checks that transaction directly. See SQLite's
+[backup snapshot semantics](https://www.sqlite.org/backup.html) and
+[FTS5 integrity command](https://www.sqlite.org/fts5.html#the_integrity_check_command).
 
 Unsupported supplied owners fail with a typed capability diagnostic before
 index creation or rebuild mutation. Optional owner capabilities are rechecked
