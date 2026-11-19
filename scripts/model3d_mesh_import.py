@@ -208,6 +208,27 @@ def _check_blender_triangle(model):
             'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has different surface normals.')
 
 
+def _check_blender_scene(value):
+    """Check the full intermediate scene inventory, including unused objects."""
+    scenes, nodes, meshes = (value.get(key, []) for key in ('scenes', 'nodes', 'meshes'))
+    require(value.get('scene') == 0 and len(scenes) == 1 and scenes[0].get('nodes') == [0]
+            and len(nodes) == 1 and nodes[0].get('mesh') == 0 and not nodes[0].get('children')
+            and len(meshes) == 1 and len(meshes[0]['primitives']) == 1
+            and 'camera' not in nodes[0] and not value.get('cameras')
+            and not any(value.get(key) for key in ('extensions', 'extensionsUsed', 'extensionsRequired'))
+            and not nodes[0].get('extensions'),
+            'MODEL3D_NORMALIZATION', 'The fixed Blender fixture requires one scene with one mesh '
+            'object and primitive, without cameras, lights or scene extensions.')
+    mesh = meshes[0]
+    primitive = mesh['primitives'][0]
+    require(not any(value.get(key) for key in ('skins', 'animations', 'materials', 'images',
+                                               'textures', 'samplers'))
+            and not mesh.get('weights') and not primitive.get('targets') and 'material' not in primitive
+            and set(primitive.get('attributes', {})) <= {'POSITION', 'NORMAL'},
+            'MODEL3D_NORMALIZATION', 'The fixed Blender fixture cannot contain additional appearance '
+            'attributes, materials, textures, skin, animation or morph channels.')
+
+
 def _verify_normalized(root, manifest, inventory, limits, *, blender):
     """Reproduce GLB packing from the retained glTF input and verify the exact output."""
     from asset_library_import import (BLENDER_VALIDATOR, TOOL, VERSION,
@@ -264,15 +285,7 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
     require(object_hash([files, embedded]) == resource_evidence,
             'MODEL3D_NORMALIZATION', 'Report inventory differs from the retained glTF resource closure.')
     if blender:
-        require(not document.json.get('skins') and not document.json.get('animations')
-                and all(not document.json.get(key) for key in ('materials', 'images', 'textures', 'samplers'))
-                and all(not mesh.get('weights') and all(not primitive.get('targets')
-                        and 'material' not in primitive
-                        and set(primitive.get('attributes', {})) <= {'POSITION', 'NORMAL'}
-                        for primitive in mesh['primitives']) for mesh in document.json.get('meshes', [])),
-                'MODEL3D_NORMALIZATION',
-                'The fixed Blender fixture cannot contain additional appearance attributes, '
-                'materials, textures, skin, animation or morph channels.')
+        _check_blender_scene(document.json)
     # The exact registered length is enough for the producer's packing plan.
     # It also avoids reserving its full configured output limit for a small GLB.
     document.limits = {**document.limits, 'source_bytes': int(normalized['bytes'])}

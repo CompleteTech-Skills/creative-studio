@@ -104,7 +104,7 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
     inventory = manifest.get('files', [])
     require(isinstance(inventory,list) and 1 <= len(inventory) <= 256,
             'MODEL3D_REFERENCE', 'Canonical inventory must be a bounded nonempty list.')
-    names = set(); total = 0; runtime = None; normalized = None
+    names = set(); total = 0; runtime = None
     for item in inventory:
         require(isinstance(item,dict) and {'path','sha256','bytes'} <= set(item),
                 'MODEL3D_REFERENCE', 'Canonical inventory record is incomplete.')
@@ -125,7 +125,6 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
         total += int(count)
         require(total <= 256*1024**2, 'MODEL3D_REFERENCE', 'Canonical version inventory exceeds its byte limit.')
         if name == 'runtime/asset.glb': runtime = item
-        if name == 'normalized.glb': normalized = item
     registered = None
     from asset_library_import import TOOL
     registered_provenance = manifest.get('provenance', {})
@@ -136,27 +135,27 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
             if isinstance(items, list) and any(isinstance(item, dict) and item.get(key) == TOOL
                                                for item in items):
                 producer_claim = True
-    # A real native claim follows its selected bytes through a legacy alias.
-    # An ordinary evidence file with the same bytes does not invent that claim.
-    native_selection = normalized is not None and (
-        runtime is None or producer_claim and (
-            geometry_record['path'] == 'normalized.glb'
-            or (normalized['sha256'], normalized['bytes']) ==
-               (geometry_record['sha256'], geometry_record['bytes'])))
-    if native_selection:
-        runtime, registered_files, registered = _normalized_evidence(manifest)
-        require(geometry_record['media_type'] == runtime['mime_type'],
-                'MODEL3D_REFERENCE', 'Canonical normalized entry media type differs from the geometry record.')
+    selected = runtime
+    if producer_claim:
+        # The claim belongs to the registered version, even when a distinct
+        # legacy runtime entry supplies the geometry for this document.
+        normalized, registered_files, registered = _normalized_evidence(manifest)
+        if (runtime is None or geometry_record['path'] == normalized['path']
+                or (normalized['sha256'], normalized['bytes']) ==
+                   (geometry_record['sha256'], geometry_record['bytes'])):
+            selected = normalized
+            require(geometry_record['media_type'] == normalized['mime_type'],
+                    'MODEL3D_REFERENCE', 'Canonical normalized entry media type differs from the geometry record.')
     else:
         require(ref['sha256'] == object_hash({key:value for key,value in manifest.items() if key != 'manifest_sha256'}),
                 'MODEL3D_REFERENCE', 'Canonical reference and immutable manifest hash disagree.')
-    require(runtime is not None and runtime['sha256'] == geometry_record['sha256']
-            and runtime['bytes'] == geometry_record['bytes'],
+    require(selected is not None and selected['sha256'] == geometry_record['sha256']
+            and selected['bytes'] == geometry_record['bytes'],
             'MODEL3D_REFERENCE', 'Canonical geometry inventory does not bind these geometry bytes.')
     if registered is not None:
         if registered['fixture']:
             require(provenance['fixture'], 'MODEL3D_PROVENANCE', 'Canonical fixture provenance must be preserved.')
-            fixture_bytes = {(item['sha256'], item['bytes']) for item in [runtime, *registered['sources']]}
+            fixture_bytes = {(item['sha256'], item['bytes']) for item in [normalized, *registered['sources']]}
             require(all(source['provenance']['fixture'] for source in sources
                         if (source['file']['sha256'], source['file']['bytes']) in fixture_bytes),
                     'MODEL3D_PROVENANCE', 'Canonical fixture sources must remain fixtures.')

@@ -1,0 +1,137 @@
+{
+  "scope": "Independent test-only oracle for PR #519 / issue #139: fixed-worker retained scene inventory and distinct legacy runtime registered-owner constraints.",
+  "frozen_public_head": "e5735a7d69e741b059f81f803b515e6a9547efcf",
+  "frozen_public_tree": "907d8148324d6321b3de8a5fe38726cfecdd6be1",
+  "independence": "Created isolated sparse worktree from the exact frozen public head. No implementation change or future fix branch inspected. Existing tests and evidence remain unchanged. Only two authorized new paths are committed.",
+  "inputs_read": [
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "issue #139",
+    "parent issue #130 and comments",
+    "mission #128 and continuation",
+    "<local-work-dir>/campaign-evidence/review519-e573-integrity.json"
+  ],
+  "environment": {
+    "python": "3.12.14",
+    "node": "v24.22.1",
+    "offline_khronos": "2.0.0-dev.3.10",
+    "PYTHONPATH": "scripts:tests",
+    "HATCH_GLTF_VALIDATOR_ROOT": "<local-work-dir>/creative-studio/tools/rig/node_modules/gltf-validator",
+    "worktree": "<local-work-dir>/oracle519-scene",
+    "blender_executed_in_this_lane": false
+  },
+  "commands": [
+    {
+      "command": "PYTHONPATH=scripts:tests HATCH_GLTF_VALIDATOR_ROOT=<local-work-dir>/creative-studio/tools/rig/node_modules/gltf-validator <local-work-dir>/env-rig/bin/python -m unittest -v test_model3d_registered_scene_contract",
+      "exit": 1,
+      "tests": 14,
+      "passes": 4,
+      "failures": 10,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 37.838,
+      "classification": "Ten intended runtime assertion failures, all RigError not raised after real fixture setup, Khronos validation and registration. No setup errors.",
+      "failed_tests": [
+        "test_distinct_runtime_cannot_contradict_registered_original_filename",
+        "test_distinct_runtime_cannot_drop_both_fixture_classifications",
+        "test_distinct_runtime_cannot_drop_original_source_fixture_classification",
+        "test_fixed_claim_rejects_active_camera",
+        "test_fixed_claim_rejects_active_punctual_light",
+        "test_fixed_claim_rejects_alternate_scene_with_extra_instance",
+        "test_fixed_claim_rejects_unused_camera_resource",
+        "test_fixed_claim_rejects_unused_mesh_instance",
+        "test_fixed_claim_rejects_unused_mesh_resource",
+        "test_fixed_claim_rejects_unused_punctual_light_resource"
+      ],
+      "sanitized_transcript": "test_distinct_runtime_cannot_contradict_registered_original_filename (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_contradict_registered_original_filename) ... FAIL\ntest_distinct_runtime_cannot_drop_both_fixture_classifications (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_drop_both_fixture_classifications) ... FAIL\ntest_distinct_runtime_cannot_drop_original_source_fixture_classification (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_drop_original_source_fixture_classification) ... FAIL\ntest_distinct_runtime_cannot_drop_owner_fixture_classification (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_drop_owner_fixture_classification) ... ok\ntest_distinct_runtime_preserves_correct_registered_owner_positive (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_preserves_correct_registered_owner_positive) ... ok\ntest_clean_synthetic_fixed_profile_still_imports (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_clean_synthetic_fixed_profile_still_imports) ... ok\ntest_fixed_claim_rejects_active_camera (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_active_camera) ... FAIL\ntest_fixed_claim_rejects_active_punctual_light (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_active_punctual_light) ... FAIL\ntest_fixed_claim_rejects_alternate_scene_with_extra_instance (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_alternate_scene_with_extra_instance) ... FAIL\ntest_fixed_claim_rejects_unused_camera_resource (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_camera_resource) ... FAIL\ntest_fixed_claim_rejects_unused_mesh_instance (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_mesh_instance) ... FAIL\ntest_fixed_claim_rejects_unused_mesh_resource (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_mesh_resource) ... FAIL\ntest_fixed_claim_rejects_unused_punctual_light_resource (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_punctual_light_resource) ... FAIL\ntest_native_authored_inventory_is_retained_without_fixed_worker_restrictions (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_native_authored_inventory_is_retained_without_fixed_worker_restrictions) ... ok\n\n======================================================================\nFAIL: test_distinct_runtime_cannot_contradict_registered_original_filename (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_contradict_registered_original_filename)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 237, in test_distinct_runtime_cannot_contradict_registered_original_filename\n    self.assert_owner_refused(declared_name='Contradictory.glb')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 223, in assert_owner_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_distinct_runtime_cannot_drop_both_fixture_classifications (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_drop_both_fixture_classifications)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 234, in test_distinct_runtime_cannot_drop_both_fixture_classifications\n    self.assert_owner_refused(declared_fixture=False, source_fixture=False)\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 223, in assert_owner_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_distinct_runtime_cannot_drop_original_source_fixture_classification (test_model3d_registered_scene_contract.RegisteredLegacyOwnerContractTests.test_distinct_runtime_cannot_drop_original_source_fixture_classification)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 231, in test_distinct_runtime_cannot_drop_original_source_fixture_classification\n    self.assert_owner_refused(source_fixture=False)\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 223, in assert_owner_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_active_camera (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_active_camera)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 121, in test_fixed_claim_rejects_active_camera\n    self.assert_fixed_claim_refused('camera')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_active_punctual_light (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_active_punctual_light)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 127, in test_fixed_claim_rejects_active_punctual_light\n    self.assert_fixed_claim_refused('light')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_alternate_scene_with_extra_instance (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_alternate_scene_with_extra_instance)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 112, in test_fixed_claim_rejects_alternate_scene_with_extra_instance\n    self.assert_fixed_claim_refused('alternate_scene')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_unused_camera_resource (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_camera_resource)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 124, in test_fixed_claim_rejects_unused_camera_resource\n    self.assert_fixed_claim_refused('unused_camera')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_unused_mesh_instance (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_mesh_instance)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 118, in test_fixed_claim_rejects_unused_mesh_instance\n    self.assert_fixed_claim_refused('unused_instance')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_unused_mesh_resource (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_mesh_resource)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 115, in test_fixed_claim_rejects_unused_mesh_resource\n    self.assert_fixed_claim_refused('unused_mesh')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n======================================================================\nFAIL: test_fixed_claim_rejects_unused_punctual_light_resource (test_model3d_registered_scene_contract.RegisteredSceneContractTests.test_fixed_claim_rejects_unused_punctual_light_resource)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 130, in test_fixed_claim_rejects_unused_punctual_light_resource\n    self.assert_fixed_claim_refused('unused_light')\n  File \"<worktree>/tests/test_model3d_registered_scene_contract.py\", line 106, in assert_fixed_claim_refused\n    with self.assertRaises(RigError) as caught:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: RigError not raised\n\n----------------------------------------------------------------------\nRan 14 tests in 37.838s\n\nFAILED (failures=10)\n"
+    },
+    {
+      "command": "PYTHONPATH=scripts:tests HATCH_GLTF_VALIDATOR_ROOT=<local-work-dir>/creative-studio/tools/rig/node_modules/gltf-validator <local-work-dir>/env-rig/bin/python -m unittest -v test_model3d_mesh_import.MeshImportTests.test_real_canonical_library_roundtrip_and_pre_read_caps test_model3d_mesh_import.MeshImportTests.test_generic_canonical_geometry_with_blender_named_evidence test_model3d_mesh_import.MeshImportTests.test_manual_normalized_filename_keeps_legacy_explicit_entry test_model3d_mesh_asset.MeshAsset.test_canonical_namespace_evidence_bound_without_schema_extension",
+      "exit": 0,
+      "tests": 4,
+      "passes": 4,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 0.696,
+      "sanitized_transcript": "test_real_canonical_library_roundtrip_and_pre_read_caps (test_model3d_mesh_import.MeshImportTests.test_real_canonical_library_roundtrip_and_pre_read_caps) ... ok\ntest_generic_canonical_geometry_with_blender_named_evidence (test_model3d_mesh_import.MeshImportTests.test_generic_canonical_geometry_with_blender_named_evidence) ... ok\ntest_manual_normalized_filename_keeps_legacy_explicit_entry (test_model3d_mesh_import.MeshImportTests.test_manual_normalized_filename_keeps_legacy_explicit_entry) ... ok\ntest_canonical_namespace_evidence_bound_without_schema_extension (test_model3d_mesh_asset.MeshAsset.test_canonical_namespace_evidence_bound_without_schema_extension) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.696s\n\nOK\n"
+    },
+    {
+      "command": "git diff --check",
+      "exit": 0,
+      "classification": "Static whitespace check only."
+    }
+  ],
+  "coverage": {
+    "fixed_profile_negatives": [
+      "alternate scene with an additional mesh instance",
+      "unreferenced mesh resource",
+      "unreferenced mesh instance",
+      "active camera",
+      "unreferenced camera resource",
+      "active KHR_lights_punctual directional light",
+      "unreferenced punctual-light resource"
+    ],
+    "owner_negatives": [
+      "wrong original filename for exact retained original bytes",
+      "source fixture classification false",
+      "both owner and source fixture classifications false"
+    ],
+    "already_passing_guard": "Owner fixture false with source fixture true is already refused by a general provenance guard; retained as regression coverage.",
+    "positives": [
+      "clean fixed triangle with synthetic Blender receipts",
+      "all seven ordinary authored scene-inventory profiles retained byte-for-byte through the public canonical consumer",
+      "different-byte legacy runtime with correct registered owner and original source passes build_asset and validate_file",
+      "four existing legacy/generic/manual-normalized compatibility cases"
+    ],
+    "immutability": "Each distinct-runtime test snapshots all staged native/source files and every physical registry/history file, verifies exact SHA-256 preservation in cleanup even on rejection. Eight manifest files and two registered versions in the sample. Native scene positives additionally compare every inventoried byte before and after canonical import.",
+    "fixture_composition": "Module aliases and composed fixture instances avoid inherited duplicate test discovery."
+  },
+  "fixture_samples": {
+    "distinct_runtime_owner": {
+      "history_versions": 2,
+      "inventory_count": 8,
+      "normalized.glb": {
+        "bytes": 952,
+        "sha256": "9f7db4b3a8bae44497bffdb7dfbfbe634ad83b8094eb692c3c9fef99b062ab67"
+      },
+      "runtime/asset.glb": {
+        "bytes": 900,
+        "sha256": "e36a2f2cfa46a3dceef5081f50c8dd1f8c5d3bff1de1e954ad93ea74b8612fa7"
+      },
+      "source/model.glb": {
+        "bytes": 912,
+        "sha256": "7ded506780556e366ab963a07b4f6890d0ba17eae7570f0e22f287f197259379"
+      }
+    },
+    "synthetic_alternate_scene": {
+      "normalized.glb": {
+        "bytes": 1012,
+        "sha256": "ac4b2b1fd477b8982176d10702dcec65b1c6a335b555abe353b8b66979b707f2"
+      },
+      "scene_count": 2,
+      "source/model.glb": {
+        "bytes": 1012,
+        "sha256": "c55005875af90d991300bcfbeba3dabc9978fd0f3ec6d680a4ad5861437fcc4b"
+      }
+    }
+  },
+  "file_sha256": {
+    "tests/test_model3d_registered_scene_contract.py": "8eab506a9beac46418d7ae9a3f9ad592fdb8e030241d0d3544995143addaa692",
+    "scripts/model3d_mesh_import.py": "9aed9cba11d6acaf9bf1523a159884b2795de99bdd846ffdf4ac99648f3a5211",
+    "scripts/model3d_mesh_asset.py": "06aadb6ce44d936f8c183459c5e050e5dba8db84f4b5f02c45bb53df64b3877f",
+    "scripts/asset_import_worker.py": "e95371141f9535120cb9961d5c7d6866d8ba34f7aa4a34f33c267b403ed82f29",
+    "tests/test_model3d_registered_provenance.py": "fb19bf27fa95ca194f8cf832915be577d5b5d8750f35e8246b3ac8f148386f7f",
+    "tests/test_model3d_registered_chain.py": "e155acd4a0770d7c52490dff2448be7d2de62790100ba1143ee424aec0696314",
+    "tests/test_model3d_fixed_appearance.py": "1171ac5aea49d7f875c54cb4330a00cc63097374d3a072e9410603e0fbd9fc66",
+    "tools/rig/package-lock.json": "bdecedca5b3b47d4fdc8d0f84cba8a6f1072ef19d6dd88156511d0b160c1d6a7"
+  },
+  "limitations": [
+    "These synthetic fixed-worker receipts are intentional adversarial declarations, not measured Blender process evidence or authenticated producer claims.",
+    "Real offline GLBs, the native normalizer, pinned Khronos validator, immutable registry I/O, canonical reader, builder and document validator execute.",
+    "No Blender subprocess was rerun in this lane; the existing unchanged FixedAppearanceTests.test_real_pinned_blender_profile_is_accepted supplies the real-worker control for integrator checks.",
+    "No rendering, visual review, external provider, production, CI, or issue-completion acceptance is claimed.",
+    "This test-only commit intentionally fails the frozen implementation. Integration and current-head gates belong to the root integrator.",
+    "No posting, pushing, publishing, or merging performed."
+  ]
+}
