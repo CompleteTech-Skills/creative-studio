@@ -17,7 +17,7 @@ import stat
 from typing import Protocol
 
 from asset_library import AssetLibrary
-from asset_library_contracts import ID_PATTERN, canonical_bytes, validate
+from asset_library_contracts import ID_PATTERN, KINDS, canonical_bytes, validate
 from asset_library_versions import AssetVersions
 from rig_errors import RigError, decode_json, object_hash
 
@@ -81,14 +81,17 @@ def parse_query(query):
     normalized = query.casefold()
     constraints = {}
     reasons = []
-    kinds = {'characters':'character','character':'character','materials':'material',
-             'material':'material','textures':'texture','texture':'texture',
-             'cameras':'camera','camera':'camera','lights':'light','light':'light','lighting':'light',
-             'environments':'environment','environment':'environment','props':'prop','prop':'prop',
-             'rigs':'rig','rig':'rig'}
+    kinds = {word: kind for kind in KINDS for word in (kind, kind + 's')}
+    kinds['lighting'] = 'light'
     # The documented compatibility clause names an explicit caller-supplied
     # requirement, not asset metadata. Preserve genuine words outside it.
     lexical = re.sub(r'\bcompatible with this (?:animation )?rig\b', '', normalized)
+    # Keep canonical compound kinds together without changing tokenization of
+    # ordinary lexical terms or the existing low-polygon rule.
+    for word in sorted(kinds, key=len, reverse=True):
+        if '-' in word:
+            lexical = re.sub(r'\b' + re.escape(word) + r'\b', word.replace('-', '_'), lexical)
+    kinds = {word.replace('-', '_'): kind for word, kind in kinds.items()}
     tokens = re.findall(r'[\w]+', lexical, re.UNICODE)
     found = sorted({kinds[t] for t in tokens if t in kinds})
     if len(found) == 1:
@@ -335,7 +338,6 @@ class SearchIndex:
                     manifest=self.dependency_graph.inspect(location)
                 else:
                     manifest=library.resolve(location['reference'])
-                annotations=library.annotations(location['reference'])
             except RigError as exc:
                 # Only a failed exact-record lookup establishes asset ineligibility.
                 # Storage, authority and history errors must abort publication.
@@ -344,6 +346,10 @@ class SearchIndex:
                     raise
                 diagnostics.append(dict(location=location,code=code,complete=False))
                 continue
+            # Annotation projection failures belong to the mutable native
+            # owner, even when they share an error code with corrupt payloads.
+            # They must abort capture before a verified cache is replaced.
+            annotations=library.annotations(location['reference'])
             collections=(self.versions[alias].collections(location['reference']) if alias in self.versions
                          else dict(revision=0,collections=[]))
             used=sorted(p for p,state in usage.items() if location in state['bindings'].values())

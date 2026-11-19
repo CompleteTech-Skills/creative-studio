@@ -41,6 +41,11 @@ Their canonical JSON bytes and one-based row identities must match exactly;
 JSON booleans cannot substitute for numeric measurements. Storage unavailability,
 owner failures and collection-history errors abort capture before publication
 and preserve the previous cache. They do not establish an empty catalog.
+In particular, a missing or damaged mutable annotation projection propagates
+the native owner's error even if its code is `LIBRARY_CORRUPT`. Full-catalog
+and pinned rebuilds retain the previous index. Repair through the library's
+explicit `recover()` operation, then retry the query or rebuild; search never
+repairs canonical storage itself.
 
 Filters accept exact lists for kind, subtype, category, author, publisher,
 license, scope (publication visibility), library alias, version, format, method,
@@ -57,7 +62,10 @@ library/asset/version/hash tie-breakers. Ranking explains lexical, constraint,
 completeness, compatibility and optional cosine components. Cursors bind the
 query, filters, sort, index snapshot, vector cache and exact query vector.
 
-The deterministic parser recognizes singular/plural asset kinds, `low-polygon`
+The deterministic parser recognizes every canonical asset kind and its plural,
+including animation, prefab, reference and the hyphenated legacy kinds. Thus
+`Find animations` selects the animation kind rather than props tagged with that
+word. It also recognizes `low-polygon`
 or `low poly` as at most 10,000 recorded triangles, and `can walk` as the
 explicit walk capability. Remaining terms use lexical matching. A phrase such
 as "compatible with this animation rig" requires explicit compatibility
