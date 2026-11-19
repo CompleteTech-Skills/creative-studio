@@ -17,32 +17,34 @@ import tempfile
 import zlib
 
 from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational, definitions, _validator
-from rig_errors import RigError, object_hash, open_payload, safe_path, scoped_directory_descriptor
+from rig_errors import RigError, object_hash, open_payload, scoped_directory_descriptor
 
 
 @contextmanager
-def _image_source(path):
-    """Use scoped capture for directory capabilities and standalone capture for paths."""
-    with scoped_directory_descriptor(path.parent) as directory:
-        if directory is not None:
-            with open_payload(path.parent, path.name) as (source, _):
+def _image_source(path, *, root=None, name=None, root_identity=None):
+    """Keep ordinary and scoped reads under the existing payload authority."""
+    root = path.parent if root is None else root
+    name = path.name if name is None else name
+    # Windows pins deny ancestor replacement while the ordinary payload reader
+    # verifies the opened file handle. POSIX open_payload walks nofollow dirfds.
+    if os.name == 'nt':
+        from atomic_windows import pinned_directory
+        with pinned_directory(root), pinned_directory(path.parent):
+            with open_payload(root, name, root_identity=root_identity) as (source, _):
                 yield source
-            return
-    require(not path.is_symlink(), 'corrupt-output', 'Image may not be a symlink.', path=path)
-    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
-    with os.fdopen(os.open(path, flags), 'rb') as source:
-        require(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'corrupt-output', 'Image is not a regular file.', path=path)
-        yield source
+    else:
+        with open_payload(root, name, root_identity=root_identity) as (source, _):
+            yield source
 
 
 @contextmanager
-def _captured(path, max_bytes):
+def _captured(path, max_bytes, **source_options):
     """Hash and decode the same privately captured bytes, not a mutable path."""
     path = Path(path)
     try:
         with tempfile.TemporaryFile() as frozen:
             digest, size = hashlib.sha256(), 0
-            with _image_source(path) as source:
+            with _image_source(path, **source_options) as source:
                 while chunk := source.read(min(1024*1024, max_bytes-size+1)):
                     size += len(chunk)
                     require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=path)
@@ -55,6 +57,76 @@ def _captured(path, max_bytes):
         raise
     except (RigError, OSError, ValueError) as exc:
         raise Render3DError('corrupt-output', str(exc), path=path) from exc
+
+
+@contextmanager
+def _output_authority(root):
+    """Pin the inventory root with the existing native platform adapter."""
+    if os.name == 'nt':
+        from atomic_windows import pinned_directory
+        with pinned_directory(root):
+            info = root.stat()
+            yield None, (info.st_dev, info.st_ino)
+    else:
+        from atomic_publish import pinned_directory_fd
+        with pinned_directory_fd(root) as descriptor:
+            info = os.fstat(descriptor)
+            identity = (info.st_dev, info.st_ino)
+            yield descriptor, identity
+            # A held POSIX directory can be renamed. Recheck the original
+            # namespace through the same nofollow adapter before accepting it.
+            with pinned_directory_fd(root) as current:
+                info = os.fstat(current)
+                require((info.st_dev, info.st_ino) == identity,
+                        'corrupt-output', 'Output root changed during verification.')
+
+
+def _image_inventory(root, descriptor, passes, limit):
+    """Enumerate only beneath a pinned root, never through replaceable parents."""
+    actual = set()
+
+    def walk(directory, relative, fd):
+        for name in os.listdir(fd if fd is not None else directory):
+            child = directory/name
+            parts = (*relative, name)
+            info = (os.stat(name, dir_fd=fd, follow_symlinks=False) if fd is not None else child.lstat())
+            if stat.S_ISDIR(info.st_mode):
+                require(len(parts) == 2 and parts[0] == 'passes' and parts[1] in passes,
+                        'corrupt-output', 'Unexpected image directory.')
+                with child_directory(directory, name, fd) as opened:
+                    walk(child, parts, opened)
+            else:
+                require(stat.S_ISREG(info.st_mode), 'corrupt-output', 'Nonregular entry in image inventory.')
+                actual.add('/'.join(parts))
+                require(len(actual) <= limit, 'incomplete-output', 'Unexpected extra image files.')
+
+    @contextmanager
+    def child_directory(parent, name, fd):
+        if fd is None:
+            from atomic_windows import pinned_directory
+            with pinned_directory(parent/name):
+                yield None
+        else:
+            opened = os.open(name, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                before = os.fstat(opened)
+                yield opened
+                after = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                require((before.st_dev, before.st_ino) == (after.st_dev, after.st_ino),
+                        'corrupt-output', 'Image inventory directory changed during verification.')
+            finally:
+                os.close(opened)
+
+    for name in ('frames', 'passes'):
+        try:
+            info = (os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                    if descriptor is not None else (root/name).lstat())
+        except FileNotFoundError:
+            continue
+        require(stat.S_ISDIR(info.st_mode), 'corrupt-output', 'Image directory is not an ordinary directory.')
+        with child_directory(root, name, descriptor) as opened:
+            walk(root/name, (name,), opened)
+    return actual
 
 
 def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
@@ -128,7 +200,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     return result
 
 
-def _exr_envelope(stream, resolution, memory_bytes):
+def _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels=False):
     """Admit only a bounded single-part, non-deep scanline EXR header."""
     # OpenEXR v3.5.4 ImfVersion.h and OpenEXRFileLayout.rst define these
     # little-endian fields. LONG_NAMES (0x400) changes names, not storage.
@@ -182,6 +254,29 @@ def _exr_envelope(stream, resolution, memory_bytes):
                     'Only EXR scanlineimage storage is supported.')
             require(read(size) == b'scanlineimage', 'unsupported-feature',
                     'Only EXR scanlineimage storage is supported.')
+        elif attribute == b'channels':
+            require(kind == b'chlist', 'corrupt-output', 'Malformed EXR channels attribute.')
+            channel_end = stream.tell()+size
+            channel_names = set()
+            while True:
+                require(stream.tell() < channel_end, 'corrupt-output', 'Unterminated EXR channel list.')
+                channel = name()
+                require(stream.tell() <= channel_end, 'corrupt-output', 'Truncated EXR channel name.')
+                if not channel:
+                    break
+                require(channel not in channel_names, 'corrupt-output', 'Duplicate EXR channel name.')
+                channel_names.add(channel)
+                require(len(channel_names) <= 64, 'corrupt-output', 'EXR channel count is outside supported bounds.')
+                require(stream.tell()+16 <= channel_end, 'corrupt-output', 'Truncated EXR channel metadata.')
+                precision, linear, reserved, x_sampling, y_sampling = struct.unpack('<iB3sii', read(16))
+                require(precision == (1 if bit_depth == 16 else 2) and x_sampling == y_sampling == 1,
+                        'corrupt-output', 'EXR channel precision or sampling differs from request.')
+                require(linear in (0, 1) and reserved == b'\x00'*3,
+                        'corrupt-output', 'Malformed EXR channel metadata.')
+                decoded_bytes = resolution[0]*resolution[1]*len(channel_names)*(8 if pixels else 4)
+                require(decoded_bytes <= memory_bytes, 'system-memory',
+                        'EXR preview arrays exceed memory budget.' if pixels else 'EXR decoded channels exceed memory budget.')
+            require(bool(channel_names) and stream.tell() == channel_end, 'corrupt-output', 'Malformed EXR channel list.')
         elif attribute == b'compression':
             require(kind == b'compression' and size == 1, 'corrupt-output', 'Malformed EXR compression attribute.')
             compression = read(1)[0]
@@ -190,8 +285,8 @@ def _exr_envelope(stream, resolution, memory_bytes):
                     'corrupt-output', f'EXR {attribute.decode()} must match the zero-origin requested full frame.')
         else:
             stream.seek(size, 1)
-    require({b'compression', b'dataWindow', b'displayWindow'} <= seen,
-            'corrupt-output', 'EXR is missing its compression or full-frame window attributes.')
+    require({b'channels', b'compression', b'dataWindow', b'displayWindow'} <= seen,
+            'corrupt-output', 'EXR is missing its channels, compression or full-frame window attributes.')
     block_rows = {0: 1, 1: 1, 2: 1, 3: 16, 4: 32, 5: 16, 6: 32, 7: 32, 8: 32, 9: 256}
     require(compression in block_rows, 'unsupported-feature',
             'EXR compression envelope is not independently verified.')
@@ -220,7 +315,7 @@ def _exr_envelope(stream, resolution, memory_bytes):
 
 
 def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
-    _exr_envelope(stream, resolution, memory_bytes)
+    _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels)
     try:
         import OpenEXR, Imath
         import numpy as np
@@ -284,6 +379,11 @@ def _requested_backend(settings, backend):
     require(backend['engine'] == settings['engine'], 'unsupported-backend',
             'Executed engine differs from the requested engine.')
     actual, selected, policy = backend['device'], settings['device'], settings['device_policy']
+    # These exact category identifiers are the current Render3D fixtures' known
+    # CPU/GPU vocabulary. An opaque hardware ID needs a future authenticated
+    # device-class contract; neither selection nor spelling supplies that fact.
+    require(actual in ('cpu', 'cuda'), 'unsupported-device',
+            'Observed device has no supported affirmative CPU/GPU classification.')
     if policy == 'cpu':
         require(actual == 'cpu', 'unsupported-device', 'CPU policy requires CPU execution.')
     elif actual == 'cpu':
@@ -294,11 +394,11 @@ def _requested_backend(settings, backend):
                 'Executed device differs from the explicitly selected device.')
 
 
-def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=1024**3, memory_bytes=1024**3, _pixels=False):
+def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=1024**3, memory_bytes=1024**3, _pixels=False, _source_options=None):
     """Decode one actual output. Pixel ranges do not establish scene correctness."""
     _image_contract(output, resolution, pass_name, max_bytes, memory_bytes)
     try:
-        with _captured(path,max_bytes) as (stream,identity):
+        with _captured(path,max_bytes,**(_source_options or {})) as (stream,identity):
             report=(_png if output['format']=='png' else _exr)(stream,resolution,output['bit_depth'],memory_bytes,_pixels)
         channels=report['channels']
         if pass_name in ('combined','albedo'):
@@ -394,41 +494,29 @@ class RenderArtifactVerifier:
                 'incomplete-output','Result lacks the exact requested frame/pass inventory.')
         settings=request['settings'];decoded=[];paths=set();total=0
         try:
-            for item in result['images']:
-                reference=item['file'];name=reference['path'];suffix=settings['output']['format']
-                expected_name=(f'frames/{item["frame"]:06d}.{suffix}' if item['pass_name']=='combined'
-                               else f'passes/{item["pass_name"]}/{item["frame"]:06d}.{suffix}')
-                require(name==expected_name and name not in paths,'corrupt-output','Image path does not match frame/pass identity.')
-                paths.add(name)
-                require(item['format']==suffix and item['bit_depth']==settings['output']['bit_depth'] and item['resolution']==settings['resolution'],
-                        'corrupt-output','Image declaration differs from request settings.')
-                file=safe_path(root,name,exists=True)
-                image=verify_image(file,output=settings['output'],resolution=settings['resolution'],pass_name=item['pass_name'],
-                    max_bytes=settings['resources']['storage_bytes']-total,memory_bytes=settings['resources']['memory_bytes'])
-                require(image['sha256']==reference['sha256'] and image['bytes']==reference['bytes'],
-                        'corrupt-output','Image bytes differ from committed reference.',path=name)
-                presentation,source=frame_times(request,item['frame'])
-                total+=image['bytes'];decoded.append(dict(frame=item['frame'],path=name,
-                    presentation_time=rational(presentation),source_time=rational(source),**image))
-            actual=set()
-            for directory in ('frames','passes'):
-                folder=root/directory
-                if folder.exists():
-                    require(not folder.is_symlink(),'corrupt-output','Image directory may not be a symlink.')
-                    for path in folder.rglob('*'):
-                        require(not path.is_symlink(),'corrupt-output','Image inventory contains a symlink.')
-                        if path.is_dir():
-                            relative=path.relative_to(root).parts
-                            require(len(relative)==2 and relative[0]=='passes'
-                                    and relative[1] in settings['output']['passes'],
-                                    'corrupt-output','Unexpected image directory.')
-                        elif path.is_file():
-                            actual.add(path.relative_to(root).as_posix())
-                            require(len(actual)<=len(paths),'incomplete-output','Unexpected extra image files.')
-                        else:
-                            raise Render3DError('corrupt-output','Nonregular entry in image inventory.')
-            require(actual==paths,'incomplete-output','Unexpected or missing output images.')
-        except RigError as exc:
+            with _output_authority(root) as (root_fd, root_identity):
+                for item in result['images']:
+                    reference=item['file'];name=reference['path'];suffix=settings['output']['format']
+                    expected_name=(f'frames/{item["frame"]:06d}.{suffix}' if item['pass_name']=='combined'
+                                   else f'passes/{item["pass_name"]}/{item["frame"]:06d}.{suffix}')
+                    require(name==expected_name and name not in paths,'corrupt-output','Image path does not match frame/pass identity.')
+                    paths.add(name)
+                    require(item['format']==suffix and item['bit_depth']==settings['output']['bit_depth'] and item['resolution']==settings['resolution'],
+                            'corrupt-output','Image declaration differs from request settings.')
+                    file=root/name
+                    image=verify_image(file,output=settings['output'],resolution=settings['resolution'],pass_name=item['pass_name'],
+                        max_bytes=settings['resources']['storage_bytes']-total,memory_bytes=settings['resources']['memory_bytes'],
+                        _source_options=dict(root=root,name=name,root_identity=root_identity))
+                    require(image['sha256']==reference['sha256'] and image['bytes']==reference['bytes'],
+                            'corrupt-output','Image bytes differ from committed reference.',path=name)
+                    presentation,source=frame_times(request,item['frame'])
+                    total+=image['bytes'];decoded.append(dict(frame=item['frame'],path=name,
+                        presentation_time=rational(presentation),source_time=rational(source),**image))
+                actual = _image_inventory(root, root_fd, settings['output']['passes'], len(paths))
+                require(actual==paths,'incomplete-output','Unexpected or missing output images.')
+        except Render3DError:
+            raise
+        except (RigError, OSError, ValueError) as exc:
             raise Render3DError('corrupt-output',str(exc)) from exc
         identity=dict(id='render3d-independent-pixels',version=VERSION,code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),platform=platform.platform())
         return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=identity,

@@ -87,3 +87,54 @@ for source closure verification. Supplying it or a scoped snapshot requires the
 bounded snapshot owner. If unavailable, the verifier returns `unsupported-feature`
 instead of accepting a limit it cannot enforce. Ordinary source verification and
 the independent encoded image budget remain available on the foundation base.
+
+
+## PR #534 policy and capture boundary correction
+
+The current Render3D verifier admits the exact observed device identifiers `cpu`
+and `cuda`. These are the canonical CPU and GPU identifiers exercised by the
+existing Render3D fixtures. The source tree has no Render3D worker identity
+producer that establishes a broader hardware-ID mapping. The separate Director
+probe's uppercase `CPU`/`GPU` output is not a Render3D `BackendIdentity`.
+Consequently, `CPU`, `CUDA`, `unknown`, `unavailable`, and opaque hardware IDs
+reject with `unsupported-device`, including when an opaque ID was explicitly
+selected. An explicit selection still must equal the admitted observed GPU;
+CPU fallback still requires `gpu-preferred` and `allow_cpu_fallback=True`.
+A future hardware owner must supply an authenticated device class before
+arbitrary per-device IDs can be admitted. These policy tests use synthetic
+supervisor identities and do not establish GPU execution.
+
+Standalone capture now uses `rig_errors.open_payload` for ordinary paths as
+well as active directory capabilities. Its bounded read is followed by the
+owner's file identity checks before the private capture is admitted for hashing
+and decoding. Full-result verification supplies the original output root,
+original relative filename, and pinned root identity to that same reader.
+The inventory is enumerated beneath the same pinned output root: POSIX uses
+the existing `atomic_publish.pinned_directory_fd` adapter, descriptor-relative
+child opens and a final no-follow namespace identity recheck; Windows uses the
+existing `atomic_windows.pinned_directory` adapter to deny replacement of held
+directory ancestors during reads and inventory traversal. Active capabilities
+keep their original directory authority even if an ordinary pathname is
+replaced. No path is resolved to discard that authority.
+
+EXR admission now parses the bounded `chlist` attribute before constructing
+`OpenEXR.InputFile`. It requires a terminated, nonempty channel list without
+duplicate names, no more than 64 channels, requested HALF/FLOAT precision,
+full-resolution sampling, and valid channel metadata. It applies the existing
+four-byte-per-decoded-sample estimate, or the stricter eight-byte preview
+estimate, before native construction. The encoded field layout follows the
+upstream [OpenEXR channel-list layout](https://openexr.com/en/latest/OpenEXRFileLayout.html#attribute-type-layouts).
+Native decoding retains its independent channel checks. The 1 MiB header cap
+and complete-file chunk accounting remain in force. These are admission and
+sample-size checks; no native allocator or peak-RSS bound was measured.
+
+The dedicated test file retains all 29 original test methods and their 79
+assertion calls unchanged. Added regressions retain all six independent policy
+probe cases and perform real disposable filesystem parent/root replacements,
+with stable-path, restored-path and scoped-authority positive controls. Mocks
+only schedule replacements or spy on constructor calls; image bytes, hashing,
+accounting, identity checks and decoding execute normally. Added malformed
+channel headers and actual synthetic 65-channel/over-budget EXRs must reject
+before native construction. Native Windows execution is not established by
+the Linux tests; using its existing pin adapter is an implementation claim.
+Issues #92, #93 and #16 remain open beyond this bounded decoder correction.

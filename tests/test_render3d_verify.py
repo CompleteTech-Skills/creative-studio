@@ -1,5 +1,6 @@
 """Real image decoding and source-bound result verification; fixtures are synthetic."""
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
 import io
 import json
@@ -89,6 +90,29 @@ class EXREnvelopeAdmission(unittest.TestCase):
         payload=b'x'*(1024**2)
         self.reject_before_decoder(prefix+b'x\x00string\x00'+struct.pack('<i',len(payload))+payload+b'\x00',
                                    'EXR header exceeds')
+
+
+    def test_channel_admission_limits_precede_native_constructor(self):
+        prefix=struct.pack('<II',20000630,2)
+        def entry(name, precision=2, sampling=1):
+            return name+b'\x00'+struct.pack('<iB3sii',precision,0,b'\x00'*3,sampling,sampling)
+        def envelope(channels):
+            return prefix+b'channels\x00chlist\x00'+struct.pack('<i',len(channels))+channels+b'\x00'
+        valid=entry(b'R')
+        cases=[(b'\x00','Malformed EXR channel list'),
+               (valid,'Unterminated EXR channel list'),
+               (valid+b'R\x00','Duplicate EXR channel name'),
+               (b'R\x00'+b'\x00'*15,'Truncated EXR channel metadata'),
+               (entry(b'R',1)+b'\x00','precision or sampling'),
+               (entry(b'R',sampling=2)+b'\x00','precision or sampling'),
+               (valid+b'\x00extra','Malformed EXR channel list'),
+               (b''.join(entry(f'C{n}'.encode()) for n in range(65))+b'\x00','channel count')]
+        for channels,message in cases:
+            with self.subTest(message=message):
+                self.reject_before_decoder(envelope(channels),message)
+        # The same bounded header fits; its declared decoded samples do not.
+        self.reject_before_decoder(envelope(b''.join(entry(f'C{n}'.encode()) for n in range(64))+b'\x00'),
+                                   'decoded channels exceed|preview arrays exceed',memory_bytes=1500)
 
 
 @unittest.skipUnless(DEPENDENCIES,'optional OpenEXR/pypng decoder packages unavailable')
@@ -528,3 +552,144 @@ class ImageVerification(unittest.TestCase):
             if hasattr(os,'mkfifo'):
                 os.mkfifo(extra)
                 with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+
+
+    def test_preserved_policy_probe_requires_affirmative_device_class(self):
+        # Preserve all six cases from the independent policy probe, then cover
+        # opaque selected IDs, ambiguous spellings, and explicit fallback.
+        cases=[('cpu',None,False,'cpu',True),
+               ('gpu-required',None,False,'cuda',True),
+               ('gpu-required',None,False,'cpu',False),
+               ('gpu-required',None,False,'CPU',False),
+               ('gpu-required',None,False,'unknown',False),
+               ('gpu-preferred',None,False,'unavailable',False),
+               ('gpu-preferred',None,True,'unknown',False),
+               ('gpu-preferred',None,True,'CPU',False),
+               ('gpu-required','unknown',False,'unknown',False),
+               ('gpu-required','CUDA:0',False,'CUDA:0',False),
+               ('gpu-required',None,False,'CUDA',False),
+               ('gpu-preferred',None,True,'cpu',True),
+               ('gpu-preferred','cuda',True,'cpu',True),
+               ('gpu-preferred','cuda',False,'cuda',True)]
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            for policy,selected,fallback,actual,accepted in cases:
+                req,res,observed=deepcopy(request),deepcopy(result),deepcopy(backend)
+                req['settings'].update(device_policy=policy,device=selected,allow_cpu_fallback=fallback)
+                observed['device']=actual
+                res.update(request_sha256=object_hash(req),backend=observed)
+                with self.subTest(policy=policy,selected=selected,fallback=fallback,actual=actual):
+                    if accepted:
+                        report=verify_result(req,res,root,snapshot_root=snapshot,expected_backend=observed)
+                        self.assertEqual(report['status'],'passed')
+                        self.assertEqual(report['decoded_images'],2)
+                        self.assertEqual(report['backend'],observed)
+                    else:
+                        with self.assertRaises(Render3DError) as caught:
+                            verify_result(req,res,root,snapshot_root=snapshot,expected_backend=observed)
+                        self.assertEqual(caught.exception.report['category'],'unsupported-device')
+
+    def test_real_parent_symlink_replacement_between_validation_and_capture_rejects(self):
+        import render3d_verify
+        original=render3d_verify._image_source
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            control=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(control['decoded_images'],2)
+            replacement=root.parent/'replacement';replacement.mkdir()
+            for image in (root/'frames').iterdir():
+                (replacement/image.name).write_bytes(image.read_bytes())
+            scheduled=[]
+            @contextmanager
+            def replace_parent(path, **options):
+                replaced=False
+                if path.parent == root/'frames' and not scheduled:
+                    (root/'frames').rename(root/'held-frames')
+                    (root/'frames').symlink_to(replacement,target_is_directory=True)
+                    scheduled.append(True);replaced=True
+                try:
+                    with original(path,**options) as source:
+                        yield source
+                finally:
+                    if replaced:
+                        (root/'frames').unlink();(root/'held-frames').rename(root/'frames')
+            with mock.patch.object(render3d_verify,'_image_source',replace_parent):
+                with self.assertRaises(Render3DError) as caught:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(scheduled,[True])
+            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+            restored=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(restored['images'],control['images'])
+
+    def test_real_parent_replacement_during_read_rejects(self):
+        import render3d_verify
+        original=render3d_verify.open_payload
+        with tempfile.TemporaryDirectory() as temporary:
+            parent=Path(temporary)/'images';parent.mkdir()
+            path=parent/'image.png';self.png(path)
+            reference=hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(verify_image(path,output=output(),resolution=[3,2])['sha256'],reference)
+            scheduled=[]
+            @contextmanager
+            def replace_parent(root,name,**options):
+                with original(root,name,**options) as opened:
+                    scheduled.append(True)
+                    parent.rename(parent.with_name('held-images'))
+                    parent.mkdir();self.png(path)
+                    yield opened
+            with mock.patch.object(render3d_verify,'open_payload',replace_parent):
+                with self.assertRaises(Render3DError) as caught:
+                    verify_image(path,output=output(),resolution=[3,2])
+            self.assertEqual(scheduled,[True])
+            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+            # Replacement bytes are valid; refusal is directory/file identity.
+            self.assertEqual(verify_image(path,output=output(),resolution=[3,2])['sha256'],reference)
+
+    def test_scoped_output_retains_authority_after_ordinary_name_replacement(self):
+        from atomic_publish import pinned_directory, private_stage_supported
+        from rig_errors import directory_capability
+        if not private_stage_supported():
+            self.skipTest('Scoped output requires the Linux descriptor adapter.')
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            with pinned_directory(root) as descriptor, directory_capability(descriptor) as capability:
+                root.rename(root.with_name('held-output'))
+                root.mkdir();(root/'frames').mkdir()
+                (root/'frames/000000.png').write_bytes(b'not the scoped image')
+                report=verify_result(request,result,capability.path,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(report['decoded_images'],2)
+            self.assertEqual([image['sha256'] for image in report['images']],
+                             [image['file']['sha256'] for image in result['images']])
+
+    def test_inventory_root_replacement_is_not_accepted(self):
+        import render3d_verify
+        original=render3d_verify._image_inventory
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            scheduled=[]
+            def replace_root(path,descriptor,passes,limit):
+                scheduled.append(True)
+                root.rename(root.with_name('held-output'))
+                root.mkdir();(root/'frames').mkdir()
+                for image in root.with_name('held-output').joinpath('frames').iterdir():
+                    (root/'frames'/image.name).write_bytes(image.read_bytes())
+                return original(path,descriptor,passes,limit)
+            with mock.patch.object(render3d_verify,'_image_inventory',replace_root):
+                with self.assertRaises(Render3DError) as caught:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(scheduled,[True])
+            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+
+    def test_actual_exr_channels_and_decoded_budget_reject_before_constructor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'channels.exr'
+            for count,resolution,budget,decode in ((65,[3,2],1024**3,verify_image),
+                                                  (64,[64,32],100000,verify_image),
+                                                  (64,[64,32],600000,decode_image)):
+                values={f'C{n}':np.ones((resolution[1],resolution[0]),dtype=np.float32) for n in range(count)}
+                self.exr(path,channels=values)
+                with self.subTest(channels=count,resolution=resolution,decode=decode.__name__):
+                    with mock.patch.object(OpenEXR,'InputFile',wraps=OpenEXR.InputFile) as constructor:
+                        with self.assertRaisesRegex(Render3DError,'channel count|channels exceed|preview arrays exceed'):
+                            decode(path,output=output('exr',32),resolution=resolution,memory_bytes=budget)
+                        constructor.assert_not_called()
