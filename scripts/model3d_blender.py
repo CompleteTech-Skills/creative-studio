@@ -9,7 +9,7 @@ import numpy as np
 
 from atomic_publish import _rename_no_replace
 from rig_blender import _run
-from rig_errors import atomic_json, require, sha256
+from rig_errors import RigError, atomic_json, require, sha256
 from rig_gltf import export_geometry, read_gltf
 from rig_import import load_character_model
 from rig_models import Geometry, validate_geometry
@@ -161,10 +161,15 @@ def roundtrip_named_part(geometry, destination, *, part, offset_m, base_color, f
     color = _vector(base_color, 4, 0, 1)
     shared, material_name = _profile(geometry, part, delta, color)
     destination = Path(destination).absolute()
-    destination = destination.parent.resolve(strict=True) / destination.name
-    require(not destination.exists() and not destination.is_symlink(), 'MODEL3D_EXPORT_EXISTS',
-            'Named-part export requires a new destination.')
-    with tempfile.TemporaryDirectory(prefix='.model3d-blender-', dir=destination.parent) as directory:
+    try:
+        destination = destination.parent.resolve(strict=True) / destination.name
+        require(not destination.exists() and not destination.is_symlink(), 'MODEL3D_EXPORT_EXISTS',
+                'Named-part export requires a new destination.')
+        staging = tempfile.TemporaryDirectory(prefix='.model3d-blender-', dir=destination.parent)
+    except OSError as error:
+        raise RigError('MODEL3D_EXPORT_PATH', 'Named-part export needs a writable existing parent directory.',
+                       observed=dict(errno=error.errno, error=type(error).__name__)) from None
+    with staging as directory:
         stage = Path(directory)
         out = stage / 'payload'
         out.mkdir()
@@ -196,5 +201,12 @@ def roundtrip_named_part(geometry, destination, *, part, offset_m, base_color, f
                        verified_parts=[m.id for m in geometry.meshes], triangles_per_export=geometry.triangle_count,
                        files=hashes)
         atomic_json(out / 'receipt.json', receipt)
-        _rename_no_replace(out, destination)
+        try:
+            _rename_no_replace(out, destination)
+        except FileExistsError:
+            raise RigError('MODEL3D_EXPORT_EXISTS', 'Named-part export requires a new destination.') from None
+        except OSError as error:
+            # e.g. a filesystem without exclusive rename; nothing was published.
+            raise RigError('MODEL3D_EXPORT_PUBLISH', 'Named-part export could not be published without replacement.',
+                           observed=dict(errno=error.errno, error=type(error).__name__)) from None
         return receipt
