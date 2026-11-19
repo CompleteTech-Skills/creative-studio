@@ -158,6 +158,34 @@ class SearchTests(unittest.TestCase):
         with self.assertRaises((RigError,FileNotFoundError)):self.index.search()
         self.assertEqual(self.library.resolve(self.refs[0]['reference'])['identity']['id'],'hero')
 
+    def test_row_ids_must_match_the_snapshot_even_when_fts_matches(self):
+        selected = self.register('hero')
+        self.index.rebuild([selected])
+        with closing(sqlite3.connect(self.index.database)) as db, db:
+            db.execute('UPDATE entries SET id=5 WHERE id=1')
+            db.execute('UPDATE words SET rowid=5 WHERE rowid=1')
+        self.assert_code('INDEX', self.index.search)
+        self.index.rebuild([selected])
+        self.assertEqual(self.index.search('hero')['results'][0]['location'], selected)
+
+    def test_self_consistent_cache_must_match_native_json_types(self):
+        import hashlib
+        from asset_library_contracts import canonical_bytes
+
+        selected = self.register('measured', triangles=1)
+        self.index.rebuild([selected])
+        with closing(sqlite3.connect(self.index.database)) as db, db:
+            payload, = db.execute("SELECT value FROM state WHERE key='snapshot'").fetchone()
+            state = json.loads(payload)
+            entry = state['snapshot']['entries'][0]
+            entry['manifest']['files'][0]['technical_metadata']['triangles'] = True
+            payload = canonical_bytes(state)
+            db.execute("UPDATE state SET value=? WHERE key='snapshot'", (payload,))
+            db.execute("UPDATE state SET value=? WHERE key='revision'",
+                       (hashlib.sha256(payload).hexdigest().encode(),))
+            db.execute('UPDATE entries SET document=? WHERE id=1', (canonical_bytes(entry),))
+        self.assert_code('STALE', lambda: self.index.search(filters={'max_triangles': 1}))
+
     def test_hostile_inputs_never_enter_sql_or_fts_syntax(self):
         self.register('hero');self.index.rebuild(self.refs)
         self.assertEqual(self.index.search('" OR 1=1; DROP TABLE words --')['total'],0)
@@ -380,6 +408,31 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(reopened_library.resolve(reference),manifest)
         for path,payload in payloads.items():
             self.assertEqual(reopened_library.read_file(reference,path),payload)
+
+    def test_collection_event_gap_aborts_rebuild_and_preserves_search_cache(self):
+        from asset_library_versions import AssetVersions
+
+        selected = self.register('selected')
+        reference = selected['reference']
+        versions = AssetVersions(self.library)
+        versions.set_collections(reference, expected_revision=0, collections=['first'])
+        versions.set_collections(reference, expected_revision=1, collections=['second'])
+        index = SearchIndex(self.root / 'collection-history', {'local': self.library},
+                            versions={'local': versions}, create=True)
+        index.rebuild([selected])
+        cached = index.database.read_bytes()
+        stream = 'asset-collections.' + reference['sha256']
+        with closing(sqlite3.connect(self.library.database)) as db, db:
+            db.execute('DELETE FROM asset_events WHERE stream=? AND revision=1', (stream,))
+        # The collection owner uses CORRUPT for a gap in its event projection.
+        # Such an error cannot establish a per-asset missing-payload diagnostic.
+        with self.assertRaises(RigError) as raised:
+            index.rebuild([selected])
+        self.assertEqual(raised.exception.report['code'], 'LIBRARY_CORRUPT')
+        self.assertEqual(index.database.read_bytes(), cached)
+        self.library.recover()
+        hits = index.search(filters={'collections': ['second']})['results']
+        self.assertEqual([hit['location'] for hit in hits], [selected])
 
 
     def test_full_catalog_refuses_split_projection_until_explicit_recovery(self):

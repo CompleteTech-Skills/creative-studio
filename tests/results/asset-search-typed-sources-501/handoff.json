@@ -1,0 +1,39 @@
+{
+  "scope": "Independent test-only regressions for offline native asset search",
+  "frozen_implementation": "aa70aceb8854dfed0923ac87f73205f70ca22116",
+  "frozen_tree": "6050ba3972dfbbf45ef6265a2db25c7c41adb4c3",
+  "review_base": "69494d34e92e6e135f3d7bd18458defce3a9f261",
+  "test_file": "tests/test_asset_library_search_typed_sources.py",
+  "test_sha256": "c2e0d1d24e4cba24b9016a849ecc3faa11fe948d43f3f0e8a3280891cdd6cc8f",
+  "native_rig_fixture": {
+    "path": "examples/rig-3d/robotic/rig.json",
+    "git_blob": "c99fcb6a4715a6ffdff4bd33fdc44dd99373f1bc"
+  },
+  "environment": {
+    "platform": "Linux x86_64",
+    "python": "3.12.14",
+    "sqlite": "3.53.1"
+  },
+  "command": "PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 PYTHONPATH=scripts:tests python -m unittest -v test_asset_library_search_typed_sources",
+  "observed_baseline": {
+    "test_methods": 4,
+    "passing_methods": 1,
+    "affected_methods": 3,
+    "subtest_failures": 5,
+    "subtest_errors": 1,
+    "skipped": 0,
+    "exit_code": 1,
+    "seconds": 10.621,
+    "log_sha256": "ce36f5e7a6746f3e95eea42c5ca7e188be0ed9402af4cf3b3bccccd8be31d4fc"
+  },
+  "observations": [
+    "An integer triangle measurement of 1 qualified for budget 1. A registered boolean true did not qualify. Original source and derived bytes remained unchanged on the successful control read.",
+    "After a type-only change in the disposable index row from 1 to true, public search completed instead of raising LIBRARY_SEARCH_INDEX. Explicit rebuild recovered the original hit, and all original bytes remained intact.",
+    "Under a temporary native SQLite EXCLUSIVE transaction without source edits, a pinned rebuild returned success instead of LIBRARY_STORAGE, changed the prior index and left the search stale after lock release. Native source bytes remained intact.",
+    "A checked-in rig document with neutral search metadata and a prop with both lexical decoys were registered. Structured controls returned the correct exact kinds. Singular and plural natural-language queries returned the prop. Source and index bytes remained intact."
+  ],
+  "limitations": [
+    "This run exercises local registered fixtures and a disposable search index. Rig runtime readiness, real embeddings, external providers, licensing and release approval remain unverified.",
+    "An amended candidate requires independent exact-head review and CI. This test-only change adds no gate configuration."
+  ]
+}

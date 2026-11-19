@@ -37,6 +37,10 @@ selected bytes, annotations and any configured collection/usage state. Changed
 state raises `LIBRARY_SEARCH_STALE` until rebuild. Corrupt or missing payloads
 are excluded with exact location/error diagnostics; metadata alone never
 establishes completeness. Derived rows are checked against the source snapshot.
+Their canonical JSON bytes and one-based row identities must match exactly;
+JSON booleans cannot substitute for numeric measurements. Storage unavailability,
+owner failures and collection-history errors abort capture before publication
+and preserve the previous cache. They do not establish an empty catalog.
 
 Filters accept exact lists for kind, subtype, category, author, publisher,
 license, scope (publication visibility), library alias, version, format, method,
@@ -59,6 +63,9 @@ explicit walk capability. Remaining terms use lexical matching. A phrase such
 as "compatible with this animation rig" requires explicit compatibility
 requirements and an authority; it never infers a rig from a pronoun.
 Keyword retrieval is not embedding inference.
+Both `Find rigs` and `find a rig` select registered rig assets. The compatibility
+clause is removed before kind parsing, so asking for props compatible with this
+rig still selects props subject to the explicit compatibility requirement.
 
 ## Optional owner admission and native collections
 

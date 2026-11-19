@@ -84,7 +84,8 @@ def parse_query(query):
     kinds = {'characters':'character','character':'character','materials':'material',
              'material':'material','textures':'texture','texture':'texture',
              'cameras':'camera','camera':'camera','lights':'light','light':'light','lighting':'light',
-             'environments':'environment','environment':'environment','props':'prop','prop':'prop'}
+             'environments':'environment','environment':'environment','props':'prop','prop':'prop',
+             'rigs':'rig','rig':'rig'}
     # The documented compatibility clause names an explicit caller-supplied
     # requirement, not asset metadata. Preserve genuine words outside it.
     lexical = re.sub(r'\bcompatible with this (?:animation )?rig\b', '', normalized)
@@ -200,9 +201,8 @@ def _vectors(values, count):
 class SearchIndex:
     """Bounded snapshot search using existing library and optional lifecycle APIs.
 
-    Configure explicit library aliases. Optional collection owners supplied in
-    ``versions`` must implement collections(reference); the bounded version
-    history owner does not. Usage owners must implement bindings(project_id).
+    Configure explicit library aliases. AssetVersions supplies the native
+    collections(reference) API. Usage owners must implement bindings(project_id).
     Only explicitly listed project IDs are inspected.
     """
     def __init__(self, root, libraries, *, create=False, versions=None,
@@ -336,17 +336,22 @@ class SearchIndex:
                 else:
                     manifest=library.resolve(location['reference'])
                 annotations=library.annotations(location['reference'])
-                collections=(self.versions[alias].collections(location['reference']) if alias in self.versions
-                             else dict(revision=0,collections=[]))
-                used=sorted(p for p,state in usage.items() if location in state['bindings'].values())
-                entry=dict(location=location,manifest=manifest,annotations=annotations,
-                           collections=collections,used_by=used)
-                size+=len(canonical_bytes(entry))
-                if size>MAX_INDEX_BYTES//4: fail('LIMIT','Metadata exceeds 16 MiB.')
-                entries.append(entry)
             except RigError as exc:
-                if exc.report['code']=='LIBRARY_SEARCH_LIMIT':raise
-                diagnostics.append(dict(location=location,code=exc.report['code'],complete=False))
+                # Only a failed exact-record lookup establishes asset ineligibility.
+                # Storage, authority and history errors must abort publication.
+                code = exc.report['code']
+                if code not in {'LIBRARY_MISSING', 'LIBRARY_HASH', 'LIBRARY_IDENTITY', 'LIBRARY_CORRUPT'}:
+                    raise
+                diagnostics.append(dict(location=location,code=code,complete=False))
+                continue
+            collections=(self.versions[alias].collections(location['reference']) if alias in self.versions
+                         else dict(revision=0,collections=[]))
+            used=sorted(p for p,state in usage.items() if location in state['bindings'].values())
+            entry=dict(location=location,manifest=manifest,annotations=annotations,
+                       collections=collections,used_by=used)
+            size+=len(canonical_bytes(entry))
+            if size>MAX_INDEX_BYTES//4: fail('LIMIT','Metadata exceeds 16 MiB.')
+            entries.append(entry)
         return dict(entries=entries,diagnostics=diagnostics,usage=usage)
 
     def rebuild(self, locations=None):
@@ -358,7 +363,8 @@ class SearchIndex:
         if len({_key(v) for v in locations})!=len(locations): fail('REQUEST','Duplicate index input.')
         snapshot=self._capture(locations)
         # Capture twice before publication to detect source/annotation/binding races.
-        if self._capture(locations)!=snapshot: fail('STALE','Sources changed during index rebuild.')
+        if canonical_bytes(snapshot)!=canonical_bytes(self._capture(locations)):
+            fail('STALE','Sources changed during index rebuild.')
         if not explicit and self._catalog()!=locations: fail('STALE','Catalog changed during index rebuild.')
         state=dict(schema_version=1,locations=locations,explicit_selection=explicit,snapshot=snapshot)
         payload=canonical_bytes(state)
@@ -396,7 +402,8 @@ class SearchIndex:
         if not row: fail('INDEX','Index is empty; rebuild it from verified sources.')
         state=decode_json(row[0])
         if (not isinstance(state,dict) or set(state)!={'schema_version','locations','explicit_selection','snapshot'} or
-            state['schema_version']!=1 or type(state['explicit_selection']) is not bool or
+            type(state['schema_version']) is not int or state['schema_version']!=1 or
+            type(state['explicit_selection']) is not bool or
             not isinstance(state['locations'],list) or len(state['locations'])>MAX_ASSETS or
             not isinstance(state['snapshot'],dict) or
             set(state['snapshot'])!={'entries','diagnostics','usage'} or
@@ -406,13 +413,14 @@ class SearchIndex:
         revision=db.execute("SELECT value FROM state WHERE key='revision'").fetchone()
         if revision!=(expected.encode(),): fail('INDEX','Derived snapshot digest differs.')
         if (not state['explicit_selection'] and self._catalog()!=state['locations'] or
-            self._capture(state['locations'])!=state['snapshot']):
+            canonical_bytes(self._capture(state['locations']))!=canonical_bytes(state['snapshot'])):
             fail('STALE','Library bytes, metadata, collections or usage changed; rebuild the index.')
         expected_entries=state['snapshot']['entries']
         stored=db.execute('SELECT id,document,text FROM entries ORDER BY id').fetchall()
         if len(stored)!=len(expected_entries):fail('INDEX','Derived row count differs; rebuild it.')
-        for (number,blob,text),entry in zip(stored,expected_entries):
-            if decode_json(blob)!=entry or text!=self._text(entry):
+        for expected_id, (row, entry) in enumerate(zip(stored, expected_entries), 1):
+            number, blob, text = row
+            if number != expected_id or blob != canonical_bytes(entry) or text != self._text(entry):
                 fail('INDEX','Derived row differs from source snapshot; rebuild it.')
         words=db.execute('SELECT rowid,text FROM words ORDER BY rowid').fetchall()
         if words!=[(r[0],r[2]) for r in stored]:fail('INDEX','Derived lexical rows differ; rebuild it.')
