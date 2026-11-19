@@ -103,8 +103,11 @@ so a mutable source pathname cannot switch between probe and decode. It runs:
 All verification commands limit input demuxers to the MOV/MP4 and Matroska/WebM
 families and protocols to local files. The verifier also reads the first 64 KiB
 of the private snapshot for its file type. The WebM profile requires the EBML
-document type `webm`. The MP4 profile requires a declared MP4 or AVC brand and
-rejects the QuickTime major brand. This distinguishes containers that ffprobe
+document type `webm`. The MP4 profile accepts an `ftyp` major brand of `mp41` or
+`mp42`. An `isom`, `iso2` through `iso9`, or `avc1` major brand also qualifies
+when the compatible brands include `mp41` or `mp42`. An `avc1` compatibility
+entry alone is insufficient. QuickTime, 3GP and 3G2 major brands are rejected
+even if they list MP4 compatibility. This distinguishes containers that ffprobe
 reports under the same demuxer family. An edit list disguised as a supported
 media file is refused before following its referenced inputs. Failure
 transcripts exclude unrelated metadata and

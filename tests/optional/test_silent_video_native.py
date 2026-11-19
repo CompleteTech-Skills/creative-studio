@@ -98,6 +98,26 @@ class SilentMedia(core.SilentContracts):
         self.assert_receipt(video.verify_export(output, request, root=self.root), output)
         self.independent_decode(output)
 
+    def test_actual_avc_major_mp4_passes_independent_silent_verifier(self):
+        source = video.build_source(self.root, self.paths[:1], fps=self.source['fps'], origin='synthetic')
+        request = video.make_request(source)
+        output = self.root / 'avc-major.mp4'
+        self.ffmpeg('-framerate', '24', '-i', self.root / '%06d.png', '-frames:v', '1',
+                    '-an', '-vf', 'setsar=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                    '-movflags', '+default_base_moof+frag_keyframe+empty_moov', '-brand', 'avc1', output)
+        probe = self.independent_probe(output)
+        tags = probe['format']['tags']
+        self.assertEqual(tags['major_brand'], 'avc1')
+        self.assertIn('iso6', tags['compatible_brands'])
+        self.assertIn('mp41', tags['compatible_brands'])
+        self.assertEqual([(s['codec_type'], s['codec_name'], s['nb_read_frames']) for s in probe['streams']],
+                         [('video', 'h264', '1')])
+        self.independent_decode(output)
+        receipt = video.verify_export(output, request, root=self.root)
+        self.assert_receipt(receipt, output)
+        self.assertEqual(receipt['frame_count'], 1)
+        self.assertEqual(receipt['decode']['exit_status'], 0)
+
     def test_distinct_containers_with_shared_probe_family_are_rejected(self):
         cases = (('vp9-webm', '.webm', 'matroska', '.mkv'),
                  ('h264-mp4', '.mp4', 'mov', '.mov'),

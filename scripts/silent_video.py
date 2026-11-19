@@ -671,10 +671,9 @@ def _mp4_header_matches(header):
             major = header[payload:payload + 4]
             compatible = {header[index:index + 4] for index in range(payload + 8, end, 4)}
             mp4_versions = {b'mp41', b'mp42'}
-            # FFmpeg's MP4 muxer can declare an ISO base major brand. AVC
-            # compatibility alone is shared with the 3GP and 3G2 muxers.
+            # ISO base and AVC major brands need explicit MP4 compatibility.
             iso_base = major == b'isom' or (major[:3] == b'iso' and major[3] in b'23456789')
-            return major in mp4_versions or (iso_base and bool(compatible & mp4_versions))
+            return major in mp4_versions or ((iso_base or major == b'avc1') and bool(compatible & mp4_versions))
         if kind not in (b'free', b'skip', b'wide'):
             return False
         offset = end

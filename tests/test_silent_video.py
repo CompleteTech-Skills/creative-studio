@@ -70,6 +70,8 @@ class SilentContracts(unittest.TestCase):
             (b'isom', (b'iso2', b'avc1', b'mp41'), True),
             (b'mp42', (b'avc1',), True),
             (b'iso5', (b'iso6', b'mp41'), True),
+            (b'avc1', (b'iso6', b'mp42'), True),
+            (b'avc1', (b'iso6', b'avc1'), False),
             (b'isom', (b'iso2', b'avc1'), False),
             (b'3gp6', (b'isom', b'iso2', b'avc1'), False),
             (b'3g2b', (b'isom', b'iso2', b'avc1'), False),
@@ -80,6 +82,15 @@ class SilentContracts(unittest.TestCase):
                 size = 16 + 4 * len(brands)
                 header = struct.pack('>I', size) + b'ftyp' + major + b'\0'*4 + b''.join(brands)
                 self.assertIs(video._mp4_header_matches(header), expected)
+
+    def test_simulated_verifier_accepts_avc_major_with_mp41_compatibility(self):
+        artifact = self.root / 'avc-major.mp4'
+        artifact.write_bytes(struct.pack('>I4s4sI4s4s', 24, b'ftyp', b'avc1', 0, b'iso6', b'mp41'))
+        with patch.object(video, '_binary', return_value=sys.executable), \
+             patch.object(video, '_run', side_effect=self._simulated_verification_records()):
+            receipt = video.verify_export(artifact, self.request)
+        self.assertIs(receipt['verified'], True)
+        self.assertEqual(receipt['artifact_sha256'], video.file_hash(artifact))
 
     def _simulated_verification_records(self):
         # Portable contract fixtures: these records do not establish real media
