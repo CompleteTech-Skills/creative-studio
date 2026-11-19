@@ -52,6 +52,12 @@ try:
             child.wait(timeout=3)
             print('TREE_FINISHED', flush=True)
             sys.exit(0)
+        if mode == 'success-with-descendant' and not stopped():
+            if child.poll() is not None:
+                raise RuntimeError('Synthetic descendant exited before supervisor')
+            (root / 'live-descendant-at-exit').write_text(str(child.pid), encoding='ascii')
+            print('TREE_PARENT_FINISHED', flush=True)
+            sys.exit(0)
         if mode == 'output-limit' and not stopped():
             # Cross the 1 MiB limit without approaching the 16 MiB POSIX cap.
             for _ in range(32):
@@ -60,7 +66,7 @@ try:
     while not stopped() and not (root / 'finish').exists():
         idle()
 finally:
-    if child is not None:
+    if child is not None and mode != 'success-with-descendant':
         (root / 'stop').touch()
         try:
             child.wait(timeout=3)
@@ -177,6 +183,11 @@ class DirectorWorkerTreeTests(unittest.TestCase):
                 if mode == 'success':
                     self.assertEqual(result, {'success': True, 'reason': None, 'exit_code': 0})
                     self.assertEqual(text.strip(), 'TREE_FINISHED')
+                elif mode == 'success-with-descendant':
+                    self.assertEqual(result, {'success': True, 'reason': None, 'exit_code': 0})
+                    self.assertEqual(text.strip(), 'TREE_PARENT_FINISHED')
+                    self.assertEqual(int((root / 'live-descendant-at-exit').read_text()),
+                                     owned[1].pid)
                 else:
                     self.assertFalse(result['success'])
                     self.assertEqual(result['reason'], mode)
@@ -207,6 +218,10 @@ class DirectorWorkerTreeTests(unittest.TestCase):
 
     def test_success_finishes_tree_and_preserves_unrelated_process(self):
         self.run_tree('success')
+
+    @unittest.skipUnless(os.name == 'nt', 'Normal-exit descendant cleanup uses Windows jobs')
+    def test_success_stops_live_descendant_and_preserves_unrelated_process(self):
+        self.run_tree('success-with-descendant')
 
 
 if __name__ == '__main__':
