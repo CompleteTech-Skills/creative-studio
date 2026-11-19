@@ -42,7 +42,7 @@ def zip_read_scope(path, *, member=None, compression=None, code='RIG_BINARY_FORM
             preserved=str(path), correction='Use complete input with valid ZIP data and checksums; preserve the original for diagnosis.')
     try:yield
     except RigError:raise
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError)+codec_errors as exc:
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, UnicodeDecodeError)+codec_errors as exc:
         raise invalid(exc) from exc
     except OSError as exc:
         if compression == zipfile.ZIP_BZIP2 and type(exc) is OSError and exc.errno is None:

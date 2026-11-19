@@ -158,7 +158,7 @@ def restore_rig(archive_path,destination,*,limits=None):
                 name=portable_name(info.filename);key=name.casefold()
                 require(key not in names,'RIG_ARCHIVE_COLLISION','Duplicate or case-aliased archive member.')
                 mode=stat.S_IFMT(info.external_attr>>16)
-                require(mode in (0,stat.S_IFREG) and not info.flag_bits&1,'RIG_ARCHIVE_TYPE','Links, special files and encrypted entries are unsupported.')
+                require(mode in (0,stat.S_IFREG) and not info.flag_bits&0x61,'RIG_ARCHIVE_TYPE','Links, special files, encrypted and patched entries are unsupported.')
                 names[key]=name;total+=info.file_size
                 require(total<=limits['archive_bytes'],'RIG_ARCHIVE_LIMIT','Expanded archive exceeds its byte budget.')
             require('inventory.json' in names.values(),'RIG_ARCHIVE_INVENTORY','Archive inventory is missing or uses an aliased name.')

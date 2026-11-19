@@ -11,6 +11,7 @@ from pathlib import Path
 import stat
 from typing import Any
 import zipfile
+import zlib
 import numpy as np
 
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, valid_import_scale, validate_contract
@@ -306,7 +307,7 @@ def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash
                 # archive snapshot. No NumPy allocator consumes untrusted headers.
                 payload = read_bundle_member(archive, archive.getinfo(name + '.npy'))
                 arrays[name] = _materialize_array(payload, shape, dtype, offset, fortran)
-    except (OSError, ValueError, EOFError, zipfile.BadZipFile, RuntimeError) as exc:
+    except (OSError, ValueError, EOFError, zipfile.BadZipFile, RuntimeError, zlib.error) as exc:
         from rig_errors import RigError
         raise RigError('RIG_BINARY', 'Invalid native array data: ' + str(exc), asset=path.name) from exc
     return metadata, arrays

@@ -160,6 +160,34 @@ class RestoreErrorTests(unittest.TestCase):
             for member in ('metadata','array'):
                 with self.subTest(codec=label,member=member):
                     self.reject_native(native_package(self.original,method,corrupt=member),'native-corrupt-'+label+'-'+member)
+    def test_corrupt_deflate_native_bundles_are_structured(self):
+        # Deflate is the compressed native method main admits; its stream
+        # corruption must not escape as a raw zlib.error.
+        for member in ('metadata','array'):
+            with self.subTest(member=member):
+                self.reject_native(native_package(self.original,zipfile.ZIP_DEFLATED,corrupt=member),
+                                   'native-corrupt-deflate-'+member)
+
+    def test_patched_and_strongly_encrypted_flags_are_refused_at_admission(self):
+        for bit in (0x20,0x40):
+            with self.subTest(flag=hex(bit)):
+                data=bytearray(inventory_archive())
+                struct.pack_into('<H',data,data.index(b'PK\x01\x02')+8,bit)
+                source=self.root/('flag-%x.zip'%bit);source.write_bytes(data)
+                target=self.root/('flag-%x-out'%bit)
+                with self.assertRaises(RigError) as caught:restore_rig(source,target)
+                self.assertEqual(caught.exception.report['code'],'RIG_ARCHIVE_TYPE')
+                self.assertFalse(target.exists());self.assertEqual(source.read_bytes(),data)
+        self.assertFalse(list(self.root.glob('.rig-restore-*')))
+
+    def test_invalid_utf8_member_names_are_structured(self):
+        data=bytearray(inventory_archive())
+        central=data.index(b'PK\x01\x02')
+        struct.pack_into('<H',data,central+8,0x800)
+        name_length=struct.unpack_from('<H',data,central+28)[0]
+        data[central+46:central+46+name_length]=b'\xff'*name_length
+        self.reject(bytes(data),'invalid-utf8-name')
+
     def test_encrypted_entry_admission_keeps_its_existing_error_code(self):
         data=bytearray(inventory_archive())
         struct.pack_into('<H',data,6,1)

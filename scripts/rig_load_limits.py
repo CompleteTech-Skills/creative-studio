@@ -12,6 +12,7 @@ from pathlib import Path
 import struct
 import binascii
 import zipfile
+import zlib
 
 import numpy as np
 
@@ -312,5 +313,6 @@ def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None
             return metadata, headers, snapshot
     except RigError:
         raise
-    except (OSError, ValueError, EOFError, KeyError, TypeError, zipfile.BadZipFile, OverflowError, RuntimeError, struct.error) as exc:
+    except (OSError, ValueError, EOFError, KeyError, TypeError, zipfile.BadZipFile, OverflowError, RuntimeError,
+            struct.error, zlib.error) as exc:
         raise RigError('RIG_BINARY', 'Invalid native binary data: ' + str(exc), asset=path.name) from exc

@@ -185,10 +185,11 @@ python scripts/rig.py restore --file output/character.zip --destination output/r
 
 `restore` reports input failures as structured errors. Malformed or truncated
 package containers and CRC or decompression failures report `RIG_ARCHIVE_FORMAT`.
-Unsupported compression methods or ZIP extraction features report
-`RIG_ARCHIVE_FORMAT`, and a selected optional Python codec that is unavailable
-reports `RIG_ARCHIVE_CODEC`. Corrupt native bundles inside a hash-consistent
-package keep the native loader's `RIG_BINARY` code. Errno-bearing filesystem
+Unsupported ZIP extraction features report `RIG_ARCHIVE_FORMAT`; an
+unsupported member compression method or a selected optional Python codec that
+is unavailable reports `RIG_ARCHIVE_CODEC`. Encrypted, strongly encrypted and
+patched members report `RIG_ARCHIVE_TYPE`. Corrupt native bundles inside a
+hash-consistent package, including corrupt deflate streams, report `RIG_BINARY`. Errno-bearing filesystem
 failures and output writes remain distinct. Nothing is published and only the
 attempt's private staging directory is removed.
 
