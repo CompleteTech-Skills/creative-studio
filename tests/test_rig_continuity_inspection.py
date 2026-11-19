@@ -525,6 +525,19 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertEqual(result['status'],'incompatible')
         self.assertEqual({x['code'] for x in result['issues']},{'MISSING_BONE','MISSING_SOCKET'})
 
+    def test_unavailable_facial_controls_are_unknown_not_a_difference(self):
+        path,_=gltf(self.root,skinned=True);asset=dict(source=pointer(self.root,path))
+        native=native_request(self.root,fixture(self.root,name='native',animated=False))
+        self.assertIsNone(compare_assets(self.root,asset,native)['facial_controls_identity'])
+        for left,right in ((asset,native),(native,asset)):
+            with self.subTest(left=left is native):
+                codes={i['code'] for i in classify_rigs(self.root,left,right)['issues']}
+                self.assertNotIn('FACIAL_CONTROLS_DIFFER',codes)
+                self.assertIn('FACIAL_CONTROLS_UNAVAILABLE',codes)
+        other,_=gltf(self.root,name='other.glb',width=2.,skinned=True)
+        codes={i['code'] for i in classify_rigs(self.root,asset,dict(source=pointer(self.root,other)))['issues']}
+        self.assertFalse(codes & {'FACIAL_CONTROLS_DIFFER','FACIAL_CONTROLS_UNAVAILABLE'})
+
     def test_separately_reviewed_native_facial_controls_affect_exact_identity(self):
         from rig_review import apply_review
         from rig_validation import REVIEW_DIMENSIONS
