@@ -182,8 +182,10 @@ def normalize_anatomy_bindings(manifest, *, occurrences=()):
     current = manifest['uncertainties']
     scope = current._scope if isinstance(current, _UncertaintyRecords) else None
     counts = Counter(id(issue) for issue in current)
+    # Count every live record of an origin, whatever its scope: an admitted
+    # original kept beside its own copy still owns the occurrence itself.
     copies = Counter(issue._origin for issue in current
-                     if isinstance(issue, _AnatomyOccurrence) and issue._scope is scope)
+                     if isinstance(issue, _AnatomyOccurrence))
     normalized = []
     for index, issue in enumerate(records):
         owner, binding = admitted.get(id(issue), (None, None))

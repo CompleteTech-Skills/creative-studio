@@ -82,5 +82,32 @@ class UncertaintyCopyIdentityTests(unittest.TestCase):
         self.assertEqual(case.rig.manifest['uncertainties'], [case.grip, case.jaw, case.jaw])
 
 
+    def assert_each_occurrence_bound_once(self):
+        bound = [b for b in self.case.rig.manifest['anatomy_uncertainty_bindings'] if b is not None]
+        self.assertEqual(len(bound), len(set(bound)))
+
+    def test_original_kept_beside_its_copy_owns_the_occurrence_alone(self):
+        case = self.case
+        issues = case.rig.manifest['uncertainties']
+        case.rig.manifest['uncertainties'] = deepcopy(issues) + [issues[1]]
+        case.save_and_reload()
+        self.assert_each_occurrence_bound_once()
+        self.assertEqual([b is not None for b in case.rig.manifest['anatomy_uncertainty_bindings']],
+                         [True, False, False, True])
+        case.remove_left_jaw()
+        self.assertEqual(case.rig.manifest['uncertainties'], [case.grip, case.jaw, case.jaw])
+
+    def test_copied_array_beside_its_original_does_not_duplicate_ownership(self):
+        case = self.case
+        issues = case.rig.manifest['uncertainties']
+        case.rig.manifest['uncertainties'] = deepcopy(issues) + issues
+        case.save_and_reload()
+        self.assert_each_occurrence_bound_once()
+        self.assertEqual([b is not None for b in case.rig.manifest['anatomy_uncertainty_bindings']],
+                         [False, False, False, True, True, False])
+        case.remove_left_jaw()
+        self.assertEqual(case.rig.manifest['uncertainties'],
+                         [case.grip, case.jaw, case.jaw, case.grip, case.jaw])
+
 if __name__ == '__main__':
     unittest.main()
