@@ -405,6 +405,63 @@ finally:case.tearDown()
         self.store.resume(job,verifier=self.verify)
         self.assertEqual(self.store.status(job)['frames'][0]['state'],'queued')
 
+    def test_resume_keeps_completed_receipt_when_verification_is_temporarily_unavailable(self):
+        self.request.update(max_attempts=1)
+        self.request['frame_range']['end'] = 6
+        job = self.submit()
+        lease = self.store.claim(job)
+        output, result = self.output(lease)
+        self.store.publish(lease, output, result, self.verify)
+        before = self.store.status(job)
+        failures = (OSError('synthetic verifier I/O interruption'),
+                    Render3DError('timeout', 'Synthetic verification timeout.'),
+                    Render3DError('unsupported-feature', 'Synthetic decoder unavailable.'))
+        for failure in failures:
+            def unavailable(*_):
+                raise failure
+            with self.subTest(error=type(failure).__name__, message=str(failure)):
+                with self.assertRaises(type(failure)):
+                    self.store.resume(job, verifier=unavailable)
+                self.assertEqual(self.store.status(job), before)
+        self.store.resume(job, verifier=self.verify)
+        self.assertEqual(self.store.status(job)['frames'][0]['receipt_sha256'],
+                         before['frames'][0]['receipt_sha256'])
+        delivered = self.store.materialize(job, self.root/'original-delivery', self.verify)
+        self.assertEqual(delivered['successful'], [5])
+
+    def test_refresh_preserves_bound_cache_when_existing_probe_is_temporarily_unavailable(self):
+        self.request['frame_range']['end'] = 6
+        original = self.submit()
+        original_lease = self.store.claim(original)
+        output, result = self.output(original_lease)
+        self.store.publish(original_lease, output, result, self.verify)
+        original_state = self.store.status(original)
+        existing = self.store.root/'cache'/original_lease['cache_key']
+        before = (existing/'cache.json').read_bytes()
+
+        fresh = deepcopy(self.request)
+        fresh.update(id='refresh-retry', cache_policy='refresh')
+        fresh['destination']['path'] = 'fresh-retry'
+        job = self.submit(fresh)
+        lease = self.store.claim(job)
+        output, result = self.output(lease)
+        self.assertEqual(lease['cache_key'], original_lease['cache_key'])
+
+        def transient(request, value, source):
+            if source == existing:
+                raise Render3DError('timeout', 'Synthetic original-cache verifier timeout.')
+            return self.verify(request, value, source)
+
+        with self.assertRaisesRegex(Render3DError, 'original-cache verifier timeout'):
+            self.store.publish(lease, output, result, transient)
+        self.assertEqual((existing/'cache.json').read_bytes(), before)
+        self.assertEqual(self.store.status(original), original_state)
+        self.assertEqual(list((self.store.root/'staging').glob('corrupt-*')), [])
+        self.store.publish(lease, output, result, self.verify)
+        self.assertNotEqual(self.store.status(job)['frames'][0]['receipt_key'], existing.name)
+        self.assertEqual(self.store.materialize(original, self.root/'base-delivery', self.verify)['successful'], [5])
+        self.assertEqual(self.store.materialize(job, self.root/'new-delivery', self.verify)['successful'], [5])
+
     def test_refresh_policy_never_accepts_cached_frame(self):
         job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
         self.store.publish(lease,output,result,self.verify)

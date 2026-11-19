@@ -77,7 +77,7 @@ successful publication. A crash between publication and the
 transaction commit leaves a reusable verified cache entry, not a false completion.
 Corrupt cache bytes are retained in a named quarantine before a newly rendered,
 verified replacement is installed. Both the retained evidence and its replacement
-count against cache capacity; repair fails without moving either entry when that
+count against cache capacity. Resume, reuse and refresh preserve an existing receipt when verification is unavailable or encounters a transient I/O error. A later independent verification can settle the same receipt. Repair fails without moving either entry when that
 capacity is insufficient. Failed backend output is preserved for
 inspection.
 

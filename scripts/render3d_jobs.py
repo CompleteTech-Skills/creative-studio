@@ -28,6 +28,22 @@ from render3d_contracts import Render3DError, require, validate, make_frame_spec
 VERSION = 1
 TERMINAL = ('complete', 'cancelled', 'failed')
 RETRYABLE = ('timeout','worker-crash','device-initialization')
+_CACHE_INVALIDITY = frozenset({
+    'corrupt-output', 'incomplete-output', 'invalid-input', 'missing-asset',
+    'ownership', 'stale-asset', 'stale-cache', 'verification-failed',
+})
+
+
+def _confirmed_cache_failure(error):
+    # Raw I/O errors, including a verifier's missing executable or temporary
+    # dependency, do not establish an invalid persisted receipt. Metadata reads
+    # classify a missing owned path and retain the underlying I/O cause.
+    if isinstance(error, OSError):
+        return False
+    cause = error.__cause__
+    if isinstance(cause, OSError) and not isinstance(cause, FileNotFoundError):
+        return False
+    return not isinstance(error, Render3DError) or error.report['category'] in _CACHE_INVALIDITY
 
 
 def _dump(value):
@@ -702,10 +718,8 @@ class JobStore:
             require(record['request']==self.frame_request(lease) and record['spec']==spec
                     and _identity(path.stat(follow_symlinks=False))==intent['payload'],
                     'ownership','Interrupted frame publication changed.')
-        except (ValueError,KeyError,FileNotFoundError) as exc:
-            if isinstance(exc,Render3DError) and exc.report['category'] in RETRYABLE:
-                raise
-            if isinstance(exc.__cause__,OSError) and not isinstance(exc.__cause__,FileNotFoundError):
+        except (ValueError, KeyError, OSError) as exc:
+            if not _confirmed_cache_failure(exc):
                 raise
             return None
         return key
@@ -749,7 +763,10 @@ class JobStore:
                 _,digest=self._verify_cache(lease,verifier,key=frame['receipt_key'],digest=frame['receipt_sha256'])
                 if frame.get('unbound_reuse'):
                     historical.append((frame,digest))
-            except (Render3DError,ValueError,OSError,KeyError):invalid.append(frame['frame'])
+            except (ValueError, OSError, KeyError) as exc:
+                if not _confirmed_cache_failure(exc):
+                    raise
+                invalid.append(frame['frame'])
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
             require(row is not None,'invalid-input','Unknown render job.')
@@ -836,8 +853,12 @@ class JobStore:
         current=make_frame_spec(lease['request'],lease['frame'],Path(lease['snapshot'])/'snapshot.json')
         require(current==lease['spec'],'stale-asset','Source changed since job submission.')
         if lease['request']['cache_policy']=='refresh':return False
-        try:_,digest=self._verify_cache(lease,verifier)
-        except (Render3DError,ValueError,OSError,KeyError):return False
+        try:
+            _, digest = self._verify_cache(lease, verifier)
+        except (ValueError, OSError, KeyError) as exc:
+            if not _confirmed_cache_failure(exc):
+                raise
+            return False
         with self._transaction() as db:
             self._owned(db,lease)
             require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
@@ -920,7 +941,9 @@ class JobStore:
                 except FileExistsError:
                     try:
                         existing,_=self._verify_cache(lease,verifier)
-                    except (Render3DError,ValueError,OSError,KeyError):
+                    except (ValueError, OSError, KeyError) as exc:
+                        if not _confirmed_cache_failure(exc):
+                            raise
                         # Preserve corrupt bytes as evidence before installing a
                         # newly rendered and independently verified replacement.
                         require(used<=self.capacity['storage_bytes'],
