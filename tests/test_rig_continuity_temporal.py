@@ -234,6 +234,35 @@ class TemporalTests(unittest.TestCase):
                 registry.append_events('main', [event('scaled-distinct', 2002, kind='relocate', target='aster',
                                                       before=distinct, after=after)], expected_sha256=head)
 
+    def test_native_cancellation_bound_covers_parent_chain(self):
+        def configure(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            nodes['camera']['parent'] = None
+            nodes['camera']['transform'] = dict(TRANSFORM, translation=[1000.3, 0.0, 0.0])
+            nodes['mesh']['parent'] = 'camera' if index == 0 else None
+            nodes['mesh']['transform'] = dict(TRANSFORM, translation=[-1000.2 if index == 0 else 0.1, 0.0, 0.0])
+            scene['roots'] = [node['id'] for node in scene['nodes'] if node['parent'] is None]
+
+        after = dict(TRANSFORM, translation=[3.0, 0.0, 0.0])
+        for name, before, accepted in (('chain-authored', [0.1, 0.0, 0.0], True),
+                                       ('chain-distinct', [0.1 + 1e-9, 0.0, 0.0], False)):
+            with self.subTest(case=name):
+                root = Path(self.temp.name) / name
+                plan = fixture(root, configure_scene=configure)
+                # The second scene seeds the same entity unparented at exactly 0.1.
+                with IdentityRegistry(Path(self.temp.name) / (name + '.sqlite'), asset_root=root) as registry:
+                    head = registry.create_timeline(plan)
+                    seed = registry.temporal_snapshot('main', 'shot-0', 2, boundary='before')['snapshot']
+                    self.assertGreater(abs(seed['entities'][0]['transform']['translation'][0] - 0.1),
+                                       8 * math.ulp(1.0))
+                    move = event(name, 2002, kind='relocate', target='aster',
+                                 before=dict(TRANSFORM, translation=before), after=after)
+                    if accepted:
+                        registry.append_events('main', [move], expected_sha256=head)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
+                            registry.append_events('main', [move], expected_sha256=head)
+
     def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
         coordinate = 999999999999.0
         angle_component = math.sqrt(0.5)

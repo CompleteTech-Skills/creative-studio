@@ -86,6 +86,49 @@ def _same_transform(a, b, *, native, floor=None):
                for sign in (1, -1))
 
 
+def _magnitude(transform):
+    """Absolute local matrix bounding every term summed into local_matrix."""
+    import numpy
+    from scene3d_math import local_matrix
+    local = local_matrix(dict(transform, translation=[0.0, 0.0, 0.0], **(
+        {'pivot': [0.0, 0.0, 0.0]} if 'pivot' in transform else {})))
+    result = numpy.abs(local)
+    result[:3, 3] = numpy.abs(numpy.asarray(transform['translation'], dtype=float))
+    if 'pivot' in transform:
+        pivot = numpy.abs(numpy.asarray(transform['pivot'], dtype=float))
+        result[:3, 3] += pivot + result[:3, :3] @ pivot
+    return result
+
+
+def _translation_floors(scene, scene_to_world):
+    """Per-node absolute translation roundoff bound through the full chain.
+
+    Mirrors evaluate_transforms with absolute values, so cancellation between
+    parents, locals, pivots and scene_to_world is bounded by the magnitudes that
+    cancelled rather than by the small result. The factor grows with depth.
+    """
+    import numpy
+    nodes = {node['id']: node for node in scene['nodes']}
+    outer = _magnitude(scene_to_world)
+    chains = {}
+    def visit(identifier):
+        if identifier not in chains:
+            node = nodes[identifier]
+            local = _magnitude(node['transform'])
+            if node['parent'] is None:
+                chains[identifier] = (local, 1)
+            else:
+                parent, depth = visit(node['parent'])
+                chains[identifier] = (parent @ local, depth + 1)
+        return chains[identifier]
+    floors = {}
+    for identifier in nodes:
+        chain, depth = visit(identifier)
+        total = outer @ chain
+        floors[identifier] = (8 * (depth + 1) * math.ulp(1.0) * total[:3, 3]).tolist()
+    return floors
+
+
 def _operations(events, initial, until=None, floors=None):
     """Replay from source; no mutable evaluator state survives a query."""
     state = deepcopy(initial)
@@ -195,7 +238,7 @@ class TemporalEngine:
             graph_state = SceneGraph(scene).evaluate_base()
             matrix = local_matrix(entry['scene_to_world'])
             import numpy
-            linear, offset = numpy.abs(matrix[:3, :3]), numpy.abs(matrix[:3, 3])
+            node_floors = _translation_floors(scene, entry['scene_to_world'])
             scene_floors = {}
             entities, nodes = {}, set()
             for binding in entry['entities']:
@@ -208,8 +251,7 @@ class TemporalEngine:
                 result = evaluated[node]
                 world = numpy.array(result['world_matrix'])
                 transform = decompose(matrix @ world)
-                # Bound on the translation residual of the composition.
-                scene_floors[entity] = (8 * math.ulp(1.0) * (linear @ numpy.abs(world[:3, 3]) + offset)).tolist()
+                scene_floors[entity] = node_floors[node]
                 state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=graph_state[node]['render_visible'])
