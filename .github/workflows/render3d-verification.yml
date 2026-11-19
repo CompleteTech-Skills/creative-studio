@@ -46,12 +46,19 @@ jobs:
           import sys
           import unittest
 
-          suite = unittest.TestSuite(
-              unittest.defaultTestLoader.discover("tests", pattern=pattern)
-              for pattern in ("test_render3d_verify*.py", "test_render3d_codec_compatibility.py")
+          patterns = (
+              "test_render3d_verify.py",
+              "test_render3d_verify_codec_consumption.py",
+              "test_render3d_codec_compatibility.py",
           )
-          result = unittest.TextTestRunner(verbosity=2).run(suite)
-          if result.testsRun == 0 or result.skipped:
+          suites = []
+          for pattern in patterns:
+              suite = unittest.defaultTestLoader.discover("tests", pattern=pattern)
+              if not suite.countTestCases():
+                  raise SystemExit(f"Required image verification module has no tests: {pattern}")
+              suites.append(suite)
+          result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(suites))
+          if result.skipped:
               raise SystemExit("The complete independent image verification suite must execute without skips.")
           sys.exit(0 if result.wasSuccessful() else 1)
           PY

@@ -248,6 +248,12 @@ Declared lengths do not authorize allocation before geometry and working-budget
 checks. These checks supplement the native pixel decoder and do not establish
 scene, lighting or artistic correctness.
 
+The verifier reads each scanline offset at its table index and walks one
+physical chunk at a time. This supports both physical scanline orders with
+bounded working storage. A DWA block admits a zero run only within its
+remaining coefficient slots, with a separate end-of-block marker.
+[OpenEXR scanline file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html#component-four-offset-tables)
+
 Format references are pinned to OpenEXR v3.5.4:
 [codec dispatch/raw fallback](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/compression.c),
 [Huffman frames](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/internal_huf.c),

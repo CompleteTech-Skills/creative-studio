@@ -377,33 +377,37 @@ def _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels=False):
     require({b'channels', b'compression', b'dataWindow', b'displayWindow'} <= seen,
             'corrupt-output', 'EXR is missing its channels, compression or full-frame window attributes.')
     block_rows = {0: 1, 1: 1, 2: 1, 3: 16, 4: 32, 5: 16, 6: 32, 7: 32, 8: 32, 9: 256}
-    require(compression in block_rows, 'unsupported-feature',
+    rows = block_rows.get(compression)
+    require(rows is not None, 'unsupported-feature',
             'EXR compression envelope is not independently verified.')
-    if compression in block_rows:
-        rows = block_rows[compression]
-        height = int(resolution[1])  # Both encoded windows matched the requested dimensions above.
-        chunks = (height+rows-1)//rows
-        require(chunks*8 <= memory_bytes, 'system-memory', 'EXR scanline table exceeds verification memory budget.')
-        table = stream.read(chunks*8)
-        require(len(table) == chunks*8, 'corrupt-output', 'Truncated EXR scanline table.')
-        boundary = stream.tell()
-        scanlines = set()
-        for offset in sorted(value for (value,) in struct.iter_unpack('<Q', table)):
-            require(offset == boundary, 'corrupt-output', 'EXR chunk table contains gaps, aliases or unreferenced bytes.')
-            stream.seek(offset)
-            chunk = stream.read(8)
-            require(len(chunk) == 8, 'corrupt-output', 'Truncated EXR chunk.')
-            line, length = struct.unpack('<iI', chunk)
-            require(0 <= line < height and line % rows == 0 and line not in scanlines,
-                    'corrupt-output', 'Invalid EXR scanline chunk.')
-            scanlines.add(line)
-            boundary = offset+8+length
-            require(boundary <= end, 'corrupt-output', 'Truncated EXR pixel payload.')
-            require(length <= memory_bytes, 'system-memory', 'EXR compressed chunk exceeds verification memory budget.')
-            payload = stream.read(length)
-            require(len(payload) == length, 'corrupt-output', 'Truncated EXR pixel payload.')
-            exr_consumption.verify_chunk(payload, compression, resolution[0], min(rows, height - line), channels, memory_bytes)
-        require(boundary == end, 'corrupt-output', 'Unexpected bytes after EXR chunks.')
+    height = int(resolution[1])  # Both encoded windows matched the requested dimensions above.
+    chunks = (height+rows-1)//rows
+    table_start = stream.tell()
+    boundary = table_start + chunks*8
+    require(boundary <= end, 'corrupt-output', 'Truncated EXR scanline table.')
+    for _ in range(chunks):
+        stream.seek(boundary)
+        chunk = stream.read(8)
+        require(len(chunk) == 8, 'corrupt-output', 'Truncated EXR chunk.')
+        line, length = struct.unpack('<iI', chunk)
+        require(0 <= line < height and line % rows == 0, 'corrupt-output', 'Invalid EXR scanline chunk.')
+        # The table is indexed by increasing Y even when physical chunks
+        # are written in decreasing Y. Matching each physical position to
+        # its table entry also proves scanline uniqueness without a set.
+        stream.seek(table_start + (line//rows)*8)
+        entry = stream.read(8)
+        require(len(entry) == 8, 'corrupt-output', 'Truncated EXR scanline table.')
+        offset = struct.unpack('<Q', entry)[0]
+        require(offset == boundary, 'corrupt-output', 'EXR chunk table contains gaps, aliases or unreferenced bytes.')
+        stream.seek(offset+8)
+        boundary = offset+8+length
+        require(boundary <= end, 'corrupt-output', 'Truncated EXR pixel payload.')
+        require(length <= memory_bytes, 'system-memory', 'EXR compressed chunk exceeds verification memory budget.')
+        payload = stream.read(length)
+        require(len(payload) == length, 'corrupt-output', 'Truncated EXR pixel payload.')
+        exr_consumption.verify_chunk(payload, compression, resolution[0], min(rows, height - line), channels, memory_bytes)
+        del payload
+    require(boundary == end, 'corrupt-output', 'Unexpected bytes after EXR chunks.')
     stream.seek(0)
 
 

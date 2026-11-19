@@ -8,11 +8,14 @@ import io
 import struct
 import tempfile
 from pathlib import Path
+import tracemalloc
 import unittest
 from unittest import mock
 import zlib
 
 from test_render3d_verify import DEPENDENCIES, Render3DError, output, verify_image, decode_image
+from exr_consumption import _consume_dwa_ac
+from render3d_verify import _exr_envelope
 
 if DEPENDENCIES:
     import numpy as np
@@ -128,6 +131,35 @@ class CodecConsumption(unittest.TestCase):
         parts[0] += b'\0'
         header[2] += 1
         self.refuse_before_native(replace_chunk(data, struct.pack('<11Q', *header) + prefix + b''.join(parts)))
+
+    def test_explicit_dwa_zero_runs_fit_the_ac_slots(self):
+        _consume_dwa_ac(iter((0xff3f, 0xff00)), 2)
+        _consume_dwa_ac(iter((1, 0xff3e)), 1)
+        for words in ((0xff40,), (1, 0xff3f)):
+            with self.subTest(words=words), self.assertRaises(Render3DError) as refused:
+                _consume_dwa_ac(iter(words), 1)
+            self.assertEqual(refused.exception.report['category'], 'corrupt-output')
+
+    def test_narrow_exr_preflight_streams_scanlines_in_both_orders(self):
+        height, budget = 1024, 8192
+        values = np.arange(height, dtype=np.float32).reshape(height, 1)
+        for order in (OpenEXR.INCREASING_Y, OpenEXR.DECREASING_Y):
+            with self.subTest(order=order):
+                with OpenEXR.File({'compression': OpenEXR.NO_COMPRESSION, 'lineOrder': order},
+                                  {'Z': values}) as writer:
+                    writer.write(str(self.path))
+                stream = io.BytesIO(self.path.read_bytes())
+                tracemalloc.start()
+                try:
+                    baseline, _ = tracemalloc.get_traced_memory()
+                    _exr_envelope(stream, [1, height], budget, 32, pixels=True)
+                    _, peak = tracemalloc.get_traced_memory()
+                finally:
+                    tracemalloc.stop()
+                self.assertLessEqual(peak - baseline, budget)
+                _, decoded = decode_image(self.path, output=output('exr', 32, passes=['depth']), resolution=[1, height],
+                                          pass_name='depth', memory_bytes=budget)
+                np.testing.assert_array_equal(decoded['Z'], values)
 
     def test_dwa_decoded_ac_words_are_consumed_by_all_native_blocks(self):
         for codec in ('DWAA', 'DWAB'):

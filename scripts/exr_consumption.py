@@ -212,15 +212,26 @@ def _dwa(data, width, height, channels, memory_bytes):
         words = _huffman_values(ac, ac_count, available + len(ac))
     else:
         words = (word for (word,) in struct.iter_unpack('<H', _inflate(ac, 2 * ac_count, available + len(ac))))
-    # DCT channels use one DC and at most 63 run-coded AC words per 8x8
-    # block. Check all decoded AC words are consumed, including clipped edges.
+    _consume_dwa_ac(words, blocks)
+
+
+def _consume_dwa_ac(words, blocks):
+    # An explicit zero run uses the remaining slots. The zero-valued run
+    # marker terminates the block and consumes no additional input words.
     missing = object()
     for _ in range(blocks):
         coefficient = 1
         while coefficient < 64:
             word = next(words, missing)
             _check(word is not missing)
-            coefficient += ((word & 255) or 64) if word & 0xff00 == 0xff00 else 1
+            if word & 0xff00 == 0xff00:
+                run = word & 255
+                if run == 0:
+                    break
+                _check(run <= 64 - coefficient)
+                coefficient += run
+            else:
+                coefficient += 1
     _check(next(words, missing) is missing)
 
 
