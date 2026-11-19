@@ -1,5 +1,6 @@
 """Real native scene persistence, failure recovery and archive regressions."""
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
 import io
 import struct
@@ -491,6 +492,79 @@ raise AssertionError('writer was not excluded')
         with self.assertRaises(RigError):self.repo.recover('corrupt-journal',0)
         self.assertEqual((self.repo.root/'HEAD.json').read_bytes(),head)
 
+    def test_recovery_requires_exact_bounded_history_before_or_after_head_commit(self):
+        import editor3d_repository as module
+
+        for committed in (False, True):
+            with self.subTest(committed=committed):
+                repo = EditorRepository.create(self.source, self.root / f'bounded-{committed}', limits={'max_history': 2})
+                for i in range(3):
+                    repo.apply(i, self.move(4 + i), f'edit-{i}')
+                with self.fail_head_once(write_then_fail=committed), self.assertRaises(OSError):
+                    repo.undo(3, 'recover-undo')
+                journal, = (repo.root / 'journal').glob('*.json')
+                original = json.loads(journal.read_bytes())
+                self.assertEqual(original['new_head']['undo'], [1])
+                self.assertEqual(original['new_head']['redo'], [3])
+                for key, invalid in [('undo', [0]), ('redo', [2])]:
+                    changed = deepcopy(original)
+                    changed['new_head'][key] = invalid
+                    module._write_metadata(journal, changed)
+                    if committed:
+                        module._write_metadata(repo.root / 'HEAD.json', changed['new_head'])
+                    head = (repo.root / 'HEAD.json').read_bytes()
+                    self.assertFalse(repo.recovery()[0]['can_recover'])
+                    with self.assertRaises(RigError) as refused:
+                        repo.recover('recover-undo', 4 if committed else 3)
+                    self.assertEqual(refused.exception.report['code'], 'EDITOR3D_HISTORY')
+                    self.assertEqual((repo.root / 'HEAD.json').read_bytes(), head)
+                    self.assertTrue(journal.is_file())
+                module._write_metadata(journal, original)
+                if committed:
+                    module._write_metadata(repo.root / 'HEAD.json', original['new_head'])
+                recovered = repo.recover('recover-undo', 4 if committed else 3)
+                self.assertEqual(self.mesh_x(recovered), 5)
+                self.assertEqual(self.mesh_x(repo.redo(4, 'redo')), 6)
+
+    def test_public_snapshots_only_admit_committed_revisions(self):
+        with self.fail_head_once(), self.assertRaises(OSError):
+            self.repo.apply(0, self.move(8), 'pending')
+        reopened = EditorRepository(self.repo.root)
+        item, = reopened.recovery()
+        revision, digest = item['revision'], item['new_head']['sha256']
+        for select, args in ((reopened.snapshot, (revision,)), (reopened.native_snapshot, (revision, digest))):
+            with self.assertRaises(RigError) as refused:
+                select(*args)
+            self.assertEqual(refused.exception.report['code'], 'EDITOR3D_REVISION')
+        self.assertEqual(reopened.history()[-1]['revision'], 0)
+        recovered = reopened.recover('pending', 0)
+        self.assertEqual(reopened.snapshot(revision), recovered)
+        self.assertEqual(reopened.native_snapshot(revision, digest)['inventory'], recovered['inventory'])
+
+    def test_recovery_acknowledges_exact_revision_after_next_writer_commits(self):
+        import editor3d_repository as module
+
+        with self.fail_head_once(), self.assertRaises(OSError):
+            self.repo.apply(0, self.move(8), 'pending')
+        next_writer = EditorRepository(self.repo.root)
+        waiting = [True]
+
+        @contextmanager
+        def advance_on_unlock(root):
+            with job_lock(root):
+                yield
+            if waiting:
+                waiting.pop()
+                next_writer.undo(1, 'downstream')
+
+        with patch.object(module, 'job_lock', advance_on_unlock):
+            recovered = self.repo.recover('pending', 0)
+        self.assertEqual(self.repo.snapshot()['revision'], 2)
+        self.assertEqual(recovered, self.repo.snapshot(1))
+        self.assertEqual(self.mesh_x(recovered), 8)
+        self.assertTrue(recovered['undo_available'])
+        self.assertFalse(recovered['redo_available'])
+
     def test_verified_private_stage_can_recover_before_publication(self):
         import editor3d_repository as module
         with patch.object(module,'_rename_no_replace',side_effect=OSError('injected publication stop')):
@@ -547,6 +621,9 @@ raise AssertionError('writer was not excluded')
             with self.assertRaises(RigError) as refused:
                 self.repo.save_as(parent / 'new-parent' / 'export')
             self.assertEqual(refused.exception.report['code'], 'EDITOR3D_DESTINATION')
+            with self.assertRaises(RigError) as refused:
+                self.repo.archive(parent / 'new-parent' / 'export.zip')
+            self.assertEqual(refused.exception.report['code'], 'EDITOR3D_DESTINATION')
         self.assertFalse((self.repo.root / 'new-parent').exists())
         self.assertFalse((self.root / 'absent').exists())
         self.assertEqual(self.repo._all_files(), untouched)
@@ -565,6 +642,38 @@ raise AssertionError('writer was not excluded')
         self.repo.archive(self.root/'archive.zip');destination=self.root/'existing';destination.mkdir()
         with self.assertRaises(RigError):EditorRepository.restore_archive(self.root/'archive.zip',destination)
         self.assertTrue(destination.is_dir());self.assertEqual(list(destination.iterdir()),[])
+
+    def test_archive_requires_head_stacks_derived_from_committed_actions(self):
+        self.repo.apply(0, self.move(), 'move')
+        self.repo.restore_revision(0, 1, 'restore')
+        self.repo.undo(2, 'undo-restore')
+        archive = self.root / 'valid.zip'
+        self.repo.archive(archive)
+        with zipfile.ZipFile(archive) as source:
+            members = {name: source.read(name) for name in source.namelist()}
+        head = json.loads(members['HEAD.json'])
+        self.assertEqual((head['undo'], head['redo']), ([0], [2]))
+        head['redo'] = [1]
+        members['HEAD.json'] = json.dumps(head).encode()
+        receipt = json.loads(members['archive-receipt.json'])
+        receipt['head'] = head
+        receipt['files']['HEAD.json'] = dict(bytes=len(members['HEAD.json']),
+                                             sha256=hashlib.sha256(members['HEAD.json']).hexdigest())
+        members['archive-receipt.json'] = json.dumps(receipt).encode()
+        invalid = self.root / 'invalid-history.zip'
+        with zipfile.ZipFile(invalid, 'w') as output:
+            for name, data in members.items():
+                output.writestr(name, data)
+        with self.assertRaises(RigError) as refused:
+            EditorRepository.verify_archive(invalid)
+        self.assertEqual(refused.exception.report['code'], 'EDITOR3D_ARCHIVE')
+        self.assertEqual(refused.exception.__cause__.report['code'], 'EDITOR3D_HISTORY')
+        destination = self.root / 'restored'
+        with self.assertRaises(RigError):
+            EditorRepository.restore_archive(invalid, destination)
+        self.assertFalse(destination.exists())
+        restored = EditorRepository.restore_archive(archive, destination)
+        self.assertEqual(self.mesh_x(restored.redo(3, 'redo-restore')), 2)
 
     def test_archive_restores_repetitive_native_provenance_bytes(self):
         from scene3d_contracts import canonical_bytes
@@ -619,6 +728,24 @@ raise AssertionError('writer was not excluded')
             with self.assertRaises(FileExistsError):
                 self.repo.archive(destination)
         self.assertEqual(destination.read_bytes(), b'foreign archive destination')
+
+    def test_archive_publishes_only_in_admitted_destination_parent(self):
+        import editor3d_repository as module
+
+        parent = self.root / 'exports'
+        parent.mkdir()
+        admitted = self.root / 'original-exports'
+        publish = module.publish_verified_file
+
+        def change_parent(source_fd, target, **kwargs):
+            parent.rename(admitted)
+            parent.mkdir()
+            return publish(source_fd, target, **kwargs)
+
+        with patch.object(module, 'publish_verified_file', side_effect=change_parent), self.assertRaises(OSError):
+            self.repo.archive(parent / 'archive.zip')
+        self.assertEqual(list(admitted.iterdir()), [])
+        self.assertEqual(list(parent.iterdir()), [])
 
     def test_archive_cleanup_failure_reports_the_committed_verified_archive(self):
         import editor3d_repository as module
@@ -766,6 +893,26 @@ r.transact_native(0,'crashed',{},crash)
         result=reopened.discard_incomplete('crashed',0)
         self.assertTrue(result['discarded']);self.assertFalse(reopened.recovery())
         self.assertEqual(len(list((reopened.root/'failed').glob('*.json'))),1)
+        failure_dir = reopened.root / 'failed'
+        original, = failure_dir.glob('*.json')
+        original_bytes = original.read_bytes()
+        first_stage = reopened.root / 'revisions' / report[0]['stage']
+        self.assertFalse(first_stage.exists())
+        retry = subprocess.run([sys.executable, '-c', script, str(reopened.root)],
+            env={**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[1] / 'scripts')}, timeout=15)
+        self.assertEqual(retry.returncode, 17)
+        item, = reopened.recovery()
+        second_stage = reopened.root / 'revisions' / item['stage']
+        self.assertTrue(second_stage.is_dir())
+        self.assertNotEqual(first_stage, second_stage)
+        journal, = (reopened.root / 'journal').glob('*.json')
+        retry_bytes = journal.read_bytes()
+        reopened.discard_incomplete('crashed', 0)
+        self.assertFalse(reopened.recovery())
+        self.assertFalse(second_stage.exists())
+        self.assertEqual(original.read_bytes(), original_bytes)
+        remaining, = set(failure_dir.glob('*.json')) - {original}
+        self.assertEqual(remaining.read_bytes(), retry_bytes)
         self.assertEqual(reopened.apply(0,self.move(),'after-recovery')['revision'],1)
 
 

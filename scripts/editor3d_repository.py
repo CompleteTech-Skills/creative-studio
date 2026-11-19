@@ -9,6 +9,7 @@ from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 import hashlib
 import io
+from itertools import chain
 import zlib
 import json
 import os
@@ -125,6 +126,63 @@ def _bytes(value):
 
 def _digest(value):
     return hashlib.sha256(_bytes(value)).hexdigest()
+
+
+def _next_history(head, action, maximum):
+    """Derive the history target and bounded stacks from one committed parent."""
+    parent = head['revision']
+    undo, redo = list(head['undo']), list(head['redo'])
+    target = None
+    if action == 'undo':
+        _require(undo, 'HISTORY', 'No retained undo entry.')
+        target = undo.pop()
+        redo.append(parent)
+    elif action == 'redo':
+        _require(redo, 'HISTORY', 'No retained redo entry.')
+        target = redo.pop()
+        undo.append(parent)
+    else:
+        _require(action in ('apply', 'restore', 'native-adapter'), 'HISTORY', 'Unknown revision action.')
+        undo.append(parent)
+        redo.clear()
+    return target, undo[-maximum:], redo[-maximum:]
+
+
+def _replay_history(records, maximum):
+    """Replay format-1 actions, retaining only the identity of each restore target."""
+    snapshots = []
+    restore_targets = {}
+    head = None
+    for revision, record in enumerate(records):
+        _require(isinstance(record, dict) and type(record.get('revision')) is int and
+                 record['revision'] == revision, 'HISTORY', 'Revision sequence differs from its records.')
+        _require(isinstance(record.get('scene_path'), str) and
+                 all(isinstance(record.get(key), str) and re.fullmatch('[0-9a-f]{64}', record[key])
+                     for key in ('request_sha256', 'snapshot_sha256')),
+                 'HISTORY', 'History requires a scene path and exact request and snapshot digests.')
+        action = record['action']
+        snapshot = (record['snapshot_sha256'], record['scene_path'])
+        if revision == 0:
+            _require(record['parent'] is None and action == 'create', 'HISTORY', 'Invalid initial revision.')
+            undo, redo = [], []
+        else:
+            _require(type(record['parent']) is int and record['parent'] == revision - 1,
+                     'HISTORY', 'History action differs from its parent.')
+            target, undo, redo = _next_history(head, action, maximum)
+            if action == 'restore':
+                # Format 1 records the digest of the restore request, including its target.
+                for i in range(len(restore_targets), revision):
+                    restore_targets[_digest(dict(action=action, target=i))] = i
+                target = restore_targets.get(record['request_sha256'])
+                _require(target is not None, 'HISTORY', 'Restore request has no committed target.')
+            elif target is not None:
+                _require(record['request_sha256'] == _digest(dict(action=action, target=None)),
+                         'HISTORY', 'History action differs from its recorded request.')
+            if target is not None:
+                _require(snapshot == snapshots[target], 'HISTORY', 'History action differs from its selected snapshot.')
+        snapshots.append(snapshot)
+        head = dict(schema_version=FORMAT, revision=revision, sha256=snapshot[0], undo=undo, redo=redo)
+    return head
 
 
 def _read_json(path):
@@ -400,28 +458,24 @@ class EditorRepository:
         _require(bundle['inventory'] == record['inventory'], 'HASH', 'Native closure differs from saved inventory.')
         return bundle
 
+    def _committed_record(self, revision, head):
+        _require(type(revision) is int and 0 <= revision <= head['revision'],
+                 'REVISION', 'Choose a committed revision.')
+        return self._record(revision)
+
+    def _history_at(self, revision):
+        return _replay_history((self._record(i) for i in range(revision + 1)), self.limits['max_history'])
+
     def snapshot(self, revision=None):
         head = self._head()
-        record = self._record(head['revision'] if revision is None else revision)
+        record = self._committed_record(head['revision'] if revision is None else revision, head)
         bundle = self._bundle(record)
-        undo, redo = len(head['undo']), len(head['redo'])
         if record['revision'] != head['revision']:
-            # Old repositories retain every action, including entries that
-            # have fallen off the bounded interactive history stacks.
-            undo = redo = 0
-            maximum = self.limits['max_history']
-            for index in range(1, record['revision'] + 1):
-                action = self._record(index)['action']
-                if action == 'undo':
-                    undo -= 1
-                    redo = min(redo + 1, maximum)
-                else:
-                    undo = min(undo + 1, maximum)
-                    redo = redo - 1 if action == 'redo' else 0
+            head = self._history_at(record['revision'])
         return dict(revision=record['revision'], sha256=record['snapshot_sha256'],
                     project=bundle['project'], documents=bundle['documents'], inventory=bundle['inventory'],
                     scene=deepcopy(bundle['documents'][record['scene_path']]), scene_path=record['scene_path'],
-                    undo_available=bool(undo), redo_available=bool(redo))
+                    undo_available=bool(head['undo']), redo_available=bool(head['redo']))
 
     def native_snapshot(self, revision, expected_sha256):
         """Verified immutable source reference for native render/import owners.
@@ -429,7 +483,7 @@ class EditorRepository:
         Consumers must copy/recheck input bytes at their admission boundary.
         This returns a native filesystem location to trusted Python callers only.
         """
-        record = self._record(revision)
+        record = self._committed_record(revision, self._head())
         _require(record['snapshot_sha256'] == expected_sha256, 'HASH', 'Requested native revision hash differs.')
         self._bundle(record)
         return dict(root=self._native_root(revision), revision=revision, sha256=expected_sha256,
@@ -462,9 +516,10 @@ class EditorRepository:
         used = sum(_scan(self.root, self.limits).values())
         _require(used + estimate <= self.limits['max_bytes'], 'LIMIT', 'Retained repository byte budget exceeded.')
 
-    def _commit(self, head, transaction_id, request, label, action, build, undo, redo,
+    def _commit(self, head, transaction_id, request, label, action, build,
                 *, schedule_autosave=False, expected_inventory=None):
         _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before another edit.')
+        _, undo, redo = _next_history(head, action, self.limits['max_history'])
         revision = head['revision'] + 1
         self._space(revision, sum(self._record(head['revision'])['inventory'][n]['bytes'] for n in self._record(head['revision'])['inventory']))
         transaction_hash = _digest(request)
@@ -499,7 +554,7 @@ class EditorRepository:
             current_bytes = sum(_scan(self.root, self.limits).values())
             _require(current_bytes <= self.limits['max_bytes'], 'LIMIT', 'New revision exceeds total repository byte budget.')
             next_head = dict(schema_version=FORMAT, revision=revision, sha256=record['snapshot_sha256'],
-                             undo=undo[-self.limits['max_history']:], redo=redo[-self.limits['max_history']:])
+                             undo=undo, redo=redo)
             _sync_directory_tree(stage)
             _sync_directory(stage.parent)
             pending.update(status='verified', new_head=next_head)
@@ -557,7 +612,7 @@ class EditorRepository:
                                           derived_documents=batch['derived_documents'], max_bytes=self.limits['max_bytes'],
                                           expected_project_sha256=record['inventory']['project.json']['sha256'])
                 return result['active_scene']['path']
-            return self._commit(head, transaction_id, request, label, 'apply', build, head['undo'] + [head['revision']], [],
+            return self._commit(head, transaction_id, request, label, 'apply', build,
                                 schedule_autosave=schedule_autosave)
 
     def _restore(self, expected_revision, transaction_id, action, target=None, expected_sha256=None,
@@ -569,21 +624,17 @@ class EditorRepository:
             previous = self._existing_transaction(head, transaction_id, _digest(request))
             if previous is not None: return previous
             self._check_expected(head, expected_revision, expected_sha256)
-            undo, redo = list(head['undo']), list(head['redo'])
-            if action == 'undo':
-                _require(bool(undo), 'HISTORY', 'No retained undo entry.'); target = undo.pop(); redo.append(head['revision'])
-            elif action == 'redo':
-                _require(bool(redo), 'HISTORY', 'No retained redo entry.'); target = redo.pop(); undo.append(head['revision'])
+            if action in ('undo', 'redo'):
+                target, _, _ = _next_history(head, action, self.limits['max_history'])
             else:
                 _require(type(target) is int and 0 <= target <= head['revision'], 'REVISION', 'Choose a retained revision.')
-                undo.append(head['revision']); redo = []
             original = self._record(target)
             source = self._native_root(target)
             self._bundle(original)
             def build(destination):
                 _copy_closure(source, destination, self.limits)
                 return original['scene_path']
-            return self._commit(head, transaction_id, request, action.capitalize(), action, build, undo, redo,
+            return self._commit(head, transaction_id, request, action.capitalize(), action, build,
                                 schedule_autosave=schedule_autosave, expected_inventory=original['inventory'])
 
     def undo(self, expected_revision, transaction_id, *, expected_sha256=None, schedule_autosave=False):
@@ -642,6 +693,11 @@ class EditorRepository:
             item['can_recover']=(item['status'] in ('verified','published') and
                 (item['committed'] or item['expected_revision']==head['revision'] and item['expected_sha256']==head['sha256']) and
                 (revision_path.is_file() or stage is not None and (stage/'record.json').is_file()))
+            if item['can_recover']:
+                try:
+                    self._verify_recovery_revision(item, revision_path.parent if revision_path.is_file() else stage)
+                except RigError:
+                    item['can_recover'] = False
             result.append(item)
         return result
 
@@ -662,6 +718,9 @@ class EditorRepository:
                  isinstance(record['created_at'], str) and
                  re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z', record['created_at']),
                  'REVISION', 'Invalid immutable transaction metadata.')
+        prior = (self._record(i) for i in range(record['revision']))
+        expected = _replay_history(chain(prior, (record,)), self.limits['max_history'])
+        _require(expected == item['new_head'], 'HISTORY', 'Journal history differs from its revision actions.')
         files = _scan(directory, self.limits)
         expected_files = {'record.json', *('native/' + name for name in record['inventory'])}
         _require(set(files) == expected_files, 'HASH', 'Recovery revision contains files outside its immutable closure.')
@@ -690,7 +749,7 @@ class EditorRepository:
                 _sync_directory(self.root)
                 path.unlink()
                 _sync_directory(path.parent)
-                return self.snapshot()
+                return self.snapshot(item['revision'])
             _require(verified and item['expected_revision'] == head['revision'] and item['expected_sha256'] == head['sha256'],
                      'STALE', 'Interrupted transaction does not match current HEAD.')
             staged_record = None
@@ -712,7 +771,7 @@ class EditorRepository:
             self._head()
             path.unlink()
             _sync_directory(path.parent)
-        return self.snapshot()
+        return self.snapshot(item['revision'])
 
     def discard_incomplete(self, transaction_id, expected_revision, *, expected_sha256=None):
         """Roll back only an unverified private attempt, retaining its journal."""
@@ -728,8 +787,10 @@ class EditorRepository:
                 if stage.exists():
                     _scan(stage,self.limits)
                     shutil.rmtree(stage)
+                    _sync_directory(stage.parent)
             failure_root=safe_path(self.root,'failed');failure_root.mkdir(exist_ok=True)
-            destination=safe_path(failure_root,path.name)
+            _sync_directory(self.root)
+            destination=safe_path(failure_root, f'{path.stem}-{secrets.token_hex(16)}.json')
             _rename_no_replace(path,destination);_sync_directory(failure_root);_sync_directory(path.parent)
         return dict(discarded=True,transaction_id=transaction_id,revision=head['revision'])
 
@@ -752,8 +813,7 @@ class EditorRepository:
             self._check_expected(head, expected_revision, expected_sha256)
             record = self._record(head['revision']); self._bundle(record)
             return self._commit(head, transaction_id, request, label, 'native-adapter',
-                lambda destination: builder(self._native_root(head['revision']), destination, record['scene_path']),
-                head['undo'] + [head['revision']], [])
+                lambda destination: builder(self._native_root(head['revision']), destination, record['scene_path']))
 
     def begin_drag(self, expected_revision, *, expected_sha256=None):
         """Remember a saved base. Preview state remains local and nonpersistent."""
@@ -945,15 +1005,26 @@ class EditorRepository:
 
     def _verify_all(self):
         head = self._head()
-        for revision in range(head['revision'] + 1): self._bundle(self._record(revision))
+        def records():
+            for revision in range(head['revision'] + 1):
+                record = self._record(revision)
+                self._bundle(record)
+                yield record
+        expected = _replay_history(records(), self.limits['max_history'])
+        _require(expected == head, 'HISTORY', 'HEAD history differs from its revision actions.')
         return head
 
     def archive(self, destination):
         """Create an exact hashed ZIP with bounded verified extraction semantics."""
         destination = Path(destination).absolute()
         _require(not destination.exists() and not destination.is_symlink() and
-                 not destination.is_relative_to(self.root), 'DESTINATION', 'Archive needs a new file outside the repository.')
+                 '..' not in destination.parts and not destination.resolve().is_relative_to(self.root),
+                 'DESTINATION', 'Archive needs a new file outside the repository.')
+        if os.name == 'nt':
+            from atomic_windows import validate_destination
+            validate_destination(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        parent_identity = _directory_identity(destination.parent)
         with job_lock(self.root):
             head = self._verify_all()
             _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before archive export.')
@@ -978,7 +1049,8 @@ class EditorRepository:
                 _require(self.verify_archive(stream) == receipt, 'HASH', 'Verified archive differs from this export.')
                 try:
                     publication = publish_verified_file(stream.fileno(), destination,
-                        expected_sha256=digest, expected_size=size, max_bytes=maximum)
+                        expected_sha256=digest, expected_size=size, max_bytes=maximum,
+                        expected_parent_identity=parent_identity)
                     cleanup_pending = False
                 except VerifiedFileCleanupError as exc:
                     publication = exc.receipt
@@ -1029,6 +1101,21 @@ class EditorRepository:
                              'ARCHIVE', 'Malformed archived file record.')
                     raw = _archive_member(archive, archive.getinfo(name), snapshot)
                     _require(hashlib.sha256(raw).hexdigest() == record['sha256'], 'HASH', 'Archive file hash differs.')
+                def metadata(name):
+                    info = archive.getinfo(name)
+                    _require(info.file_size <= MAX_METADATA_BYTES, 'LIMIT', 'Archived repository metadata exceeds its bound.')
+                    value = decode_json(_archive_member(archive, info, snapshot))
+                    _require(isinstance(value, dict), 'ARCHIVE', 'Archived repository metadata must be an object.')
+                    return value
+                limits = _validated_limits(metadata('repository.json')['limits'])
+                head = metadata('HEAD.json')
+                last = head.get('revision')
+                _require(type(last) is int and 0 <= last < limits['max_revisions'],
+                         'HISTORY', 'Invalid archived HEAD revision.')
+                records = (metadata(f'revisions/{revision:08d}/record.json') for revision in range(last + 1))
+                expected = _replay_history(records, limits['max_history'])
+                _require(_bytes(head) == _bytes(expected) == _bytes(receipt['head']),
+                         'HISTORY', 'Archive HEAD history differs from its revision actions.')
                 return receipt
         except (zipfile.BadZipFile, KeyError, OSError, RuntimeError, NotImplementedError, EOFError, zlib.error, ValueError) as exc:
             raise RigError('EDITOR3D_ARCHIVE', str(exc), stage='editor3d-repository') from exc
