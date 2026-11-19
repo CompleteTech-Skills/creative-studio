@@ -14,7 +14,7 @@ from unittest import mock
 import zlib
 
 from test_render3d_verify import DEPENDENCIES, Render3DError, output, verify_image, decode_image
-from exr_consumption import _consume_dwa_ac
+from exr_consumption import ZLIB_DECODER_STATE, _consume_dwa_ac
 from render3d_verify import _exr_envelope
 
 if DEPENDENCIES:
@@ -162,6 +162,33 @@ class CodecConsumption(unittest.TestCase):
             self.assertEqual(pixels[name].shape, (height, width))
             self.assertTrue(np.all(pixels[name] == component / 255.0))
 
+    def test_zip_chunk_peak_stays_within_the_minimum_admitted_budget(self):
+        width, height = 16384, 16
+        with OpenEXR.File({'compression': OpenEXR.ZIP_COMPRESSION},
+                          {'Z': np.zeros((height, width), np.float32)}) as writer:
+            writer.write(str(self.path))
+        data = self.path.read_bytes()
+
+        def envelope(budget):
+            return _exr_envelope(io.BytesIO(data), [width, height], budget, 32)
+
+        low, high = 1, 1 << 26
+        while low < high:
+            middle = (low + high) // 2
+            try:
+                envelope(middle)
+                high = middle
+            except Render3DError:
+                low = middle + 1
+        tracemalloc.start()
+        try:
+            baseline, _ = tracemalloc.get_traced_memory()
+            envelope(low)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLessEqual(peak - baseline, low)
+
     def test_narrow_exr_preflight_streams_scanlines_in_both_orders(self):
         height, budget = 1024, 8192
         values = np.arange(height, dtype=np.float32).reshape(height, 1)
@@ -222,7 +249,8 @@ class CodecConsumption(unittest.TestCase):
         data = self.original('ZIP', depth=32, scalar=True)
         _, payload = chunk(data)
         width, height = self.resolution
-        budget = 2 * len(payload) + width * height * 4 + 1
+        # Input and copied suffix, two output-sized buffers and zlib state.
+        budget = 2 * len(payload) + 2 * (width * height * 4 + 1) + ZLIB_DECODER_STATE
         options = dict(output=output('exr', 32, passes=['depth']), resolution=self.resolution,
                        pass_name='depth')
         report = verify_image(self.path, memory_bytes=budget, **options)

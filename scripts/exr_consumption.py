@@ -68,10 +68,17 @@ class _Bits:
         return value
 
 
+# zlib inflate allocates a 32 KiB window and about 7 KiB of state per decoder.
+ZLIB_DECODER_STATE = 64 * 1024
+
+
 def _inflate(data, expected, memory_bytes):
     # This fresh decoder receives one input. It may copy a suffix of it
     # into unused_data or unconsumed_tail while input and output are live.
-    require(0 <= expected and 2 * len(data) + expected + 1 <= memory_bytes,
+    # CPython fills a block buffer of expected + 1 bytes and then copies it
+    # into the returned bytes, so two output-sized buffers coexist at the peak,
+    # alongside zlib's own decoder state (a 32 KiB window plus inflate state).
+    require(0 <= expected and 2 * len(data) + 2 * (expected + 1) + ZLIB_DECODER_STATE <= memory_bytes,
             'system-memory', 'EXR codec verification exceeds its working budget.')
     try:
         decoder = zlib.decompressobj()
