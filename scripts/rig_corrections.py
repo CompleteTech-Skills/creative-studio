@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import numpy as np
 from rig_contracts import validate_contract
-from rig_errors import atomic_json, object_hash, require, safe_path, sha256
+from rig_errors import atomic_json, job_lock, object_hash, read_json, require, safe_path, sha256
 from rig_jobs import next_version, save_rig
 from rig_models import rig_signature
 from rig_skeleton import skeleton_from_heads, validate_skeleton
@@ -25,9 +25,57 @@ def validate_correction_binding(rig, correction):
             'RIG_STALE_CORRECTION', 'Correction targets a different rig revision; rebase it against the current rig.')
 
 
+def _validate_persisted_authority(rig):
+    """Compare the handle's admitted core while its native writer lock is held."""
+    require(rig.root is not None, 'RIG_RUN', 'The rig needs a run directory.')
+    current = validate_contract(read_json(safe_path(rig.root, 'rig.json', exists=True)), 'Rig')
+    admitted = rig._admitted_sha256 or rig_signature(rig.manifest)
+    require(rig_signature(current) == admitted, 'RIG_STALE_CORRECTION',
+            'The saved rig changed after this handle was admitted; reload and rebase the correction.')
+    return current
+
+
+def _persist_correction(rig, correction):
+    """Persist through the caller's existing native writer ownership boundary."""
+    current = _validate_persisted_authority(rig)
+    if current['skeleton'] is not None and any(
+            edit['operation'] in ('bone-add', 'bone-update', 'bone-remove', 'template')
+            for edit in correction['edits']):
+        # Both public correction routes publish here under native writer ownership.
+        # Unsaved public skeleton authoring may reset the handle's version, so
+        # the admitted saved skeleton supplies the persisted successor identity.
+        rig.skeleton['version'] = next_version(current['skeleton']['version'])
+    digest = object_hash(correction)
+    atomic_json(safe_path(rig.root, 'rig/corrections/' + digest + '.json'), correction)
+    save_rig(rig, operation='manual-correction')
+
+
 def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
+    """Apply a handle-bound edit, optionally under current persisted authority.
+
+    Persisted edits retain legitimate unsaved changes on a currently admitted
+    handle. Detached previews (persist=False) are relative only to that handle
+    and neither read nor modify the current saved revision.
+    """
+    correction = deepcopy(correction)
+    validate_correction_binding(rig, correction)
+    if not persist:
+        return _apply_correction(rig, correction, resolve_template=resolve_template)
+    require(rig.root is not None, 'RIG_RUN', 'The rig needs a run directory.')
+    with job_lock(rig.root):
+        _validate_persisted_authority(rig)
+        result, report = _apply_correction(rig, correction, resolve_template=resolve_template)
+        _persist_correction(result, correction)
+        report['rig_sha256'] = rig_signature(result.manifest)
+        return result, report
+
+
+def _apply_correction(rig, correction, *, resolve_template=None):
     validate_correction_binding(rig, correction)
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
+    if result._admitted_sha256 is None:
+        result._admitted_sha256 = rig_signature(rig.manifest)
+    admitted_skeleton_version = rig.skeleton['version'] if rig.manifest['skeleton'] else None
     specs=[];evidence={}
     if result.manifest['skeleton']:
         for bone in result.skeleton['bones']:
@@ -152,7 +200,8 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True
     if skeleton_changed:
-        skeleton=skeleton_from_heads(specs,identifier=result.skeleton['id'],version=next_version(result.skeleton['version']))
+        skeleton=skeleton_from_heads(specs,identifier=result.skeleton['id'],
+            version=next_version(admitted_skeleton_version or result.skeleton['version']))
         for b in skeleton['bones']:b['evidence']=evidence[b['id']]
         result.manifest['skeleton']=skeleton
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
@@ -165,7 +214,4 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
     require(set(result.manifest['facial']['eyes']) <= bone_ids,'RIG_EYE_REFERENCE','Eye control bone is missing.')
     from rig_facial import validate_eyelid_bindings
     validate_eyelid_bindings(result)
-    if persist:
-        digest=object_hash(correction);atomic_json(safe_path(result.root,'rig/corrections/'+digest+'.json'),correction)
-        save_rig(result,operation='manual-correction')
     return result,dict(invalidated=invalidated,rig_sha256=rig_signature(result.manifest),source_preserved=True)

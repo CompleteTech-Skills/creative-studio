@@ -92,8 +92,13 @@ def mutate(root,operation,parameters=None):
             ok=result['ok'] if operation=='validate' else result['report']['ok']
             require(ok,'RIG_VALIDATION_FAILED','Numerical validation failed; inspect the retained report.',asset=name,preserved=str(rig.root))
         elif operation=='correct':
-            from rig_corrections import apply_rig_corrections
-            _,result=apply_rig_corrections(rig,parameters['correction'],resolve_template=resolve_template)
+            from rig_corrections import apply_rig_corrections, _persist_correction
+            # run_step already owns the native writer lock. Use the same pure
+            # correction and guarded persistence owners without a nested lock.
+            corrected,result=apply_rig_corrections(rig,parameters['correction'],persist=False,
+                                                 resolve_template=resolve_template)
+            _persist_correction(corrected,parameters['correction'])
+            result['rig_sha256']=rig_signature(corrected.manifest)
         elif operation=='review':
             from rig_review import apply_review
             result=apply_review(rig,parameters['receipt']);result['job_status']='review-approved' if result['status']=='approved' else 'needs-correction'
