@@ -58,6 +58,17 @@ def _oriented_bounds(record):
     return center, half_axes
 
 
+def _oriented_parts(record):
+    """Translation, rotated local centre and half axes, kept separate.
+
+    Overlap subtracts translations and local centres independently so nearby
+    boxes far from the origin are not compared through rounded world centres.
+    """
+    low, high = _box(record['local'])
+    matrix = record['matrix']
+    return matrix[:3,3], matrix[:3,:3] @ ((low + high) / 2), (matrix[:3,:3] @ np.diag((high - low) / 2)).T
+
+
 def _overlap(a, b, clearance=0):
     return bool(np.all(a[0] <= b[1]+clearance) and np.all(b[0] <= a[1]+clearance))
 
@@ -160,6 +171,7 @@ def _closest_triangle(point, triangle, *, frame=None, face_only=False):
 
 def _triangle_intersects(left, right):
     """Separating-axis triangle intersection, including coplanar triangles."""
+    original_left, original_right, ambiguous = left, right, False
     anchor = left[0]
     combined = np.concatenate([left-anchor,right-anchor])
     scale = float(np.max(np.abs(combined)))
@@ -180,7 +192,33 @@ def _triangle_intersects(left, right):
         axis = axis/magnitude
         a,b = left@axis,right@axis
         tolerance = 32*np.finfo(float).eps*max(1.,float(np.max(np.abs(a))),float(np.max(np.abs(b))))
-        if a.max() < b.min()-tolerance or b.max() < a.min()-tolerance:
+        gap = max(float(b.min()-a.max()), float(a.min()-b.max()))
+        if gap > tolerance:
+            return False
+        if gap >= -tolerance:
+            ambiguous = True
+    # The rounding band is a trigger for exact arithmetic, not a contact margin.
+    return _triangle_intersects_exact(original_left, original_right) if ambiguous else True
+
+
+def _triangle_intersects_exact(left, right):
+    """Rational SAT on the given float vertices; touching counts as contact."""
+    from fractions import Fraction
+    def sub(p,q): return [p[i]-q[i] for i in range(3)]
+    def cross(p,q): return [p[1]*q[2]-p[2]*q[1], p[2]*q[0]-p[0]*q[2], p[0]*q[1]-p[1]*q[0]]
+    def dot(p,q): return p[0]*q[0]+p[1]*q[1]+p[2]*q[2]
+    left = [[Fraction(float(x)) for x in point] for point in left]
+    right = [[Fraction(float(x)) for x in point] for point in right]
+    e = [sub(left[1],left[0]),sub(left[2],left[1]),sub(left[0],left[2])]
+    f = [sub(right[1],right[0]),sub(right[2],right[1]),sub(right[0],right[2])]
+    n = cross(e[0],e[1]); m = cross(f[0],f[1])
+    axes = [n,m]+[cross(a,b) for a in e for b in f]
+    axes += [cross(n,a) for a in e]+[cross(m,b) for b in f]
+    for axis in axes:
+        if not any(axis):
+            continue
+        a = [dot(point,axis) for point in left]; b = [dot(point,axis) for point in right]
+        if max(a) < min(b) or max(b) < min(a):
             return False
     return True
 
@@ -350,12 +388,12 @@ class SpatialIndex:
         """Exact SAT overlap of transformed local boxes, including shear.
 
         Geometry boxes remain conservative with respect to non-box meshes.
-        Degenerate (flat/line) bounds use world AABB broad-phase candidates.
+        Degenerate (flat/line) bounds are separated by the face and edge axes.
         """
         records = self._chosen(exclude, visibility)
         require(identifier in self._records, 'Node has no geometric bounds.', 'SCENE3D_SPATIAL')
         source = self._records[identifier]
-        center, axes = _oriented_bounds(source)
+        translation, local_center, axes = _oriented_parts(source)
         # A rotated mesh's local box can have empty corners outside the
         # world bounds of its vertices. Project the box itself onto XYZ.
         source_extent = np.abs(axes).sum(axis=0)
@@ -363,8 +401,8 @@ class SpatialIndex:
         for other,record in records:
             if other == identifier:
                 continue
-            other_center, other_axes = _oriented_bounds(record)
-            delta = other_center - center
+            other_translation, other_local_center, other_axes = _oriented_parts(record)
+            delta = (other_translation - translation) + (other_local_center - local_center)
             extent = source_extent + np.abs(other_axes).sum(axis=0)
             if np.any(np.abs(delta) > extent + 32*np.finfo(float).eps*np.maximum(extent, np.abs(delta))):
                 continue

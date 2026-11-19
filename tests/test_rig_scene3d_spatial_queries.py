@@ -93,6 +93,43 @@ class SpatialQueryTests(unittest.TestCase):
         self.assertIn('probe', index.oriented_overlap('mesh'))
         self.assertIn('mesh', index.oriented_overlap('probe'))
 
+    def test_oriented_overlap_keeps_touching_boxes_far_from_origin(self):
+        graph = self.graph()
+        node = graph.document()['nodes'][1]
+        width, offset = 2.0**-23, 2.0**29
+        for name, x in (('left', offset), ('right', offset+width), ('apart', offset+3*width)):
+            item = deepcopy(node)
+            item.update(id=name, name=name, bounds=dict(minimum=[0,0,0], maximum=[width,1,1]))
+            item['transform'] = dict(translation=[x,0,0], rotation=[0,0,0,1], scale=[1,1,1])
+            graph.create(item)
+        index = SpatialIndex(graph)
+        self.assertIn('right', index.overlap(index.bounds('left')))
+        self.assertIn('right', index.oriented_overlap('left'))
+        self.assertIn('left', index.oriented_overlap('right'))
+        self.assertNotIn('apart', index.oriented_overlap('left'))
+
+    def test_mesh_overlap_decides_rounding_band_exactly(self):
+        graph = self.graph()
+        node = graph.document()['nodes'][1]
+        for name in ('large', 'small'):
+            item = deepcopy(node); item.update(id=name, name=name)
+            item['transform'] = dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1])
+            graph.create(item)
+        size = 1e6
+        # Plane z = y*1e-6; the small triangle's vertices satisfy y = 0 or 1e-6.
+        large = dict(vertices=[[-size,-size,-1.],[size,-size,-1.],[0.,size,1.]], triangles=[[0,1,2]])
+        def small(z):
+            return dict(vertices=[[0,0,z],[1e-6,0,z],[0,1e-6,z]], triangles=[[0,1,2]])
+        for gap in (1e-9, 5e-9):
+            with self.subTest(gap=gap):
+                index = SpatialIndex(graph, {'large': large, 'small': small(gap)})
+                self.assertEqual(index.mesh_overlap('small'), [])
+        crossing = dict(vertices=[[0,0,-1e-9],[1e-6,0,-1e-9],[0,1e-6,1e-9]], triangles=[[0,1,2]])
+        for name, mesh in (('touching', small(0.)), ('crossing', crossing)):
+            with self.subTest(case=name):
+                index = SpatialIndex(graph, {'large': large, 'small': mesh})
+                self.assertEqual([hit['node'] for hit in index.mesh_overlap('small')], ['large'])
+
     def test_raycast_distinguishes_large_triangle_edge_and_adjacent_floats(self):
         side = 1e9
         graph = self.graph()
