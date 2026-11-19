@@ -1007,6 +1007,70 @@ EditorRepository(sys.argv[1]).transact_native(0, 'identity', {}, stop)
         reopened.discard_incomplete('identity', 0)
         self.assertFalse(stage.exists())
 
+    def test_discard_retains_unadmittable_stages_outside_the_repository(self):
+        outside = self.root / 'outside-target'
+        outside.mkdir()
+        (outside / 'keep.txt').write_bytes(b'keep')
+        builders = {
+            'alias': "(destination / 'Part.obj').write_bytes(b'a'); (destination / 'part.obj').write_bytes(b'b')",
+            'reserved': "(destination / 'aux.tmp').write_bytes(b'x')",
+            'link': "os.symlink(sys.argv[2], destination / 'escape', target_is_directory=True)",
+        }
+        # Detect case-insensitive volumes (including the normal Windows and
+        # macOS filesystems). Full Unicode case folding also aliases two names
+        # that such volumes can store independently.
+        probe = self.root / 'CaseProbe'
+        probe.touch()
+        if (self.root / 'caseprobe').exists():
+            builders['alias'] = "(destination / 'mass.obj').touch(); (destination / 'ma\\u00df.obj').touch()"
+        if os.name == 'nt':
+            # AUX is a real Windows device. DEL is legal for a local filename
+            # and exercises the same portable-name rejection without opening it.
+            del builders['reserved']
+            builders['nonportable'] = "(destination / ('invalid' + chr(127) + '.obj')).touch()"
+        if os.name == 'posix' and os.geteuid() != 0:
+            builders['unreadable'] = "(destination / 'unreadable').mkdir(mode=0)"
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts'))
+        for name, body in builders.items():
+            with self.subTest(stage=name):
+                repo = EditorRepository.create(self.source, self.root / ('unadmittable-' + name))
+                before = repo.snapshot()
+                child = f"""import os
+import sys
+from editor3d_repository import EditorRepository
+repo = EditorRepository(sys.argv[1])
+def unverified(source, destination, scene):
+    destination.mkdir()
+    {body}
+    os._exit(47)
+repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
+"""
+                exited = subprocess.run([sys.executable, '-B', '-c', child, str(repo.root), str(outside)],
+                                        env=env, capture_output=True, timeout=20)
+                if name == 'link' and os.name == 'nt' and b'WinError 1314' in exited.stderr:
+                    self.skipTest('directory symlinks require a Windows privilege')
+                self.assertEqual(exited.returncode, 47, exited.stderr)
+                reopened = EditorRepository(repo.root)
+                item, = reopened.recovery()
+                with self.assertRaises(RigError) as blocked:
+                    reopened.apply(0, self.move(8), 'blocked-by-recovery')
+                self.assertEqual(blocked.exception.report['code'], 'EDITOR3D_RECOVERY')
+                result = reopened.discard_incomplete('interrupted-' + name, 0, expected_sha256=before['sha256'])
+                retained = Path(result['retained_stage'])
+                self.assertFalse(retained.is_relative_to(repo.root))
+                self.assertTrue(retained.is_dir() and not retained.is_symlink())
+                if name == 'link':
+                    self.assertTrue((retained / 'native' / 'escape').is_symlink())
+                if name == 'unreadable':
+                    locked = retained / 'native' / 'unreadable'
+                    self.assertEqual(locked.stat().st_mode & 0o777, 0)
+                    locked.chmod(0o700)
+                self.assertFalse(os.path.lexists(repo.root / 'revisions' / item['stage']))
+                self.assertFalse(reopened.recovery())
+                self.assertEqual(self.mesh_x(reopened.apply(0, self.move(8), 'after-discard')), 8)
+                reopened.archive(self.root / (name + '.zip'))
+        self.assertEqual((outside / 'keep.txt').read_bytes(), b'keep')
+
     def test_discard_reports_retained_over_entry_budget_stage(self):
         child = """import os, sys
 from editor3d_repository import EditorRepository

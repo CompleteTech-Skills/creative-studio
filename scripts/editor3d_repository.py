@@ -837,11 +837,11 @@ class EditorRepository:
         check_owned(stage)
         try:
             _scan(stage, self.limits, bound_content=False)
-            over_limit = False
-        except RigError as exc:
-            if exc.report['code'] != 'EDITOR3D_LIMIT':
-                raise
-            over_limit = True
+            admitted = True
+        except (RigError, PermissionError):
+            # Retain a tree when admission rejects it or its contents cannot be
+            # inspected. Identity and ownership checks still have to succeed.
+            admitted = False
         check_owned(stage)
         _rename_no_replace(stage, retained)
         try:
@@ -851,7 +851,7 @@ class EditorRepository:
             raise
         _sync_directory(retained.parent)
         _sync_directory(stage.parent)
-        if over_limit:
+        if not admitted:
             return retained
         shutil.rmtree(retained)
         _sync_directory(retained.parent)
