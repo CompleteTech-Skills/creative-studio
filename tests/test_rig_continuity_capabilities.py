@@ -1,5 +1,6 @@
 """Offline continuity capability and fallback contracts."""
 import copy
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -8,12 +9,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from continuity_capabilities import Admission, CapabilityRefusal, Policy, MATRIX, schemas, validate, discover
+from continuity_capabilities import Admission, CapabilityRefusal, Policy, MATRIX, MANDATORY_FIELDS, OwnerAdapter, schemas, validate, discover
 from continuity_capability_owners import RigOwner, ImageMastersOwner, pointer
 from continuity_contracts import VERSION, canonical_bytes, digest
 from rig_errors import RigError
@@ -577,3 +579,91 @@ class CapabilityTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, r"matrix capability mismatch: missing=\['historical-media'\]"):
                 probe.run(destination)
         self.assertFalse((destination / 'report.json').exists())
+
+    def policy_owner(self, capability, *, malformed=None, execute=None, expiry=None):
+        # This explicitly synthetic in-process adapter tests policy invariants,
+        # not real production backend or artistic acceptance. Real native adapter
+        # coverage is tested separately above.
+        test=self
+        if not (self.root/'rig').exists():shutil.copytree(REPO/'examples/rig-3d/robotic',self.root/'rig')
+        native=pointer(self.root,self.root/'rig/rig.json',kind='hatch-3d-rig')
+        class Fixture(OwnerAdapter):
+            def __init__(self):self.lock=threading.Lock();self.calls=0
+            def snapshot(self):
+                return dict(schema_version=VERSION,kind='continuity-capability-snapshot',
+                    capability_id=capability,implementation_id=MATRIX[capability][0][0],
+                    owner='hatch-rig',backend='policy-fixture',backend_version='1.0.0',contract_version=VERSION,
+                    input_types=['hatch-3d-rig'],output_types=['native-inspection'],operations=[capability],
+                    status='available',discovered=True,tested_operations=[capability],evidence=[test.project],
+                    limits=dict(memory_bytes=512*1024*1024,disk_bytes=64*1024*1024,cpu_seconds=60,gpu_bytes=0,concurrency=1),
+                    offline=True,asset_rights_required=True,
+                    expires_at=expiry or '2099-01-01T00:00:00Z',limitations=[])
+            @contextmanager
+            def reserve(self,check):
+                with self.lock:yield
+            def execute(self,check):
+                self.calls+=1
+                payload=(test.root/'project.json').read_bytes()
+                result=dict(outcome='executed',evidence=[test.project],
+                    measurements=dict(fixture=True,source_sha256=hashlib.sha256(payload).hexdigest(),model_invoked=False,device='cpu'),
+                    verified_fields=list(MANDATORY_FIELDS[capability])+['source-conversion-binding'],limitations=[])
+                if malformed:result.update(malformed)
+                if execute:execute(result)
+                return result
+        return Fixture(),native
+
+    def test_all_thirteen_categorical_matrix_invariants(self):
+        for cap in MATRIX:
+            with self.subTest(cap=cap):
+                owner,native=self.policy_owner(cap)
+                request=self.request(cap);request['checks'][0].update(inputs=[native],input_types=['hatch-3d-rig'],output_types=['native-inspection'])
+                result=self.engine(owner).run(request)
+                check=result['checks'][0]
+                self.assertEqual(owner.calls,1)
+                self.assertFalse(result['visual_approval'])
+                if cap in ('graphical-editor','video-encoding','historical-media'):
+                    self.assertEqual(check['outcome'],'partial')
+                    self.assertTrue(check['missing_fields'])
+                elif cap=='visual-comparison':self.assertEqual(check['outcome'],'needs_visual_review')
+                else:self.assertEqual(check['outcome'],'supported_fallback',check)
+
+    def test_batch_and_reservation_expiry_are_current(self):
+        current=[datetime(2026,10,24,tzinfo=timezone.utc)]
+        def advance(result):current[0]+=timedelta(seconds=2)
+        owner,native=self.policy_owner('geometry-inspection',execute=advance,expiry='2026-10-24T00:00:01Z')
+        request=self.request('geometry-inspection','geometry-inspection')
+        for check in request['checks']:check['inputs']=[native]
+        engine=self.engine(owner);engine.clock=lambda:current[0]
+        result=engine.run(request)
+        self.assertEqual(owner.calls,1)
+        self.assertEqual(result['checks'][1]['outcome'],'blocked_missing_capability')
+
+    def test_unavailable_snapshot_can_have_unknown_version(self):
+        owner,native=self.policy_owner('geometry-inspection')
+        snapshot=owner.snapshot();snapshot.update(status='unavailable',backend_version=None,tested_operations=[],evidence=[])
+        self.assertIsNone(validate(snapshot,'snapshot')['backend_version'])
+        snapshot['status']='available'
+        with self.assertRaises(ValueError):validate(snapshot,'snapshot')
+
+    def test_painted_input_cannot_replace_geometry_or_3d_reference(self):
+        owner,native=self.policy_owner('visual-reference')
+        request=self.request('visual-reference');request['checks'][0]['inputs']=[self.project]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('canonical-reference',result['checks'][0]['unsatisfied_gates'])
+        self.assertEqual(owner.calls,0)
+
+    def test_owner_required_review_records_missing_field_and_gate(self):
+        owner,native=self.policy_owner('visual-reference',malformed=dict(outcome='needs_visual_review'))
+        request=self.request('visual-reference');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'needs_visual_review')
+        self.assertIn('visual-approval',result['checks'][0]['missing_fields'])
+        self.assertIn('visual-approval',result['checks'][0]['unsatisfied_gates'])
+
+    def test_whole_process_resource_measurement_is_explicit(self):
+        owner, request=self.bound('geometry-inspection')
+        result=self.engine(owner).run(request)
+        m=result['checks'][0]['measurements']['admission_resources']
+        self.assertGreaterEqual(m['process_cpu_seconds'],0)
+        self.assertIn(m['rss_status'],('measured','unavailable'))
