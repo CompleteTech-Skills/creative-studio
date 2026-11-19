@@ -111,6 +111,14 @@ def list_templates(directory=None) -> list[dict]:
     return result
 
 
+def fitted_anatomy_uncertainty(name, origin):
+    if origin['source'] in ('geometry-fit', 'semantic-part', 'import-metadata') or origin['confidence'] < .9:
+        return dict(element=name, code='RIG_ANATOMY_UNCERTAIN',
+                    message='Inspect joint position, direction and anatomical role before production approval.',
+                    evidence=origin, resolution='pending')
+    return None
+
+
 def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=None,
                        existing=None, character_id='character') -> dict:
     """Fit approved landmarks first, then semantic parts, then measured bounds.
@@ -167,10 +175,9 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
     # actual annotations before computing status or returning the fitted rig.
     validate_skeleton(skeleton)
     for name, origin in evidence.items():
-        if origin['source'] in ('geometry-fit', 'semantic-part', 'import-metadata') or origin['confidence'] < .9:
-            uncertainties.append(dict(element=name, code='RIG_ANATOMY_UNCERTAIN',
-                message='Inspect joint position, direction and anatomical role before production approval.',
-                evidence=origin, resolution='pending'))
+        observation = fitted_anatomy_uncertainty(name, origin)
+        if observation is not None:
+            uncertainties.append(observation)
     controllers = dict(ik=deepcopy(template['ik']), constraints=deepcopy(template['constraints']))
     for chain in controllers['ik']:
         chain['pole'] = (np.asarray(chain['pole'])*factor+offset).tolist()

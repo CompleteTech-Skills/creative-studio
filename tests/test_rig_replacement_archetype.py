@@ -230,6 +230,59 @@ class ReplacementArchetypeTests(unittest.TestCase):
                 self.assertEqual(result.manifest["archetype"], "authored-creature")
                 self.assertEqual(load_rig(result.root).manifest["archetype"], "authored-creature")
 
+    def test_refit_preserves_same_code_reviews_from_other_owners(self):
+        for route in ("native", "http"):
+            with self.subTest(route=route):
+                original = self.native_rig() if route == "native" else self.http_rig()
+                previous_fit = deepcopy(original.manifest["uncertainties"][0])
+                unrelated = [
+                    dict(element=element, code="RIG_ANATOMY_UNCERTAIN",
+                         message=f"Independent review of {element} remains pending.",
+                         evidence=dict(source="import-metadata", reference="Independent authored note",
+                                       confidence=.35), resolution="pending")
+                    for element in ("body", "pelvis")
+                ]
+                original.manifest["uncertainties"].extend(deepcopy(unrelated))
+                save_rig(original, operation="synthetic-independent-anatomy")
+                correction = self.correction(original, "quadruped")
+                correction["edits"][0]["value"]["landmarks"] = {
+                    "root": dict(head=[0, 0, 0], tail=[0, .3, 0], approved=True),
+                    "pelvis": dict(head=[0, .5, 0], tail=[0, .7, 0], confidence=.8,
+                                   approved=True),
+                }
+                if route == "native":
+                    result, _ = apply_rig_corrections(original, correction)
+                    manifests = [result.manifest, load_rig(result.root).manifest]
+                else:
+                    status, response = self.request("PATCH", "/v1/rigs/http", correction)
+                    self.assertEqual(status, 200, response)
+                    status, returned = self.request("GET", "/v1/rigs/http")
+                    self.assertEqual(status, 200, returned)
+                    manifests = [returned, load_rig(original.root).manifest]
+                for manifest in manifests:
+                    observations = manifest["uncertainties"]
+                    self.assertNotIn(previous_fit, observations)
+                    for review in unrelated:
+                        with self.subTest(element=review["element"]):
+                            self.assertIn(review, observations)
+                    fitted_pelvis = [item["resolution"] for item in observations
+                                     if item["element"] == "pelvis"
+                                     and item["evidence"]["source"] == "human-landmark"]
+                    self.assertEqual(fitted_pelvis, ["corrected"])
+
+    def test_refit_retains_duplicate_previous_observations_when_ownership_is_ambiguous(self):
+        original = self.native_rig()
+        fitted_observation = deepcopy(original.manifest["uncertainties"][0])
+        original.manifest["uncertainties"].append(deepcopy(fitted_observation))
+        save_rig(original, operation="synthetic-legacy-duplicate-anatomy")
+        correction = self.correction(original, "custom", "quadruped")
+        correction["edits"][1]["value"]["landmarks"] = {
+            "root": dict(head=[0, 0, 0], tail=[0, .3, 0], approved=True),
+        }
+        result, _ = apply_rig_corrections(original, correction)
+        observations = load_rig(result.root).manifest["uncertainties"]
+        self.assertEqual(observations.count(fitted_observation), 2)
+
     def test_last_admitted_template_determines_identity(self):
         rig = self.native_rig()
         result, _ = apply_rig_corrections(rig, self.correction(rig, "quadruped", "humanoid"))
