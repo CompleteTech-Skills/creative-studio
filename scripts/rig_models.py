@@ -135,7 +135,9 @@ def _anatomy_binding_inputs(manifest):
 def normalize_anatomy_bindings(manifest, *, occurrences=()):
     """Demote stale occurrence metadata; only an explicit fit may bind it."""
     records, bindings, names = _anatomy_binding_inputs(manifest)
-    if not records and 'anatomy_uncertainty_bindings' not in manifest:
+    # A historical manifest without ownership metadata already treats all
+    # records as independent. Preserve that representation and signature on resave.
+    if 'anatomy_uncertainty_bindings' not in manifest:
         return
     # Only records admitted by the loader or a native owner can carry bindings.
     # A digest and array position alone cannot distinguish an opaque duplicate

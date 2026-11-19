@@ -11,11 +11,12 @@ import tempfile
 import unittest
 
 from rig_demo import make_geometry
-from rig_errors import read_json, timestamp
+from rig_errors import atomic_json, read_json, sha256, timestamp
 from rig_jobs import save_rig
 from rig_models import load_rig, rig_signature
 from rig_operations import mutate
 from rig_test_helpers import fixture
+from rig_validation import REVIEW_DIMENSIONS
 
 
 class RigLegacyUncertaintyTests(unittest.TestCase):
@@ -89,6 +90,40 @@ class RigLegacyUncertaintyTests(unittest.TestCase):
         # Whole-record equality includes message, original evidence, spelling,
         # pending resolution and ordering; a role label supplies no anatomy.
         self.assertEqual(self.rig.manifest['uncertainties'], self.initial)
+
+    def test_metadata_free_resave_preserves_legacy_review_identity(self):
+        # A synthetic serialized receipt exercises the native reader's
+        # compatibility path without granting an actual visual approval.
+        manifest = deepcopy(self.rig.manifest)
+        manifest.pop('anatomy_uncertainty_bindings')
+        for issue in manifest['uncertainties']:
+            issue['resolution'] = 'corrected'
+        original = rig_signature(manifest)
+        evidence = self.rig.root / 'review/synthetic-legacy-evidence.json'
+        atomic_json(evidence, {'kind': 'synthetic-format-fixture'})
+        receipt = self.rig.root / 'review/synthetic-legacy-receipt.json'
+        atomic_json(receipt, dict(
+            schema_version=1, kind='hatch-3d-rig-review', rig_id=manifest['id'],
+            rig_version=manifest['version'], expected_sha256=original,
+            author='Synthetic legacy format fixture', reviewer_kind='agent',
+            created_at=timestamp(), fixture=manifest['source']['fixture'],
+            evidence=[dict(path='review/synthetic-legacy-evidence.json', sha256=sha256(evidence))],
+            dimensions={dimension: dict(verdict='approved', note='Synthetic compatibility fixture.')
+                        for dimension in REVIEW_DIMENSIONS},
+        ))
+        manifest['review'] = dict(status='approved', receipts=[
+            dict(path='review/synthetic-legacy-receipt.json', sha256=sha256(receipt))])
+        receipt_bytes = receipt.read_bytes()
+        atomic_json(self.rig.root / 'rig.json', manifest)
+
+        historical = load_rig(self.rig.root)
+        self.assertEqual(rig_signature(historical.manifest), original)
+        save_rig(historical, bump=False)
+        reopened = load_rig(self.rig.root)
+        self.assertNotIn('anatomy_uncertainty_bindings', reopened.manifest)
+        self.assertEqual(rig_signature(reopened.manifest), original)
+        self.assertEqual(reopened.manifest, manifest)
+        self.assertEqual(receipt.read_bytes(), receipt_bytes)
 
     def test_known_bone_removal_preserves_unowned_historical_record(self):
         self.historical_format()
