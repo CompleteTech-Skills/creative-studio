@@ -804,3 +804,12 @@ acknowledgment was interrupted. Reopen the current journal under the existing
 Hatch ownership lock for recovery; repeated replay retains uncertainty and charges
 each measured delta once. This check does not infer nonexecution or authorize
 new provider work.
+
+Production acquisition may tighten native attempt and concurrency limits to the
+project's stricter policy. While holding the existing run lock and original
+directory admission, it verifies that the journal is still current and publishes
+only those tighter limits before entering native claim reconciliation. A tighter
+policy does not create a reservation or authorize a token by itself. If later
+claim admission refuses, the tighter limits remain durable; all claim, accounting
+and source history stays with its original owner. The current-journal accounting
+guard applies unchanged to the subsequent claim and every recovery operation.

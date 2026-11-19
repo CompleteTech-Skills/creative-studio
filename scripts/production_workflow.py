@@ -679,12 +679,20 @@ def claim_generation(root, binding_id, job):
                     hatch.inside(run, selected[field])  # Keep containment without resolving the read's leaf.
                     prompt = run / selected[field]
                     hatch.append_input_text(prompt, marker, instruction)
-            data.setdefault('limits', {})['attempts_per_job'] = min(
+            limits = dict(data.get('limits', {}))
+            limits['attempts_per_job'] = min(
                 data.get('limits', {}).get('attempts_per_job', report['limits']['attempts_per_job']),
                 report['limits']['attempts_per_job'])
-            data['limits']['concurrency'] = min(
-                data['limits'].get('concurrency', report['limits']['concurrency']),
+            limits['concurrency'] = min(
+                limits.get('concurrency', report['limits']['concurrency']),
                 report['limits']['concurrency'])
+            if limits != data.get('limits', {}):
+                # This caller already holds the native owner lock and original
+                # directory admission. Publish only a tightening of its current
+                # journal before claim reconciliation authenticates that journal.
+                hatch._require_current_handoff(run, data)
+                data['limits'] = limits
+                hatch._save_admitted(run, data)
             handoff_checks = []
             handoff = hatch.claim(run, data, job, _handoff_rechecks=handoff_checks)
             handoff['production_context'] = context
