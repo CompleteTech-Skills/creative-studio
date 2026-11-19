@@ -204,45 +204,50 @@ def _descendants(identity):
     return known
 
 
-def _group_members(identity):
-    """Live members of the engine's own session/group born no earlier than it.
+OWNER_VARIABLE='HATCH_MODEL3D_OWNER'
 
-    The engine leads a new session, so its group and session IDs equal its PID.
-    A group ID cannot be reused while any member is alive; the start-time bound
-    excludes an unrelated later leader that might reuse the PID afterwards.
+
+def _owned_pids(marker):
+    """Live processes carrying this launch's owner marker in their environment.
+
+    Ownership is proven positively: the supervisor gives its engine a fresh
+    random marker that every descendant inherits. Stale or reused PIDs, other
+    sessions and kernel threads never carry it, so they are never signalled.
     """
-    if not isinstance(identity,dict):return []
-    members=[]
+    if not (isinstance(marker,str) and len(marker)==32 and all(c in '0123456789abcdef' for c in marker)):
+        return []
+    needle=(OWNER_VARIABLE+'='+marker).encode();owned=[]
     for entry in os.scandir('/proc'):
-        if not entry.name.isdigit():continue
+        if not entry.name.isdigit() or int(entry.name)==os.getpid():continue
         try:
+            with (Path(entry.path)/'environ').open('rb') as stream:environ=stream.read(1<<20)
+            if needle not in environ.split(b'\0'):continue
             text=(Path(entry.path)/'stat').read_text()
         except (FileNotFoundError,ProcessLookupError,PermissionError):continue
-        fields=text[text.rfind(')')+2:].split()
-        if (int(fields[2])==identity['group'] and int(fields[3])==identity['group']
-                and int(fields[19])>=int(identity['start'])):
-            members.append(int(entry.name))
-    return members
+        if text[text.rfind(')')+2:].split()[0]!='Z':owned.append(int(entry.name))
+    return owned
 
 
-def _kill_group_remnants(identity):
-    """After the engine leader exits, its surviving descendants are still owned."""
+def _kill_owned(marker):
+    """SIGKILL every live process proven to belong to this launch."""
     for _ in range(50):
-        if not _group_members(identity):return
-        try:os.killpg(identity['group'],signal.SIGKILL)
-        except ProcessLookupError:return
+        pids=_owned_pids(marker)
+        if not pids:return
+        for pid in pids:
+            try:os.kill(pid,signal.SIGKILL)
+            except ProcessLookupError:pass
         time.sleep(.02)
     raise RigError('MODEL3D_WORKER_OWNERSHIP','Owned worker descendants could not be terminated.')
 
 
 def reap_orphaned_engine(root, request_sha256=None):
-    """Terminate an engine whose supervisor died without cleanup."""
+    """Terminate an engine whose supervisor died before publishing a final state."""
     try:record=state(root)
     except (RigError,OSError,ValueError):return False
-    identity=record.get('process_identity') if isinstance(record,dict) else None
-    if not isinstance(identity,dict) or set(identity)!={'pid','start','group'}:return False
-    if not _group_members(identity):return False
-    _kill_group_remnants(identity)
+    if not isinstance(record,dict) or record.get('status')!='running':return False
+    marker=record.get('owner_marker')
+    if not _owned_pids(marker):return False
+    _kill_owned(marker)
     return True
 
 
@@ -337,17 +342,18 @@ def _guard(root,expected_hash):
     value=_request(root,expected_hash)
     # Stopping the supervisor must still run the owned-tree cleanup below.
     for number in (signal.SIGTERM,signal.SIGHUP):signal.signal(number,_terminate_supervisor)
+    marker=uuid.uuid4().hex
     with job_lock(root):
-        atomic_json(root/'state.json',dict(schema_version=1,token=value['token'],status='running',
+        atomic_json(root/'state.json',dict(schema_version=1,token=value['token'],status='running',owner_marker=marker,
                     supervisor_identity=_identity(os.getpid()),started_at=timestamp()))
         before=resource.getrusage(resource.RUSAGE_CHILDREN)
         process=subprocess.Popen([sys.executable,'-I',str(Path(__file__).resolve()),'execute','--root',str(root),
                                   '--request-hash',expected_hash],
                     cwd=str(Path(__file__).resolve().parents[1]),stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True,close_fds=True,
-                    preexec_fn=_set_parent_death_signal)
+                    env={**os.environ,OWNER_VARIABLE:marker},preexec_fn=_set_parent_death_signal)
         identity=_identity(process.pid); started=time.monotonic(); reason=None
-        running=dict(schema_version=1,token=value['token'],status='running',pid=process.pid,
+        running=dict(schema_version=1,token=value['token'],status='running',owner_marker=marker,pid=process.pid,
                      started_at=timestamp(),started_epoch=time.time(),limits=value['limits'],process_identity=identity,
                      supervisor_identity=_identity(os.getpid()))
         atomic_json(root/'state.json',running)
@@ -377,8 +383,8 @@ def _guard(root,expected_hash):
                     reason=reason or 'resource-exhausted';_stop(process,identity,root,known,expected_hash)
                     for key in list(selector.get_map().values()):selector.unregister(key.fileobj);key.fileobj.close()
             code=process.wait()
-            # The leader is gone; any surviving member of its group is an owned orphan.
-            if identity:_kill_group_remnants(identity)
+            # The leader is gone; any surviving process carrying its marker is an owned orphan.
+            _kill_owned(marker)
             after=resource.getrusage(resource.RUSAGE_CHILDREN)
             result=read_json(root/'result.json') if (root/'result.json').exists() else None
             error=read_json(root/'error.json') if (root/'error.json').exists() else None
@@ -393,8 +399,10 @@ def _guard(root,expected_hash):
                        result=result,error=error)
             atomic_json(root/'state.json',final)
         finally:
+            # A second stop signal must not abort the owned-tree cleanup.
+            for number in (signal.SIGTERM,signal.SIGHUP):signal.signal(number,signal.SIG_IGN)
             if process.poll() is None:_stop(process,identity,root,known,expected_hash)
-            if identity:_kill_group_remnants(identity)
+            _kill_owned(marker)
             selector.close()
             for stream in logs.values():stream.close()
 

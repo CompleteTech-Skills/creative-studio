@@ -83,7 +83,10 @@ class BatchTests(unittest.TestCase):
             else:self.fail('Scheduler did not record an owned supervisor before the deadline')
             process.kill();process.wait(timeout=5)
         self.wait_worker(root/owned['relative_root'])
-        completed=batches.run_batch(root)['journal']
+        # The scheduler asks the worker owner to reap before deciding the outcome.
+        with patch.object(batches.worker,'reap_orphaned_engine',wraps=worker.reap_orphaned_engine) as reap:
+            completed=batches.run_batch(root)['journal']
+        self.assertTrue(reap.called)
         self.assertEqual(completed['status'],'completed')
         self.assertEqual(len(completed['items']['first']['workers']),1)
         self.assertEqual(completed['items']['first']['checkpoint']['attempts'],1)
@@ -152,7 +155,7 @@ class BatchTests(unittest.TestCase):
         deadline=time.monotonic()+30
         while not (root/'diagnostic-child.json').exists() and time.monotonic()<deadline:time.sleep(.02)
         child=read_json(root/'diagnostic-child.json')['pid'];record=worker.state(root)
-        self.addCleanup(lambda:worker._kill_group_remnants(record['process_identity']))
+        self.addCleanup(lambda:worker._kill_owned(record['owner_marker']))
         return root,child,record
 
     def test_engine_exit_kills_its_surviving_owned_descendants(self):
@@ -178,6 +181,24 @@ class BatchTests(unittest.TestCase):
         self.assertTrue(worker.reap_orphaned_engine(root) or self.gone(child,0.))
         self.assertTrue(self.gone(child))
         self.assertFalse(worker.reap_orphaned_engine(root))
+
+    def test_reaping_never_signals_processes_without_this_launch_marker(self):
+        root,child,record=self.started_tree()
+        worker.cancel(root);self.assertEqual(self.wait_worker(root)['status'],'cancelled')
+        decoy=subprocess.Popen(['sleep','30'],start_new_session=True)
+        self.addCleanup(lambda:(decoy.kill(),decoy.wait()))
+        identity=worker._identity(decoy.pid)
+        finished=read_json(root/'state.json')
+        # A completed record is never reaped, whatever identity it carries.
+        atomic_json(root/'state.json',dict(finished,process_identity=identity))
+        self.assertFalse(worker.reap_orphaned_engine(root))
+        # A running record whose marker no live process carries, stale/reused
+        # identities, kernel-thread groups and malformed markers signal nothing.
+        for marker,forged in ((uuid.uuid4().hex,identity),(uuid.uuid4().hex,dict(pid=0,start='0',group=0)),
+                              ('not-a-marker',identity),(None,identity)):
+            atomic_json(root/'state.json',dict(finished,status='running',owner_marker=marker,process_identity=forged))
+            self.assertFalse(worker.reap_orphaned_engine(root))
+        self.assertIsNone(decoy.poll())
 
     def test_inventory_exhaustion_still_kills_real_owned_leader(self):
         root,job=self.make_worker('sleep')
