@@ -38,16 +38,25 @@ def _validate_persisted_authority(rig):
 def _persist_correction(rig, correction):
     """Persist through the caller's existing native writer ownership boundary."""
     current = _validate_persisted_authority(rig)
-    if current['skeleton'] is not None and any(
-            edit['operation'] in ('bone-add', 'bone-update', 'bone-remove', 'template')
-            for edit in correction['edits']):
-        # Both public correction routes publish here under native writer ownership.
-        # Unsaved public skeleton authoring may reset the handle's version, so
-        # the admitted saved skeleton supplies the persisted successor identity.
-        rig.skeleton['version'] = next_version(current['skeleton']['version'])
+    invalidated = []
+    if rig.manifest['skeleton'] != current['skeleton']:
+        # Every correction publishes the complete authored handle. Compare the
+        # actual skeleton, including detached edits, rather than the last edit's
+        # operation name. The saved identity is authoritative under this lock.
+        if current['skeleton'] is not None:
+            rig.skeleton['version'] = next_version(current['skeleton']['version'])
+        invalidated = _invalidate_skeleton_dependents(rig)
     digest = object_hash(correction)
     atomic_json(safe_path(rig.root, 'rig/corrections/' + digest + '.json'), correction)
     save_rig(rig, operation='manual-correction')
+    return invalidated
+
+
+def _invalidate_skeleton_dependents(rig):
+    rig.weights = {}
+    rig.clips = {}
+    rig.manifest['state_mapping'] = {}
+    return ['skins', 'animations', 'state_mapping', 'review', 'validation']
 
 
 def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
@@ -65,7 +74,8 @@ def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=Non
     with job_lock(rig.root):
         _validate_persisted_authority(rig)
         result, report = _apply_correction(rig, correction, resolve_template=resolve_template)
-        _persist_correction(result, correction)
+        invalidated = _persist_correction(result, correction)
+        report['invalidated'] = list(dict.fromkeys(report['invalidated'] + invalidated))
         report['rig_sha256'] = rig_signature(result.manifest)
         return result, report
 
@@ -204,7 +214,7 @@ def _apply_correction(rig, correction, *, resolve_template=None):
             version=next_version(admitted_skeleton_version or result.skeleton['version']))
         for b in skeleton['bones']:b['evidence']=evidence[b['id']]
         result.manifest['skeleton']=skeleton
-        invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
+        invalidated = _invalidate_skeleton_dependents(result)
         for u in result.manifest['uncertainties']:
             if evidence.get(u['element'],{}).get('source')=='human-landmark':u['resolution']='corrected'
     validate_skeleton(result.skeleton,result.manifest['limits'])

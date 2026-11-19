@@ -97,7 +97,8 @@ def mutate(root,operation,parameters=None):
             # correction and guarded persistence owners without a nested lock.
             corrected,result=apply_rig_corrections(rig,parameters['correction'],persist=False,
                                                  resolve_template=resolve_template)
-            _persist_correction(corrected,parameters['correction'])
+            invalidated = _persist_correction(corrected,parameters['correction'])
+            result['invalidated'] = list(dict.fromkeys(result.get('invalidated', []) + invalidated))
             result['rig_sha256']=rig_signature(corrected.manifest)
         elif operation=='review':
             from rig_review import apply_review
