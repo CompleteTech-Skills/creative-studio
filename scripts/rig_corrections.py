@@ -11,11 +11,22 @@ from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
 
 
-def apply_rig_corrections(rig, correction, *, persist=True):
+def validate_correction_binding(rig, correction):
+    """Validate the bounded original envelope before resolving execution inputs."""
+    if isinstance(correction, dict) and isinstance(correction.get('edits'), list):
+        from rig_contracts import definitions
+        limit=definitions()['RigCorrection']['properties']['edits']['maxItems']
+        require(len(correction['edits']) <= limit, 'RIG_SCHEMA',
+                'Correction exceeds the edit limit.', stage='RigCorrection',
+                asset='edits', expected=limit, observed=len(correction['edits']))
     validate_contract(correction, 'RigCorrection')
     require(correction['rig_id']==rig.manifest['id'] and correction['rig_version']==rig.manifest['version']
             and correction['expected_sha256']==rig_signature(rig.manifest),
             'RIG_STALE_CORRECTION', 'Correction targets a different rig revision; rebase it against the current rig.')
+
+
+def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
+    validate_correction_binding(rig, correction)
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
     specs=[];evidence={}
     if result.manifest['skeleton']:
@@ -43,6 +54,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                     result.manifest['controllers']['constraints']=[c for c in result.manifest['controllers']['constraints'] if c['bone']!=target and c.get('target')!=target]
                     result.manifest['attachments']=[s for s in result.manifest['attachments'] if s['bone']!=target]
                     result.manifest['facial']['eyes']=[x for x in result.manifest['facial']['eyes'] if x!=target]
+                    if 'eyelids' in result.manifest['facial']:
+                        result.manifest['facial']['eyelids']=[binding for binding in result.manifest['facial']['eyelids'] if binding['eye']!=target]
                     for expression in result.manifest['facial']['expressions'].values():expression['bones'].pop(target,None)
                 else:
                     require(isinstance(value,dict) and set(value) <= {'id','role','parent','head','tail','deform','mirror','roll'},
@@ -61,6 +74,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                         for s in result.manifest['attachments']:
                             if s['bone']==target:s['bone']=renamed
                         result.manifest['facial']['eyes']=[renamed if x==target else x for x in result.manifest['facial']['eyes']]
+                        for binding in result.manifest['facial'].get('eyelids', []):
+                            if binding['eye']==target:binding['eye']=renamed
                         for expression in result.manifest['facial']['expressions'].values():
                             if target in expression['bones']:expression['bones'][renamed]=expression['bones'].pop(target)
                         target=renamed
@@ -122,13 +137,17 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                 for key in stale:result.clips.pop(key)
                 invalidated.extend('clip:'+key for key in stale);result.manifest['state_mapping']={}
             if action=='remove':
+                if 'eyelids' in result.manifest['facial']:
+                    result.manifest['facial']['eyelids']=[binding for binding in result.manifest['facial']['eyelids']
+                        if (binding['mesh'],binding['morph'])!=(target,name)]
                 for expression in result.manifest['facial']['expressions'].values():
                     expression['morphs'].pop(target+'::'+name,None)
                     if not any(name in m.morphs for m in result.geometry.meshes):expression['morphs'].pop(name,None)
         elif operation=='template':
             from rig_templates import generate_skeleton
             require(isinstance(value,dict) and set(value) <= {'template','landmarks'} and 'template' in value,'RIG_TEMPLATE_EDIT','Specify a template and optional landmarks.')
-            fitted=generate_skeleton(result.geometry,value['template'],landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
+            template=value['template'] if resolve_template is None else resolve_template(value['template'])
+            fitted=generate_skeleton(result.geometry,template,landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
             for key in ('skeleton','controllers','attachments','uncertainties'):result.manifest[key]=fitted[key]
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True
@@ -144,6 +163,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
     bone_ids={b['id'] for b in result.skeleton['bones']}
     require(all(s['bone'] in bone_ids for s in result.manifest['attachments']),'RIG_ATTACHMENT_REFERENCE','Attachment bone is missing.')
     require(set(result.manifest['facial']['eyes']) <= bone_ids,'RIG_EYE_REFERENCE','Eye control bone is missing.')
+    from rig_facial import validate_eyelid_bindings
+    validate_eyelid_bindings(result)
     if persist:
         digest=object_hash(correction);atomic_json(safe_path(result.root,'rig/corrections/'+digest+'.json'),correction)
         save_rig(result,operation='manual-correction')

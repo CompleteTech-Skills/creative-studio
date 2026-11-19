@@ -50,11 +50,25 @@ Callers can tighten native resource limits. Byte and memory admission precedes
 payload retrieval, and native preflight budgets geometry, hierarchy, animation copies
 and embedded texture work before validation. It accounts for generated native
 morph position arrays, repeated inverse binds and per-binding skeletal passes.
-Memory admission is a conservative working-set estimate. Node, clip and key
-limits bound the report. The timeout applies to the Khronos subprocess. The
+The report's `resources` section gives the selected-scene node and
+primitive-instance counts, accessor and embedded image inventory counts, and
+the sum of encoded image view lengths and header dimensions in pixels. An image
+view is counted for each image record that refers to it. The glTF load estimate
+uses the native preflight's geometry-only method and array estimate. The
+verification reserve includes that estimate along with geometry analysis,
+animation, generated native arrays and verification overhead. The native decode
+budget is the profile's memory limit minus that reserve. Raster admission
+charges 16 bytes per image pixel against half the decode budget, rounded down,
+with a separate 16,777,216-pixel cap per image. These byte estimates describe
+admission for this verification pass. Process memory, GPU allocations and
+renderer performance require their own measurements. Node, clip and key limits
+bound the report. The timeout applies to the Khronos subprocess. The
 in-process native checks use the resource admission limits.
 
-Verification leaves the library read-only and reports visual review as
+The `capabilities` list describes data observed in this normalized payload
+under the native format checks. Support for a particular renderer or original
+source format requires separate evidence. Verification leaves the library
+read-only and reports visual review as
 `unreviewed` and production approval as false. Prefabs, environments, linked
 assets, original/alternate payload formats, Blender, skeleton-free animation,
 and renderer execution remain outside this slice. The full #140 acceptance
