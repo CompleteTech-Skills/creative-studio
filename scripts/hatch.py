@@ -750,8 +750,12 @@ def claim(root, data, name, *, _handoff_rechecks=None):
         raise ValueError('inspect canonical base/calibration and record base-review before generating rows')
     if name != 'base' and job.get('prompt_settings_hash') != input_digest(root / 'extraction-settings.json'):
         raise ValueError('calibration changed outside configure; regenerate prompts with configure before claiming rows')
+    # Capture the requested generation inputs without changing the current
+    # journal. Budget admission must authenticate the original imported or
+    # derived source record before its replacement transition is published.
+    generation_job = dict(job)
     for key in ('derived_from', 'derivation_receipt', 'import_receipt'):
-        job.pop(key, None)
+        generation_job.pop(key, None)
     next_attempt = job.get('attempts', 0) + 1
     selected_prompt = job.get('retry_prompt_file', job['prompt_file']) if next_attempt > 1 else job['prompt_file']
     # Keep only the bounded handoff inputs, not every attached image, in memory.
@@ -766,7 +770,7 @@ def claim(root, data, name, *, _handoff_rechecks=None):
         if path not in captured:
             captured[path] = input_bytes(path)
         return captured[path]
-    hashes = inputs(root, job, _reader=capture)
+    hashes = inputs(root, generation_job, _reader=capture)
     prompt_bytes = capture(root / selected_prompt)
     prompt_text = prompt_bytes.decode('utf-8')
     request = json.loads(capture(root / 'pet_request.json'))
@@ -791,9 +795,12 @@ def claim(root, data, name, *, _handoff_rechecks=None):
     input_images = [{**x, 'path': str(root / x['path'])} for x in job['input_images']]
     tool_arguments = {'transparent_background':
                       (settings if name != 'base' else request['extraction']).get('background') != 'chroma'}
-    job.pop('stale', None)
     budget = _native_budget(root, data, claim_handoff=handoff_identity)
     token = budget.before_claim(job, hashes) if budget is not None else uuid.uuid4().hex
+    # The admitted transition replaces only the active source fields. Import
+    # and derivation receipts in the append-only history remain intact.
+    for key in ('derived_from', 'derivation_receipt', 'import_receipt', 'stale'):
+        job.pop(key, None)
     # A refusal here retains the durable reservation and unpublished token intent.
     # Never reread mutable inputs with ordinary file/JSON readers after admission.
     def check_captured_inputs():
