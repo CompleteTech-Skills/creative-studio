@@ -329,6 +329,36 @@ def _pole_perpendicular(direction, origin, pole):
     return unit(perpendicular)
 
 
+# Relative rounding allowance for directions derived from evaluated chain points.
+_STEERING_ROUNDING = 64*np.finfo(float).eps
+
+
+def _pole_steering_unresolved(previous, point, following, pole):
+    """Whether a FABRIK pole rotation is below its own rounding uncertainty.
+
+    The neighbour axis is a difference of nearby points. Near a nested fold it
+    is short, nearly parallel to the pole offset, or both, so the steering
+    angle carries rounding of order eps*scale/(|axis|*sin). Rotating by such an
+    unresolved angle moves an already aligned joint, and the error cascades
+    into the next neighbour axis. Measurable pole changes still steer.
+    """
+    raw = following-previous
+    span = float(np.linalg.norm(raw))
+    axis = raw/span
+    current = point-previous
+    offset = pole-previous
+    current_perp = current-axis*np.dot(current, axis)
+    pole_perp = offset-axis*np.dot(offset, axis)
+    current_norm, pole_norm = float(np.linalg.norm(current_perp)), float(np.linalg.norm(pole_perp))
+    if current_norm == 0. or pole_norm == 0.:
+        return True
+    scale = max(float(np.abs(previous).max()), float(np.abs(point).max()), float(np.abs(following).max()), 1e-300)
+    axis_error = _STEERING_ROUNDING*scale/span
+    uncertainty = axis_error*(np.linalg.norm(current)/current_norm+np.linalg.norm(offset)/pole_norm)
+    cosine = float(np.clip(np.dot(current_perp, pole_perp)/(current_norm*pole_norm), -1., 1.))
+    return math.acos(cosine) <= uncertainty
+
+
 def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
     """Split the validated order before any consumer of the endpoint pose."""
     # Follow the same parent/target edges validated by constraint_order().
@@ -469,6 +499,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
                 for i in range(1, len(points)-1):
                     axis = points[i+1]-points[i-1]
                     if np.linalg.norm(axis) < 1e-8:continue
+                    if _pole_steering_unresolved(points[i-1], points[i], points[i+1], pole):continue
                     axis = unit(axis);delta = points[i]-points[i-1]
                     projection = axis*np.dot(delta, axis)
                     radius = np.linalg.norm(delta-projection)
