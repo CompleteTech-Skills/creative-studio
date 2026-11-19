@@ -35,11 +35,21 @@ EVALUATOR_SOURCES = (
 )
 
 
-def _portable_code(code):
-    # Source filenames can differ between workers with the same loaded code.
-    constants = tuple(_portable_code(value) if isinstance(value, CodeType) else value
-                      for value in code.co_consts)
-    return code.replace(co_filename='<loaded evaluator>', co_consts=constants)
+def _portable_constant(value):
+    if isinstance(value, CodeType):
+        # Source filenames may differ between workers with the same code.
+        return value.replace(co_filename='<loaded evaluator>',
+                             co_consts=tuple(map(_portable_constant, value.co_consts)))
+    if isinstance(value, slice):
+        # Compiled subscripts can contain slice literals on newer Python
+        # versions. Marshal format 2 does not support slice objects.
+        return ('slice', tuple(map(_portable_constant, (value.start, value.stop, value.step))))
+    if isinstance(value, tuple):
+        # Frame real tuple literals so they cannot collide with slice encoding.
+        return ('tuple', tuple(map(_portable_constant, value)))
+    if isinstance(value, frozenset):
+        return ('frozenset', frozenset(map(_portable_constant, value)))
+    return value
 
 
 @lru_cache(maxsize=1)
@@ -50,8 +60,8 @@ def _evaluator_fingerprint():
         loaded = import_module(filename.removesuffix('.py'))._EVALUATOR_MODULE_CODE
         # Marshal without reference or interning tags so process import order
         # cannot change the digest of equivalent compiled code.
-        modules[filename] = hashlib.sha256(marshal.dumps(_portable_code(loaded), 2)).hexdigest()
-    return digest(dict(format='loaded-evaluator-v1', modules=modules,
+        modules[filename] = hashlib.sha256(marshal.dumps(_portable_constant(loaded), 2)).hexdigest()
+    return digest(dict(format='loaded-evaluator-v2', modules=modules,
                        python=platform.python_version(), numpy=numpy.__version__,
                        jsonschema=metadata.version('jsonschema')))
 

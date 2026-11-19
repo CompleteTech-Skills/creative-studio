@@ -405,6 +405,20 @@ class TemporalTests(unittest.TestCase):
                          continuity_bytes([first, later]))
         self.assertEqual(self.snap(frame=3)['snapshot']['entities'][0]['transform'], native_before)
 
+    def test_loaded_code_fingerprint_preserves_slice_literal_types(self):
+        import marshal
+
+        from continuity_temporal import _portable_constant
+
+        def serialized(value):
+            code = compile('None', '<fixture-path>', 'eval').replace(co_consts=(value,))
+            return marshal.dumps(_portable_constant(code), 2)
+
+        self.assertEqual(serialized(slice(None, 2, -1)), serialized(slice(None, 2, -1)))
+        self.assertNotEqual(serialized(slice(None, 2, -1)), serialized(slice(None, 2, 1)))
+        self.assertNotEqual(serialized(slice(None, 2, -1)), serialized(('slice', (None, 2, -1))))
+        self.assertNotEqual(serialized((slice(1, 2),)), serialized((('slice', (1, 2, None)),)))
+
     def test_evaluator_fingerprint_is_stable_when_only_disk_bytes_change(self):
         document = dict(plan=self.plan, events=[])
         original = TemporalEngine(self.root, document).evaluator_sha256
