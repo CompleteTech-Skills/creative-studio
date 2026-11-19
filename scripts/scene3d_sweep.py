@@ -180,16 +180,25 @@ def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
             contained=solid_inside(start,triangles)
             tested+=len(triangles)
             require(tested<=MAX_QUERY_TESTS,'Sphere closed-nearest query budget exceeded.','SCENE3D_SPATIAL_LIMIT')
-            candidates=[(i,_closest_triangle(start,triangle)) for i,triangle in enumerate(triangles)]
-            candidates.sort(key=lambda item:(float(np.linalg.norm(item[1]-start)),item[0]))
-            for triangle_id,point in candidates:
-                normal=point-start;length=float(np.linalg.norm(normal))
+            # Compare separation before rounding contact points back into
+            # world space, including the nearest-boundary ordering.
+            candidates = []
+            for i, triangle in enumerate(triangles):
+                anchor = triangle[0]
+                local_start = start - anchor
+                point = _closest_triangle(local_start, triangle - anchor)
+                candidates.append((math.hypot(*(point - local_start)), i, point))
+            candidates.sort(key=lambda item: (item[0], item[1]))
+            for length,triangle_id,point in candidates:
                 if not contained and length>radius:break
-                outward=_boundary_outward(point,triangles,triangle_id,solid_inside,require)
+                anchor = triangles[triangle_id,0]
+                local_triangles = triangles - anchor
+                outward=_boundary_outward(point,local_triangles,triangle_id,solid_inside,require)
                 if outward is None:continue
-                boundary_ulp=32*np.finfo(float).eps*max(float(np.max(np.abs(point))),float(np.max(np.abs(start))),float(np.max(np.abs(triangles[triangle_id]-triangles[triangle_id,0]))))
+                boundary_ulp=32*np.finfo(float).eps*float(np.max(np.abs(local_triangles[triangle_id])))
+                normal = point - (start - anchor)
                 normal=(normal/length*(1 if contained else -1) if length>boundary_ulp else outward)
-                hit=dict(fraction=0.,normal=normal.tolist(),point=point.tolist(),center=start.tolist(),
+                hit=dict(fraction=0.,normal=normal.tolist(),point=(anchor+point).tolist(),center=start.tolist(),
                          node=node,triangle=triangle_id,revision=index._revision,initial_containment=contained)
                 if best is None or (hit['fraction'],node,triangle_id)<(best['fraction'],best['node'],best['triangle']):
                     best=hit

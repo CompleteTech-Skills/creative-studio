@@ -128,6 +128,20 @@ class SphereSweepTests(unittest.TestCase):
         self.assertIsNone(index.sweep_sphere([.2,2e-14,.2],[.2,3e-14,.2],1e-14))
         self.assertIsNone(index.sweep_sphere([.2,.10000000000001,.2],[.2,1,.2],.1))
 
+    def test_closed_prism_initial_clearance_survives_translation(self):
+        vertices = [[0,0,0],[1,0,0],[0,0,1],[0,1,0],[1,1,0],[0,1,1]]
+        faces = [[0,1,2],[3,5,4],[0,3,4],[0,4,1],[1,4,5],[1,5,2],[2,5,3],[2,3,0]]
+        for base in (0, 2**39, -(2**39)):
+            with self.subTest(base=base):
+                index = self.index([[base+x,y,z] for x,y,z in vertices], faces)
+                start = [base+.5,.5,.5001]
+                # The diagonal face is .0001/sqrt(2) from the center.
+                self.assertIsNone(index.sweep_sphere(start, start, .00006))
+                hit = index.sweep_sphere(start, start, .00008)
+                self.assertEqual(hit['fraction'], 0)
+                self.assertFalse(hit['initial_containment'])
+                np.testing.assert_allclose(hit['normal'], [2**-.5,0,2**-.5], rtol=0, atol=1e-10)
+
     def test_closed_box_initial_containment_uses_nearest_outward_escape(self):
         vertices=[[x,y,z] for x in (-1,1) for y in (-1,1) for z in (-1,1)]
         faces=[[0,1,3],[0,3,2],[4,6,7],[4,7,5],[0,4,5],[0,5,1],

@@ -7,6 +7,7 @@ Animated/deformed callers must supply their evaluated vertices explicitly.
 """
 from __future__ import annotations
 
+from fractions import Fraction
 from itertools import product
 import math
 import sys
@@ -70,9 +71,41 @@ def _ray_box(origin, direction, low, high, limit):
         else:
             a, b = sorted(((low[i]-origin[i])/direction[i], (high[i]-origin[i])/direction[i]))
             near, far = max(near, a), min(far, b)
-            if near > far:
+            # Independent slab divisions can round an exact corner contact
+            # to opposite sides. The triangle test resolves the boundary.
+            if near > far and near - far > 8*math.ulp(max(abs(near),abs(far))):
                 return False
     return True
+
+
+def _exact_ray_triangle(origin, direction, triangle, limit):
+    """Resolve an uncertain ray/edge sign using the exact binary inputs."""
+    def vector(row):
+        return tuple(Fraction(x) for x in row)
+
+    def subtract(a, b):
+        return tuple(x-y for x,y in zip(a,b))
+
+    def determinant(a, b, c):
+        return (a[0]*(b[1]*c[2]-b[2]*c[1]) + a[1]*(b[2]*c[0]-b[0]*c[2]) +
+                a[2]*(b[0]*c[1]-b[1]*c[0]))
+
+    a,b,c = map(vector, triangle)
+    d = vector(direction)
+    e1, e2, offset = subtract(b,a), subtract(c,a), subtract(vector(origin),a)
+    det = determinant(e1,d,e2)
+    if not det:
+        return None
+    u, v = determinant(offset,d,e2)/det, determinant(d,offset,e1)/det
+    w = 1-u-v
+    if min(w,u,v) < 0:
+        return None
+    t = determinant(e2,offset,e1)/det
+    if t < 0 or t*t*sum(x*x for x in d) > Fraction(limit)**2:
+        return None
+    travel = [t*x for x in d]
+    point = [float(Fraction(x)+dx) for x,dx in zip(origin,travel)]
+    return math.hypot(*map(float,travel)), point, [float(w),float(u),float(v)]
 
 
 def _triangle_frame(triangle):
@@ -323,13 +356,18 @@ class SpatialIndex:
         require(identifier in self._records, 'Node has no geometric bounds.', 'SCENE3D_SPATIAL')
         source = self._records[identifier]
         center, axes = _oriented_bounds(source)
-        source_box = _box(source['box'])
+        # A rotated mesh's local box can have empty corners outside the
+        # world bounds of its vertices. Project the box itself onto XYZ.
+        source_extent = np.abs(axes).sum(axis=0)
         result = []
         for other,record in records:
-            if other == identifier or not _overlap(source_box,_box(record['box'])):
+            if other == identifier:
                 continue
             other_center, other_axes = _oriented_bounds(record)
             delta = other_center - center
+            extent = source_extent + np.abs(other_axes).sum(axis=0)
+            if np.any(np.abs(delta) > extent + 32*np.finfo(float).eps*np.maximum(extent, np.abs(delta))):
+                continue
             # Face normals from each box plus all nine edge cross products.
             candidates = [np.cross(a,b) for a,b in ((axes[0],axes[1]),(axes[1],axes[2]),(axes[2],axes[0]),
                                                     (other_axes[0],other_axes[1]),(other_axes[1],other_axes[2]),(other_axes[2],other_axes[0]))]
@@ -409,6 +447,7 @@ class SpatialIndex:
 
     def raycast(self, origin, direction, *, max_distance=1e9, exclude=(), visibility='all', first=True):
         origin, direction = _vec(origin,'ray origin'), _vec(direction,'ray direction')
+        input_direction = direction
         magnitude = np.max(np.abs(direction))
         require(magnitude > 0, 'Ray direction is zero.', 'SCENE3D_SPATIAL')
         direction = direction/magnitude
@@ -423,7 +462,8 @@ class SpatialIndex:
             triangles = record['triangles']
             tested += len(triangles)
             require(tested <= MAX_QUERY_TESTS, 'Ray query budget exceeded.', 'SCENE3D_SPATIAL_LIMIT')
-            for index, (a,b,c) in enumerate(triangles):
+            for index, triangle in enumerate(triangles):
+                a,b,c = triangle
                 e1, e2 = b-a, c-a
                 scale = max(float(np.max(np.abs(e1))),float(np.max(np.abs(e2))))
                 if scale == 0:
@@ -431,21 +471,39 @@ class SpatialIndex:
                 e1, e2 = e1/scale, e2/scale
                 p = np.cross(direction,e2)
                 det = np.dot(e1,p)
-                if det == 0:
-                    continue
-                inverse = 1./det
                 offset = (origin-a)/scale
-                u = np.dot(offset,p)*inverse
+                u = np.dot(offset,p)
                 q = np.cross(offset,e1)
-                v = np.dot(direction,q)*inverse
-                distance = np.dot(e2,q)*inverse*scale
-                if u >= -EPS and v >= -EPS and u+v <= 1+EPS and -EPS <= distance <= limit:
-                    normal = np.cross(e1,e2)
-                    normal /= np.linalg.norm(normal)
-                    distance = max(0.,float(distance))
-                    hits.append(dict(node=identifier, triangle=index, distance=distance,
-                                     point=(origin+direction*distance).tolist(), normal=normal.tolist(),
-                                     barycentric=[float(1-u-v),float(u),float(v)], revision=self._revision))
+                v = np.dot(direction,q)
+                w = det-u-v
+                # Scaled edges and unit direction have components <= 1.
+                # The scalar triple products' roundoff grows with the ray
+                # offset. Use this bound to select exact evaluation, never
+                # as a geometric margin around the triangle.
+                roundoff = 64*np.finfo(float).eps*max(1.,float(np.max(np.abs(offset))))
+                minimum = min(w,u,v) if det > 0 else min(-w,-u,-v)
+                if minimum < -roundoff:
+                    continue
+                uncertain = minimum <= roundoff or not np.isfinite(minimum)
+                if not uncertain:
+                    numerator = np.dot(e2,q)
+                    distance = float(numerator/det*scale)
+                    distance_error = (roundoff*scale + 64*np.finfo(float).eps*abs(distance))/abs(det)
+                    uncertain = abs(numerator) <= roundoff or abs(distance-limit) <= distance_error
+                if uncertain:
+                    hit = _exact_ray_triangle(origin,input_direction,triangle,limit)
+                    if hit is None:
+                        continue
+                    distance, point, barycentric = hit
+                else:
+                    if not 0 <= distance <= limit:
+                        continue
+                    point = (origin+direction*distance).tolist()
+                    barycentric = [float(x/det) for x in (w,u,v)]
+                normal = _triangle_frame(triangle)[3]
+                hits.append(dict(node=identifier, triangle=index, distance=distance,
+                                 point=point, normal=normal.tolist(),
+                                 barycentric=barycentric, revision=self._revision))
         hits.sort(key=lambda h:(h['distance'],h['node'],h['triangle']))
         return (hits[0] if hits else None) if first else hits
 

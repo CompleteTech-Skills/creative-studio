@@ -77,6 +77,43 @@ class SpatialQueryTests(unittest.TestCase):
         self.assertIsNone(index.raycast([2.1,1,.1],[0,-1,0]))
         self.assertIsNone(index.nearest([2.1,1,.1]))
 
+    def test_oriented_overlap_uses_rotated_local_box_for_both_nodes(self):
+        graph = self.graph()
+        node = graph.document()['nodes'][1]
+        rotation = [0, math.sin(math.pi/8), 0, math.cos(math.pi/8)]
+        graph.set_transform('mesh', dict(translation=[0,0,0], rotation=rotation, scale=[1,1,1]))
+        probe = deepcopy(node)
+        probe.update(id='probe', name='probe', bounds=dict(minimum=[-.01]*3, maximum=[.01]*3))
+        probe['transform']['translation'] = [1,.5,0]
+        graph.create(probe)
+        # The (1,1,1) corner of this tetrahedron's local box is empty.
+        index = SpatialIndex(graph, {'mesh': dict(vertices=[[0,0,0],[1,0,0],[0,1,0],[0,0,1]],
+                                                  triangles=[[0,1,2],[0,3,1],[0,2,3],[1,3,2]])})
+        self.assertNotIn('probe', index.overlap(index.bounds('mesh')))
+        self.assertIn('probe', index.oriented_overlap('mesh'))
+        self.assertIn('mesh', index.oriented_overlap('probe'))
+
+    def test_raycast_distinguishes_large_triangle_edge_and_adjacent_floats(self):
+        side = 1e9
+        graph = self.graph()
+        graph.set_transform('mesh', dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1]))
+        for face in ([0,1,2], [1,2,0], [0,2,1]):
+            with self.subTest(face=face):
+                index = SpatialIndex(graph, {'mesh': dict(vertices=[[0,0,0],[0,0,side],[side,0,0]],
+                                                          triangles=[face])})
+                for z in (math.nextafter(side/2, 0), side/2):
+                    hit = index.raycast([side/2, 1, z], [0,-1,0], max_distance=1)
+                    self.assertEqual(hit['distance'], 1)
+                    self.assertGreaterEqual(min(hit['barycentric']), 0)
+                for z in (math.nextafter(side/2, math.inf), side/2+.05):
+                    self.assertIsNone(index.raycast([side/2, 0, z], [0,-1,0]))
+
+                # The 7-24-25 ray reaches the vertex at exactly 25 metres.
+                hit = index.raycast([-7,24,0], [7,-24,0], max_distance=25)
+                self.assertEqual(hit['distance'], 25)
+                self.assertEqual(hit['point'], [0,0,0])
+                self.assertIsNone(index.raycast([-7,24,0], [7,-24,0], max_distance=math.nextafter(25.,0.)))
+
 
     def test_transformed_mesh_and_index_refresh(self):
         graph = self.graph()

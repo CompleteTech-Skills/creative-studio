@@ -15,8 +15,8 @@
         "sha256": "3360e766a48dc880537c61d11a42e0ff108e1eccdf56e7fad24b58a95fd90737"
       },
       "current": {
-        "git_blob": "48d8f04430a53266f15b5909c2229e323f0a58a5",
-        "sha256": "44e9d324697bcb8b1b08e636b95d3b9d8a86971139cbac544c1aab31d45c2d5a"
+        "git_blob": "d82ceac26d4098573d01a83db6b3bd3cd1283d03",
+        "sha256": "6917e7969a610155cf84555ef41d647a9de1695ab0bcd4f217401de39061f45f"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -26,8 +26,8 @@
         "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47"
       },
       "current": {
-        "git_blob": "d35d5a03dc276a80c3949e59f02b88e4938be7f4",
-        "sha256": "9fb847d8131ab4070a93604239f1ca0f5a01d5061fad191f406c493efe5117b4"
+        "git_blob": "312931b8c49dd9668178c2601a64af2e023ba639",
+        "sha256": "535d9fdbe48635003c1ddb3c5cbd9ea41446cb763102123fe440ce5e0ae581b1"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -37,8 +37,8 @@
         "sha256": "4b956ae891e021af09cc7fca18981649b697c6af418f43f6bd162a997949e48a"
       },
       "current": {
-        "git_blob": "bea6087daef1cffe70ad4767d91b6b04bb40d110",
-        "sha256": "cc29f89d840f437dc58621bc722f03b9b8dcf6e2be716563ce6957037adff61c"
+        "git_blob": "5c66828b75b5abd64ddfca202bed255b64f39910",
+        "sha256": "0a0f17d915a867ca9c447204b6c0e91746f0316a01f34a0892384e70d11692b6"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -48,15 +48,15 @@
         "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2"
       },
       "current": {
-        "git_blob": "b0a13683c1dca25b6cb3c7448391db8bf83c1382",
-        "sha256": "5d7d1665dac8a96824c335530082c10f1d875288a3bcb37ef78b8ff8ca81c953"
+        "git_blob": "e0c5f42417c30c18b0dcf2e93c7e9d7ec98f8f5e",
+        "sha256": "444265b855b8977581cc29c6d877971593086a700aa7c75dc287952a392c3449"
       },
       "byte_identical_to_archived_transport": false
     }
   },
   "review_history": "Retained original independent source review: coordination scene-program/review-scene62-initial.md; whole integration candidate requires new independent review.",
   "scope": "Canonical query transport first prepared for Director38. Current recovery covers the query and sweep modules.",
-  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow.",
+  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow. Geometry review regressions exercise rotated mesh boxes in both directions, exact ray edge and vertex decisions, and closed prism clearance after translation.",
   "resource_limits": {
     "vertices": 1000000,
     "triangles": 1000000,
@@ -70,5 +70,6 @@
     "query_budget": "One _QueryBudget can be shared across mesh_overlap calls using _budget; reject when cumulative operation exceeds the limit",
     "bounds_only": "Never treated as actual triangles; consumer must verify actual collider inventory before claiming collision-free state",
     "sphere_sweep": "Unsupported nested/cavity or interior-overlapping closed components explicitly reject; this limit does not replace separate solid mesh_overlap containment."
-  }
+  },
+  "geometry_review_base": "5936c830c86ee6f2c5da7a53076bbb14bcde1633"
 }
