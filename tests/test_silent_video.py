@@ -61,6 +61,20 @@ class SilentContracts(unittest.TestCase):
         self.assertEqual(self.request['profile'], 'h264-mp4')
         video.validate_request(self.request)
 
+    def test_blender_manifest_requires_integer_v1(self):
+        manifest = {'schema_version': 1, 'kind': 'blender-frame-manifest',
+                    'engine': 'CYCLES', 'fps': self.source['fps'],
+                    'frames': self.source['frames']}
+        adapted = video.source_from_blender_manifest(self.root, manifest)
+        self.assertEqual(adapted['origin'], 'blender3d')
+        self.assertEqual(adapted['frames'], self.source['frames'])
+        for version in (2, True, 1.0, '1'):
+            with self.subTest(version=version):
+                with self.assertRaisesRegex(ValueError, 'unsupported Blender frame manifest'):
+                    video.source_from_blender_manifest(
+                        self.root, dict(manifest, schema_version=version)
+                    )
+
     def test_audio_policy_cannot_be_relaxed_or_silence_substituted(self):
         for policy in ('silent', 'muted', 'optional', 'allowed', None):
             with self.subTest(policy=policy):

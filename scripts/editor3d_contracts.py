@@ -72,6 +72,30 @@ def _definitions():
     native = obj(dict(owner={'enum': ['rig', 'model3d', 'scene3d', 'production2d',
         'camera3d', 'lookdev', 'animation3d']}, id=ident, version=version,
         native_kind=ident, file=file))
+    def native_role(*owners):
+        # Full closed alternatives keep owner/kind pairs linked in JSON Schema
+        # and generated TypeScript, instead of allowing a cross-product.
+        alternatives = []
+        for owner, kinds in owners:
+            alternative = deepcopy(native)
+            alternative['properties']['owner'] = {'const': owner}
+            alternative['properties']['native_kind'] = {'enum': list(kinds)}
+            alternatives.append(alternative)
+        return {'anyOf': alternatives}
+
+    animation_native = native_role(('rig', ('AnimationClip',)),
+        ('scene3d', ('scene3d-animation',)), ('production2d', ('clip',)),
+        ('camera3d', ('camera3d-animation',)))
+    shot_native = native_role(('scene3d', ('scene3d-shot',)),
+        ('camera3d', ('camera3d-shot',)), ('production2d', ('shot',)))
+    color_native = native_role(('lookdev', ('look3d',)))
+    render_native = native_role(('scene3d', ('scene3d-render',)),
+        ('lookdev', ('render-quality3d',)), ('camera3d', ('camera3d-render',)))
+    scene_native = native_role(('scene3d', ('scene3d-scene',)))
+    character_native = native_role(('rig', ('Rig',)), ('model3d', ('model3d-asset',)),
+        ('scene3d', ('scene3d-asset',)), ('production2d', ('cast',)))
+    project_native = native_role(('scene3d', ('scene3d-project',)),
+        ('production2d', ('project',)))
     pointer = obj(dict(id=ident, sha256=digest))
     fps = obj(dict(numerator=dict(type='integer', minimum=1, maximum=240000),
                    denominator=dict(type='integer', minimum=1, maximum=10000)))
@@ -84,18 +108,18 @@ def _definitions():
     project = _doc('project', dict(id=ident, name=text, revision=integer,
         created_at=stamp, updated_at=stamp,
         application=obj(dict(name={'const': 'hatch-editor3d'}, version=version)),
-        coordinates={'const': COORDINATES}, color_management=nullable(native),
-        frame_rate=fps, scenes=arr(pointer, 0, 4096), shots=arr(native, 0, 4096),
-        shared_assets=arr(pointer, 0, 4096), characters=arr(native, 0, 4096),
-        animation_clips=arr(pointer, 0, 4096), render_presets=arr(native, 0, 128),
+        coordinates={'const': COORDINATES}, color_management=nullable(color_native),
+        frame_rate=fps, scenes=arr(pointer, 0, 4096), shots=arr(shot_native, 0, 4096),
+        shared_assets=arr(pointer, 0, 4096), characters=arr(character_native, 0, 4096),
+        animation_clips=arr(pointer, 0, 4096), render_presets=arr(render_native, 0, 128),
         editor_metadata=metadata, provenance=provenance,
-        dependency_manifest=arr(native, 0, 4096), source_projects=arr(native, 0, 128),
+        dependency_manifest=arr(native, 0, 4096), source_projects=arr(project_native, 0, 128),
         validation_status={'enum': ['unvalidated', 'valid', 'invalid']},
         review_status={'const': 'unreviewed'}))
-    scene = _doc('scene', dict(id=ident, project_id=ident, native=native,
+    scene = _doc('scene', dict(id=ident, project_id=ident, native=scene_native,
         nodes=arr(pointer, 0, 4096), collections=ids, default_camera=nullable(ident),
         animations=ids, timeline=interval, editor_metadata=metadata))
-    node = _doc('node', dict(id=ident, scene_id=ident, native=native, native_node_id=ident,
+    node = _doc('node', dict(id=ident, scene_id=ident, native=scene_native, native_node_id=ident,
         node_type={'enum': ['mesh', 'group', 'character', 'armature', 'bone', 'camera',
             'point-light', 'directional-light', 'spot-light', 'area-light',
             'world', 'primitive', 'instance']}, parent=nullable(ident), sibling_order=integer,
@@ -110,7 +134,22 @@ def _definitions():
         dependencies=arr(native, 0, 4096), thumbnails=arr(file, 0, 32),
         validation_status={'enum': ['unvalidated', 'valid', 'invalid']},
         previous=nullable(native)))
-    animation = _doc('animation', dict(id=ident, native=native,
+    asset_roles = dict(
+        model3d=native_role(('model3d', ('model3d-asset',)), ('scene3d', ('scene3d-asset',))),
+        rig=native_role(('rig', ('Rig',))),
+        image2d=native_role(('production2d', ('cast',))),
+        reference2d=native_role(('production2d', ('cast',))),
+        material=native_role(('lookdev', ('material3d', 'material-instance3d',
+            'material-variant3d', 'material-graph3d'))),
+        texture=native_role(('lookdev', ('texture3d',))),
+        camera=native_role(('camera3d', ('camera3d-camera',))),
+        animation=animation_native)
+    # The base closes all fields. These partial alternatives narrow the paired
+    # discriminator and native reference without copying the whole asset root.
+    asset = {'allOf': [asset, {'anyOf': [dict(type='object',
+        properties=dict(asset_type={'const': name}, native=role),
+        required=['asset_type', 'native']) for name, role in asset_roles.items()]}]}
+    animation = _doc('animation', dict(id=ident, native=animation_native,
         targets=ids, frame_rate=fps, interval=interval))
     from rig_contracts import definitions as rig_definitions
     transform = deepcopy(rig_definitions()['Bone']['properties']['rest'])
@@ -137,11 +176,37 @@ def _definitions():
     response = _doc('response', dict(request_id=ident,
         status={'enum': ['accepted', 'complete', 'rejected', 'unavailable', 'cancelled']},
         project_revision=nullable(integer), project_sha256=nullable(digest),
-        outputs=arr(file, 0, 4096), diagnostics=arr(diagnostic, 0, 128),
-        executed={'type': 'boolean'}, review_status={'const': 'unreviewed'}))
+        outputs={}, diagnostics={}, executed={'type': 'boolean'},
+        review_status={'const': 'unreviewed'}))
+    response['properties']['job_id'] = nullable(ident)
+
+    def response_case(status, *, executed, outputs, diagnostics, **fields):
+        properties = dict(status=status, executed={'const': executed},
+            outputs=outputs, diagnostics=diagnostics, **fields)
+        return dict(type='object', properties=properties, required=list(properties))
+
+    # Keep the base closed and narrow the fields together for each status.
+    diagnostic_ref = ref('Diagnostic')
+    diagnostics = arr(diagnostic_ref, 0, 128)
+    no_outputs = arr(file, 0, 0)
+    response = {'allOf': [response, {'anyOf': [
+        response_case({'const': 'accepted'}, executed=False, outputs=no_outputs,
+            diagnostics=diagnostics, job_id=ident),
+        response_case({'const': 'complete'}, executed=True, outputs=arr(file, 0, 4096),
+            diagnostics=diagnostics),
+        response_case({'const': 'cancelled'}, executed=False, outputs=no_outputs,
+            diagnostics=diagnostics),
+        response_case({'enum': ['rejected', 'unavailable']}, executed=False,
+            outputs=no_outputs, diagnostics=dict(arr(diagnostic_ref, 1, 128),
+                prefixItems=[diagnostic_ref])),
+    ]}]}
     return dict(project=project, scene=scene, node=node, asset=asset, animation=animation,
         command=command, revision=revision, session=session, derived=derived, request=request,
-        response=response, NativeReference=native, FileReference=file, ResourcePointer=pointer,
+        response=response, NativeReference=native, AnimationNativeReference=animation_native,
+        ShotNativeReference=shot_native, ColorNativeReference=color_native,
+        RenderNativeReference=render_native, SceneNativeReference=scene_native,
+        CharacterNativeReference=character_native, ProjectNativeReference=project_native,
+        FileReference=file, ResourcePointer=pointer,
         FrameRate=fps, FrameInterval=interval, EditorMetadata=metadata, Diagnostic=diagnostic,
         Provenance=provenance, Transform=transform)
 
@@ -187,6 +252,19 @@ def validate_contract(value):
                                     format_checker=FormatChecker())
     error = next(validator.iter_errors(value), None)
     if error:
+        if kind == 'response' and error.validator == 'anyOf' and not error.absolute_path:
+            # Preserve specific service diagnostics for the selected status case.
+            wrong_status = {item.schema_path[0] for item in error.context
+                            if tuple(item.absolute_path) == ('status',)}
+            selected = [item for item in error.context if item.schema_path[0] not in wrong_status]
+            paths = {tuple(item.absolute_path) for item in selected}
+            if paths <= {('diagnostics',), ('executed',)}:
+                if any(item.validator == 'minItems' for item in selected):
+                    _error('DIAGNOSTIC', 'Failed or unavailable requests need an actionable diagnostic.')
+                if paths == {('executed',)}:
+                    if value['status'] == 'complete':
+                        _error('STATUS', 'Complete means the declared operation actually executed.')
+                    _error('STATUS', 'Only complete responses may declare execution.')
         _error('SCHEMA', error.message, '/' + '/'.join(map(str, error.absolute_path)))
     for child, path in _walk(value):
         for field in ('created_at', 'updated_at'):
@@ -256,12 +334,10 @@ def validate_contract(value):
         if value['operation'] == 'projects.create' and any(value[k] is not None for k in ('expected_revision', 'expected_project_sha256')):
             _error('PRECONDITION', 'Project creation cannot overwrite an existing revision.')
     if kind == 'response':
-        if value['status'] in ('rejected', 'unavailable') and not value['diagnostics']:
-            _error('DIAGNOSTIC', 'Failed or unavailable requests need an actionable diagnostic.')
-        if value['status'] != 'complete' and value['executed']:
-            _error('STATUS', 'Only complete responses may declare execution.')
-        if value['status'] == 'complete' and not value['executed']:
-            _error('STATUS', 'Complete means the declared operation actually executed.')
+        if value['status'] == 'accepted' and value.get('job_id') is None:
+            _error('JOB', 'Accepted asynchronous work requires an explicit job identity.', '/job_id')
+        if value['status'] in ('accepted', 'cancelled', 'rejected', 'unavailable') and value['outputs']:
+            _error('OUTPUT', 'Only completed work may publish output references.', '/outputs')
     if kind == 'derived' and value['status'] == 'verified' and not value['evidence']:
         _error('EVIDENCE', 'Verified derived state requires exact artifact evidence.')
     return value
@@ -425,6 +501,8 @@ def migrate_document(value):
 
 
 def _ts(schema):
+    if not schema:
+        return 'unknown'
     if '$ref' in schema:
         return schema['$ref'].split('/')[-1]
     if 'const' in schema:
@@ -433,6 +511,8 @@ def _ts(schema):
         return ' | '.join(json.dumps(x) for x in schema['enum'])
     if 'anyOf' in schema:
         return '(' + ' | '.join(_ts(x) for x in schema['anyOf']) + ')'
+    if 'allOf' in schema and 'type' not in schema:
+        return '(' + ' & '.join(_ts(x) for x in schema['allOf']) + ')'
     kind = schema.get('type')
     if kind == 'object':
         fields = schema.get('properties', {})
@@ -440,6 +520,9 @@ def _ts(schema):
         return '{ ' + '; '.join(json.dumps(k) + ('' if k in required else '?') + ': ' + _ts(v) for k, v in fields.items()) + ' }'
     if kind == 'array':
         item = _ts(schema['items'])
+        if 'prefixItems' in schema:
+            prefix = [_ts(part) for part in schema['prefixItems']]
+            return '[' + ', '.join([*prefix, '...Array<' + item + '>']) + ']'
         if schema.get('minItems') == schema.get('maxItems'):
             return '[' + ', '.join(item for _ in range(schema['minItems'])) + ']'
         return 'Array<' + item + '>'

@@ -1,0 +1,13 @@
+{
+  "base": "1447f45d7b224c16a0133defa8364f50b394cf3b",
+  "operations_tests": 30,
+  "duration_seconds": 6.431,
+  "status": "PASS",
+  "note": "After canonical trusted-root source snapshot fixes; no code changes in create_run",
+  "files": {
+    "scripts/rig_jobs.py": "a8228658cfe603190d87a21c8daca873801215b1ce7a74e05d5e75ea6f2ff9f6",
+    "scripts/rig_source_snapshot.py": "470ade4ca55a0e05ed83113a56636377322ec63de8b1610fc8cc91205f18619b",
+    "scripts/rig_errors.py": "3bb2b8461fdbbc757b365e0f21fe29cfb705b0690f379675ab022c2abc244632",
+    "tests/test_rig_workflow.py": "8c85d769b4b36fa9c06f6c4d3d824cb7edf9f4692ee437dfb271c311d62361b3"
+  }
+}
