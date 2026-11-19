@@ -223,7 +223,7 @@ def _owned_pids(marker):
             with (Path(entry.path)/'environ').open('rb') as stream:environ=stream.read(1<<20)
             if needle not in environ.split(b'\0'):continue
             text=(Path(entry.path)/'stat').read_text()
-        except (FileNotFoundError,ProcessLookupError,PermissionError):continue
+        except OSError:continue
         if text[text.rfind(')')+2:].split()[0]!='Z':owned.append(int(entry.name))
     return owned
 
@@ -351,7 +351,9 @@ def _guard(root,expected_hash):
                                   '--request-hash',expected_hash],
                     cwd=str(Path(__file__).resolve().parents[1]),stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True,close_fds=True,
-                    env={**os.environ,OWNER_VARIABLE:marker},preexec_fn=_set_parent_death_signal)
+                    # Marker first: an oversized environment cannot push it past the read bound.
+                    env={OWNER_VARIABLE:marker,**{k:v for k,v in os.environ.items() if k!=OWNER_VARIABLE}},
+                    preexec_fn=_set_parent_death_signal)
         identity=_identity(process.pid); started=time.monotonic(); reason=None
         running=dict(schema_version=1,token=value['token'],status='running',owner_marker=marker,pid=process.pid,
                      started_at=timestamp(),started_epoch=time.time(),limits=value['limits'],process_identity=identity,
@@ -384,6 +386,12 @@ def _guard(root,expected_hash):
                     for key in list(selector.get_map().values()):selector.unregister(key.fileobj);key.fileobj.close()
             code=process.wait()
             # The leader is gone; any surviving process carrying its marker is an owned orphan.
+            # Tracked descendants whose birth identity still matches are owned too,
+            # even if they replaced their environment.
+            for pid,record in known.items():
+                if pid!=process.pid and _identity(pid)==record:
+                    try:os.kill(pid,signal.SIGKILL)
+                    except ProcessLookupError:pass
             _kill_owned(marker)
             after=resource.getrusage(resource.RUSAGE_CHILDREN)
             result=read_json(root/'result.json') if (root/'result.json').exists() else None
