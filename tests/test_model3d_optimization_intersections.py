@@ -53,8 +53,10 @@ class TriangleContacts(unittest.TestCase):
         touching=self.pair([[0,0,0],[1,0,0],[.5,-1,0]],[[.25,0,-1],[.75,0,1],[.5,1,-1]])
         self.assertEqual(triangle_contacts(touching)['contact_count'],1)
     def test_exact_edge_crossing_parameter_keeps_boundary_contacts(self):
-        # A rounded crossing parameter moves each of these exact boundary
-        # contacts just outside the other triangle.
+        # Each edge/plane crossing point lies exactly on the other triangle's
+        # boundary: the first and third pairs touch at one point, the second
+        # crosses along a segment ending on edges. A rounded crossing parameter
+        # moves those points just outside and loses the contact.
         for a,b in (([[2,2,2],[2,-1,1],[1,-1,1]],[[2,0,3],[0,-2,1],[1,-3,-3]]),
                     ([[-3,-2,1],[-2,2,-3],[0,-1,3]],[[2,3,-1],[-3,0,-1],[2,1,-2]]),
                     ([[1,-1,2],[1,0,1],[3,1,-2]],[[3,-2,-1],[-1,2,0],[0,0,3]])):
