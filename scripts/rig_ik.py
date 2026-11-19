@@ -100,7 +100,7 @@ def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_toleran
 
 def _fold_axis_permutations(root, seed, source):
     """Permute local axes when their world directions retain all pairwise angles."""
-    lengths = np.linalg.norm(root, axis=0)
+    lengths = np.asarray([math.hypot(*root[:, axis]) for axis in range(3)])
     axes = root / lengths
     gram = axes.T @ axes
     coordinates = np.linalg.solve(axes, source)
