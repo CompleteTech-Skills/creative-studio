@@ -718,7 +718,9 @@ def recover_prepare(root):
 
 
 @_journal_operation
-def claim(root, data, name):
+def claim(root, data, name, *, _handoff_rechecks=None):
+    if _handoff_rechecks is not None and (type(_handoff_rechecks) is not list or _handoff_rechecks):
+        raise ValueError('handoff rechecks require an empty in-process collector')
     _require_current_authority(data)
     reconcile(root, data)
     job = job_for(data, name)
@@ -791,10 +793,11 @@ def claim(root, data, name):
     # A refusal here retains the durable reservation and unpublished token intent.
     # Never reread mutable inputs with ordinary file/JSON readers after admission.
     def check_captured_inputs():
-        if (inputs(root, job) != hashes or claim_handoff_identity(root, job) != handoff_identity or
-                any(input_bytes(path) != payload for path, payload in captured.items()) or
-                budget is not None and job['budget_operation'].get('handoff_hashes') != handoff_identity):
-            raise ValueError('generation inputs changed during claim admission')
+        with _pinned_journal_admission(root):
+            if (inputs(root, job) != hashes or claim_handoff_identity(root, job) != handoff_identity or
+                    any(input_bytes(path) != payload for path, payload in captured.items()) or
+                    budget is not None and job['budget_operation'].get('handoff_hashes') != handoff_identity):
+                raise ValueError('generation inputs changed during claim admission')
     check_captured_inputs()
     if budget is not None:
         budget.preflight_publication(job, token)
@@ -812,6 +815,10 @@ def claim(root, data, name):
             budget.publish_claim(job, token)
         check_captured_inputs()
         _require_current_handoff(root, data)
+        if _handoff_rechecks is not None:
+            # An enclosing native transaction can retain this exact admission
+            # until its own receipt is durable, without serializing authority.
+            _handoff_rechecks.append(check_captured_inputs)
         return {'job': name, 'token': job['token'], 'generation_skill': '$imagegen', 'attempt': job['attempts'],
                 **({'budget_reservation_id': job['budget_operation']['reservation_id'],
                     'budget_operation_id': job['budget_operation']['operation_id']} if budget is not None else {}),

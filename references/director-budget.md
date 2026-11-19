@@ -735,3 +735,19 @@ directory-identity suite also exercises real disposable journal rollback after
 ledger publication and after the production receipt, plus ordinary-directory
 replacement before the production admission report. Its wrappers retain the
 original readers, journal writers and accounting; no provider is called.
+
+A current native reservation without its first publication remains owned by
+its original journal. A generic complete or failed measurement records the
+actual delta but retains that owner's remaining capacity; a generic cancellation
+cannot prove that the unpublished owner is stopped. The original owner may
+still replay a saved, not-yet-charged observation and reconcile uncertainty.
+Ordinary non-native reservations retain their existing terminal/release behavior.
+
+Production handoff retains an in-process recheck of the exact captured native
+inputs. After saving the outer production receipt, it invokes that same check
+under the original directory admission before the final journal check and return.
+This witness is not serialized into a receipt or accepted as caller authority.
+The unchanged passive observer in `tests/test_native_outer_handoff.py` checks
+actual input reads around the outer save. The unpublished-owner regression suite
+uses real temporary journals and ledgers with explicitly scheduled interruptions;
+it does not claim provider execution or arbitrary concurrent-process isolation.

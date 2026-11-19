@@ -685,12 +685,16 @@ def claim_generation(root, binding_id, job):
             data['limits']['concurrency'] = min(
                 data['limits'].get('concurrency', report['limits']['concurrency']),
                 report['limits']['concurrency'])
-            handoff = hatch.claim(run, data, job)
+            handoff_checks = []
+            handoff = hatch.claim(run, data, job, _handoff_rechecks=handoff_checks)
             handoff['production_context'] = context
             handoff['receipt_template']['production_context'] = context
             _event(state, 'generation-claimed', binding_id=binding_id, job=job, token=handoff['token'],
                    requirements_hash=binding['requirements_hash'])
             _save(root, state)
+            if len(handoff_checks) != 1:
+                raise ValueError('production handoff is missing its original native input admission')
+            handoff_checks[0]()
             hatch._require_current_handoff(run, data)
             return handoff
 

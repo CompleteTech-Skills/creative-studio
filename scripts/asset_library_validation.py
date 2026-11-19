@@ -168,17 +168,34 @@ def _preflight(path, size, limits):
     require(reserve < limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
             'Native decoding and geometry analysis exceed the verification working-set estimate.')
     decode_limits = dict(limits, memory_bytes=limits['memory_bytes'] - reserve)
+    raster_budget = decode_limits['memory_bytes'] // 2
     dimensions = []
-    total_pixels = 0
+    total_pixels = raster_estimate = 0
     for buffer, offset, length in image_views:
         width, height = image_dimensions(buffer[offset:offset + length])
         pixels = width * height
         total_pixels += pixels
-        require(pixels <= 16_777_216 and total_pixels * 16 <= decode_limits['memory_bytes'] // 2,
+        raster_estimate = total_pixels * 16
+        require(pixels <= 16_777_216 and raster_estimate <= raster_budget,
                 'RIG_LIMIT_TEXTURE', 'Embedded textures exceed the native raster admission budget.')
         dimensions.append((width, height))
     materials = len(document.json.get('materials', []))
-    return raw, hierarchy, materials, dimensions, decode_limits, document, expected_clips
+    resources = dict(
+        active_mesh_primitives=raw['mesh_instances'],
+        active_nodes=raw['active_nodes'],
+        accessors=raw['accessors'],
+        embedded_image_count=len(image_views),
+        embedded_image_encoded_bytes=image_bytes,
+        embedded_image_pixels=total_pixels,
+        gltf_load_estimate=dict(method=raw['method'], scope=raw['scope'],
+                                memory_bytes=raw['estimated_memory_bytes'],
+                                array_bytes=raw['array_bytes']),
+        verification_reserve_bytes=reserve,
+        native_decode_memory_budget_bytes=decode_limits['memory_bytes'],
+        raster_estimate_bytes=raster_estimate,
+        raster_budget_bytes=raster_budget,
+    )
+    return raw, hierarchy, materials, dimensions, decode_limits, document, expected_clips, resources
 
 
 def _measure_tracks(clip, channels, document, targets):
@@ -258,7 +275,7 @@ def _measure_rig(model, limits, document, expected_clips, targets):
 
 
 def _native_report(path, record, limits):
-    raw, hierarchy, materials, dimensions, decode_limits, document, expected_clips = _preflight(
+    raw, hierarchy, materials, dimensions, decode_limits, document, expected_clips, resources = _preflight(
         path, record['bytes'], limits)
     independent = validate_gltf(path, timeout=min(120, limits['timeout_seconds']))
     issues = independent.get('issues')
@@ -302,7 +319,7 @@ def _native_report(path, record, limits):
     return dict(geometry=geometry, meshes=meshes, hierarchy=hierarchy, authored_materials=materials,
                 authored_textures=authored_textures, textures=textures, skeleton=skeleton, skins=skins,
                 native_rigid_bindings=rigid_bindings, clips=clips,
-                capabilities=sorted(capabilities),
+                capabilities=sorted(capabilities), resources=resources,
                 independent_validation=dict(status='passed', version=version, asset_sha256=record['sha256'],
                                             errors=0, warnings=issues['numWarnings']))
 

@@ -354,7 +354,8 @@ class BudgetLedger:
                 # closure. Direct measurements retain their hold until the
                 # enrolled owner supplies genuine terminal evidence.
                 keep_native_open = native is None and (
-                    'publication_protocol' not in intent or _unfinished_native(state, row))
+                    'publication_protocol' not in intent or not _native_publications(state, row)
+                    or _unfinished_native(state, row))
                 _need(not _native_pending_usage(self, row, native, owner_verified=owner_verified), 'UNCERTAIN',
                       'Resolve every token-bound native unknown before final ledger settlement.')
             for key in METRICS:
@@ -375,14 +376,16 @@ class BudgetLedger:
         _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
         row = state['reservations'][reservation_id]
         _need(row['state'] == 'reserved', 'UNCERTAIN', 'Uncertain/final reservations cannot be released.')
-        published = [event['payload'] for event in state['events'] if event['action'] == 'native-claim' and
-                     event['payload']['reservation_id'] == reservation_id]
+        published = _native_publications(state, row)
         _need(outcome != 'unstarted' or not (row['attempts'] or published),
               'STATE', 'Started or published work cannot be released as unstarted.')
         intent = _row_native_intent(self, state, row)
+        current_native = intent is not None and 'publication_protocol' in intent
+        _need(not current_native or published or native_run is not None, 'STATE',
+              'Unpublished native cancellation requires its original owner journal.')
         # A durable native observation can precede the first ledger publication
         # when publication was interrupted. Its outstanding usage still owns the hold.
-        if published or (intent is not None and 'publication_protocol' in intent and row['attempts']):
+        if published or current_native:
             _require_native_finalization(state, row)
             _require_generic_reconciliation(self, row)
             owner_verified = native_run is not None
@@ -759,9 +762,13 @@ def _native_finalized(state, row, token):
                event['payload']['token'] == token for event in state['events'])
 
 
+def _native_publications(state, row):
+    return [event['payload'] for event in state['events'] if
+            event['action'] == 'native-claim' and event['payload']['reservation_id'] == row['id']]
+
+
 def _unfinished_native(state, row):
-    publications = [event['payload'] for event in state['events'] if
-                    event['action'] == 'native-claim' and event['payload']['reservation_id'] == row['id']]
+    publications = _native_publications(state, row)
     return bool(publications and not _native_finalized(state, row, publications[-1]['token']))
 
 
