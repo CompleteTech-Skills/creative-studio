@@ -507,3 +507,73 @@ class CapabilityTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(json.loads(completed.stdout)['code'], 'CONTINUITY_REFERENCE_MISSING')
         self.assertNotIn(str(self.root), completed.stdout + completed.stderr)
+
+    def test_source_bound_probe_cannot_run_on_different_rig(self):
+        owner, request=self.bound('geometry-inspection');request['checks'][0]['inputs']=[]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('canonical-reference',result['checks'][0]['unsatisfied_gates'])
+
+    def test_aggregate_budget_is_not_reset_per_check(self):
+        request=self.request('geometry-inspection','visual-reference','physics-continuation')
+        with self.assertRaisesRegex(ValueError,'aggregate'):
+            Admission(self.root,policy=Policy()).run(request)
+
+    def test_failed_owner_does_not_suppress_independent_check(self):
+        owner, request=self.bound('geometry-inspection')
+        request['checks'].append(self.request('visual-reference')['checks'][0])
+        request['checks'][1]['id']='visual'
+        class Broken(type(owner)):
+            def snapshot(self): raise ValueError('broken owner schema')
+        broken=object.__new__(Broken)
+        result=self.engine(broken,owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertEqual(len(result['checks']),2)
+        self.assertEqual(result['checks'][0]['outcome'],'partial')
+        self.assertEqual(result['checks'][1]['unsatisfied_gates'],['owner-contract'])
+
+    def test_measured_memory_limit_blocks_before_owner_execution(self):
+        owner, request=self.bound('geometry-inspection')
+        request['checks'][0]['resources']['memory_bytes']=1
+        with patch.object(owner, 'execute', wraps=owner.execute) as execute:
+            result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('resource-memory_bytes',result['checks'][0]['unsatisfied_gates'])
+        execute.assert_not_called()
+
+    def test_network_policy_is_never_a_fallback(self):
+        owner, request=self.bound('geometry-inspection')
+        owner._snap['offline']=False
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('network-policy',result['checks'][0]['unsatisfied_gates'])
+
+    def test_nullable_snapshot_integer_fields_normalize_on_copy(self):
+        owner,request=self.bound('geometry-inspection')
+        result=self.engine(owner).run(request)
+        result['checks'][0]['snapshot']['limits']['memory_bytes']=float(result['checks'][0]['snapshot']['limits']['memory_bytes'])
+        parsed=validate(result,'result')
+        self.assertIs(type(parsed['checks'][0]['snapshot']['limits']['memory_bytes']),int)
+        self.assertIs(type(result['checks'][0]['snapshot']['limits']['memory_bytes']),float)
+
+    def test_native_lock_collision_is_not_missing_backend(self):
+        from rig_errors import job_lock
+
+        owner, request = self.bound('geometry-inspection')
+        with job_lock(self.root / 'rig'):
+            result = self.engine(owner).run(request)
+
+        self.assertEqual(result['outcome'], 'failed')
+        row = result['checks'][0]
+        self.assertEqual(row['unsatisfied_gates'], ['ownership'])
+        self.assertEqual(row['error'].partition(':')[0], 'RIG_BUSY')
+
+    def test_standalone_probe_rejects_omitted_capability(self):
+        import continuity_capability_probe as probe
+
+        destination = self.root / 'probe'
+        with patch.dict(probe.MATRIX):
+            del probe.MATRIX['historical-media']
+            with self.assertRaisesRegex(AssertionError, r"matrix capability mismatch: missing=\['historical-media'\]"):
+                probe.run(destination)
+        self.assertFalse((destination / 'report.json').exists())
