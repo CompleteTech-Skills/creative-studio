@@ -3,12 +3,14 @@
 Claims and accounting writes are real local execution. Usage is synthetic and
 interruptions are injected at publication/settlement boundaries; no provider runs.
 """
+from argparse import Namespace
+from hashlib import sha256
 import unittest
 from unittest.mock import patch
 
 import hatch
 from director_budget import NativeBudget
-from rig_errors import RigError
+from rig_errors import RigError, job_lock
 import test_director_budget_stale_native_owner as controls
 
 
@@ -118,6 +120,60 @@ class StaleOwnerRefusalTests(unittest.TestCase):
         self.assertNotIn('receipt', events[1])
         self.assert_refusal_and_recovery(stale, lambda budget, job: budget.reconcile(),
                                         calls=2, amount='0.25')
+
+    def check_limits_with_pending_usage(self, *, stale):
+        token = self.claim()['token']
+        with hatch.ownership(self.root):
+            earlier = hatch.manifest(self.root)
+        usage = self.observe('interrupt-meter', 'uncertain', amount=None)
+        with hatch.ownership(self.root), job_lock(self.ledger.root):
+            with self.assertRaises(RigError) as interrupted:
+                hatch.record_budget_usage(self.root, hatch.manifest(self.root), 'base', token, usage)
+        self.assertEqual(interrupted.exception.report['code'], 'RIG_BUSY')
+        self.assertEqual(self.row()['attempts'], [])
+
+        def digests():
+            return {path: sha256(content).hexdigest() for path, content in self.inventory().items()}
+
+        journal = (self.root / 'imagegen-jobs.json').relative_to(self.owner).as_posix()
+        with hatch.ownership(self.root):
+            current = hatch.manifest(self.root)
+            current_job = hatch.job_for(current, 'base')
+            pending, = current_job['budget_operation']['events']
+            self.assertEqual(pending['payload']['id'], usage['id'])
+            self.assertNotIn('receipt', pending)
+            original = digests()
+            if stale:
+                with self.assertRaises((RigError, ValueError)):
+                    hatch.configure_limits(self.root, earlier, Namespace(max_calls=1))
+                self.assertEqual(digests(), original)
+            else:
+                result = hatch.configure_limits(self.root, current, Namespace(max_calls=1))
+                self.assertEqual(result['limits']['generation_calls'], 1)
+                self.assertEqual(hatch.manifest(self.root)['limits']['generation_calls'], 1)
+
+            hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
+            recovered = digests()
+            self.assertEqual({path: recovered.get(path) for path in original if path != journal},
+                             {path: digest for path, digest in original.items() if path != journal})
+            job = hatch.job_for(hatch.manifest(self.root, recovery=True), 'base')
+            self.assertEqual(job['history'], hatch.job_for(earlier, 'base')['history'])
+            self.assertEqual(job['token'], token)
+            event, = job['budget_operation']['events']
+            self.assertEqual(event['payload'], pending['payload'])
+            self.assertEqual(event['receipt']['state'], 'uncertain')
+            hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
+            self.assertEqual(digests(), recovered)
+        row = self.row()
+        self.assertEqual((row['state'], row['spent']['provider_calls'], row['held']['provider_calls']),
+                         ('uncertain', '1', '2'))
+        self.assertEqual(len(row['attempts']), 1)
+
+    def test_stale_limits_update_preserves_pending_native_usage(self):
+        self.check_limits_with_pending_usage(stale=True)
+
+    def test_current_limits_update_preserves_pending_native_usage(self):
+        self.check_limits_with_pending_usage(stale=False)
 
 
 if __name__ == '__main__':

@@ -1712,6 +1712,9 @@ def resume(root, data):
 @_journal_operation
 def configure_limits(root, data, args):
     import math
+    # A policy edit owns the current journal; it cannot replace newer usage
+    # merely because the caller still holds an otherwise valid running copy.
+    _require_current_handoff(root, data)
     value = dict(data.get('limits', {}))
     for argument, key, maximum in (('max_attempts', 'attempts_per_job', 100), ('concurrency', 'concurrency', 16), ('max_calls', 'generation_calls', 100000)):
         supplied = getattr(args, argument, None)
