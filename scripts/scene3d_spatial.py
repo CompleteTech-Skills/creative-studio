@@ -255,11 +255,9 @@ def _triangle_intersects(left, right):
     if scale == 0 or not math.isfinite(scale):
         return _exact_triangle_overlap(left, right)
     normalized_left, normalized_right = relative_left / scale, relative_right / scale
-    uncertain = False
     for axis in _triangle_axes(normalized_left, normalized_right):
         magnitude = max(map(abs, axis))
         if magnitude == 0:
-            uncertain = True
             continue
         axis = np.asarray(axis) / magnitude
         a, b = normalized_left @ axis, normalized_right @ axis
@@ -267,9 +265,10 @@ def _triangle_intersects(left, right):
         gap = max(float(b.min() - a.max()), float(a.min() - b.max()))
         if gap > tolerance:
             return False
-        if gap >= -tolerance:
-            uncertain = True
-    return _exact_triangle_overlap(left, right) if uncertain else True
+    # Float axes only reject clearly separated pairs. Nearly parallel edges give
+    # skewed float cross products on which a separated pair can project as a
+    # clear overlap, so every remaining contact is confirmed exactly.
+    return _exact_triangle_overlap(left, right)
 
 
 def _closed(indices):

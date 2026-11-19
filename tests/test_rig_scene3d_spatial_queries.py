@@ -93,6 +93,20 @@ class SpatialQueryTests(unittest.TestCase):
         self.assertIn('probe', index.oriented_overlap('mesh'))
         self.assertIn('mesh', index.oriented_overlap('probe'))
 
+    def test_triangle_contact_is_exact_for_nearly_parallel_skew_edges(self):
+        from scene3d_spatial import _triangle_intersects
+        left = np.array([[1678.9275453845798,552.2476837411891,-17.483032618084046],
+                         [-1678.9275453845798,-552.2476837411891,17.483032618084046],
+                         [-150.01064768274784,613.1908458429399,498.13423978480466]])
+        right = np.array([[1678.9275453440628,552.247683846023,-17.483033197574446],
+                          [-1678.9275453402383,-552.2476838577292,17.483033195053007],
+                          [288.7652557845327,-727.162056553735,-120.0931074335002]])
+        self.assertFalse(_triangle_intersects(left, right))
+        self.assertFalse(_triangle_intersects(right, left))
+        shared = np.array([left[0], left[1], right[2]])
+        self.assertTrue(_triangle_intersects(left, shared))
+
+
     def test_raycast_distinguishes_large_triangle_edge_and_adjacent_floats(self):
         side = 1e9
         graph = self.graph()
