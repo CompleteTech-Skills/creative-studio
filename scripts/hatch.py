@@ -485,6 +485,8 @@ def inputs(root, job, *, _reader=None):
 
 @_journal_operation
 def revise_profile(root, data, path):
+    # A stale snapshot must not replace a running handoff's newer usage.
+    _require_current_handoff(root, data)
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running claims before a profile revision')
     before, after = load_profile(root / 'profile.json'), load_profile(path)
@@ -1054,6 +1056,8 @@ def repair(root, data, name, reason):
 
 @_journal_operation
 def configure(root, data, args):
+    # A stale snapshot must not replace a running handoff's newer usage.
+    _require_current_handoff(root, data)
     if any(j['status'] == 'running' for j in data['jobs']):
         raise ValueError('reconcile running handoffs before changing extraction settings')
     settings = read(root / 'extraction-settings.json')
@@ -1553,6 +1557,8 @@ def install(root, data, package_path, destination, allow_fixture=False, fail_aft
 
 @_journal_operation
 def rollback(root, data):
+    # A stale snapshot must not replace a running handoff's newer usage.
+    _require_current_handoff(root, data)
     records = data.get('installations', []) + ([data['gates']['installed']] if data.get('gates', {}).get('installed') else [])
     if not records or not records[-1].get('backup'):
         raise ValueError('no recoverable previous installation recorded')
@@ -1693,6 +1699,8 @@ def status(root, data):
 
 @_journal_operation
 def resume(root, data):
+    # A stale snapshot must not replace a running handoff's newer usage.
+    _require_current_handoff(root, data)
     if data.get('pending_install'):
         destination = Path(data['pending_install']['destination']).resolve()
         with ownership(destination):
@@ -1741,6 +1749,8 @@ def configure_limits(root, data, args):
 
 @_journal_operation
 def annotate(root, data, name, path):
+    # A stale snapshot must not replace a running handoff's newer usage.
+    _require_current_handoff(root, data)
     job = job_for(data, name)
     if name == 'base' or job['status'] != 'generated':
         raise ValueError('annotations require a current state source')
