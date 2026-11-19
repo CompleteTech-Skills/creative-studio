@@ -87,17 +87,18 @@ def _sweep_pivot(origin, motion, radius):
     return max(Fraction(0), min(Fraction(1), -projection / sum(v*v for v in motion)))
 
 
-def _within_triangle_radius(distance, radius, center, triangle):
-    if abs(distance - radius) > 8 * math.ulp(max(distance, radius)):
-        return distance < radius
-    from scene3d_spatial import _exact_closest_triangle
-    _, squared = _exact_closest_triangle(center, triangle, False)
-    return squared <= Fraction(radius)**2
+def _unit_vector(vector):
+    """Normalize after scaling, retaining exact subnormal displacements."""
+    scale = max(map(abs, vector))
+    if not scale:
+        return None
+    scaled = np.array([float(component / scale) for component in vector])
+    return scaled / math.hypot(*scaled)
 
 
 def _triangle_hit(start, end, delta, radius, triangle):
     from scene3d_spatial import (_closest_triangle, _nearest_vertex, _triangle_frame,
-                                 _fraction_vector, _subtract3)
+                                 _fraction_vector, _subtract3, _exact_closest_triangle)
     # Center near the swept segment so a distant authored vertex cannot
     # erase a small positive gap during contact validation.
     start_world, triangle_world = start, triangle
@@ -112,13 +113,15 @@ def _triangle_hit(start, end, delta, radius, triangle):
     exact_origin = tuple(s + pivot*v - a for s, v, a in zip(exact_start, exact_motion, exact_anchor))
     exact_vertices = [_subtract3(_fraction_vector(vertex), exact_anchor) for vertex in triangle_world]
     frame = _triangle_frame(triangle)
-    nearest = _closest_triangle(initial_center, triangle, frame=frame)
-    gap = math.hypot(*(initial_center - nearest))
-    initially_touching = _within_triangle_radius(gap, radius, start_world, triangle_world)
+    # Radius-only ULP bands cannot bound nearest-point or anchor-subtraction
+    # error. Classify every initial contact from the original world floats.
+    initial_point, initial_squared = _exact_closest_triangle(start_world, triangle_world, False)
+    initially_touching = initial_squared <= Fraction(radius)**2
     candidates = [(lower, False)] if initially_touching else []
     normal = frame[3]
-    candidates.extend(_feature_candidates(exact_origin, exact_motion, exact_vertices,
-                                          radius, lower, upper))
+    if not initially_touching:
+        candidates.extend(_feature_candidates(exact_origin, exact_motion, exact_vertices,
+                                              radius, lower, upper))
     for t, face_only in sorted(candidates):
         if not lower <= t <= upper:
             continue
@@ -133,24 +136,31 @@ def _triangle_hit(start, end, delta, radius, triangle):
         else:
             time = pivot + t
             world_center = np.array([float(s + time*v) for s, v in zip(exact_start, exact_motion)])
-        point = _closest_triangle(center, triangle, frame=frame, face_only=face_only)
-        if point is None:
-            continue  # A plane crossing outside the triangle is never a face hit.
-        separation = center - point
-        distance = math.hypot(*separation)
-        tolerance = max(radius*1e-9, 8*np.finfo(float).eps*float(np.max(np.abs(travel))))
-        if distance > radius+tolerance:
-            continue
-        if distance > 0:
-            outward=separation/distance
-        elif np.any(normal):
-            outward=normal if float(delta@normal)<=0 else -normal
-        elif np.linalg.norm(delta)>0:
-            outward=-delta/np.linalg.norm(delta)
+        if t == lower:
+            # Reusing the exact nearest point prevents rounded local geometry
+            # from undoing the overlap decision, including stationary spheres.
+            world_point = list(map(float, initial_point))
+            separation = _subtract3(exact_start, initial_point)
         else:
-            outward=np.array([1.,0.,0.])
+            point = _closest_triangle(center, triangle, frame=frame, face_only=face_only)
+            if point is None:
+                continue  # A plane crossing outside the triangle is never a face hit.
+            separation = center - point
+            distance = math.hypot(*separation)
+            tolerance = max(radius*1e-9, 8*np.finfo(float).eps*float(np.max(np.abs(travel))))
+            if distance > radius+tolerance:
+                continue
+            world_point = (point+anchor).tolist()
+        outward = _unit_vector(separation)
+        if outward is None:
+            if np.any(normal):
+                outward=normal if float(delta@normal)<=0 else -normal
+            else:
+                outward = _unit_vector(-delta)
+                if outward is None:
+                    outward=np.array([1.,0.,0.])
         return time, dict(fraction=float(time), normal=outward.tolist(),
-                          point=(point+anchor).tolist(), center=world_center.tolist())
+                          point=world_point, center=world_center.tolist())
     return None
 
 
@@ -204,8 +214,9 @@ def _boundary_outward(point, triangles, triangle_id, inside, require):
 
 
 def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
-    from scene3d_spatial import (_vec, _positive, _closest_triangle, _closed, _inside,
-                                 _box, _nearest_vertex, MAX_QUERY_TESTS)
+    from scene3d_spatial import (_vec, _positive, _closed, _inside,
+                                 _box, _nearest_vertex, _exact_closest_triangle,
+                                 _fraction_vector, _subtract3, MAX_QUERY_TESTS)
     from scene3d_graph import require
     start,end=_vec(start,'sweep start'),_vec(end,'sweep end')
     radius=_positive(radius,'sphere radius')
@@ -235,28 +246,26 @@ def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
             contained=solid_inside(start,triangles)
             tested+=len(triangles)
             require(tested<=MAX_QUERY_TESTS,'Sphere closed-nearest query budget exceeded.','SCENE3D_SPATIAL_LIMIT')
-            # Compare separation before rounding contact points back into
-            # world space, including the nearest-boundary ordering.
+            # Exact squared distances own initial membership, ordering and
+            # pruning; approximate local distances cannot safely exclude a face.
             candidates = []
             for i, triangle in enumerate(triangles):
-                anchor = _nearest_vertex(start, triangle)
-                local_start = start - anchor
-                point = _closest_triangle(local_start, triangle - anchor)
-                candidates.append((math.hypot(*(point - local_start)), i, point, anchor))
+                point, squared = _exact_closest_triangle(start, triangle, False)
+                candidates.append((squared, i, point))
             candidates.sort(key=lambda item: (item[0], item[1]))
-            for length, triangle_id, point, anchor in candidates:
-                if not contained:
-                    if length - radius > 8 * math.ulp(max(length, radius)):
-                        break
-                    if not _within_triangle_radius(length, radius, start, triangles[triangle_id]):
-                        continue
+            for squared, triangle_id, exact_point in candidates:
+                if not contained and squared > Fraction(radius)**2:
+                    break
+                anchor = _nearest_vertex(start, triangles[triangle_id])
+                point = np.array(list(map(float, _subtract3(exact_point, _fraction_vector(anchor)))))
+                normal = _subtract3(exact_point, _fraction_vector(start))
+                length = math.hypot(*map(float, normal))
                 local_triangles = triangles - anchor
                 outward=_boundary_outward(point,local_triangles,triangle_id,solid_inside,require)
                 if outward is None:continue
                 boundary_ulp=32*np.finfo(float).eps*float(np.max(np.abs(local_triangles[triangle_id])))
-                normal = point - (start - anchor)
-                normal=(normal/length*(1 if contained else -1) if length>boundary_ulp else outward)
-                hit=dict(fraction=0.,normal=normal.tolist(),point=(anchor+point).tolist(),center=start.tolist(),
+                normal=(_unit_vector(normal)*(1 if contained else -1) if length>boundary_ulp else outward)
+                hit=dict(fraction=0.,normal=normal.tolist(),point=list(map(float, exact_point)),center=start.tolist(),
                          node=node,triangle=triangle_id,revision=index._revision,initial_containment=contained)
                 order = (0., node, triangle_id)
                 if order < best_order:

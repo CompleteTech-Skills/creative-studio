@@ -45,6 +45,15 @@ segment interval before any float conversion, including subnormal motion whose
 unbounded contact time would exceed the float range. Internal rational times retain
 ordering when public float fractions coincide. Returned points, normals and
 fractions remain floating approximations; this does not promise symbolic contacts.
+Initial sphere membership always compares the canonical exact nearest squared
+distance against the squared radius, using the original world-coordinate floats.
+A radius-only ULP band cannot bound the error introduced by a distant triangle
+anchor or an approximate nearest-point projection. Zero-time contacts therefore
+reuse the exact nearest point and displacement before converting output fields to
+floats. Contact directions are scaled before normalization, so a subnormal
+displacement does not lose its unit normal to a rounded length. Closed-mesh initial
+candidates also sort and prune by exact squared distance. This adds exact nearest-point work for every initially tested triangle;
+no mesh-scale performance guarantee is made.
 The same triangle/component query budgets and geometry owners remain authoritative.
 Grid and scale snapping raise a spatial error if the snapped
 result exceeds the finite number range.
@@ -68,3 +77,9 @@ adjacent-radius miss, and subnormal-motion misses. Existing corner, oriented-box
 long-sweep, geometry-domain and budget assertions remain in the suites. This is
 synthetic geometric regression coverage, not full #62 or #12 acceptance, renderer
 validation, or a production collision-freedom claim.
+
+The initial-contact regressions independently establish both signs of stationary
+clearance through real synthetic OBJ imports: a separated sphere must miss and an
+overlapping sphere must return fraction zero. Closed tetrahedron variants exercise
+the corresponding initial-distance ordering and pruning. They retain the same
+engineering-fixture and whole-head review limits described above.

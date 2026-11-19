@@ -386,5 +386,36 @@ class SphereSweepTests(unittest.TestCase):
         self.assertEqual(hit['point'], [0,0,0])
         self.assertIsNone(index.sweep_sphere(start, end, math.nextafter(5., 0.)))
 
+    def test_closed_initial_contact_uses_exact_distance_before_pruning(self):
+        # Close the independently reproduced triangles into tetrahedra on the
+        # side opposite the center. Their first face remains the nearest one.
+        cases = [
+            ([[12.31864239252063,2.4744783512101027,-1.020901252205501],
+              [-8.024746468385963,-1.6895550683365412,0.43239213264501597],
+              [5.590018511123537,-5.80262113015734,-5.187108017104714]],
+             [-0.03815808506652956,0.06294822341987616,-0.1629765024258417],
+             0.11765086832225397, False),
+            ([[258877029.17296016,-97779357.09754065,96442046.70095032],
+              [-88179600.72030865,59217689.28600697,-39883030.480944134],
+              [-174215274.6797548,-85414650.94813463,-47099783.22117342]],
+             [217784.28221309153,370510.57219454163,988781.0360718747],
+             3218293.171926339, True)]
+        for vertices, center, radius, expected in cases:
+            with self.subTest(expected=expected):
+                a, b, c = np.asarray(vertices)
+                normal = np.cross(b-a, c-a)
+                normal /= math.hypot(*normal)
+                if np.dot(np.asarray(center)-a, normal) < 0:
+                    normal = -normal
+                fourth = (a+b+c)/3-normal*math.hypot(*(b-a))
+                index = self.index(vertices+[fourth.tolist()], [[0,2,1],[0,1,3],[0,3,2],[1,2,3]])
+                hit = index.sweep_sphere(center, center, radius)
+                self.assertEqual(hit is not None, expected)
+                if expected:
+                    self.assertEqual(hit['fraction'], 0)
+                    self.assertFalse(hit['initial_containment'])
+                    self.assertEqual(hit['triangle'], 0)
+                    self.assertEqual(hit['center'], center)
+
 
 if __name__=='__main__':unittest.main()
