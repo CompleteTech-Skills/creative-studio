@@ -95,15 +95,16 @@ def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_toleran
         if np.max(np.abs(world_turn @ source - target)) <= direction_tolerance:
             turn = right_t.T @ symmetry @ right_t
             rotation = quaternion(qmul(matrix_quaternion(turn), seed['rotation']))
-            yield dict(rotation=rotation.tolist(), scale=seed['scale'])
+            yield dict(rotation=rotation.tolist(), scale=seed['scale']), world_turn
 
 
-def _fold_axis_permutations(root, seed, source):
+def _fold_axis_permutations(root, seed):
     """Permute local axes when their world directions retain all pairwise angles."""
     lengths = np.asarray([math.hypot(*root[:, axis]) for axis in range(3)])
     axes = root / lengths
     gram = axes.T @ axes
-    coordinates = np.linalg.solve(axes, source)
+    left, _, right_t = np.linalg.svd(axes)
+    polar = left @ right_t
     scales = np.asarray(seed['scale'])
     for order in permutations(range(3)):
         indices = list(order)
@@ -118,18 +119,21 @@ def _fold_axis_permutations(root, seed, source):
             rotation = quaternion(qmul(seed['rotation'], matrix_quaternion(permutation)))
             reoriented = dict(rotation=rotation.tolist(),
                               scale=(scales[indices] * (lengths / lengths[indices])).tolist())
-            yield reoriented, axes @ (permutation @ coordinates)
+            yield reoriented, polar @ permutation @ polar.T
 
 
 def _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
     yield from _fold_parent_axis_turns(parent_axes, seed, source, direction, direction_tolerance, bounds)
-    for permuted, axis in _fold_axis_permutations(root, seed, source):
+    for permuted, first in _fold_axis_permutations(root, seed):
+        axis = first @ source
         if np.max(np.abs(axis - direction)) <= direction_tolerance:
-            yield permuted
-        yield from _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance, bounds)
+            yield permuted, first
+        turns = _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance, bounds)
+        for oriented, second in turns:
+            yield oriented, second @ first
 
 
-def _fold_root_transform(parent, root, seed, source, target, target_resolution):
+def _fold_root_transform(parent, root, seed, first_offset, target, target_resolution):
     """Choose a rigid pole turn that is representable as local TRS.
 
     Pole direction fixes the swing, but leaves a twist about that direction.
@@ -143,6 +147,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     # their components. Pole distance must not change a representable ray.
     target_scale = float(np.max(np.abs(target)))
     target, target_resolution = target / target_scale, target_resolution / target_scale
+    source = root @ first_offset
     source, direction = unit(source / np.max(np.abs(source))), unit(target)
     swing = qmatrix(qbetween(source, direction))
     target_length = math.hypot(*target)
@@ -201,7 +206,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
         # pole's spacing inherit the first segment's much shorter length.
         lower, upper = 0., math.inf
         for component, observed, spacing in zip(axis, target, target_resolution):
-            error = spacing + roundoff * target_length
+            error = spacing + min(roundoff, 64 * eps) * target_length
             if component == 0:
                 if abs(observed) > error:
                     return False
@@ -212,7 +217,18 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
                 return False
         return upper > 0
 
-    def pole_error(oriented):
+    # Probe the same map on the parent axes as well as the root columns.
+    # Cofactors project each parent axis away from its other two axes.
+    dual = np.cross(normalized_parent[:, [1, 2, 0]].T,
+                    normalized_parent[:, [2, 0, 1]].T)
+    dual = dual / np.maximum(np.max(np.abs(dual), axis=1, keepdims=True), np.finfo(float).tiny)
+    heights = np.diag(dual @ normalized_parent)
+    pairs = np.maximum(parent_columns[:, None], parent_columns[None, :])
+    left_weight = parent_columns[:, None] / pairs
+    right_weight = parent_columns[None, :] / pairs
+    seed_axes_t = qmatrix(seed['rotation']).T
+
+    def pole_error(oriented, turn):
         try:
             local_frame = compose(rotation=oriented['rotation'], scale=oriented['scale'])[:3, :3]
         except RigError as exc:
@@ -220,10 +236,27 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
                 return math.inf
             raise
         world = parent @ local_frame
-        turn = np.linalg.solve(scaled_root.T, (world / column_scales).T).T
-        if np.linalg.det(turn) > 0 and np.max(np.abs(turn.T @ turn - identity)) <= roundoff:
-            axis = turn @ source
-            if pole_matches(axis):
+        candidate_axes = local_frame / oriented['scale']
+        ratios = np.asarray(oriented['scale']) / seed['scale']
+        relative = (candidate_axes * ratios) @ seed_axes_t
+        rotated_parent = turn @ normalized_parent
+        projected = dual @ rotated_parent
+        difference = heights[:, None] * left_weight * relative - projected * right_weight
+        # Absolute products bound ordinary cancellation in these short products.
+        local_bound = (np.abs(candidate_axes) * ratios) @ np.abs(seed_axes_t)
+        world_bound = np.abs(dual) @ (np.abs(turn) @ np.abs(normalized_parent))
+        error_budget = 128 * eps * (1 + left_weight * local_bound + right_weight * world_bound)
+        if not np.all(np.abs(difference) <= error_budget):
+            return math.inf
+        if not np.all(np.abs(world / column_scales - turn @ scaled_root) <= 128 * eps):
+            return math.inf
+        if np.linalg.det(turn) > 0 and np.max(np.abs(turn.T @ turn - identity)) <= 128 * eps:
+            segment = world @ first_offset
+            magnitude = np.max(np.abs(segment))
+            if not magnitude or not np.isfinite(magnitude):
+                return math.inf
+            axis = unit(segment / magnitude)
+            if pole_matches(axis) and pole_matches(turn @ source):
                 return np.max(np.abs(axis - direction))
         return math.inf
 
@@ -241,7 +274,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
         columns = value[:3, :3] / oriented['scale']
         if np.max(np.abs(columns.T @ columns - identity)) > 128 * eps:
             return None
-        return oriented if math.isfinite(pole_error(oriented)) else None
+        return oriented if math.isfinite(pole_error(oriented, rotation)) else None
 
     oriented = try_world_turn(swing)
     if oriented is not None:
@@ -249,8 +282,8 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     # Different sign choices can represent the same pole with different
     # rounding after FK. Prefer a well-resolved fit whenever one is available.
     closest, best_error = None, math.inf
-    for oriented in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
-        error = pole_error(oriented)
+    for oriented, turn in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
+        error = pole_error(oriented, turn)
         if error <= 16 * eps:
             return oriented
         if math.isfinite(error) and error <= best_error:
@@ -482,12 +515,12 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         # world points would discard that information at distant origins.
         first = next(bone for bone in skeleton['bones'] if bone['id'] == names[1])
         first_seed = {**first['rest'], **result['bones'].get(names[1], {})}
-        source = world[root][:3, :3] @ vector(first_seed['translation'])
+        first_offset = vector(first_seed['translation'])
         target_resolution = np.array([math.ulp(float(origin[i])) + math.ulp(float(pole[i]))
                                       for i in range(3)])
         try:
             oriented = _fold_root_transform(world[parent][:3, :3] if parent else np.eye(3),
-                                            world[root][:3, :3], seed, source, pole_delta,
+                                            world[root][:3, :3], seed, first_offset, pole_delta,
                                             target_resolution)
         except np.linalg.LinAlgError as exc:
             raise RigError('RIG_SINGULAR_TRANSFORM',
