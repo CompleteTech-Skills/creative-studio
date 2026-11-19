@@ -733,15 +733,16 @@ repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
             self.skipTest(f'symlinks unavailable: {exc}')
         os.chmod(stage / 'ro', 0o555)
         self.addCleanup(lambda: os.path.isdir(stage / 'ro') and os.chmod(stage / 'ro', 0o755))
-        with patch.object(shutil.rmtree, 'avoids_symlink_attacks', False):
-            try:
+        for flag in (False, True):
+            if not os.path.lexists(stage):
+                (stage / 'ro').mkdir(parents=True)
+                (stage / 'ro' / 'link').symlink_to(outside)
+                os.chmod(stage / 'ro', 0o555)
+            with self.subTest(fd_safe_rmtree=flag), patch.object(shutil.rmtree, 'avoids_symlink_attacks', flag):
                 editor3d_repository._discard_private_stage(stage, stage.parent)
-            except RigError as exc:
-                # POSIX cannot unlink inside a read-only directory; the error
-                # is typed and the outside target is untouched.
-                self.assertEqual(exc.report['code'], 'EDITOR3D_FILE')
-        self.assertEqual(stat.S_IMODE(os.stat(outside).st_mode), 0o644)
-        self.assertEqual(outside.read_bytes(), b'keep')
+                self.assertFalse(os.path.lexists(stage))
+                self.assertEqual(stat.S_IMODE(os.stat(outside).st_mode), 0o644)
+                self.assertEqual(outside.read_bytes(), b'keep')
 
         deep = self.root / 'deep-revisions' / '.editor-revision-deep'
         # Deeper than the default recursion limit; built iteratively.
@@ -763,6 +764,46 @@ repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
             with self.subTest(fd_safe_rmtree=flag), patch.object(shutil.rmtree, 'avoids_symlink_attacks', flag):
                 editor3d_repository._discard_private_stage(deep, deep.parent)
                 self.assertFalse(os.path.lexists(deep))
+
+    def test_discard_survives_a_descriptor_limit_below_stage_depth(self):
+        stage = self.root / 'fd-revisions' / '.editor-revision-fd'
+        level = stage
+        stage.mkdir(parents=True)
+        for _ in range(400):
+            level = level / 'd'
+            level.mkdir()
+        child = """import resource
+import sys
+from pathlib import Path
+from editor3d_repository import _discard_private_stage
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+resource.setrlimit(resource.RLIMIT_NOFILE, (min(256, hard), hard))
+stage = Path(sys.argv[1])
+_discard_private_stage(stage, stage.parent)
+"""
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts'))
+        try:
+            import resource  # noqa: F401
+        except ImportError:
+            self.skipTest('descriptor limits are POSIX-only')
+        exited = subprocess.run([sys.executable, '-B', '-c', child, str(stage)],
+                                env=env, capture_output=True, timeout=60)
+        self.assertEqual(exited.returncode, 0, exited.stderr[-400:])
+        self.assertFalse(os.path.lexists(stage))
+
+    @unittest.skipUnless(os.name == 'nt', 'NTFS read-only attributes are shared by hard links')
+    def test_discard_never_clears_read_only_on_a_hard_linked_file(self):
+        import editor3d_repository
+        outside = self.root / 'shared-readonly.txt'
+        outside.write_bytes(b'keep')
+        os.chmod(outside, stat.S_IREAD)
+        self.addCleanup(lambda: os.chmod(outside, stat.S_IWRITE | stat.S_IREAD))
+        stage = self.root / 'hardlink-revisions' / '.editor-revision-hardlink'
+        stage.mkdir(parents=True)
+        os.link(outside, stage / 'linked.txt')
+        with self.assertRaises(RigError):
+            editor3d_repository._discard_private_stage(stage, stage.parent)
+        self.assertFalse(os.access(outside, os.W_OK))
 
     def test_discard_refuses_a_stage_replaced_by_a_link(self):
         outside = self.root / 'link-target'

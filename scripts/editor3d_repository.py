@@ -390,7 +390,10 @@ def _remove_entry_no_follow(root):
                 # Directory junction or directory symlink: rmdir removes the
                 # link only; its target is never entered.
                 os.rmdir(path)
-            elif os.name == 'nt' and not linked and stat.S_ISREG(info.st_mode):
+            elif (os.name == 'nt' and not linked and stat.S_ISREG(info.st_mode)
+                  and info.st_nlink == 1):
+                # The read-only attribute belongs to the file; never clear it
+                # for a file that also has names outside the stage.
                 os.chmod(path, stat.S_IWRITE)
                 os.unlink(path)
             else:
@@ -405,6 +408,20 @@ def _remove_entry_no_follow(root):
             os.chmod(path, stat.S_IWRITE)
             os.rmdir(path)
 
+    def make_traversable(path, info):
+        # POSIX: a read-only stage directory blocks removing its children.
+        # Change only this verified real directory, never through a link.
+        if os.name == 'nt' or stat.S_IMODE(info.st_mode) & 0o700 == 0o700:
+            return
+        handle = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            opened = os.fstat(handle)
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                raise OSError('Private stage directory changed during removal.')
+            os.fchmod(handle, 0o700)
+        finally:
+            os.close(handle)
+
     stack = [(root, False)]
     while stack:
         path, expanded = stack.pop()
@@ -413,6 +430,7 @@ def _remove_entry_no_follow(root):
             continue
         info, linked = classify(path)
         if stat.S_ISDIR(info.st_mode) and not linked:
+            make_traversable(path, info)
             stack.append((path, True))
             with os.scandir(path) as entries:
                 stack.extend((entry.path, False) for entry in entries)
@@ -439,8 +457,10 @@ def _discard_private_stage(stage, revisions):
         if shutil.rmtree.avoids_symlink_attacks:
             try:
                 shutil.rmtree(stage)
-            except RecursionError:
-                # The fd-safe rmtree recurses per level; finish iteratively.
+            except (RecursionError, OSError):
+                # The fd-safe rmtree recurses and holds one descriptor per
+                # level (macOS limits descriptors to 256) and cannot enter
+                # read-only directories; finish with the no-follow walk.
                 _remove_entry_no_follow(stage)
         else:
             _remove_entry_no_follow(stage)
