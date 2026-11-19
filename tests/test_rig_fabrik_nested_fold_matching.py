@@ -66,28 +66,41 @@ class RigFabrikNestedFoldMatchingTests(unittest.TestCase):
                         pose = zigzag_pose(skeleton, gap, root_rotation=rotation, root_translation=translation)
                         self.assert_preserved(skeleton, pose, 1e-10)
 
-    def test_measurable_pole_change_still_steers_interior_joints(self):
-        skeleton = chain_skeleton(3)
+    def steering_error(self, count, translation, bend, angle):
+        """Relative error of the elbow's achieved pole rotation about the reach axis."""
+        skeleton = chain_skeleton(count)
         pose = neutral_pose(skeleton)
-        pose['bones']['b1'] = dict(rotation=quaternion([1, 0, 0], .8))
-        declaration = dict(boundaries.chain(3), solver='fabrik')
+        pose['bones']['b0'] = dict(translation=[translation]*3)
+        for index in range(1, count-1):
+            pose['bones'][f'b{index}'] = dict(rotation=quaternion([1, 0, 0], bend))
         world = evaluate_fk(skeleton, pose)
-        root, elbow, end = (world[name][:3, 3] for name in ('b0', 'b1', 'b2'))
-        axis = (end-root)/np.linalg.norm(end-root)
-        before = elbow-root-axis*np.dot(elbow-root, axis)
-        for angle in (1e-3, .5, math.pi/2, math.pi):
-            with self.subTest(angle=angle):
-                c, s = math.cos(angle), math.sin(angle)
-                other = np.cross(axis, before/np.linalg.norm(before))
-                wanted = c*before/np.linalg.norm(before)+s*other
-                pole = root+axis*np.dot(elbow-root, axis)+wanted*2.
-                result = solve_ik(skeleton, pose, declaration, end.tolist(), pole=pole.tolist())
-                solved = evaluate_fk(skeleton, result.pose)
-                new_elbow = solved['b1'][:3, 3]
-                perp = new_elbow-root-axis*np.dot(new_elbow-root, axis)
-                self.assertTrue(result.converged, result.report())
-                self.assertGreater(float(np.dot(perp/np.linalg.norm(perp), wanted)), 1-1e-9)
+        root, elbow, second = (world[name][:3, 3] for name in ('b0', 'b1', 'b2'))
+        end = world[f'b{count-1}'][:3, 3]
+        axis = (second-root)/np.linalg.norm(second-root)
+        bent = elbow-root-axis*np.dot(elbow-root, axis)
+        bent /= np.linalg.norm(bent)
+        other = np.cross(axis, bent)
+        pole = root+axis*np.dot(elbow-root, axis)+(math.cos(angle)*bent+math.sin(angle)*other)*2.
+        declaration = dict(boundaries.chain(count), solver='fabrik')
+        result = solve_ik(skeleton, pose, declaration, end.tolist(), pole=pole.tolist())
+        self.assertTrue(result.converged, result.report())
+        solved = evaluate_fk(skeleton, result.pose)['b1'][:3, 3]
+        perp = solved-root-axis*np.dot(solved-root, axis)
+        achieved = math.atan2(float(np.dot(perp, other)), float(np.dot(perp, bent)))
+        return abs(achieved-angle)/angle
 
+    def test_measurable_pole_changes_still_steer_interior_joints(self):
+        # Small but resolvable changes, including 1e-12 rad at exact
+        # coordinates, must not be mistaken for rounding (see PR #529).
+        cases = [(count, 0., bend, angle) for count in (3, 4) for bend in (1e-2, .3, .8, 2.)
+                 for angle in (1e-12, 1e-8, 1e-6, 1e-4, 1e-2, .5, math.pi/2, math.pi-1e-3)]
+        cases += [(count, 1e3, bend, angle) for count in (3, 4) for bend in (1e-2, .8)
+                  for angle in (1e-8, 1e-6, 1e-4, 1e-2)]
+        cases += [(count, 1e6, bend, angle) for count in (3, 4)
+                  for bend, angle in ((1e-4, 1e-4), (1e-2, 1e-6), (1e-2, 1e-2), (.8, 1e-6), (.8, 1e-2))]
+        for count, translation, bend, angle in cases:
+            with self.subTest(count=count, translation=translation, bend=bend, angle=angle):
+                self.assertLessEqual(self.steering_error(count, translation, bend, angle), 2e-3)
 
 if __name__ == '__main__':
     unittest.main()

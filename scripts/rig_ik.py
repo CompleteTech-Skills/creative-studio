@@ -329,34 +329,43 @@ def _pole_perpendicular(direction, origin, pole):
     return unit(perpendicular)
 
 
-# Relative rounding allowance for directions derived from evaluated chain points.
-_STEERING_ROUNDING = 64*np.finfo(float).eps
+# Safety factor on first-order rounding of FABRIK steering directions. Point
+# rounding accumulates through FK, and an axis is a difference of two points.
+_STEERING_ROUNDING_FACTOR = 4.
 
 
 def _pole_steering_unresolved(previous, point, following, pole):
-    """Whether a FABRIK pole rotation is below its own rounding uncertainty.
+    """Whether a FABRIK pole rotation is no larger than its rounding uncertainty.
 
-    The neighbour axis is a difference of nearby points. Near a nested fold it
-    is short, nearly parallel to the pole offset, or both, so the steering
-    angle carries rounding of order eps*scale/(|axis|*sin). Rotating by such an
-    unresolved angle moves an already aligned joint, and the error cascades
-    into the next neighbour axis. Measurable pole changes still steer.
+    The neighbour axis is a difference of nearby points, so its direction is
+    uncertain by about eps*scale/|axis|. That error tilts the perpendiculars of
+    the current point and the pole offset in proportion to their cotangents
+    against the axis, and each perpendicular also carries its own absolute
+    rounding. Near nested folds this first-order uncertainty exceeds the
+    apparent steering angle of an already aligned joint; rotating by it moves
+    the joint and the error cascades into the next neighbour axis. Larger,
+    resolvable pole changes still steer.
     """
     raw = following-previous
     span = float(np.linalg.norm(raw))
     axis = raw/span
     current = point-previous
     offset = pole-previous
-    current_perp = current-axis*np.dot(current, axis)
-    pole_perp = offset-axis*np.dot(offset, axis)
+    current_along, offset_along = float(np.dot(current, axis)), float(np.dot(offset, axis))
+    current_perp = current-axis*current_along
+    pole_perp = offset-axis*offset_along
     current_norm, pole_norm = float(np.linalg.norm(current_perp)), float(np.linalg.norm(pole_perp))
     if current_norm == 0. or pole_norm == 0.:
         return True
-    scale = max(float(np.abs(previous).max()), float(np.abs(point).max()), float(np.abs(following).max()), 1e-300)
-    axis_error = _STEERING_ROUNDING*scale/span
-    uncertainty = axis_error*(np.linalg.norm(current)/current_norm+np.linalg.norm(offset)/pole_norm)
-    cosine = float(np.clip(np.dot(current_perp, pole_perp)/(current_norm*pole_norm), -1., 1.))
-    return math.acos(cosine) <= uncertainty
+    rounding = np.finfo(float).eps*max(float(np.abs(previous).max()), float(np.abs(point).max()),
+                                       float(np.abs(following).max()), float(np.abs(pole).max()))
+    uncertainty = _STEERING_ROUNDING_FACTOR*(
+        rounding/span*(abs(current_along)/current_norm+abs(offset_along)/pole_norm)
+        +rounding/current_norm+rounding/pole_norm)
+    # atan2 resolves small angles that acos(cos) would round to zero.
+    angle = math.atan2(float(np.linalg.norm(np.cross(current_perp, pole_perp))),
+                       float(np.dot(current_perp, pole_perp)))
+    return angle <= uncertainty
 
 
 def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
