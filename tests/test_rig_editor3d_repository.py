@@ -766,6 +766,10 @@ repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
                 self.assertFalse(os.path.lexists(deep))
 
     def test_discard_survives_a_descriptor_limit_below_stage_depth(self):
+        try:
+            import resource  # noqa: F401
+        except ImportError:
+            self.skipTest('descriptor limits are POSIX-only')
         stage = self.root / 'fd-revisions' / '.editor-revision-fd'
         level = stage
         stage.mkdir(parents=True)
@@ -782,10 +786,6 @@ stage = Path(sys.argv[1])
 _discard_private_stage(stage, stage.parent)
 """
         env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts'))
-        try:
-            import resource  # noqa: F401
-        except ImportError:
-            self.skipTest('descriptor limits are POSIX-only')
         exited = subprocess.run([sys.executable, '-B', '-c', child, str(stage)],
                                 env=env, capture_output=True, timeout=60)
         self.assertEqual(exited.returncode, 0, exited.stderr[-400:])

@@ -449,7 +449,11 @@ def _discard_private_stage(stage, revisions):
     """
     _require(re.fullmatch(r'\.editor-revision-[a-zA-Z0-9_-]+', stage.name) is not None
              and stage.parent == revisions, 'RECOVERY', 'Private stage path is not a revision stage.')
-    info = os.lstat(stage)
+    try:
+        info = os.lstat(stage)
+    except OSError as exc:
+        raise RigError('EDITOR3D_FILE', 'Private stage could not be inspected: ' + str(exc),
+                       stage='editor3d-repository') from exc
     _require(stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)
              and not getattr(info, 'st_file_attributes', 0) & 0x400,
              'PATH', 'Private stage is not a real directory.')
@@ -464,10 +468,10 @@ def _discard_private_stage(stage, revisions):
                 _remove_entry_no_follow(stage)
         else:
             _remove_entry_no_follow(stage)
+        _sync_directory(revisions)
     except (OSError, RecursionError) as exc:
         raise RigError('EDITOR3D_FILE', 'Private stage could not be removed: ' + str(exc),
                        stage='editor3d-repository') from exc
-    _sync_directory(revisions)
 
 
 class EditorRepository:
