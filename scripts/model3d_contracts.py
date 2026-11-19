@@ -81,7 +81,9 @@ def _definitions():
         role={'enum': ['geometry', 'front', 'back', 'left', 'right', 'top', 'bottom',
                        'detail', 'identity', 'sketch', 'texture', 'annotation', 'mask', 'depth', 'profile', 'viewpoint']},
         provenance=provenance,
-        original_filename=short, dimensions_px=dimensions,
+        # Preserve the same bounded acquisition name accepted by AssetLibrary.
+        # This is retained provenance, not an identifier or a filesystem path.
+        original_filename=dict(type='string', minLength=1, maxLength=1024), dimensions_px=dimensions,
         acquisition=obj(dict(method={'enum': ['imported', 'authored', 'generated', 'recovered', 'unknown']},
                              timestamp=timestamp)),
         evidence_class=evidence_class, mask=nullable_file, annotations=arr(ref('file'), 0, 128),

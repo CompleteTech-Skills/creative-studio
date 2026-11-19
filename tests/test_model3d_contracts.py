@@ -131,6 +131,17 @@ class Model3DContracts(unittest.TestCase):
         schema['$defs']['asset']['properties'].clear()
         self.assertTrue(schemas()['model3d.schema.json']['$defs']['asset']['properties'])
 
+    def test_original_acquisition_filename_retains_bounded_full_name(self):
+        source = deepcopy(self.asset['sources'][0])
+        for length in (129, 1024):
+            with self.subTest(length=length):
+                source['original_filename'] = 'n' * (length - 4) + '.glb'
+                before = deepcopy(source)
+                validate_contract(source)
+                self.assertEqual(source, before)
+        source['original_filename'] = 'n' * 1021 + '.glb'
+        self.assertInvalid(source, 'MODEL3D_SCHEMA')
+
     def test_real_glb_and_external_gltf_payloads(self):
         for asset in (self.asset, asset_fixture(self.root, 'external', suffix='.gltf')):
             with self.subTest(asset=asset['id']):

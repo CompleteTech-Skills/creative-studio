@@ -70,6 +70,11 @@ def mutate(root,operation,parameters=None):
             for key in ('skeleton','controllers','attachments','uncertainties'):rig.manifest[key]=fitted[key]
             rig.manifest['archetype']=fitted['template_id'];rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
             rig.manifest['facial']['eyes']=[b['id'] for b in rig.skeleton['bones'] if b['role'].startswith('eye.')]
+            if 'eyelids' in rig.manifest['facial']:
+                eyes=set(rig.manifest['facial']['eyes'])
+                rig.manifest['facial']['eyelids']=[binding for binding in rig.manifest['facial']['eyelids'] if binding['eye'] in eyes]
+            from rig_facial import validate_eyelid_bindings
+            validate_eyelid_bindings(rig)
             save_rig(rig,operation='generate-skeleton');result=dict(bones=len(rig.skeleton['bones']),uncertainties=len(fitted['uncertainties']),job_status=fitted['status'])
         elif operation=='weights':
             from rig_skinning import generate_skin_weights
@@ -121,7 +126,7 @@ def pose_operation(rig,parameters):
     from rig_contracts import validate_contract
     from rig_skeleton import neutral_pose
     from rig_animation import evaluate_animation,save_pose
-    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls
+    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls,refresh_gaze_eyelids
     from rig_constraints import apply_constraints
     pose=deepcopy(parameters['pose']) if isinstance(parameters.get('pose'),dict) else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
     validate_contract(pose,'Pose')
@@ -131,16 +136,19 @@ def pose_operation(rig,parameters):
     if parameters.get('fingers'):pose=finger_controls(rig,pose,**parameters['fingers'])
     if parameters.get('appendages'):pose=appendage_controls(rig,pose,**parameters['appendages'])
     pose,_=apply_constraints(rig.skeleton,pose,rig.manifest['controllers']['constraints'])
+    if parameters.get('gaze'):pose=refresh_gaze_eyelids(rig,pose)
     validate_contract(pose,'Pose')
     return pose
 
 
 def solve_operation(rig,parameters):
     from rig_ik import solve_ik
+    from rig_facial import refresh_gaze_eyelids
     chain=next((c for c in rig.manifest['controllers']['ik'] if c['id']==parameters['chain']),None)
     require(chain is not None,'RIG_IK_CHAIN','Requested IK chain does not exist.')
     result=solve_ik(rig.skeleton,pose_operation(rig,parameters),chain,parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'],orientation=parameters.get('orientation'))
+    if parameters.get('gaze'):result.pose=refresh_gaze_eyelids(rig,result.pose)
     return dict(pose=result.pose,report=result.report())
 
 
