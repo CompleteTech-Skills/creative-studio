@@ -113,7 +113,10 @@ def dispatch(args):
         require(args.destination,'RIG_ARGUMENT','--destination is required.');return create_review_ui(rig,args.destination)
     if name in ('pose','solve-ik','render'):
         params=dict(clip=args.clip,time=args.time)
-        if args.file:params.update(read_json(args.file))
+        if args.file:
+            supplied = read_json(args.file)
+            require(isinstance(supplied, dict), 'RIG_OPERATION_SCHEMA', 'Operation parameters must be a JSON object.')
+            params.update(supplied)
         if args.pose:
             if Path(args.pose).is_file():params['pose']=read_json(args.pose)
             elif args.pose!='neutral':params['clip']=args.pose

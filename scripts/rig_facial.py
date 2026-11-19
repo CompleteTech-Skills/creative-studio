@@ -194,12 +194,16 @@ def gaze_at(rig, pose: dict, target, *, head_follow=0., vergence=True) -> dict:
     return _gaze_eyelids(rig, result, eyelids, rest) if eyelids else result
 
 
+_FINGER_NAMES = ('thumb', 'index', 'middle', 'ring', 'pinky')
+
+
 def finger_controls(rig, pose: dict, *, side: str, curl=0., spread=0., fingers=None) -> dict:
     require(side in ('left', 'right') and 0 <= curl <= 1 and -1 <= spread <= 1,
             'RIG_FINGER_CONTROL', 'Finger controls exceed their bounded ranges.')
-    fingers = fingers or ['thumb', 'index', 'middle', 'ring', 'pinky']
+    fingers = fingers or _FINGER_NAMES
+    require(all(name in _FINGER_NAMES for name in fingers), 'RIG_FINGER_UNAVAILABLE',
+            'Choose a thumb, index, middle, ring or pinky digit.')
     result = deepcopy(pose)
-    found = 0
     order = {name:i for i,name in enumerate(hierarchy_order(rig.skeleton))}
     for i, finger in enumerate(fingers):
         bones = [b for b in rig.skeleton['bones'] if b['role'].startswith(finger+'.') and b['role'].endswith('.'+side)]
@@ -208,7 +212,7 @@ def finger_controls(rig, pose: dict, *, side: str, curl=0., spread=0., fingers=N
         for j, bone in enumerate(bones):
             rotation = axis_angle([1, 0, 0], curl*1.35)
             if j == 0:rotation = qmul(rotation, axis_angle([0, 0, 1], spread*(i-(len(fingers)-1)/2)*.10))
-            result = rotate_bone(rig.skeleton, result, bone['id'], rotation);found += 1
+            result = rotate_bone(rig.skeleton, result, bone['id'], rotation)
     return apply_constraints(rig.skeleton, result, rig.manifest['controllers']['constraints'])[0]
 
 

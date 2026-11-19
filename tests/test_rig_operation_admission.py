@@ -158,6 +158,22 @@ class RigOperationAdmissionTests(unittest.TestCase):
                     status=rig.main(['pose','--run-dir','memory','--file','memory.json'])
                 self.assertEqual(status,1);self.assertEqual(json.loads(output.getvalue())['error']['code'],'RIG_OPERATION_SCHEMA')
 
+    def test_cli_rejects_nonobject_parameter_files_before_merging_defaults(self):
+        import rig
+        with tempfile.TemporaryDirectory() as directory, patch('rig_models.load_rig', return_value=self.rig):
+            parameter_file = Path(directory) / 'parameters.json'
+            for command, extra in (
+                ('pose', []), ('solve-ik', ['--chain', 'arm', '--target', '1', '1', '0']),
+            ):
+                for body in ([], '', [['expressions', {'blink': .5}]]):
+                    with self.subTest(command=command, body=body):
+                        parameter_file.write_text(json.dumps(body), encoding='utf-8')
+                        output = io.StringIO()
+                        with redirect_stdout(output):
+                            status = rig.main([command, '--run-dir', 'memory', '--file', str(parameter_file), *extra])
+                        self.assertEqual(status, 1)
+                        self.assertEqual(json.loads(output.getvalue())['error']['code'], 'RIG_OPERATION_SCHEMA')
+
     def test_loopback_http_admits_defaults_and_rejects_supplied_falsy_controls(self):
         # Real request parsing/authentication/dispatch with synthetic in-memory
         # geometry; only durable fixture loading is replaced.
@@ -295,6 +311,20 @@ class RigOperationAdmissionTests(unittest.TestCase):
                 selected=operation(rig,{**extra,'fingers':{**controls,'fingers':['index']}})
                 pose=selected['pose'] if operation is solve_operation else selected
                 self.assertIn('index.1.left',pose['bones']);self.assertNotIn('thumb.1.left',pose['bones'])
+
+    def test_finger_selection_cannot_rotate_eye_or_wing_geometry(self):
+        for asset, name, side in ((self.rig, 'eye', 'left'), (articulated_rig(), 'wing-root', 'right')):
+            before = deepcopy(asset.skeleton)
+            neutral = neutral_pose(asset.skeleton)
+            original = deepcopy(neutral)
+            for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+                with self.subTest(operation=operation.__name__, anatomy=name):
+                    with self.assertRaises(RigError) as refused:
+                        operation(asset, {**extra, 'pose': neutral,
+                            'fingers': {'side': side, 'curl': .7, 'fingers': [name]}})
+                    self.assertEqual(refused.exception.report['code'], 'RIG_FINGER_UNAVAILABLE')
+                    self.assertEqual(neutral, original)
+                    self.assertEqual(asset.skeleton, before)
 
     def test_ik_default_pole_and_unit_orientation_use_native_solver(self):
         parameters={'chain':'arm','target':[1,1,0]}
