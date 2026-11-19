@@ -1,0 +1,4 @@
+# Optional dependencies for the OpenColorIO profile and transform checks.
+numpy==2.3.5
+opencolorio==2.5.2
+PyYAML==6.0.3

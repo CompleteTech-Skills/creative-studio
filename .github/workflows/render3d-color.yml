@@ -1,0 +1,54 @@
+name: Render3D OpenColorIO verification
+on:
+  pull_request:
+    paths:
+      - .github/workflows/render3d-color.yml
+      - requirements-color.txt
+      - scripts/cinematics3d_color.py
+      - scripts/render3d_color_context.py
+      - scripts/render3d_contracts.py
+      - scripts/rig_errors.py
+      - tests/test_render3d_color_context.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/render3d-color.yml
+      - requirements-color.txt
+      - scripts/cinematics3d_color.py
+      - scripts/render3d_color_context.py
+      - scripts/render3d_contracts.py
+      - scripts/rig_errors.py
+      - tests/test_render3d_color_context.py
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  color:
+    name: OpenColorIO profile verification (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-color.txt
+      - name: Run native transforms and verify color receipts
+        run: |
+          python - <<'PY'
+          import unittest
+
+          tests = unittest.defaultTestLoader.discover('tests', 'test_render3d_color_context.py')
+          result = unittest.TextTestRunner(verbosity=2).run(tests)
+          if not result.testsRun or result.skipped or not result.wasSuccessful():
+              raise SystemExit("The color verification suite must run without skips or failures.")
+          PY

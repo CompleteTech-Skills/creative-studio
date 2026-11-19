@@ -91,3 +91,25 @@ Render result JSON has a separate 1 GiB decoding budget for large frame/pass
 inventories; all other documents and the default shared decoder retain the
 32 MiB limit. Oversized non-result documents still reject. This is an input-byte
 bound, not a promise that arbitrary result inventories fit available memory.
+
+## OCIO pixel transforms and worker observations
+
+`cinematics3d_color.make_plan` checks Standard and the selected SDR view against linear
+patches converted through the profile's XYZ D65 role and the IEC sRGB transfer
+function. A tone-mapped view can instead establish its output encoding through
+a separately measurable final conversion. Supported forms are a display color
+space reached from a display-referred XYZ D65 role, a legacy forward group
+ending in an explicit conversion from a measured linear color space, and an
+inline encoder following exposure/contrast operations that preserve RGB axes.
+A view with an ambiguous output encoding fails plan creation. An explicit look
+runs before the display conversion. The plan reports a full-view calibration
+error only for Standard without a look.
+
+`render3d_color_context.color_context` compares the current `OCIO` path and
+profile file bytes with the supplied inventory. Its hashes and role names
+describe that inventory. Display, view, look and pass settings come from the
+supplied scene. The observation records `renderer_profile_verified: false`
+because Blender can retain its startup color configuration after the environment
+or files change. Establishing the active renderer profile requires independent
+renderer admission. The separate pixel transform receipt describes float-array
+processing and leaves source-render verification open.
