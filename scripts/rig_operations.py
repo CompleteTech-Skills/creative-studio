@@ -165,8 +165,8 @@ def _pose_parameters(parameters, *, solve=False):
         require(fingers['side'] in ('left','right'), 'RIG_OPERATION_SCHEMA', 'Finger side must be left or right.')
         if 'curl' in fingers:_number(fingers['curl'], 0, 1, 'fingers.curl')
         if 'spread' in fingers:_number(fingers['spread'], -1, 1, 'fingers.spread')
-        names=fingers.get('fingers')
-        if names is not None:
+        if 'fingers' in fingers:
+            names=fingers['fingers']
             require(isinstance(names, list) and 1 <= len(names) <= 32
                     and all(isinstance(name, str) and 0 < len(name) <= 128 for name in names)
                     and len(set(names)) == len(names), 'RIG_OPERATION_SCHEMA', 'Finger names must be a bounded, nonempty unique list.')
@@ -194,12 +194,12 @@ def _check_pose(rig, pose):
     from rig_skeleton import evaluate_fk
     validate_contract(pose, 'Pose')
     require(pose['rig_version'] == rig.skeleton['version'], 'RIG_POSE_VERSION', 'Pose targets a different skeleton version.')
-    evaluate_fk(rig.skeleton, pose)
     meshes=rig.geometry.by_id()
     require(set(pose['morphs']) <= set(meshes), 'RIG_MORPH_REFERENCE', 'Pose references a missing mesh.')
     for mesh, weights in pose['morphs'].items():
         require(set(weights) <= set(meshes[mesh].morphs), 'RIG_MORPH_REFERENCE', 'Pose references a missing morph.')
         for amount in weights.values():_number(amount, -2, 2, 'pose.morphs')
+    evaluate_fk(rig.skeleton, pose)
 
 
 def pose_operation(rig,parameters):

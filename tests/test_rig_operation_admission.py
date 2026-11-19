@@ -44,6 +44,27 @@ def memory_rig():
     return rig
 
 
+def articulated_rig():
+    rig=memory_rig()
+    specs=[dict(id=b['id'],role=b['role'],parent=b['parent'],head=b['head'],tail=b['tail'])
+           for b in rig.skeleton['bones']]
+    roles=['tail.1','wing-root.left','wing-root.right']+[name+'.1.left' for name in
+           ('thumb','index','middle','ring','pinky')]
+    for index,role in enumerate(roles):
+        specs.append(dict(id=role,role=role,parent='b0',head=[index+1,0,0],tail=[index+1,1,0]))
+    rig.manifest['skeleton']=skeleton_from_heads(specs)
+    rest=evaluate_fk(rig.skeleton)
+    # Each represented control owns a separate weighted triangle off its axis.
+    # This exposes rotations, including wing twist, in actual deformed vertices.
+    for role in roles:
+        head=rest[role][:3,3]
+        positions=head+np.array([[.1,.2,0],[.2,.5,.1],[.1,.8,-.1]])
+        rig.geometry.meshes.append(Mesh(role,positions,np.array([[0,1,2]])))
+        rig.weights[role]=SkinWeights(role,[role],np.zeros((3,1),dtype=np.uint16),
+            np.ones((3,1)),np.array([np.linalg.inv(rest[role])]))
+    return rig
+
+
 class RigOperationAdmissionTests(unittest.TestCase):
     def setUp(self):self.rig=memory_rig()
 
@@ -80,6 +101,24 @@ class RigOperationAdmissionTests(unittest.TestCase):
                        lambda p:p['morphs'].update(strip={'blink':3})):
             pose=neutral_pose(self.rig.skeleton);change(pose)
             with self.subTest(change=change),self.assertRaises(RigError):pose_operation(self.rig,{'pose':pose})
+
+    def test_invalid_morphs_reject_before_native_evaluation_for_pose_and_ik(self):
+        invalid=[({'missing':{}},'RIG_MORPH_REFERENCE'),
+                 ({'strip':{'missing':0}},'RIG_MORPH_REFERENCE'),
+                 ({'strip':{'blink':3}},'RIG_OPERATION_SCHEMA'),
+                 ({'strip':{'blink':float('nan')}},'RIG_NONFINITE'),
+                 ({'strip':{'blink':float('inf')}},'RIG_NONFINITE')]
+        for operation,extra in ((pose_operation,{}),(solve_operation,{'chain':'arm','target':[1,1,0]})):
+            for morphs,code in invalid:
+                pose=neutral_pose(self.rig.skeleton);pose['morphs']=morphs
+                parameters={'pose':pose,**extra};before=deepcopy(parameters)
+                with self.subTest(operation=operation.__name__,code=code), \
+                        patch('rig_skeleton.evaluate_fk') as fk,patch('rig_ik.solve_ik') as ik:
+                    with self.assertRaises(RigError) as caught:operation(self.rig,parameters)
+                    self.assertEqual(caught.exception.report['code'],code)
+                    fk.assert_not_called();ik.assert_not_called()
+                # NaN is not equal to itself; compare the unchanged serialized payload.
+                self.assertEqual(json.dumps(parameters,sort_keys=True),json.dumps(before,sort_keys=True))
 
     def test_explicit_null_gaze_releases_eye_and_owned_lid_geometry(self):
         pose=rotate_bone(self.rig.skeleton,neutral_pose(self.rig.skeleton),'b2',axis_angle([1,0,0],.2))
@@ -132,8 +171,10 @@ class RigOperationAdmissionTests(unittest.TestCase):
                         ('pose',{},200),('pose',{'clip':None,'gaze':None},200),
                         ('pose',{'gaze':False},400),('pose',{'head_follow':None},400),
                         ('pose',{'fingers':0},400),('pose',{'appendages':False},400),
+                        ('pose',{'fingers':{'side':'left','fingers':None}},400),
                         ('pose',{'expressions':0},400),('pose',{'unknown':None},400),
                         ('solve-ik',{'chain':'arm','target':[1,1,0],'pole':None,'orientation':None},200),
+                        ('solve-ik',{'chain':'arm','target':[1,1,0],'fingers':{'side':'left','fingers':None}},400),
                         ('solve-ik',{'chain':'arm','target':[1,1,0],'pole':False},400),
                         ('solve-ik',{'chain':'arm','target':[1,1,0],'orientation':False},400)):
                         with self.subTest(endpoint=endpoint,body=body):
@@ -150,6 +191,34 @@ class RigOperationAdmissionTests(unittest.TestCase):
                 server.shutdown();server.server_close();thread.join(timeout=5)
                 self.assertFalse(thread.is_alive())
 
+    def test_loopback_rejects_invalid_morphs_before_native_evaluation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'jobs'/'fixture').mkdir(parents=True)
+            server=RigServer(root/'jobs',root,token='synthetic-operation-test-token')
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with patch('rig_models.load_rig',return_value=self.rig):
+                    for endpoint,extra in (('pose',{}),('solve-ik',{'chain':'arm','target':[1,1,0]})):
+                        for morphs,code in (({'missing':{}},'RIG_MORPH_REFERENCE'),
+                                ({'strip':{'missing':0}},'RIG_MORPH_REFERENCE'),
+                                ({'strip':{'blink':3}},'RIG_OPERATION_SCHEMA')):
+                            pose=neutral_pose(self.rig.skeleton);pose['morphs']=morphs
+                            with self.subTest(endpoint=endpoint,morphs=morphs), \
+                                    patch('rig_skeleton.evaluate_fk') as fk,patch('rig_ik.solve_ik') as ik:
+                                connection=HTTPConnection('127.0.0.1',server.server_port,timeout=5)
+                                try:
+                                    connection.request('POST','/v1/rigs/fixture/'+endpoint,
+                                        json.dumps({'pose':pose,**extra},allow_nan=False),headers={
+                                            'Content-Type':'application/json','Authorization':'Bearer '+server.token})
+                                    response=connection.getresponse();result=json.loads(response.read())
+                                    self.assertEqual(response.status,400)
+                                    self.assertEqual(result['error']['code'],code)
+                                    fk.assert_not_called();ik.assert_not_called()
+                                finally:connection.close()
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+
     def test_numeric_and_nested_control_boundaries_apply_to_both_operations(self):
         invalid=[{'time':1e9+1},{'time':None},{'head_follow':-1e-9},{'head_follow':1+1e-9},
                  {'expressions':{'blink':-1e-9}},{'expressions':{'blink':1+1e-9}},
@@ -158,6 +227,7 @@ class RigOperationAdmissionTests(unittest.TestCase):
                  {'fingers':{'side':'left','spread':-1-1e-9}},
                  {'fingers':{'side':'left','spread':1+1e-9}},
                  {'fingers':{'side':'left','unknown':0}},
+                 {'fingers':{'side':'left','fingers':None}},
                  {'fingers':{'side':'left','fingers':['index','index']}},
                  {'appendages':{'time':-1e-9}},{'appendages':{'time':120+1e-9}},
                  {'appendages':{'seed':2**31}},{'appendages':{'seed':-2**31-1}},
@@ -192,6 +262,39 @@ class RigOperationAdmissionTests(unittest.TestCase):
                     self.assertTrue(np.isfinite(evaluate_deformation(articulated,pose)['strip']['positions']).all())
                     self.assertTrue(pose['bones'])
                     self.assertEqual(controls,before)
+
+    def test_each_articulated_control_has_its_own_finite_geometry_effect(self):
+        rig=articulated_rig()
+        cases=[({'fingers':{'side':'left','curl':.7}},'index.1.left'),
+               ({'fingers':{'side':'left','spread':.8,'fingers':['index','middle']}},'index.1.left')]
+        cases += [({'appendages':{'time':.25,'seed':3,field:.7}},mesh) for field,mesh in
+                  (('tail_curl','tail.1'),('tail_wag','tail.1'),('secondary','tail.1'),
+                   ('wing_flap','wing-root.left'),('wing_fold','wing-root.left'),('wing_twist','wing-root.left'))]
+        for operation,extra in ((pose_operation,{}),(solve_operation,{'chain':'arm','target':[1,1,0]})):
+            baseline=operation(rig,extra)
+            baseline=evaluate_deformation(rig,baseline['pose'] if operation is solve_operation else baseline)
+            for controls,mesh in cases:
+                before=deepcopy(controls)
+                with self.subTest(operation=operation.__name__,controls=controls):
+                    actual=operation(rig,{**extra,**controls})
+                    geometry=evaluate_deformation(rig,actual['pose'] if operation is solve_operation else actual)
+                    self.assertGreater(np.max(np.abs(geometry[mesh]['positions']-baseline[mesh]['positions'])),1e-3)
+                    for value in geometry.values():self.assertTrue(np.isfinite(value['positions']).all())
+                    unrelated='wing-root.right' if mesh in ('index.1.left','tail.1') else 'tail.1'
+                    np.testing.assert_allclose(geometry[unrelated]['positions'],baseline[unrelated]['positions'],atol=1e-12)
+                    self.assertEqual(controls,before)
+
+    def test_finger_list_omission_keeps_default_and_explicit_bounded_selection(self):
+        rig=articulated_rig()
+        for operation,extra in ((pose_operation,{}),(solve_operation,{'chain':'arm','target':[1,1,0]})):
+            with self.subTest(operation=operation.__name__):
+                controls={'side':'left','curl':.7,'spread':.5}
+                default=operation(rig,{**extra,'fingers':controls})
+                explicit=operation(rig,{**extra,'fingers':{**controls,'fingers':['thumb','index','middle','ring','pinky']}})
+                self.assertEqual(default,explicit)
+                selected=operation(rig,{**extra,'fingers':{**controls,'fingers':['index']}})
+                pose=selected['pose'] if operation is solve_operation else selected
+                self.assertIn('index.1.left',pose['bones']);self.assertNotIn('thumb.1.left',pose['bones'])
 
     def test_ik_default_pole_and_unit_orientation_use_native_solver(self):
         parameters={'chain':'arm','target':[1,1,0]}
