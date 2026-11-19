@@ -426,6 +426,48 @@ changes hidden by a normalized dot product. Four methods failed on 5e8d6df2
 (16 failing subcases); all ten pass with the direct unit-vector comparison,
 including exact-match, orientation, joint-limit and runtime-length controls.
 
+Six further independent native methods cover closed squares and rectangles at
+large translated roots, including microscopic segments and blended skin. Three
+methods failed on `92d5e138` across eight subcases even though its 98-test native
+gate passed. Reconstructing each joint from translated rotated positions lost
+precision and changed the internal frames. Explicit pole steering now applies
+one coherent rotation at the chain root, preserving all descendant local
+transforms before the ordinary endpoint and constraint pass. The root's new
+local TRS must remain representable. If the shortest pole swing would require
+local shear under a scaled parent, a bounded solve checks the remaining twist
+freedom about the pole. Pairwise local-column orthogonality produces three
+quartic polynomials, with at most twelve candidate roots plus the omitted
+half-turn; every candidate is verified against the original matrices. A
+representable rigid turn preserves the closed seed, while singular or genuinely
+unrepresentable transforms retain the structured transform error. The four independent
+fold modules passed all 34 methods after this correction in 0.985 seconds,
+exit 0, zero skips. Full corrected gates and fresh review remain required.
+
+Parent stretch symmetries and rigid axis permutations supply directly
+representable candidates before the polynomial fallback. Each reconstructed
+world turn must still satisfy the independent rigidity check. The pole fit
+accounts separately for the representable spacing of the supplied world
+positions, so subtraction at a translated origin cannot reject an attainable
+turn solely through coordinate rounding. Independent native controls retain
+small attainable turns, highly scaled parents, changed local scales and
+structured rejection of a nearby direction that would require shear.
+
+Pole admission intersects the candidate's positive ray with the separate
+coordinate rounding intervals of the supplied pole and origin. A distant pole
+does not borrow uncertainty from a short first segment, and an imprecise X
+coordinate cannot conceal a resolved Y/Z mismatch. The first segment comes
+from its native local offset before world translation is added. Trial local
+transforms below the native scale floor are discarded while other rigid
+candidates are checked; the original seed still passes the ordinary native
+transform validation. Three preserved independent regressions exercise both
+solvers at these distance, translation and near-floor scale boundaries.
+For an axial parent, candidate generation also checks the finite intersections
+of its rotation circle with the pole's coordinate intervals and their intervening
+arcs. Pairwise coordinate ratios give linear sine/cosine equations; this keeps
+an attainable azimuth when different world coordinates have different precision.
+Bounded normalization makes the folded steering independent of finite pole
+distance even when squaring the supplied components would overflow.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
