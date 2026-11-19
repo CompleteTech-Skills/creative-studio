@@ -466,6 +466,18 @@ class ForegroundContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'encoded as PNG'):
             fg.load(self.root)
 
+    def test_derived_png_refuses_changed_opacity_or_orientation(self):
+        path = self.root / 'presentation-fixture.png'
+        orientation = Image.Exif()
+        orientation[274] = 6
+        for name, metadata in (('transparency', dict(transparency=255)),
+                               ('orientation', dict(exif=orientation))):
+            with self.subTest(name=name):
+                Image.new('L', (8, 6), 255).save(path, **metadata)
+                self.assertEqual(fg._verified_image(path, sha(path)).size, (8, 6))
+                with self.assertRaisesRegex(ValueError, 'display metadata'):
+                    fg._verified_image(path, sha(path), png_only=True)
+
     def test_current_runtime_counts_are_bound_and_historical_threads_remain_readable(self):
         self.assertEqual(fg.load(self.root)['parameters']['threads'],2)
         self.receipt['parameters']['threads']=1

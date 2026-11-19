@@ -88,6 +88,10 @@ def _verified_image(path, expected_hash=None, *, png_only=False):
                 raise ValueError('foreground artifact must be encoded as PNG')
             if image.width * image.height > MAX_PIXELS:
                 raise ValueError('source exceeds foreground pixel bound')
+            if png_only:
+                image.load()
+                if 'transparency' in image.info or image.getexif().get(274, 1) != 1:
+                    raise ValueError('foreground artifact contains display metadata that changes opacity or orientation')
             return image.copy()
     except (OSError, Image.DecompressionBombError) as exc:
         raise ValueError('invalid bounded foreground image: ' + str(exc)) from exc
@@ -289,7 +293,12 @@ def _worker(stage, weights, threshold):
                            'mask': _asset(stage, relative), 'bbox': box, 'pixels': count(mask)})
         overlaps = union(overlaps, intersect(occupied, mask)); occupied = union(occupied, mask)
         overlay = _draw_candidate(overlay, mask, candidates[-1], OVERLAY_RENDERER)
-    overlaps.save(stage / 'masks/overlap.png'); overlay.save(stage / 'overlay.png')
+    # The derived overlay is displayed in admitted source-pixel coordinates.
+    # Its encoded presentation must agree with those coordinates and alpha.
+    overlay.info.pop('transparency', None)
+    overlay.info.pop('exif', None)
+    overlaps.save(stage / 'masks/overlap.png')
+    overlay.save(stage / 'overlay.png')
     atomic_json(stage / 'output.json', {'candidates': candidates, 'overlap': _asset(stage, 'masks/overlap.png'),
                                         'overlay': _asset(stage, 'overlay.png'),
                                         'runtime': {'torch_threads': torch.get_num_threads(), 'torch_interop_threads': torch.get_num_interop_threads()}})
