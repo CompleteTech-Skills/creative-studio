@@ -6,6 +6,7 @@ art. The integration cases execute the installed FFmpeg and ffprobe binaries.
 from copy import deepcopy
 from fractions import Fraction
 import hashlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -177,9 +178,72 @@ class SilentMedia(core.SilentContracts):
         self.ffmpeg('-i', silent, '-f', 'lavfi', '-i',
                     'anullsrc=r=48000:cl=mono', '-map', '0:v:0', '-map', '1:a:0',
                     '-c:v', 'copy', '-c:a', 'libopus', '-shortest', output)
-        self.assertEqual(len(self.independent_probe(output)['streams']), 2)
-        with self.assertRaises(ValueError):
+        streams = self.independent_probe(output)['streams']
+        self.assertEqual(len(streams), 2)
+        self.assertEqual([(stream['codec_type'], stream['codec_name'])
+                          for stream in streams], [('video', 'vp9'), ('audio', 'opus')])
+        self.assertGreater(int(streams[1]['nb_read_frames']), 0)
+        with self.assertRaisesRegex(ValueError, 'exactly one video stream') as refusal:
             video.verify_export(output, request)
+        self.assertIs(refusal.exception.evidence['verified'], False)
+        self.assertEqual(refusal.exception.evidence['audio_stream_count'], 1)
+
+    def test_subtitle_stream_is_rejected_even_without_audio(self):
+        silent = self.root / 'video.mp4'
+        video.encode(self.request, self.root, silent)
+        subtitles = self.root / 'captions.srt'
+        subtitles.write_text('1\n00:00:00,000 --> 00:00:00,200\nTest caption\n',
+                             encoding='utf-8')
+        output = self.root / 'video-with-captions.mp4'
+        self.ffmpeg('-i', silent, '-i', subtitles, '-map', '0:v:0', '-map', '1:s:0',
+                    '-c:v', 'copy', '-c:s', 'mov_text', output)
+        streams = self.independent_probe(output)['streams']
+        self.assertEqual([(stream['codec_type'], stream['codec_name'])
+                          for stream in streams], [('video', 'h264'), ('subtitle', 'mov_text')])
+        self.independent_decode(output)
+        with self.assertRaisesRegex(ValueError, 'exactly one video stream') as refusal:
+            video.verify_export(output, self.request)
+        evidence = refusal.exception.evidence
+        self.assertIs(evidence['verified'], False)
+        self.assertEqual(evidence['video_stream_count'], 1)
+        self.assertEqual(evidence['audio_stream_count'], 0)
+        self.assertEqual(evidence['other_stream_count'], 1)
+        self.assertEqual(evidence['probe']['exit_status'], 0)
+
+    def test_malformed_probe_metadata_is_rejected_with_evidence(self):
+        output = self.root / 'video.mp4'
+        receipt = video.encode(self.request, self.root, output)
+        refusals = {
+            'display_aspect_ratio': 'invalid display aspect ratio in probe',
+            'format_name': 'invalid container format in probe',
+            'invalid JSON': 'malformed/incomplete ffprobe evidence',
+        }
+        for field, reason in refusals.items():
+            with self.subTest(field=field):
+                inspected = deepcopy(receipt['probe'])
+                if field == 'invalid JSON':
+                    inspected['stdout'] = '{'
+                else:
+                    data = json.loads(inspected['stdout'])
+                    target = data['streams'][0] if field == 'display_aspect_ratio' else data['format']
+                    target[field] = None
+                    inspected['stdout'] = json.dumps(data)
+                with patch.object(video, '_run', return_value=inspected) as run:
+                    with self.assertRaisesRegex(ValueError, reason) as refusal:
+                        video.verify_export(output, self.request)
+                run.assert_called_once()
+                evidence = refusal.exception.evidence
+                self.assertIs(evidence['verified'], False)
+                if field == 'invalid JSON':
+                    self.assertNotIn('audio_stream_count', evidence)
+                else:
+                    self.assertEqual(evidence['audio_stream_count'], 0)
+                # Failure evidence retains the observation, with private paths
+                # replaced by the current public diagnostic aliases.
+                expected = deepcopy(inspected)
+                expected['command'][0] = 'ffprobe'
+                expected['command'][-1] = '<media-workdir>/artifact.mp4'
+                self.assertEqual(evidence['probe'], expected)
 
     def test_extra_video_stream_is_rejected(self):
         silent = self.root / 'video.mp4'
@@ -286,11 +350,600 @@ class SilentMedia(core.SilentContracts):
         with self.assertRaises(ValueError):
             video.verify_export(output, self.request)
 
+    def test_corrupt_media_preserves_actual_ffprobe_failure_in_python_and_cli(self):
+        artifact=self.root/'corrupt-evidence.mp4';artifact.write_bytes(b'not a media artifact')
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact,self.request)
+        evidence=failed.exception.evidence
+        self.assertEqual(evidence['artifact_sha256'],hashlib.sha256(artifact.read_bytes()).hexdigest())
+        self.assertEqual(evidence['request_sha256'],video._digest(self.request))
+        probe=evidence['probe']
+        self.assertEqual(Path(probe['command'][0]).name,Path(shutil.which('ffprobe')).name)
+        self.assertNotEqual(probe['exit_status'],0)
+        self.assertIsInstance(probe['stdout'],str)
+        self.assertTrue(probe['stderr'])
+        self.assertLessEqual(len(probe['stderr'].encode()),self.request['limits']['max_log_bytes'])
+        request_path=self.root/'failure-request.json';request_path.write_text(json.dumps(self.request))
+        result=subprocess.run([sys.executable,str(Path(video.__file__).resolve()),'verify-export',str(artifact),'--request',str(request_path),'--require-silent'],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,1)
+        report=json.loads(result.stdout)
+        self.assertFalse(report['verified'])
+        self.assertEqual(report['artifact_sha256'],evidence['artifact_sha256'])
+        self.assertEqual(report['probe']['exit_status'],probe['exit_status'])
+        self.assertTrue(report['probe']['stderr'])
+        for value in (evidence,report):
+            for field in ('video_stream_count','audio_stream_count','other_stream_count'):
+                self.assertNotIn(field,value)
+
+    def test_os_decoder_launch_failure_retains_completed_stages_and_hashes(self):
+        artifact = self.root / 'launch-control.mp4'
+        video.encode(self.request, self.root, artifact)
+        before = artifact.read_bytes()
+        private = self.root / 'SYNTHETIC_PRIVATE_DECODER_DIR'
+        private.mkdir()
+        decoder = private / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
+        decoder.write_bytes(b'Offline placeholder in an unsupported executable format.\n')
+        decoder.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, 'launch failed') as failed:
+            video.verify_export(artifact, self.request, ffmpeg=decoder)
+        request_path = self.root / 'launch-request.json'
+        request_path.write_text(json.dumps(self.request), encoding='utf-8')
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()),
+            'verify-export', str(artifact), '--request', str(request_path), '--require-silent'],
+            env=dict(os.environ, PATH=str(private) + os.pathsep + os.environ['PATH']),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        for evidence in (failed.exception.evidence, json.loads(result.stdout)):
+            self.assertFalse(evidence['verified'])
+            self.assertEqual(evidence['artifact_sha256'], hashlib.sha256(before).hexdigest())
+            self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+            self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+            for stage in ('probe', 'timeline'):
+                self.assertEqual(evidence[stage]['exit_status'], 0)
+                self.assertTrue(evidence[stage]['stdout'])
+            self.assertIsInstance(evidence['decode']['launch_error']['errno'], int)
+            self.assertIs(evidence['decode']['started'], False)
+            self.assertEqual((evidence['decode']['stdout'], evidence['decode']['stderr']), ('', ''))
+            self.assertNotIn('exit_status', evidence['decode'])
+            self.assertNotIn(private.name, json.dumps(evidence) + str(failed.exception))
+        self.assertEqual(artifact.read_bytes(), before)
+
+    def _failed_verification_reports(self, artifact, request, *, root=None, ffprobe=None, env=None):
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, request, root=root, ffprobe=ffprobe)
+        python_report = {**failed.exception.evidence, 'error': str(failed.exception)}
+        request_path = self.root / 'diagnostic-contract-request.json'
+        request_path.write_text(json.dumps(request))
+        command = [sys.executable, video.__file__, 'verify-export', str(artifact),
+                   '--request', str(request_path), '--require-silent']
+        if root is not None:
+            command += ['--root', str(root)]
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        return {'python': python_report, 'cli': json.loads(result.stdout)}
+
+    def test_real_probe_executable_basename_is_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_EXECUTABLE'
+        artifact = self.root / 'corrupt.mp4'
+        artifact.write_bytes(b'synthetic non-media')
+        installed = Path(shutil.which('ffprobe')).resolve()
+        for variant in ('public-name', 'private-target'):
+            directory = self.root / variant
+            directory.mkdir()
+            executable = directory / 'ffprobe'
+            target = executable if variant == 'public-name' else directory / (marker + '-ffprobe')
+            shutil.copy2(installed, target)
+            self.assertEqual(video.file_hash(target), video.file_hash(installed))
+            if target != executable:
+                executable.symlink_to(target.name)
+            reports = self._failed_verification_reports(
+                artifact, self.request, ffprobe=executable,
+                env=dict(os.environ, PATH=str(directory) + os.pathsep + os.environ['PATH']))
+            for interface, report in reports.items():
+                with self.subTest(variant=variant, interface=interface):
+                    self.assertFalse(report['verified'])
+                    self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+                    self.assertNotIn('video_stream_count', report)
+                    for key in ('probe', 'command_failure'):
+                        self.assertNotEqual(report[key]['exit_status'], 0)
+                        self.assertTrue(report[key]['stderr'])
+                        self.assertEqual(report[key]['command'][0], 'ffprobe')
+                    self.assertNotIn(marker, json.dumps(report))
+
+    @unittest.skipUnless(os.name == 'posix' and os.geteuid() != 0,
+                         'actual unreadable-file check requires an unprivileged POSIX process')
+    def test_unreadable_source_omits_private_frame_basename_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_FRAME'
+        renamed = self.root / (marker + '.png')
+        (self.root / self.paths[0]).rename(renamed)
+        source = video.build_source(self.root, [renamed.name, *self.paths[1:]], self.source['fps'])
+        request = video.make_request(source)
+        artifact = self.root / 'six-frames.mp4'
+        video.encode(request, self.root, artifact)
+        self.assert_receipt(video.verify_export(artifact, request, root=self.root), artifact)
+        original_mode = renamed.stat().st_mode
+        try:
+            renamed.chmod(0)
+            with self.assertRaises(PermissionError):
+                renamed.read_bytes()
+            reports = self._failed_verification_reports(artifact, request, root=self.root)
+        finally:
+            renamed.chmod(original_mode)
+        for interface, report in reports.items():
+            with self.subTest(interface=interface):
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+                self.assertEqual(report['request_sha256'], video._digest(request))
+                self.assertEqual(report['source_manifest_sha256'], video._digest(source))
+                for stage in ('probe', 'timeline', 'decode'):
+                    self.assertEqual(report[stage]['exit_status'], 0)
+                self.assertNotIn(marker, json.dumps(report))
+
+    @unittest.skipUnless(os.name == 'posix' and os.geteuid() != 0,
+                         'actual unreadable-file check requires an unprivileged POSIX process')
+    def test_unreadable_artifact_has_only_available_identity_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_ARTIFACT'
+        artifact = self.root / (marker + '.mp4')
+        video.encode(self.request, self.root, artifact)
+        self.assert_receipt(video.verify_export(artifact, self.request), artifact)
+        original_mode = artifact.stat().st_mode
+        try:
+            artifact.chmod(0)
+            with self.assertRaises(PermissionError):
+                artifact.read_bytes()
+            reports = self._failed_verification_reports(artifact, self.request)
+        finally:
+            artifact.chmod(original_mode)
+        for interface, report in reports.items():
+            with self.subTest(interface=interface):
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['request_sha256'], video._digest(self.request))
+                self.assertEqual(report['source_manifest_sha256'], video._digest(self.source))
+                for unavailable in ('artifact_sha256', 'artifact_bytes', 'probe', 'timeline', 'decode'):
+                    self.assertNotIn(unavailable, report)
+                self.assertNotIn(marker, json.dumps(report))
+
+    @unittest.skipUnless(os.name == 'posix', 'actual ENOEXEC fixture requires POSIX executable semantics')
+    def test_actual_decode_launch_failure_preserves_two_successful_probes(self):
+        artifact = self.root / 'launch-evidence.mp4'
+        video.encode(self.request, self.root, artifact)
+        digest = video.file_hash(artifact)
+        control = video.verify_export(artifact, self.request)
+        self.assert_receipt(control, artifact)
+        tool_dir = self.root / 'SYNTHETIC_PRIVATE_LAUNCH_TOOL_DIRECTORY'
+        tool_dir.mkdir()
+        invalid = tool_dir / 'ffmpeg'
+        invalid.write_bytes(b'synthetic executable with no executable format\n')
+        invalid.chmod(0o755)
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, self.request, ffmpeg=invalid)
+        request_path = self.root / 'launch-evidence-request.json'
+        request_path.write_text(json.dumps(self.request))
+        env = dict(os.environ, PATH=str(tool_dir) + os.pathsep + os.environ.get('PATH', ''))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        report = json.loads(result.stdout)
+        for evidence in (failed.exception.evidence, report):
+            self.assertFalse(evidence['verified'])
+            self.assertEqual(evidence['artifact_sha256'], digest)
+            self.assertEqual(evidence['artifact_sha256_scope'], 'verification-snapshot')
+            self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+            self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+            self.assertEqual(evidence['video_stream_count'], 1)
+            self.assertEqual(evidence['audio_stream_count'], 0)
+            for stage in ('probe', 'timeline'):
+                self.assertEqual(evidence[stage]['exit_status'], 0)
+                self.assertTrue(json.loads(evidence[stage]['stdout']))
+            self.assertEqual(len(json.loads(evidence['timeline']['stdout'])['frames']), 6)
+            self.assertIs(evidence['decode']['started'], False)
+            self.assertEqual(evidence['decode']['launch_error']['errno'], errno.ENOEXEC)
+            self.assertNotIn('exit_status', evidence['decode'])
+            self.assertEqual(evidence['decode']['stdout'], '')
+            self.assertEqual(evidence['decode']['stderr'], '')
+            self.assertNotIn(tool_dir.name, json.dumps(evidence))
+        self.assertNotIn(tool_dir.name, str(failed.exception))
+        self.assertEqual(video.file_hash(artifact), digest)
+
+    def test_actual_caller_artifact_change_retains_completed_snapshot_verification(self):
+        artifact = self.root / 'SYNTHETIC_PRIVATE_CALLER_ARTIFACT.mp4'
+        video.encode(self.request, self.root, artifact)
+        original_bytes = artifact.read_bytes()
+        digest = hashlib.sha256(original_bytes).hexdigest()
+        self.assert_receipt(video.verify_export(artifact, self.request), artifact)
+        changed = []
+        def mutate_after_snapshot():
+            if not changed:
+                artifact.write_bytes(b'revised synthetic caller artifact')
+                changed.append(True)
+            return False
+        with self.assertRaisesRegex(ValueError, 'artifact changed') as failed:
+            video.verify_export(artifact, self.request, cancel=mutate_after_snapshot)
+        self.assertEqual(changed, [True])
+        self.assertNotEqual(video.file_hash(artifact), digest)
+        artifact.write_bytes(original_bytes)
+        tool_dir = self.root / 'SYNTHETIC_PRIVATE_MUTATION_TOOL_DIRECTORY'
+        tool_dir.mkdir()
+        wrapper = tool_dir / 'ffmpeg'
+        # This synthetic local wrapper really decodes through installed FFmpeg,
+        # then revises only the caller fixture. It does not forge process results.
+        wrapper.write_text('#!' + sys.executable + '\n'
+            'import os, subprocess, sys\nfrom pathlib import Path\n'
+            'result = subprocess.run([os.environ["SILENT_TEST_REAL_FFMPEG"], *sys.argv[1:]])\n'
+            'Path(os.environ["SILENT_TEST_CALLER_ARTIFACT"]).write_bytes(b"revised synthetic caller artifact")\n'
+            'sys.exit(result.returncode)\n')
+        wrapper.chmod(0o755)
+        request_path = self.root / 'mutation-evidence-request.json'
+        request_path.write_text(json.dumps(self.request))
+        env = dict(os.environ, PATH=str(tool_dir) + os.pathsep + os.environ.get('PATH', ''),
+                   SILENT_TEST_REAL_FFMPEG=shutil.which('ffmpeg'), SILENT_TEST_CALLER_ARTIFACT=str(artifact))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, '')
+        self.assertNotEqual(video.file_hash(artifact), digest)
+        for evidence in (failed.exception.evidence, json.loads(result.stdout)):
+            self.assertFalse(evidence['verified'])
+            self.assertEqual(evidence['artifact_sha256'], digest)
+            self.assertEqual(evidence['artifact_bytes'], len(original_bytes))
+            self.assertEqual(evidence['artifact_sha256_scope'], 'verification-snapshot')
+            self.assertEqual(evidence['request_sha256'], video._digest(self.request))
+            self.assertEqual(evidence['source_manifest_sha256'], video._digest(self.source))
+            for stage in ('probe', 'timeline', 'decode'):
+                self.assertEqual(evidence[stage]['exit_status'], 0)
+            self.assertEqual(len(json.loads(evidence['timeline']['stdout'])['frames']), 6)
+            for marker in (tool_dir.name, artifact.name):
+                self.assertNotIn(marker, json.dumps(evidence))
+
+    def test_failed_probe_redacts_owned_temporary_paths_in_python_and_cli(self):
+        marker = 'SYNTHETIC_WORKDIR_MARKER'
+        private = self.root / marker
+        private.mkdir()
+        artifact = self.root / 'path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, request)
+        evidence = failed.exception.evidence
+        self.assertNotIn(marker, str(failed.exception) + json.dumps(evidence))
+        self.assertIn('<media-workdir>', json.dumps(evidence))
+        self.assertNotEqual(evidence['probe']['exit_status'], 0)
+        for field in ('stdout', 'stderr'):
+            self.assertLessEqual(len(evidence['probe'][field].encode()), 1024)
+        request_path = self.root / 'path-error-request.json'
+        request_path.write_text(json.dumps(request))
+        env = dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        self.assertFalse(json.loads(result.stdout)['verified'])
+
+    def test_failed_probe_excludes_unneeded_editorial_metadata(self):
+        artifact=self.root/'tagged-audio.mp4'
+        marker='SYNTHETIC_EDITORIAL_MARKER'
+        stream_marker='SYNTHETIC_STREAM_MARKER'
+        self.ffmpeg('-f','lavfi','-i','anullsrc=r=48000:cl=mono','-t','0.25','-c:a','aac',
+                    '-metadata','title='+marker,'-metadata:s:a:0','handler_name='+stream_marker,artifact)
+        before=hashlib.sha256(artifact.read_bytes()).hexdigest()
+        self.assertIn(marker,json.dumps(self.independent_probe(artifact)))
+        self.assertIn(stream_marker,json.dumps(self.independent_probe(artifact)))
+        with self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact,self.request)
+        evidence=failed.exception.evidence
+        self.assertNotIn(marker,evidence['probe']['stdout'])
+        self.assertNotIn(stream_marker,evidence['probe']['stdout'])
+        self.assertEqual(evidence['video_stream_count'],0)
+        self.assertEqual(evidence['audio_stream_count'],1)
+        self.assertEqual(evidence['other_stream_count'],0)
+        request_path=self.root/'metadata-request.json';request_path.write_text(json.dumps(self.request))
+        result=subprocess.run([sys.executable,str(Path(video.__file__).resolve()),'verify-export',str(artifact),'--request',str(request_path),'--require-silent'],capture_output=True,text=True,timeout=30)
+        self.assertEqual(result.returncode,1)
+        report=json.loads(result.stdout)
+        self.assertFalse(report['verified'])
+        self.assertNotIn(marker,result.stdout)
+        self.assertNotIn(stream_marker,result.stdout)
+        self.assertEqual(report['audio_stream_count'],1)
+        self.assertEqual(report['artifact_sha256'],before)
+        self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(),before)
+
+    def test_real_probe_truncated_long_workdir_is_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_PRIVATE_LONG_WORKDIR'
+        private = self.root / marker
+        for index in range(6):
+            private = private / (str(index) + 'x' * 180)
+        private.mkdir(parents=True)
+        artifact = self.root / 'long-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+            video.verify_export(artifact, request)
+        evidence = failed.exception.evidence
+        self.assertNotIn(marker, str(failed.exception) + json.dumps(evidence))
+        self.assertTrue(evidence['probe']['stderr_truncated'])
+        self.assertIn('<media-path-truncated>', evidence['probe']['stderr'])
+        self.assertLessEqual(len(evidence['probe']['stderr'].encode()), 1024)
+        self.assertEqual(evidence['artifact_sha256'], video.file_hash(artifact))
+        request_path = self.root / 'long-path-request.json'
+        request_path.write_text(json.dumps(request))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent'],
+            env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        self.assertFalse(report['verified'])
+        self.assertTrue(report['probe']['stderr_truncated'])
+        self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_stale_source_failure_does_not_disclose_relative_source_names(self):
+        marker = 'SYNTHETIC_PRIVATE_SOURCE_NAME'
+        folder = self.root / marker
+        folder.mkdir()
+        paths = []
+        for relative in self.paths:
+            (self.root / relative).rename(folder / relative)
+            paths.append(marker + '/' + relative)
+        source = video.build_source(self.root, paths, fps=self.source['fps'], origin='synthetic')
+        request = video.make_request(source)
+        artifact = self.root / 'private-source.mp4'
+        video.encode(request, self.root, artifact)
+        with Image.new('RGB', (64, 48), (250, 0, 0)) as changed:
+            changed.save(self.root / paths[0])
+        with self.assertRaisesRegex(ValueError, 'index 0') as failed:
+            video.verify_export(artifact, request, root=self.root)
+        self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+        self.assertEqual(failed.exception.evidence['decode']['exit_status'], 0)
+        request_path = self.root / 'private-source-request.json'
+        request_path.write_text(json.dumps(request))
+        result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+            str(artifact), '--request', str(request_path), '--require-silent', '--root', str(self.root)],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(marker, result.stdout + result.stderr)
+        self.assertFalse(json.loads(result.stdout)['verified'])
+
+    def test_unicode_workdir_capture_boundaries_are_private_in_python_and_cli(self):
+        marker = 'SYNTHETIC_UNICODE_WORKDIR'
+        artifact = self.root / 'unicode-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        request_path = self.root / 'unicode-path-request.json'
+        request_path.write_text(json.dumps(request))
+        for pad in range(4):
+            private = self.root / (marker + 'x' * pad)
+            for index in range(6):
+                private = private / (str(index) + '\U0001f600' * 45)
+            private.mkdir(parents=True)
+            with self.subTest(pad=pad):
+                with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                record = failed.exception.evidence['probe']
+                self.assertTrue(record['stderr_truncated'])
+                self.assertIn('<media-path-truncated>', record['stderr'])
+                self.assertLessEqual(len(record['stderr'].encode()), 1024)
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertTrue(report['probe']['stderr_truncated'])
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_disguised_edit_lists_cannot_open_or_echo_referenced_clip_names(self):
+        marker = 'SYNTHETIC_EDITORIAL_CLIP_NAME'
+        for profile in ('h264-mp4', 'vp9-webm'):
+            with self.subTest(profile=profile):
+                request = video.make_request(self.source, profile)
+                artifact = self.root / ('workprint' + video.PROFILES[profile]['extension'])
+                artifact.write_text("ffconcat version 1.0\nfile '" + marker + ".mp4'\n")
+                with self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                self.assertNotEqual(failed.exception.evidence['probe']['exit_status'], 0)
+                self.assertNotIn('video_stream_count', failed.exception.evidence)
+                request_path = self.root / ('edit-list-request-' + profile + '.json')
+                request_path.write_text(json.dumps(request))
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_filesystem_byte_workdir_is_private_in_python_and_cli(self):
+        from test_silent_video_diagnostic_boundaries_native import completed_process_capture_schedule
+
+        # This case asserts the actual completed probe's exit 1. Let that real
+        # child finish before bounded capture, so overflow cannot race it into
+        # SIGKILL. The adjacent termination case retains the ordinary schedule.
+        completed_cli = self.root / 'completed-byte-path-cli.py'
+        completed_cli.write_text(
+            'import sys\n'
+            'sys.path.insert(0, %r)\n' % str(Path(__file__).resolve().parent) +
+            'from test_silent_video_diagnostic_boundaries_native import '
+            'completed_process_capture_schedule, video\n'
+            'with completed_process_capture_schedule():\n'
+            '    video.main()\n', encoding='utf-8')
+        marker = 'SYNTHETIC_NON_UTF8_WORKDIR'
+        # POSIX exercises an actual non-UTF-8 filename byte. Windows uses its
+        # actual Unicode replacement-character filename as a native control.
+        suffix = os.fsdecode(b'\xff') if os.name == 'posix' else '\ufffd'
+        artifact = self.root / 'byte-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        request_path = self.root / 'byte-path-request.json'
+        request_path.write_text(json.dumps(request))
+        for long_path in (False, True):
+            private = self.root / (marker + suffix + str(long_path))
+            if long_path:
+                for index in range(6):
+                    private /= str(index) + 'x' * 180
+            private.mkdir(parents=True)
+            with self.subTest(long_path=long_path):
+                with completed_process_capture_schedule(), \
+                        patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                self.assertEqual(failed.exception.evidence['probe']['exit_status'], 1)
+                self.assertEqual(bool(failed.exception.evidence['probe'].get('stderr_truncated')), long_path)
+                self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
+                result = subprocess.run([sys.executable, str(completed_cli), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                self.assertEqual(report['probe']['exit_status'], 1)
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_filesystem_byte_workdir_records_native_termination_and_evidence_budget(self):
+        marker = 'SYNTHETIC_NON_UTF8_WORKDIR'
+        # POSIX exercises an actual non-UTF-8 filename byte. Windows uses its
+        # actual Unicode replacement-character filename as a native control.
+        suffix = os.fsdecode(b'\xff') if os.name == 'posix' else '\ufffd'
+        artifact = self.root / 'byte-path-error.mp4'
+        artifact.write_bytes(b'synthetic corrupt media')
+        request = deepcopy(self.request)
+        request['limits']['max_log_bytes'] = 1024
+        request_path = self.root / 'byte-path-request.json'
+        request_path.write_text(json.dumps(request))
+        for long_path in (False, True):
+            private = self.root / (marker + suffix + str(long_path))
+            if long_path:
+                for index in range(6):
+                    private /= str(index) + 'x' * 180
+            private.mkdir(parents=True)
+            with self.subTest(long_path=long_path):
+                with patch.object(tempfile, 'tempdir', str(private)), self.assertRaises(ValueError) as failed:
+                    video.verify_export(artifact, request)
+                self.assertNotIn(marker, str(failed.exception) + json.dumps(failed.exception.evidence))
+                record = failed.exception.evidence['probe']
+                if long_path:
+                    self.assertTrue(record['evidence_limit_exceeded'])
+                    self.assertIn('evidence byte budget', str(failed.exception))
+                    self.assertIs(type(record['termination_requested']), bool)
+                    # POSIX kill is -SIGKILL; Windows TerminateProcess uses 1.
+                    # A process already finished at the limit retains exit 1.
+                    if os.name == 'posix' and record['termination_requested']:
+                        # The process can finish naturally between poll/kill.
+                        self.assertIn(record['exit_status'], (-9, 1))
+                    else:
+                        self.assertEqual(record['exit_status'], 1)
+                    self.assertLessEqual(len(record['stderr'].encode()), 1024)
+                else:
+                    self.assertEqual(record['exit_status'], 1)
+                self.assertEqual(bool(failed.exception.evidence['probe'].get('stderr_truncated')), long_path)
+                self.assertEqual(failed.exception.evidence['artifact_sha256'], video.file_hash(artifact))
+                result = subprocess.run([sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+                    str(artifact), '--request', str(request_path), '--require-silent'],
+                    env=dict(os.environ, TMPDIR=str(private), TEMP=str(private), TMP=str(private)),
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(marker, result.stdout + result.stderr)
+                report = json.loads(result.stdout)
+                self.assertFalse(report['verified'])
+                record = report['probe']
+                if long_path:
+                    self.assertTrue(record['evidence_limit_exceeded'])
+                    self.assertIn('evidence byte budget', report['error'])
+                    self.assertIs(type(record['termination_requested']), bool)
+                    if os.name == 'posix' and record['termination_requested']:
+                        self.assertIn(record['exit_status'], (-9, 1))
+                    else:
+                        self.assertEqual(record['exit_status'], 1)
+                    self.assertTrue(record['stderr_truncated'])
+                    self.assertLessEqual(len(record['stderr'].encode()), 1024)
+                else:
+                    self.assertEqual(record['exit_status'], 1)
+                self.assertEqual(report['artifact_sha256'], video.file_hash(artifact))
+
+    def test_historical_full_probe_receipt_accepts_only_matching_authoritative_facts(self):
+        artifact=self.root/'historical-receipt.mp4'
+        receipt=video.encode(self.request,self.root,artifact)
+        command=[shutil.which('ffprobe'),'-v','error','-count_frames','-show_streams','-show_format','-of','json',str(artifact)]
+        full=subprocess.run(command,capture_output=True,text=True,timeout=30)
+        self.assertEqual(full.returncode,0)
+        historical=deepcopy(receipt)
+        historical['probe']=dict(command=command,exit_status=full.returncode,stdout=full.stdout,stderr=full.stderr)
+        self.assertIn('tags',json.loads(full.stdout)['format'])
+        self.assertNotEqual(historical['probe']['stdout'],receipt['probe']['stdout'])
+        accepted=video.validate_receipt(historical,artifact,self.request,root=self.root)
+        self.assertTrue(accepted['verified'])
+        for change in ('codec','missing-width','float-width','extra-stream'):
+            tampered=deepcopy(historical);raw=json.loads(tampered['probe']['stdout'])
+            if change=='codec':raw['streams'][0]['codec_name']='vp9'
+            elif change=='missing-width':del raw['streams'][0]['width']
+            elif change=='float-width':raw['streams'][0]['width']=float(raw['streams'][0]['width'])
+            else:raw['streams'].append({'codec_type':'audio'})
+            tampered['probe']['stdout']=json.dumps(raw)
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                video.validate_receipt(tampered,artifact,self.request,root=self.root)
+
     def test_ffprobe_nonzero_exit_is_rejected(self):
         output = self.root / 'video.mp4'
         video.encode(self.request, self.root, output)
         with self.assertRaises(ValueError):
             video.verify_export(output, self.request, ffprobe=sys.executable)
+
+    def test_ffprobe_nonzero_exit_is_rejected_with_cli_evidence(self):
+        output = self.root / 'invalid.mp4'
+        output.write_bytes(b'not a media artifact')
+        request_path = self.root / 'request.json'
+        request_path.write_text(json.dumps(self.request), encoding='utf-8')
+        result = subprocess.run(
+            [sys.executable, str(Path(video.__file__).resolve()), 'verify-export',
+             str(output), '--request', str(request_path), '--require-silent'],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, '')
+        evidence = json.loads(result.stdout)
+        self.assertIs(evidence['verified'], False)
+        self.assertNotIn('audio_stream_count', evidence)
+        probe = evidence['probe']
+        # The verifier now limits its query to required metadata and exposes a
+        # logical tool identity, while preserving the actual arguments/status.
+        self.assertEqual(probe['command'][:-1],
+                         ['ffprobe', '-format_whitelist', 'mov,matroska,webm',
+                          '-protocol_whitelist', 'file', '-v', 'error', '-count_frames',
+                          '-show_entries',
+                          'stream=codec_type,codec_name,pix_fmt,width,height,nb_read_frames,'
+                          'sample_aspect_ratio,display_aspect_ratio,color_range,color_space,'
+                          'color_transfer,color_primaries,avg_frame_rate,time_base:'
+                          'format=format_name,duration', '-of', 'json'])
+        self.assertEqual(probe['command'][-1], '<media-workdir>/artifact.mp4')
+        self.assertGreater(probe['exit_status'], 0)
+        self.assertIn('media command failed (%s)' % probe['exit_status'], evidence['error'])
+
+        actual = subprocess.run([shutil.which('ffprobe'), *probe['command'][1:-1], str(output)],
+                                capture_output=True, timeout=30)
+        self.assertEqual(probe['exit_status'], actual.returncode)
+        self.assertEqual(probe['stdout'], actual.stdout.decode('utf-8', errors='replace'))
+        self.assertTrue(probe['stderr'].strip())
+        self.assertEqual(
+            probe['stderr'].splitlines()[-1].replace(probe['command'][-1], str(output)),
+            actual.stderr.decode('utf-8', errors='replace').splitlines()[-1],
+        )
+        self.assertNotIn(str(self.root), json.dumps(evidence))
 
     def test_stale_source_is_rejected_without_publishing(self):
         output = self.root / 'stale.mp4'
