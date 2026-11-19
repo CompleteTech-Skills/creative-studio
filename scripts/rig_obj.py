@@ -135,7 +135,7 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
                 current_group = label or 'mesh'
             elif key == 'o':
                 object_index += 1
-                current_object = (object_index, label) if label else None
+                current_object = (object_index, label)
             else:
                 current_group = label
                 group_members[label] = values
@@ -168,7 +168,8 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
     meshes = []
     obj_partitions = []
     for i, ((group, material, object_scope), faces) in enumerate(groups.items()):
-        name = object_scope[1] if object_scope is not None else group or 'mesh'
+        object_label = object_scope[1] if object_scope is not None else ''
+        name = object_label or group or 'mesh'
         if geometry_only:
             partition = {}
             if object_scope is not None:

@@ -198,6 +198,21 @@ class NativeImportTests(unittest.TestCase):
             self.assertEqual(positions[:, 2].tolist(), [height, height, height])
             self.assertEqual(document.accessor(primitive['indices']).ravel().tolist(), [0, 1, 2])
 
+    def test_static_obj_keeps_unnamed_declarations_distinct(self):
+        source = self.root / 'unnamed.obj'
+        source.write_bytes(b'v 0 0 0\nv 1 0 0\nv 0 1 0\ng panel\nf 1 2 3\n'
+                           b'o\nf 1 2 3\no\nf 1 2 3\n')
+        reference = self.import_source(source)
+        normalized = self.root / 'unnamed.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        self.assertEqual(len(document.json['nodes']), 3)
+        self.assertEqual([mesh['extras']['hatchObj'] for mesh in document.json['meshes']], [
+            dict(groups=['panel']),
+            dict(object='', object_index=1, groups=['panel']),
+            dict(object='', object_index=2, groups=['panel']),
+        ])
+
     def test_static_obj_quad_omits_unsupplied_attributes(self):
         source = self.root / 'quad.obj'
         source.write_bytes(b'v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n')

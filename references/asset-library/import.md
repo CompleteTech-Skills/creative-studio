@@ -82,10 +82,11 @@ widths also fail the import. The OBJ parser checks the caller's time budget
 between source records and after triangulating each face. `probe` checks the
 captured geometry and inventories the single source. The preflight records
 the captured OBJ size alongside the generated glTF JSON and binary sizes.
-Import stops with `RIG_OBJ_PRECISION` if encoding positions as glTF float32
-would collapse a triangle with area, turn its normal by 90 degrees or more,
-or give a collinear triangle area. Both probe and import check the source and
-encoded triangle geometry before building the GLB.
+The parser reads OBJ position coordinates as binary64. Probe and import check
+the triangles in that numeric representation against the float32 positions
+the GLB will encode. They report `RIG_OBJ_PRECISION` if the conversion collapses
+a triangle, turns its normal by 90 degrees or more, or gives a collinear
+triangle area. The original decimal coordinates remain in the retained OBJ.
 The version retains the original bytes under
 `source/model.obj` and records the original filename and SHA-256.
 The normalized GLB keeps faces from separate object declarations distinct,
