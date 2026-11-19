@@ -109,3 +109,97 @@ class Archives(unittest.TestCase):
             path.write_bytes(central+struct.pack('<4s4H2LH',b'PK\x05\x06',0,0,1,1,len(central),0,0))
             with patch('render3d_archive.zipfile.ZipFile',side_effect=AssertionError('must not allocate')):
                 with self.assertRaises(Render3DError):restore_render(path,Path(temporary)/'result')
+
+
+@unittest.skipUnless(fixtures.DEPENDENCIES,'optional render decoders unavailable')
+class ArchiveGuards(unittest.TestCase):
+    """Each restore guard is reached by an archive whose inventory still agrees."""
+    delivery=Archives.delivery
+
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        self.root=Path(temporary.name);request,delivery,snapshot=self.delivery(self.root)
+        archive_render(delivery,self.root/'film.zip',request=request,snapshot_root=snapshot)
+        with zipfile.ZipFile(self.root/'film.zip') as original:
+            self.members={i.filename:original.read(i) for i in original.infolist()}
+        self.index=json.loads(self.members.pop('inventory.json'))
+        self.frame=next(n for n in self.members if n.endswith('frames/000000.png'))
+
+    def forge(self,name,*,members=None,records=None,extra=()):
+        import hashlib
+        members=dict(self.members if members is None else members)
+        files=[dict(r) for r in (self.index['files'] if records is None else records)]
+        path=self.root/(name+'.zip')
+        with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr('inventory.json',json.dumps(dict(self.index,files=files)))
+            for member,data in members.items():archive.writestr(member,data)
+            for info,data in extra:archive.writestr(info,data)
+        return path
+
+    def refused(self,path,message):
+        destination=self.root/(path.stem+'-out')
+        with self.assertRaisesRegex(Render3DError,message):restore_render(path,destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(self.root.glob('.render-restore-*')),[])
+
+    def record(self,member):
+        return next(r for r in self.index['files'] if 'payload/'+r['path']==member)
+
+    def test_same_size_byte_change_fails_the_member_hash(self):
+        data=bytearray(self.members[self.frame]);data[-1]^=1
+        self.refused(self.forge('flip',members={**self.members,self.frame:bytes(data)}),'Archived file hash differs')
+
+    def test_compressed_member_is_refused(self):
+        members=dict(self.members);data=members.pop(self.frame)
+        info=zipfile.ZipInfo(self.frame);info.compress_type=zipfile.ZIP_DEFLATED
+        self.refused(self.forge('deflated',members=members,extra=[(info,data)]),'size or compression')
+
+    def test_symlink_member_is_refused(self):
+        import stat
+        members=dict(self.members);data=members.pop(self.frame)
+        info=zipfile.ZipInfo(self.frame);info.external_attr=(stat.S_IFLNK|0o777)<<16
+        self.refused(self.forge('symlink',members=members,extra=[(info,data)]),'nonregular')
+
+    def test_duplicate_member_is_refused(self):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            path=self.forge('duplicate',extra=[(zipfile.ZipInfo(self.frame),self.members[self.frame])])
+        self.refused(path,'duplicate entries')
+
+    def test_listed_case_alias_is_refused(self):
+        import hashlib
+        source=self.record(self.frame);alias=dict(source,path=source['path'].replace('frames/','FRAMES/'))
+        members={**self.members,'payload/'+alias['path']:self.members[self.frame]}
+        self.refused(self.forge('alias',members=members,records=[*self.index['files'],alias]),'alias')
+
+    def test_reforged_consistent_inventory_is_reverified(self):
+        import hashlib
+        data=bytearray(self.members[self.frame]);data[-1]^=1
+        records=[dict(r,sha256=hashlib.sha256(bytes(data)).hexdigest()) if 'payload/'+r['path']==self.frame else r
+                 for r in self.index['files']]
+        path=self.forge('reforged',members={**self.members,self.frame:bytes(data)},records=records)
+        destination=self.root/'reforged-out'
+        with self.assertRaises(Render3DError) as caught:restore_render(path,destination)
+        self.assertNotIn('Archived file hash differs',str(caught.exception))
+        self.assertFalse(destination.exists())
+
+
+class JunctionSources(unittest.TestCase):
+    def test_inventory_refuses_a_directory_junction(self):
+        import os
+        import render3d_archive as module
+        with tempfile.TemporaryDirectory() as temporary:
+            source=Path(temporary)/'source';(source/'linked').mkdir(parents=True)
+            (source/'linked'/'file').write_bytes(b'outside')
+            real=os.scandir
+            class Entry:
+                def __init__(self,entry):self.entry=entry
+                def __getattr__(self,name):return getattr(self.entry,name)
+                def is_junction(self):return self.entry.name=='linked'
+            class Listing:
+                def __init__(self,path):self.listing=real(path)
+                def __enter__(self):return (Entry(e) for e in self.listing.__enter__())
+                def __exit__(self,*args):return self.listing.__exit__(*args)
+            with patch('render3d_archive.os.scandir',side_effect=Listing):
+                with self.assertRaisesRegex(Render3DError,'junction'):module._inventory(source)

@@ -47,6 +47,8 @@ def _inventory(root):
                 require(key not in aliases,'invalid-input','Archive paths alias across platforms.')
                 aliases[key]=name
                 require(not entry.is_symlink(),'invalid-input','Archive source contains a symlink.')
+                # Windows junctions report is_symlink() False and is_dir() True.
+                require(not getattr(entry,'is_junction',lambda:False)(),'invalid-input','Archive source contains a junction.')
                 if entry.is_dir(follow_symlinks=False):pending.append(Path(entry.path));continue
                 require(entry.is_file(follow_symlinks=False),'invalid-input','Archive source is not a regular file.')
                 size=entry.stat(follow_symlinks=False).st_size;total+=size
@@ -98,7 +100,7 @@ def archive_render(delivery_root,destination,*,request=None,snapshot_root=None):
     immutable copy is verified before compression and exclusive publication.
     """
     source=Path(delivery_root).absolute();destination=Path(destination).absolute()
-    require(not source.is_symlink() and source.is_dir(),'invalid-input','Delivery root must be a directory.')
+    require(not source.is_symlink() and not getattr(source,'is_junction',lambda:False)() and source.is_dir(),'invalid-input','Delivery root must be a directory.')
     require(not destination.exists() and not destination.is_symlink(),'ownership','Archive destination exists.')
     require(not destination.parent.resolve().is_relative_to(source.resolve()),'ownership','Archive cannot be inside its source.')
     destination.parent.mkdir(parents=True,exist_ok=True)
@@ -110,7 +112,7 @@ def archive_render(delivery_root,destination,*,request=None,snapshot_root=None):
             if (payload/'request.json').exists():require(load(payload/'request.json')==request,'stale-asset','Supplied request differs.')
             else:atomic_json(payload/'request.json',request)
         if snapshot_root is not None:
-            snap=Path(snapshot_root).absolute();require(not snap.is_symlink(),'invalid-input','Snapshot root cannot be a symlink.')
+            snap=Path(snapshot_root).absolute();require(not snap.is_symlink() and not getattr(snap,'is_junction',lambda:False)(),'invalid-input','Snapshot root cannot be a symlink or junction.')
             require(not (payload/'snapshot').exists(),'ownership','Delivery already contains its snapshot.')
             for item in _inventory(snap):_copy_file(safe_path(snap,item['path'],exists=True),safe_path(payload/'snapshot',item['path']),item)
         verify_delivery(payload)
