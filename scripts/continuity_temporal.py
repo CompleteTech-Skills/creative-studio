@@ -65,17 +65,28 @@ def _equal(a, b):
     return a == b
 
 
-def _same_transform(a, b, *, native):
-    """Compare validated TRS, allowing roundoff only at a native matrix boundary."""
-    roundoff = 8 * math.ulp(1.0)
-    for field in ('translation', 'scale'):
-        if native:
-            # Matrix cancellation near zero needs a small absolute floor.
-            if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=roundoff)
-                       for x, y in zip(a[field], b[field])):
-                return False
-        elif not _equal(a[field], b[field]):
+def _same_transform(a, b, *, native, floor=None, relative=None, conditioned=None):
+    """Compare validated TRS, allowing roundoff only at a native matrix boundary.
+
+    ``floor`` is the per-axis absolute translation bound recorded when the
+    native value was composed; cancellation leaves a residual proportional to
+    the magnitudes that cancelled, not to the result. ``relative`` bounds the
+    composition depth; ``conditioned`` additionally includes the world-scale
+    conditioning, which affects only the decomposed scale and rotation.
+    """
+    unit = 8 * math.ulp(1.0)
+    base = max(unit, relative or 0.) if native else unit
+    roundoff = max(base, conditioned or 0.) if native else unit
+    floor = floor or (0., 0., 0.)
+    if native:
+        if not all(math.isclose(x, y, rel_tol=base, abs_tol=max(unit, bound))
+                   for x, y, bound in zip(a['translation'], b['translation'], floor)):
             return False
+        if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=0.)
+                   for x, y in zip(a['scale'], b['scale'])):
+            return False
+    elif not (_equal(a['translation'], b['translation']) and _equal(a['scale'], b['scale'])):
+        return False
     if not native:
         # Compare exact ratios of the authored components before normalization.
         # A common nonzero scale, including a sign flip, preserves rotation.
@@ -93,7 +104,78 @@ def _same_transform(a, b, *, native):
                for sign in (1, -1))
 
 
-def _operations(events, initial, until=None):
+def _native_bounds(scene, scene_to_world):
+    """Per-node roundoff bounds for values composed from native matrices.
+
+    Mirrors evaluate_transforms with norm bounds rather than entrywise values:
+    a rotation's computed zero entries carry ulp-sized error, and entrywise
+    products of rotations grow exponentially with depth. For each level the
+    linear part has spectral norm at most max|scale|; the effective local
+    translation t + p - R S p is bounded by |t| + |p| + max|scale| |p|.
+    Returns {node: (translation floor per axis, base relative tolerance,
+    composed max-scale product)}; ``_seed_bound`` applies the conditioning of
+    the decomposed world scale. Non-finite bounds fail closed.
+    """
+    nodes = {node['id']: node for node in scene['nodes']}
+    def local(transform):
+        largest = max(abs(float(v)) for v in transform['scale'])
+        magnitude = math.hypot(*map(float, transform['translation']))
+        if 'pivot' in transform:
+            magnitude += (1 + largest) * math.hypot(*map(float, transform['pivot']))
+        return largest, magnitude
+    chains = {}
+    def visit(identifier):
+        if identifier not in chains:
+            node = nodes[identifier]
+            largest, magnitude = local(node['transform'])
+            if node['parent'] is None:
+                chains[identifier] = (largest, magnitude, 1)
+            else:
+                scale, total, depth = visit(node['parent'])
+                chains[identifier] = (scale * largest, total + scale * magnitude, depth + 1)
+        return chains[identifier]
+    outer_scale, outer_magnitude = local(scene_to_world)
+    bounds = {}
+    for identifier in nodes:
+        scale, total, depth = visit(identifier)
+        levels = depth + 1
+        floor = 8 * math.sqrt(3) * (levels + 1) * math.ulp(1.0) * (outer_magnitude + outer_scale * total)
+        product = outer_scale * scale
+        bounds[identifier] = ([floor] * 3, 8 * (levels + 1) * math.ulp(1.0), product)
+    return bounds
+
+
+MAX_CONDITIONED_ROUNDOFF = 1e-6
+
+
+def _seed_bound(bound, transform):
+    """Scale and rotation error grow with the conditioning of the world scale."""
+    floor, relative, product = bound
+    smallest = min(abs(float(value)) for value in transform['scale'])
+    conditioned = relative * max(1.0, product / smallest)
+    # Only mapped nodes are checked; non-finite bounds fail closed. Beyond the
+    # orthonormality tolerance decompose already enforces, the conditioned
+    # bound would no longer distinguish rotations or scales, so refuse it.
+    if not all(math.isfinite(value) for value in (*floor, product, conditioned)):
+        fail('LIMIT', 'native transform magnitudes exceed representable roundoff bounds')
+    if conditioned > MAX_CONDITIONED_ROUNDOFF:
+        fail('LIMIT', 'native world scale is too ill-conditioned to compare decomposed rotation and scale')
+    return floor, relative, conditioned
+
+
+def _bound_arguments(bound):
+    return {} if bound is None else dict(floor=bound[0], relative=bound[1], conditioned=bound[2])
+
+
+def _combined_bound(incoming, initial):
+    """Both sides may be native: add their floors and relative bounds."""
+    if initial is None:
+        return _bound_arguments(incoming)
+    return dict(floor=[a + b for a, b in zip(incoming[0], initial[0])], relative=incoming[1] + initial[1],
+                conditioned=incoming[2] + initial[2])
+
+
+def _operations(events, initial, until=None, floors=None):
     """Replay from source; no mutable evaluator state survives a query."""
     state = deepcopy(initial)
     applied, previous = [], None
@@ -129,7 +211,8 @@ def _operations(events, initial, until=None):
                 field = 'transform' if kind == 'relocate' else 'visible'
                 current = container[field]
             if kind == 'relocate':
-                matches = _same_transform(current, operation['before'], native=entity not in relocated)
+                matches = _same_transform(current, operation['before'], native=entity not in relocated,
+                                          **_bound_arguments((floors or {}).get(entity)))
                 relocated.add(entity)
             else:
                 matches = _equal(current, operation['before'])
@@ -187,6 +270,8 @@ class TemporalEngine:
         known_shots = {digest(rooted(r)): r['path'] for r in project_doc['shots']}
         scenes, scene_references, seeds, mapped_ancestors = {}, {}, {}, {}
         mapped_parents = set()
+        floors = {}
+        import numpy
         for entry in self.plan['scenes']:
             reference = entry['scene']
             native_path = known_scenes.get(digest(reference))
@@ -200,6 +285,8 @@ class TemporalEngine:
             # collection and layer flags, through its single visible field.
             graph_state = SceneGraph(scene).evaluate_base()
             matrix = local_matrix(entry['scene_to_world'])
+            node_bounds = _native_bounds(scene, entry['scene_to_world'])
+            scene_floors = {}
             entities, nodes = {}, set()
             for binding in entry['entities']:
                 entity, node = binding['entity_id'], binding['node_id']
@@ -209,7 +296,9 @@ class TemporalEngine:
                 if node not in evaluated:
                     fail('MAPPING', 'node has no native evaluated state')
                 result = evaluated[node]
-                transform = decompose(matrix @ __import__('numpy').array(result['world_matrix']))
+                world = numpy.array(result['world_matrix'])
+                transform = decompose(matrix @ world)
+                scene_floors[entity] = _seed_bound(node_bounds[node], transform)
                 state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=graph_state[node]['render_visible'])
@@ -229,6 +318,7 @@ class TemporalEngine:
             scenes[scene['id']] = scene
             scene_references[scene['id']] = reference
             seeds[scene['id']] = entities
+            floors[scene['id']] = scene_floors
         self.shots = {}
         last_end = -1
         scene_intervals = {}
@@ -271,6 +361,7 @@ class TemporalEngine:
         if first['entry']['story_start_tick'] != 0:
             fail('MAPPING', 'initial native state must be anchored at story tick zero')
         self.initial = dict(entities=seeds[first['entry']['scene_id']], facts={})
+        self.initial_floors = floors[first['entry']['scene_id']]
         for scene_id, entities in seeds.items():
             if set(entities) != set(self.initial['entities']):
                 fail('MAPPING', 'every scene must explicitly map the persistent entity set')
@@ -289,7 +380,7 @@ class TemporalEngine:
                              if operation['event_type'] == 'relocate' else _equal(before, after))
                 if not unchanged:
                     fail('ADAPTER_REQUIRED', 'event changes a native ancestor of another mapped entity')
-        _operations(self.events, self.initial)
+        _operations(self.events, self.initial, floors=self.initial_floors)
         # An additional scene's native starting state must agree with the
         # authored chronology. Never silently discard a conflicting native
         # incoming transform/visibility under an inherited sidecar value.
@@ -302,9 +393,16 @@ class TemporalEngine:
             if not incoming:
                 fail('MAPPING', 'scene mapping has no consuming shot')
             initial_tick = min(incoming)
-            state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick)
+            state, applied = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick,
+                                         floors=self.initial_floors)
+            applied = set(applied)
+            # After an authored relocation the replayed transform is exact data.
+            moved = {operation['entity_id'] for event in self.events if event['event_id'] in applied
+                     for operation in event['operations'] if operation['event_type'] == 'relocate'}
             if any(native['visible'] != state['entities'][entity]['visible'] or
-                   not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True)
+                   not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True,
+                                       **_combined_bound(floors[scene_id][entity],
+                                                         None if entity in moved else self.initial_floors.get(entity)))
                    for entity, native in entities.items()):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
         verify_references(self.root, sources)
@@ -361,7 +459,7 @@ class TemporalEngine:
 
     def _snapshot(self, cutoff, *, head_sha256, shot_id, scene_id, frame, boundary,
                   event_id, tick, scene_tick, presentation_tick):
-        state, applied = _operations(self.events, self.initial, cutoff)
+        state, applied = _operations(self.events, self.initial, cutoff, floors=self.initial_floors)
         result = dict(schema_version='1.0.0', kind='continuity-temporal-snapshot',
             timeline_id=self.plan['timeline_id'], branch_id=self.plan['branch_id'],
             project_revision=self.plan['project_revision'], world_id=self.plan['world_id'],
