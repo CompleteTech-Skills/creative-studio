@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from asset_library import AssetLibrary
 from asset_library_import import ImportPipeline
-from asset_library_validation import _generated_workspace, validate_asset
+from asset_library_validation import _generated_workspace, _preflight, validate_asset
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, object_hash
 from rig_gltf import GltfBuilder, read_gltf
@@ -163,6 +163,18 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertFalse(report['production_approved'])
         self.assertEqual(report['visual_review'], 'unreviewed')
         self.assertEqual(report['capabilities'], ['material', 'mesh', 'texture'])
+        self.assertEqual(report['payload']['bytes'], 928)
+        self.assertEqual(report['resources'], dict(
+            active_mesh_primitives=1, active_nodes=2, accessors=2,
+            embedded_image_count=1, embedded_image_encoded_bytes=79, embedded_image_pixels=4,
+            gltf_load_estimate=dict(
+                method='native-gltf-load-conservative-v1',
+                scope='geometry metadata/accessors/instances only; image decoding requires separate admission',
+                memory_bytes=2_161_480, array_bytes=840),
+            verification_reserve_bytes=18_943_103,
+            native_decode_memory_budget_bytes=2_128_540_545,
+            raster_estimate_bytes=64, raster_budget_bytes=1_064_270_272,
+        ))
         self.assertEqual(report['geometry'], dict(vertices=3, triangles=1, bounds=[[6, -2, 4], [8, 0, 4]],
                                                   dimensions_m=[2, 2, 0], surface_area_m2=2))
         self.assertEqual([(node['node'], node['parent']) for node in report['hierarchy']], [(1, None), (0, 1)])
@@ -247,6 +259,80 @@ class NativeVerificationTests(unittest.TestCase):
         source.write_text(json.dumps(document), encoding='utf-8')
         return source
 
+    def test_skinned_animation_reconciles_source_targets_and_every_key_time(self):
+        builder = GltfBuilder()
+        positions = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', bounds=True)
+        joints = builder.accessor([[0, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]], 'VEC4', component=5121)
+        weights = builder.accessor([[1, 0, 0, 0]] * 3, 'VEC4')
+        deltas = builder.accessor([[0, 0, 0.25]] * 3, 'VEC3', bounds=True)
+        identity = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+        inverse_child = [[1, 0, 0, -1], *identity[1:]]
+        inverse_binds = builder.accessor([identity, inverse_child], 'MAT4')
+        exact_times = [-0.0, 1 / 128, 1 / 32]
+        child_times = [0.0, 3 / 128, 1 / 32]
+        times = builder.accessor(exact_times, 'SCALAR', bounds=True)
+        child_input = builder.accessor(child_times, 'SCALAR', bounds=True)
+        root_translations = builder.accessor([[0, 0, 0], [0, 0.25, 0], [0, 0, 0]], 'VEC3')
+        child_translations = builder.accessor([[1, 0, 0], [1, 0.5, 0], [1, 0, 0]], 'VEC3')
+        morph_weights = builder.accessor([0, 0.5, 0], 'SCALAR')
+        primitive = dict(attributes=dict(POSITION=positions, JOINTS_0=joints, WEIGHTS_0=weights),
+                         targets=[dict(POSITION=deltas)])
+        joint_name = 'Private Fixture Joint'
+        builder.json.update(
+            scenes=[dict(nodes=[0, 1])],
+            nodes=[dict(mesh=0, skin=0), dict(name=joint_name, children=[2]),
+                   dict(name=joint_name, translation=[1, 0, 0])],
+            meshes=[dict(primitives=[primitive, primitive])],
+            skins=[dict(joints=[1, 2], inverseBindMatrices=inverse_binds)],
+            animations=[dict(samplers=[dict(input=times, output=root_translations),
+                                       dict(input=child_input, output=child_translations),
+                                       dict(input=times, output=morph_weights, interpolation='STEP')],
+                             channels=[dict(sampler=0, target=dict(node=1, path='translation')),
+                                       dict(sampler=1, target=dict(node=2, path='translation')),
+                                       dict(sampler=2, target=dict(node=0, path='weights'))])])
+        source = self.root / 'channel-lineage.glb'
+        builder.write(source)
+        reference = self.import_asset(source, category='animation', scale=1)
+        report = validate_asset(self.library, reference)
+        self.assertEqual(report['skeleton']['deform_bones'], 2)
+        self.assertEqual(len(report['skins']), 2)
+        self.assertEqual(report['hierarchy'][-1]['world_matrix'][0][3], 1)
+        tracks = report['clips'][0]['tracks']
+        self.assertEqual([(track['source_node'], track.get('source_primitive'), track['path'],
+                           track['interpolation'], track['keys']) for track in tracks],
+                         [(1, None, 'translation', 'LINEAR', 3),
+                          (2, None, 'translation', 'LINEAR', 3),
+                          (0, 0, 'weights', 'STEP', 3),
+                          (0, 1, 'weights', 'STEP', 3)])
+        for track, expected in zip(tracks, (exact_times, child_times, exact_times, exact_times), strict=True):
+            self.assertEqual(track['key_times_sha256'], object_hash(expected))
+            self.assertEqual(track['last_key_exact'], dict(numerator=1, denominator=32))
+        self.assertNotIn('private-fixture-joint', json.dumps(report).lower())
+        self.assertNotIn(joint_name, json.dumps(report))
+
+        def faulty_decode(fault):
+            def decode(*args, **kwargs):
+                model = load_character_model(*args, **kwargs)
+                tracks = next(iter(model.clips.values()))['tracks']
+                if fault == 'middle time':
+                    tracks[0]['times'][1] = 1 / 64
+                elif fault == 'signed zero':
+                    tracks[0]['times'][0] = 0.0
+                else:
+                    first, second = (0, 1) if fault == 'bone target' else (2, 3)
+                    tracks[first]['target'], tracks[second]['target'] = (
+                        tracks[second]['target'], tracks[first]['target'])
+                return model
+            return decode
+
+        for fault in ('bone target', 'primitive target', 'middle time', 'signed zero'):
+            with (self.subTest(fault=fault),
+                  patch('asset_library_validation.load_character_model', side_effect=faulty_decode(fault)),
+                  self.assertRaises(RigError) as error):
+                validate_asset(self.library, reference)
+            self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_ANIMATION')
+            self.assertNotIn(joint_name, json.dumps(error.exception.report))
+
     def test_unskinned_animation_reports_exact_source_end_and_rigid_fallback(self):
         report = validate_asset(self.library, self.import_asset(self.animated_source()))
         self.assertEqual(report['skins'], [])
@@ -311,6 +397,31 @@ class NativeVerificationTests(unittest.TestCase):
                 validate_asset(self.library, reference)
         self.assertEqual(error.exception.report['code'], 'RIG_VALIDATOR_MISSING')
         self.assertNotIn(str(self.root), json.dumps(error.exception.report))
+
+    def test_reported_resource_estimates_match_admission_boundaries(self):
+        reference = self.import_asset()
+        report = validate_asset(self.library, reference)
+        resources = report['resources']
+        reserve = resources['verification_reserve_bytes']
+        raster_estimate = resources['raster_estimate_bytes']
+        minimum_raster_admission = reserve + 2 * raster_estimate
+        with patch('asset_library_validation.validate_gltf') as independent:
+            for memory_bytes, code in ((reserve, 'RIG_LIMIT_MEMORY'),
+                                       (minimum_raster_admission - 1, 'RIG_LIMIT_TEXTURE')):
+                with self.subTest(memory_bytes=memory_bytes), self.assertRaises(RigError) as error:
+                    validate_asset(self.library, reference, limits={'memory_bytes': memory_bytes})
+                self.assertEqual(error.exception.report['code'], code)
+            independent.assert_not_called()
+
+        path = self.root / 'normalized.glb'
+        payload = self.library.read_file(reference, 'normalized.glb')
+        path.write_bytes(payload)
+        profile = dict(report['limits'], memory_bytes=minimum_raster_admission)
+        *_, admitted = _preflight(path, len(payload), profile)
+        self.assertEqual(admitted['verification_reserve_bytes'], reserve)
+        self.assertEqual(admitted['native_decode_memory_budget_bytes'], 2 * raster_estimate)
+        self.assertEqual(admitted['raster_budget_bytes'], raster_estimate)
+        self.assertEqual(admitted['raster_estimate_bytes'], raster_estimate)
 
     def test_canonical_owner_missing_or_corrupt_bytes_fail_before_decode(self):
         reference = self.import_asset()

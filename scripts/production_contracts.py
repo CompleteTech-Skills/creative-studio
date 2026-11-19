@@ -6,6 +6,7 @@ Its public data model is versioned independently of legacy hatch-pet manifests.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
 import copy
 import hashlib
 import json
@@ -16,6 +17,7 @@ from pathlib import Path
 from PIL import Image
 
 from asset_contracts import MAX_SOURCE_PIXELS, MAX_WORK_BYTES
+from rig_errors import open_payload_at, owned_directory_fd
 
 SCHEMA_VERSION = 1
 CONTRACT_VERSION = '1.0.0'
@@ -348,6 +350,13 @@ def read_json(path):
     path = Path(path)
     if path.stat().st_size > MAX_MANIFEST_BYTES:
         raise ValueError('manifest exceeds 16 MiB: ' + str(path))
+    try:
+        return _decode_manifest(path.read_text(encoding='utf-8'), str(path))
+    except UnicodeError as exc:
+        raise ValueError('invalid UTF-8 JSON manifest: ' + str(path)) from exc
+
+
+def _decode_manifest(text, label):
     def pairs(items):
         result = {}
         for key, value in items:
@@ -358,11 +367,11 @@ def read_json(path):
     def invalid(value):
         raise ValueError('non-finite JSON number: ' + value)
     try:
-        value = json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=pairs, parse_constant=invalid)
-        _structural(value, {}, str(path))
+        value = json.loads(text, object_pairs_hook=pairs, parse_constant=invalid)
+        _structural(value, {}, label)
         return value
     except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
-        raise ValueError('invalid UTF-8 JSON manifest: ' + str(path)) from exc
+        raise ValueError('invalid UTF-8 JSON manifest: ' + label) from exc
 
 
 def _unique(values, label, versioned=False):
@@ -812,19 +821,87 @@ def load_project(path, verify_hashes=True, *, allow_missing_assets=False):
     path = Path(path).resolve()
     if path.is_dir():
         path /= 'project.json'
-    root = path.parent
-    project = validate_structure(read_json(path), 'project')
+    return _load_project(path.parent, path.name, verify_hashes, allow_missing_assets)
+
+
+def load_project_at(root_fd, *, expected_project_sha256=None):
+    """Strictly verify a native 2D closure in a held Scene3D snapshot directory.
+
+    The staging caller already admits every archived filename under the Scene3D
+    profile. The ordinary legacy loader keeps its own path spelling policy.
+    """
+    with owned_directory_fd(root_fd) as descriptor:
+        return _load_project(None, 'project.json', True, False, expected_project_sha256=expected_project_sha256,
+                             open_file=lambda name: open_payload_at(descriptor, name, profile='scene3d'))
+
+
+def _load_project(root, name, verify_hashes, allow_missing_assets, *, open_file=None, expected_project_sha256=None):
+    def read_manifest(target, expected_sha256=None):
+        if open_file is None:
+            return read_json(target)
+        with open_file(target) as (stream, info):
+            if info.st_size > MAX_MANIFEST_BYTES:
+                raise ValueError('manifest exceeds 16 MiB: ' + target)
+            payload = stream.read(MAX_MANIFEST_BYTES + 1)
+            if len(payload) != info.st_size:
+                raise ValueError('manifest size changed while reading: ' + target)
+        if expected_sha256 is not None and hashlib.sha256(payload).hexdigest() != expected_sha256:
+            _fail(target, 'manifest hash differs from the verified snapshot bytes')
+        try:
+            return _decode_manifest(payload.decode('utf-8'), target)
+        except UnicodeError as exc:
+            raise ValueError('invalid UTF-8 JSON manifest: ' + target) from exc
+
+    def bounded_hash(stream, size, label):
+        if size > MAX_SOURCE_BYTES:
+            _fail(label, 'source exceeds 64 MiB encoded-file bound')
+        digest = hashlib.sha256()
+        remaining = size
+        while remaining:
+            chunk = stream.read(min(1024 * 1024, remaining))
+            if not chunk:
+                _fail(label, 'source size changed while reading')
+            digest.update(chunk)
+            remaining -= len(chunk)
+        if stream.read(1):
+            _fail(label, 'source size changed while reading')
+        return digest.hexdigest()
+
+    def inspect_bytes(target, label, relative):
+        if open_file is None:
+            size = target.stat().st_size
+            if size > MAX_SOURCE_BYTES:
+                _fail(label, 'source exceeds 64 MiB encoded-file bound: ' + relative)
+            return size, file_sha(target)
+        with open_file(target) as (stream, info):
+            return info.st_size, bounded_hash(stream, info.st_size, relative)
+
+    def image_input(target, relative):
+        if open_file is None:
+            return nullcontext(target)
+        return checked_image_stream(target, relative)
+
+    @contextmanager
+    def checked_image_stream(target, relative):
+        with open_file(target) as (stream, info):
+            record = inventory[relative]
+            if info.st_size != record['bytes'] or bounded_hash(stream, info.st_size, relative) != record['sha256']:
+                _fail(relative, 'encoded image bytes changed before validation')
+            stream.seek(0)
+            yield stream
+
+    project = validate_structure(read_manifest(root / name if open_file is None else name, expected_project_sha256), 'project')
     inventory, stale, missing, expected_hashes = {}, [], [], {}
     limits = project['limits']
 
     def inspect(record, label, manifest=False):
         relative = record['path']
-        target = safe_path(root, relative, must_exist=False)
+        target = safe_path(root, relative, must_exist=False) if open_file is None else relative
         expected = record['sha256']
         if relative in expected_hashes and expected_hashes[relative] != expected:
             _fail(label, 'conflicting hashes for one portable path: ' + relative)
         expected_hashes[relative] = expected
-        if not target.is_file():
+        if open_file is None and not target.is_file():
             if not allow_missing_assets or manifest:
                 _fail(label, 'missing dependency: ' + relative + '; restore or import this exact asset')
             if relative not in inventory:
@@ -837,10 +914,7 @@ def load_project(path, verify_hashes=True, *, allow_missing_assets=False):
                 _fail('project', 'asset count exceeds configured resource bound')
             return target
         if relative not in inventory:
-            size = target.stat().st_size
-            if size > MAX_SOURCE_BYTES:
-                _fail(label, 'source exceeds 64 MiB encoded-file bound: ' + relative)
-            actual = file_sha(target)
+            size, actual = inspect_bytes(target, label, relative)
             if actual != expected:
                 if verify_hashes:
                     _fail(label, 'hash mismatch: ' + relative + '; recover the exact file or explicitly revise its version/reference')
@@ -850,7 +924,7 @@ def load_project(path, verify_hashes=True, *, allow_missing_assets=False):
                 _fail('project', 'source inventory exceeds configured assets or 1 GiB total source resource bound')
         if 'size' in record:
             try:
-                with Image.open(target) as image:
+                with image_input(target, relative) as source, Image.open(source) as image:
                     if image.format not in ('PNG', 'WEBP', 'JPEG') or getattr(image, 'n_frames', 1) != 1:
                         _fail(label, 'only single-frame PNG, WebP or JPEG sources are supported')
                     if image.width * image.height > limits['max_source_pixels']:
@@ -865,19 +939,22 @@ def load_project(path, verify_hashes=True, *, allow_missing_assets=False):
                 raise ValueError(label + ': invalid or excessive encoded image') from exc
         return target
 
-    cast = validate_cast(read_json(inspect(project['cast'], 'project.cast', True)), project['fixture'])
+    def load_reference(record, label):
+        return read_manifest(inspect(record, label, True), record['sha256'] if open_file is not None else None)
+
+    cast = validate_cast(load_reference(project['cast'], 'project.cast'), project['fixture'])
     characters = _unique(cast['characters'], 'cast.characters', True)
     props = _unique(cast['props'], 'cast.props', True)
     clips, clip_paths = {}, {}
     for record in project['clips']:
-        clip = validate_clip(read_json(inspect(record, 'project.clips', True)), characters)
+        clip = validate_clip(load_reference(record, 'project.clips'), characters)
         key = asset_key(clip)
         if key in clips:
             _fail('project', 'duplicate clip version: ' + key)
         clips[key], clip_paths[key] = clip, record['path']
     scenes, scene_paths, shots = [], {}, {}
     for record in project['scenes']:
-        scene = validate_scene(read_json(inspect(record, 'project.scenes', True)), characters, clips, props, project['fixture'])
+        scene = validate_scene(load_reference(record, 'project.scenes'), characters, clips, props, project['fixture'])
         if scene['id'] in scene_paths:
             _fail('project', 'scene IDs must be unique across the project')
         scene_paths[scene['id']] = record['path']
@@ -911,7 +988,7 @@ def load_project(path, verify_hashes=True, *, allow_missing_assets=False):
                 _fail('project', 'continuity references a missing shot')
     bundle = {'root': root, 'project': project, 'cast': cast, 'characters': characters, 'props': props,
         'clips': clips, 'scenes': scenes, 'shots': shots,
-        'paths': {'project': path.name, 'cast': project['cast']['path'], 'clips': clip_paths, 'scenes': scene_paths},
+              'paths': {'project': name, 'cast': project['cast']['path'], 'clips': clip_paths, 'scenes': scene_paths},
         'inventory': inventory, 'stale': stale, 'missing': missing,
         'resources': {'total_frames': total_frames, 'assets': len(inventory),
                       'source_bytes': sum(item['bytes'] for item in inventory.values()), 'estimated_work_bytes': work_bytes},
