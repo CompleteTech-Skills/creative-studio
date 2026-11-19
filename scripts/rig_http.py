@@ -1,6 +1,5 @@
 """Optional authenticated loopback API; paths and work budgets stay local and bounded."""
 from __future__ import annotations
-from functools import partial
 import hmac
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import json
@@ -12,12 +11,18 @@ import uuid
 from rig_errors import RigError,decode_json,require,safe_path,sha256,slug
 
 
+MAX_TOKEN_CHARACTERS=4096
+
+
 class RigServer(ThreadingHTTPServer):
     daemon_threads=True
     def __init__(self,root,intake,*,port=0,token=None,workers=2):
         self.root=Path(root).resolve();self.root.mkdir(parents=True,exist_ok=True)
         self.intake=Path(intake).resolve();require(self.intake.is_dir(),'RIG_API_INTAKE','Intake must be an existing directory.')
-        self.token=token or secrets.token_urlsafe(32);require(len(self.token)>=24,'RIG_API_TOKEN','Use a token of at least 24 characters.')
+        self.token=secrets.token_urlsafe(32) if token is None else token
+        require(isinstance(self.token,str) and 24<=len(self.token)<=MAX_TOKEN_CHARACTERS
+                and all(0x21<=ord(character)<=0x7e for character in self.token),
+                'RIG_API_TOKEN','Use a printable ASCII token of 24–4096 characters without whitespace.')
         require(1<=workers<=4,'RIG_API_WORKERS','Use 1–4 bounded workers.');self.budget=threading.BoundedSemaphore(workers)
         super().__init__(('127.0.0.1',port),RigHandler)
 
@@ -40,8 +45,13 @@ class RigHandler(BaseHTTPRequestHandler):
         require(identifier==slug(identifier) and len(identifier)<=128,'RIG_API_ID','Invalid job identifier.')
         root=safe_path(self.server.root,identifier);require(root.is_dir(),'RIG_API_NOT_FOUND','Job does not exist.');return root
     def _run(self):
-        authorized=self.headers.get('Authorization','')
-        if not hmac.compare_digest(authorized,'Bearer '+self.server.token):self._respond(401,dict(ok=False,error=dict(code='RIG_API_AUTH',message='A valid local bearer token is required.')));return
+        fields=self.headers.get_all('Authorization', [])
+        authorized=fields[0] if len(fields)==1 else None
+        valid_authorization=(isinstance(authorized,str) and len(authorized)<=MAX_TOKEN_CHARACTERS+7
+                             and authorized.isascii() and hmac.compare_digest(authorized,'Bearer '+self.server.token))
+        if not valid_authorization:
+            self._respond(401,dict(ok=False,error=dict(code='RIG_API_AUTH',message='A valid local bearer token is required.')))
+            return
         origin=self.headers.get('Origin')
         allowed={f'http://127.0.0.1:{self.server.server_port}',f'http://localhost:{self.server.server_port}'}
         if origin and origin not in allowed:self._respond(403,dict(ok=False,error=dict(code='RIG_API_ORIGIN',message='Cross-origin API calls are refused.')));return
@@ -74,13 +84,16 @@ class RigHandler(BaseHTTPRequestHandler):
         if self.command=='GET' and len(parts)==4 and parts[3]=='artifacts':
             return dict(artifacts=[dict(path=p.relative_to(root).as_posix(),bytes=p.stat().st_size,sha256=sha256(p)) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()])
         body=self._body()
-        if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:return mutate(root,'correct',dict(correction=body))
+        if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:
+            return mutate(root,'correct',dict(correction=body,template_source='installed'))
         require(self.command=='POST' and len(parts)==4,'RIG_API_NOT_FOUND','Unsupported route or method.')
         operation=parts[3]
         aliases={'generate':'auto','skin':'weights','test-motion':'test-motion','validate':'validate','analyze':'analyze','state-map':'state-map','animate':'animate','configure':'configure'}
         if operation in aliases:
-            # Template paths are deliberately restricted to installed IDs in HTTP.
-            if operation=='generate':require('/' not in body.get('template','') and '\\' not in body.get('template',''),'RIG_API_TEMPLATE','Use an installed template ID.')
+            if operation=='generate':
+                require('template_source' not in body,'RIG_OPERATION_SCHEMA','Template source is selected by the server.')
+                body.setdefault('template','humanoid')
+                body['template_source']='installed'
             return mutate(root,aliases[operation],body)
         if operation=='pose':return pose_operation(rig,body)
         if operation=='solve-ik':return solve_operation(rig,body)

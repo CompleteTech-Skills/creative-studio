@@ -221,7 +221,7 @@ The facade exports model import/analysis, templates/skeleton generation, correct
 python scripts/rig.py serve --run-dir output/rig-jobs --intake input/models --port 8766
 ```
 
-The server binds only `127.0.0.1` and prints its local bearer token. Send `Authorization: Bearer TOKEN` and `Content-Type: application/json`. Cross-origin requests are refused, intake reads stay inside the chosen folder, exports stay inside the selected job, JSON bodies are limited to four MiB, connections time out, and two workers are available. There is no remote/public-server mode.
+The server binds only `127.0.0.1` and prints its local bearer token. Configured tokens must contain 24–4096 printable ASCII characters without whitespace; missing, repeated, malformed or non-ASCII authorization fields return structured `401 RIG_API_AUTH` responses. Send one `Authorization: Bearer TOKEN` field and `Content-Type: application/json`. Cross-origin requests are refused, intake reads stay inside the chosen folder, exports stay inside the selected job, JSON bodies are limited to four MiB, connections time out, and two workers are available. There is no remote/public-server mode.
 
 | Method and route | Behavior |
 | --- | --- |
@@ -237,7 +237,9 @@ The server binds only `127.0.0.1` and prints its local bearer token. Send `Autho
 | `POST /v1/rigs/{id}/pose`, `/solve-ik` | Evaluate a native pose or spatial target |
 | `POST .../retarget`, `/review` | Retarget from another local job or apply a bound review receipt |
 
-Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
+Unknown mutation fields fail. For HTTP `generate` and template-replacement corrections, use an exact installed canonical template ID such as `humanoid`. The server checks a correction's schema, 1,024-edit ceiling and current rig binding before looking up its templates. One installed catalogue serves all edits in a request. Native execution opens the installed file for each selected ID. Native Python and CLI callers can also select custom files explicitly.
+
+Job status and portable archives record the canonical ID and the operation's `template_source` of `installed`. Resume uses that source to resolve the ID on the current installation. A saved correction contains the submitted object, and its filename is the hash of that object. A stale correction returns 409, missing jobs return 404, unauthenticated requests return 401, and occupied workers return 429.
 
 ## Resource limits, jobs and recovery
 
@@ -368,6 +370,104 @@ and its requested orientation is within `1e-5` radians. A reachable position can
 therefore have `reachable: true` and `converged: false` when a joint limit prevents
 the orientation. Contact and grasp reports retain this angular residual.
 
+FK-to-IK matching accepts fully folded chains whose endpoint coincides with
+their root, using the already evaluated first joint position as its matching pole.
+A matching pole preserves an already closed authoritative seed and its evaluated
+joint transforms and bound geometry. Ordinary matches retain their original
+reach-based pole distance. Closure is tested within `1e-9` meters, the matched
+endpoint must also meet the chain's residual tolerance, and normalized pole/first
+segment directions must differ by at most eight machine epsilons in unit-vector
+distance. Comparing the vector difference avoids a dot product rounding a
+measurable small pole change to an apparent exact match. A finite pole
+direction must exceed `1e-9` meters. An explicitly changed pole reorients a closed
+seed's existing shape, including backfolded multisegment chains with degenerate
+neighbor axes. At the equal-length two-segment fold, either solver can also
+construct the elbow along that pole from an open seed.
+Runtime segment-length checks, joint limits, endpoint orientation, actual
+residuals and bounded convergence reporting remain authoritative.
+
+Twelve independent boundary tests exercise ordinary near-folded matching,
+small segments at large world translations, both explicit backfolded pole
+directions, actual blended skinning, length limits and the native orientation/
+constraint pass. They produced four failing methods on the previous candidate
+and passed all twelve after the correction on Linux/Python 3.12.14 (1.845s,
+exit 0, zero skips). The original thirteen #348 test methods remain unchanged.
+This is local numerical evidence; independent review and exact published-head
+checks are required before integration.
+
+The shared quaternion-between-directions helper preserves measurable small
+angles instead of snapping near-parallel directions to identity. Near opposite
+directions it uses the cross-product magnitude and `atan2`, avoiding cancellation
+in `1 + dot`; exactly opposite directions retain a stable perpendicular axis.
+Both the folded rotation and its ordinary chain-orientation pass use this same
+native helper. Four additional independently authored methods cover small pole
+changes, near-opposite changes, exact matches and controls at unit and 1,000 m
+segment scales, including translated roots. Six subtests failed on published
+`f19906ea` despite its 81-test gate passing. The corrected helper passed these
+four methods together with the twelve folded boundaries and fourteen native
+math tests: 30 tests in 1.165 seconds, exit 0, zero skips. This is synthetic
+numerical evidence, not an artistic or production acceptance claim.
+
+Independent re-review of that correction identified cancellation in oblique
+near-opposite cross products, including a valid scaled-pole control that had
+worked on the earlier source. The negative-dot hemisphere now computes its axis
+as `cross(a, a + b)` to avoid subtracting nearly equal products, with a stable
+perpendicular fallback only at machine-roundoff scale. Two further independent
+methods retain the exact oblique-opposite case and genuine angular differences
+of `1e-8` and `1e-12` radians, with a `1e-5` control. All six pole-precision
+methods, twelve folded boundaries and fourteen native math tests passed after
+this correction: 32 tests in 1.211 seconds, exit 0, zero skips. Earlier failed
+cases remain in the gate and in source history.
+
+Ten further independent methods cover explicit positive and negative pole changes
+of 1e-6 and 1e-7 radians through both declared and override inputs at 1 m and
+1000 m segment lengths. Cartesian joint and actual blended-skin oracles detect
+changes hidden by a normalized dot product. Four methods failed on 5e8d6df2
+(16 failing subcases); all ten pass with the direct unit-vector comparison,
+including exact-match, orientation, joint-limit and runtime-length controls.
+
+Six further independent native methods cover closed squares and rectangles at
+large translated roots, including microscopic segments and blended skin. Three
+methods failed on `92d5e138` across eight subcases even though its 98-test native
+gate passed. Reconstructing each joint from translated rotated positions lost
+precision and changed the internal frames. Explicit pole steering now applies
+one coherent rotation at the chain root, preserving all descendant local
+transforms before the ordinary endpoint and constraint pass. The root's new
+local TRS must remain representable. If the shortest pole swing would require
+local shear under a scaled parent, a bounded solve checks the remaining twist
+freedom about the pole. Pairwise local-column orthogonality produces three
+quartic polynomials, with at most twelve candidate roots plus the omitted
+half-turn; every candidate is verified against the original matrices. A
+representable rigid turn preserves the closed seed, while singular or genuinely
+unrepresentable transforms retain the structured transform error. The four independent
+fold modules passed all 34 methods after this correction in 0.985 seconds,
+exit 0, zero skips. Full corrected gates and fresh review remain required.
+
+Parent stretch symmetries and rigid axis permutations supply directly
+representable candidates before the polynomial fallback. Each reconstructed
+world turn must still satisfy the independent rigidity check. The pole fit
+accounts separately for the representable spacing of the supplied world
+positions, so subtraction at a translated origin cannot reject an attainable
+turn solely through coordinate rounding. Independent native controls retain
+small attainable turns, highly scaled parents, changed local scales and
+structured rejection of a nearby direction that would require shear.
+
+Pole admission intersects the candidate's positive ray with the separate
+coordinate rounding intervals of the supplied pole and origin. A distant pole
+does not borrow uncertainty from a short first segment, and an imprecise X
+coordinate cannot conceal a resolved Y/Z mismatch. The first segment comes
+from its native local offset before world translation is added. Trial local
+transforms below the native scale floor are discarded while other rigid
+candidates are checked; the original seed still passes the ordinary native
+transform validation. Three preserved independent regressions exercise both
+solvers at these distance, translation and near-floor scale boundaries.
+For an axial parent, candidate generation also checks the finite intersections
+of its rotation circle with the pole's coordinate intervals and their intervening
+arcs. Pairwise coordinate ratios give linear sine/cosine equations; this keeps
+an attainable azimuth when different world coordinates have different precision.
+Bounded normalization makes the folded steering independent of finite pole
+distance even when squaring the supplied components would overflow.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
@@ -423,3 +523,34 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+### Authored eyelid response to gaze
+
+The optional `facial.eyelids` array binds an exact eye, mesh and morph. Each
+binding names `eye`, `mesh`, `morph`, `up_weight`, `down_weight`, `up_radians`
+and `down_radians`. Weights stay in [-2, 2]; directional angles must be positive
+and at most pi/2. At most 128 closed bindings are accepted. Existing facial
+controllers without this optional array retain their original contract.
+
+The facial owner computes eyelid weights from the final constrained local eye
+pitch. Parent motion does not become an eyelid command. Each exact mesh/morph
+channel has one gaze owner; missing, inert or multiply owned targets reject.
+Releasing gaze removes only its owned morph overrides so authored defaults can
+resume. Existing expressions and unrelated morph channels keep their ownership.
+Public pose and IK operations resample only gaze-owned channels after their
+last constraint or IK pass, including the pose embedded in the IK report.
+Operations without active gaze preserve existing morph overrides and released
+channels instead of inferring gaze ownership from the bone pose.
+
+Native correction remaps an eyelid eye when its bone is renamed and removes
+only dependencies on an eye or exact mesh/morph that was removed. The completed
+correction is admitted before the active rig is saved. Automatic skeleton
+replacement regenerates the eye list, drops bindings only for eyes absent from
+that new list, and validates every surviving binding before saving. This also
+restores the dispatcher behavior originally merged in PR #361.
+
+The optional contract and its runtime owner integrate together. Accepting an
+eyelid field without its owning validation/runtime would admit inert state.
+The preserved synthetic gaze, correction and automatic-replacement regressions
+exercise native morph geometry and saved/reloaded rigs; they do not establish
+artistic expression quality or complete the broader facial-animation program.
