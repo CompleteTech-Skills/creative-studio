@@ -153,6 +153,8 @@ Animation clips contain real translation/rotation/scale/morph channels, ordered 
 
 The Python API supports masked pose layers, additive rest-relative deltas, morph mixing and aligned crossfades. Embedded root motion can accumulate between loops. World-space foot/paw contacts re-solve IK through stance intervals; contact and release events remain in the native clip. An exported GLB contains the resulting baked motion, not live contact solvers.
 
+Contact targets repeat at their authored world locations for in-place clips. Embedded root-motion loops translate each repeated contact target by the same complete-cycle root displacement as the pose. Non-looping evaluation keeps contact targets at their authored world locations.
+
 ```bash
 python scripts/rig.py retarget --source output/source-character --run-dir output/target-character --clip walk
 python scripts/rig.py render --run-dir output/target-character --clip walk-retargeted --time 0.7 --destination output/retarget.png
@@ -526,6 +528,66 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+
+### Bounded state execution
+
+The optional Python `rig_state_runtime.RigStateRuntime` executes selected validated clip recipes with caller-supplied monotonic seconds. Use `evaluate(now)`, `request(state, now)` and `cancel(now)` for bounded transitions, incoming priority/interruption policy, completion edges and cancellation into selected executable `static-neutral`. Interrupted crossfades preserve the evaluated source pose; sparse target morphs return to authored defaults. Embedded root motion accumulates across recipes while in-place clips retain their cycle reset. Rejected requests and exhausted completion chains restore prior runtime state. Reconstruct the runtime after rig or clip changes.
+
+Runtime root placement is applied before native constraints and contact IK, retaining authored world-space poles and constraint points. Internal multi-clip intervals are half-open; the final non-looping endpoint remains clamped. Numerical regressions compare every joint transform and complete skinned positions.
+
+Event dispatch, explicit catalog recovery, reduced-motion execution and detailed dependency discovery remain deferred. See [bounded runtime preservation](rig-state-runtime-preservation.md) for exact source boundaries, retained tests and remaining verification gates.
+
+### Native report and interior-clock follow-up
+
+The public elapsed clock still selects native interior channel samples while
+exact schedules retain ownership of rounded clip boundaries. Two independent
+regressions preserve the native phase at an ordinary translated origin and
+reject actual skin overflow atomically. Seven independent validation regressions
+use real FK and skinning to cover very large finite distances, distinct large
+poses, and structured failures when a derived distance is unrepresentable.
+Distance aggregation uses overflow-safe Euclidean measurement; scalar rounding
+keeps large finite pose signatures valid. All nine new methods passed in the
+181-test combined gate before integration of the later folded-matching merge.
+That is synthetic native numerical evidence; no visual approval is implied.
+
+The analytical two-bone solve factors the triangle calculation before measuring
+its perpendicular extent, so representable long segments do not overflow merely
+because an intermediate squared length would be too large. Eight independent
+native regressions cover direct solving, animation and runtime evaluation,
+ordinary bent limbs, and measured contact reports. A contact evaluation failure
+makes the aggregate contact check fail and leaves its unavailable distances
+`null`; it cannot report a successful check with invented zero distances.
+
+Finite folded-parent steering measures basis columns without squaring overflow
+and normalizes independent parent columns before equilibrating equations.
+A global or row-only divisor can erase a small axis after a rigid world turn.
+Bounded root columns are rotated and solved before relative local magnitudes
+are restored using binary exponents, without an overflowing scale ratio. This
+preserves both finite near-maximum rotated bases and attainable turns around
+extremely unequal independent axes. Nonfinite candidates remain inadmissible.
+Existing shear, reflection and pole-ray checks remain
+authoritative. The independent source comparator is retained unchanged in
+`tests/independent/test_rig_fold_relative_solve.py`; run it explicitly with
+`PYTHONPATH=scripts:tests python tests/independent/test_rig_fold_relative_solve.py`.
+The automatic finite-basis and finite-solve modules check actual native FK,
+skin deformation, direct IK, animation and state playback at smaller and
+near-maximum finite scales with explicit attainable local pose witnesses.
+The separate anisotropic module covers smaller and extreme diagonal parents;
+its unchanged independent source control is retained in
+`tests/independent/test_rig_fold_anisotropic_solve.py` for explicit execution
+with `PYTHONPATH=scripts:tests`.
+They establish synthetic numerical behavior, not artistic acceptance.
+
+Canonical contact validation now measures every active positional goal in the
+final FK pose at the union of the existing sample times. The original seven
+requested samples per contact remain the `samples` coverage count;
+`final_samples` records all active-goal observations used for error and drift.
+A short overlapping contact can no longer hide a miss in an earlier active
+goal merely because their seven-point grids differ. The retained independent
+controls also exercise rigid world rotations of highly unequal parent axes,
+actual native skin deformation and playback rollback. All are synthetic
+geometry checks rather than visual or production acceptance.
 
 ### Authored eyelid response to gaze
 

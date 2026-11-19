@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from fractions import Fraction
 from itertools import permutations, product
 import math
 import numpy as np
@@ -95,15 +96,16 @@ def _fold_parent_axis_turns(parent_axes, seed, source, target, direction_toleran
         if np.max(np.abs(world_turn @ source - target)) <= direction_tolerance:
             turn = right_t.T @ symmetry @ right_t
             rotation = quaternion(qmul(matrix_quaternion(turn), seed['rotation']))
-            yield dict(rotation=rotation.tolist(), scale=seed['scale'])
+            yield dict(rotation=rotation.tolist(), scale=seed['scale']), world_turn
 
 
-def _fold_axis_permutations(root, seed, source):
+def _fold_axis_permutations(root, seed):
     """Permute local axes when their world directions retain all pairwise angles."""
-    lengths = np.linalg.norm(root, axis=0)
+    lengths = np.asarray([math.hypot(*root[:, axis]) for axis in range(3)])
     axes = root / lengths
     gram = axes.T @ axes
-    coordinates = np.linalg.solve(axes, source)
+    left, _, right_t = np.linalg.svd(axes)
+    polar = left @ right_t
     scales = np.asarray(seed['scale'])
     for order in permutations(range(3)):
         indices = list(order)
@@ -118,18 +120,21 @@ def _fold_axis_permutations(root, seed, source):
             rotation = quaternion(qmul(seed['rotation'], matrix_quaternion(permutation)))
             reoriented = dict(rotation=rotation.tolist(),
                               scale=(scales[indices] * (lengths / lengths[indices])).tolist())
-            yield reoriented, axes @ (permutation @ coordinates)
+            yield reoriented, polar @ permutation @ polar.T
 
 
 def _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
     yield from _fold_parent_axis_turns(parent_axes, seed, source, direction, direction_tolerance, bounds)
-    for permuted, axis in _fold_axis_permutations(root, seed, source):
+    for permuted, first in _fold_axis_permutations(root, seed):
+        axis = first @ source
         if np.max(np.abs(axis - direction)) <= direction_tolerance:
-            yield permuted
-        yield from _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance, bounds)
+            yield permuted, first
+        turns = _fold_parent_axis_turns(parent_axes, permuted, axis, direction, direction_tolerance, bounds)
+        for oriented, second in turns:
+            yield oriented, second @ first
 
 
-def _fold_root_transform(parent, root, seed, source, target, target_resolution):
+def _fold_root_transform(parent, root, seed, first_offset, target, target_resolution):
     """Choose a rigid pole turn that is representable as local TRS.
 
     Pole direction fixes the swing, but leaves a twist about that direction.
@@ -143,6 +148,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     # their components. Pole distance must not change a representable ray.
     target_scale = float(np.max(np.abs(target)))
     target, target_resolution = target / target_scale, target_resolution / target_scale
+    source = root @ first_offset
     source, direction = unit(source / np.max(np.abs(source))), unit(target)
     swing = qmatrix(qbetween(source, direction))
     target_length = math.hypot(*target)
@@ -153,15 +159,40 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     require(np.all(column_scales > 0), 'RIG_SINGULAR_TRANSFORM',
             'Closed-chain pole steering needs an invertible root transform.')
     scaled_root = root / column_scales
+    # Normalize independent parent columns before balancing equations. A global
+    # or row-only divisor can erase a small axis after a rigid world rotation.
+    # The solve uses bounded columns; restore relative local magnitudes using
+    # binary exponents only after elimination, without an overflowing ratio.
+    parent_columns = np.max(np.abs(parent), axis=0)
+    require(np.all(parent_columns > 0), 'RIG_SINGULAR_TRANSFORM',
+            'Closed-chain pole steering needs an invertible parent transform.')
+    normalized_parent = parent / parent_columns
+    row_scales = np.max(np.abs(normalized_parent), axis=1)
+    require(np.all(row_scales > 0), 'RIG_SINGULAR_TRANSFORM',
+            'Closed-chain pole steering needs an invertible parent transform.')
+    relative_parent = normalized_parent / row_scales[:, None]
+    parent_mantissa, parent_exponent = np.frexp(parent_columns)
+    column_mantissa, column_exponent = np.frexp(column_scales)
+    ratio = column_mantissa[None, :] / parent_mantissa[:, None]
+    exponents = column_exponent[None, :] - parent_exponent[:, None]
+
+    def relative_solve(rotation):
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            solved = np.linalg.solve(relative_parent, (rotation @ scaled_root) / row_scales[:, None])
+            return np.ldexp(solved * ratio, exponents)
     # The measured turn uses a linear solve. Allow its conditioning to amplify
     # arithmetic roundoff, but cap the error even for poorly resolved frames.
     eps = np.finfo(float).eps
     parent_axes = np.linalg.svd(parent)
     stretches = parent_axes[1]
-    require(stretches[-1] > 0, 'RIG_SINGULAR_TRANSFORM',
+    # SVD of the unbalanced world matrix can round an independent small axis
+    # to zero. Its vectors still guide symmetry candidates, but singularity
+    # admission belongs to the same balanced system used by the actual solve.
+    require(math.isfinite(np.linalg.cond(relative_parent)), 'RIG_SINGULAR_TRANSFORM',
             'Closed-chain pole steering needs an invertible parent transform.')
     root_condition = np.linalg.cond(scaled_root)
-    conditioning = max(stretches[0] / stretches[-1], root_condition)
+    conditioning = max(stretches[0] / stretches[-1] if stretches[-1] > 0 else math.inf,
+                       root_condition)
     roundoff = min(16 * conditioning, 65536) * eps
     # This scalar only filters candidate generators. Final pole admission uses
     # the independently resolved coordinate intervals below, so a large X
@@ -176,7 +207,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
         # pole's spacing inherit the first segment's much shorter length.
         lower, upper = 0., math.inf
         for component, observed, spacing in zip(axis, target, target_resolution):
-            error = spacing + roundoff * target_length
+            error = spacing + min(roundoff, 64 * eps) * target_length
             if component == 0:
                 if abs(observed) > error:
                     return False
@@ -187,7 +218,18 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
                 return False
         return upper > 0
 
-    def pole_error(oriented):
+    # Probe the same map on the parent axes as well as the root columns.
+    # Cofactors project each parent axis away from its other two axes.
+    dual = np.cross(normalized_parent[:, [1, 2, 0]].T,
+                    normalized_parent[:, [2, 0, 1]].T)
+    dual = dual / np.maximum(np.max(np.abs(dual), axis=1, keepdims=True), np.finfo(float).tiny)
+    heights = np.diag(dual @ normalized_parent)
+    pairs = np.maximum(parent_columns[:, None], parent_columns[None, :])
+    left_weight = parent_columns[:, None] / pairs
+    right_weight = parent_columns[None, :] / pairs
+    seed_axes_t = qmatrix(seed['rotation']).T
+
+    def pole_error(oriented, turn):
         try:
             local_frame = compose(rotation=oriented['rotation'], scale=oriented['scale'])[:3, :3]
         except RigError as exc:
@@ -195,17 +237,36 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
                 return math.inf
             raise
         world = parent @ local_frame
-        turn = np.linalg.solve(scaled_root.T, (world / column_scales).T).T
-        if np.linalg.det(turn) > 0 and np.max(np.abs(turn.T @ turn - identity)) <= roundoff:
-            axis = turn @ source
-            if pole_matches(axis):
+        candidate_axes = local_frame / oriented['scale']
+        ratios = np.asarray(oriented['scale']) / seed['scale']
+        relative = (candidate_axes * ratios) @ seed_axes_t
+        rotated_parent = turn @ normalized_parent
+        projected = dual @ rotated_parent
+        difference = heights[:, None] * left_weight * relative - projected * right_weight
+        # Absolute products bound ordinary cancellation in these short products.
+        local_bound = (np.abs(candidate_axes) * ratios) @ np.abs(seed_axes_t)
+        world_bound = np.abs(dual) @ (np.abs(turn) @ np.abs(normalized_parent))
+        error_budget = 128 * eps * (1 + left_weight * local_bound + right_weight * world_bound)
+        if not np.all(np.abs(difference) <= error_budget):
+            return math.inf
+        if not np.all(np.abs(world / column_scales - turn @ scaled_root) <= 128 * eps):
+            return math.inf
+        if np.linalg.det(turn) > 0 and np.max(np.abs(turn.T @ turn - identity)) <= 128 * eps:
+            segment = world @ first_offset
+            magnitude = np.max(np.abs(segment))
+            if not magnitude or not np.isfinite(magnitude):
+                return math.inf
+            axis = unit(segment / magnitude)
+            if pole_matches(axis) and pole_matches(turn @ source):
                 return np.max(np.abs(axis - direction))
         return math.inf
 
     def try_world_turn(rotation):
         value = np.eye(4)
         try:
-            value[:3, :3] = np.linalg.solve(parent, rotation @ root)
+            value[:3, :3] = relative_solve(rotation)
+            if not np.isfinite(value).all():
+                return None
             oriented = decompose(value)
         except RigError as exc:
             if exc.report['code'] in ('RIG_SHEAR', 'RIG_SINGULAR_TRANSFORM'):
@@ -214,7 +275,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
         columns = value[:3, :3] / oriented['scale']
         if np.max(np.abs(columns.T @ columns - identity)) > 128 * eps:
             return None
-        return oriented if math.isfinite(pole_error(oriented)) else None
+        return oriented if math.isfinite(pole_error(oriented, rotation)) else None
 
     oriented = try_world_turn(swing)
     if oriented is not None:
@@ -222,8 +283,8 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     # Different sign choices can represent the same pole with different
     # rounding after FK. Prefer a well-resolved fit whenever one is available.
     closest, best_error = None, math.inf
-    for oriented in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
-        error = pole_error(oriented)
+    for oriented, turn in _fold_symmetry_candidates(parent_axes, root, seed, source, direction, direction_tolerance, bounds):
+        error = pole_error(oriented, turn)
         if error <= 16 * eps:
             return oriented
         if math.isfinite(error) and error <= best_error:
@@ -235,7 +296,7 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     perpendicular = np.eye(3) - parallel
     x, y, z = direction
     cross = np.array([[0., -z, y], [z, 0., -x], [-y, x, 0.]])
-    constant, cosine, sine = (np.linalg.solve(parent, part @ swing @ root)
+    constant, cosine, sine = (relative_solve(part @ swing)
                               for part in (parallel, perpendicular, cross))
     # Uniform rescaling leaves all zero dot-product conditions unchanged and
     # avoids overflow while forming polynomial coefficients.
@@ -272,9 +333,48 @@ def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
     """Use the same evaluated segment boundary for rest and runtime poses."""
     world = evaluate_fk(skeleton, pose)
     points = np.array([world[name][:3, 3] for name in names])
-    lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
-    require(np.all(lengths > 1e-8), 'RIG_IK_LENGTH', 'IK segments must have measurable length.')
+    lengths = np.array([math.dist(a, b) for a, b in zip(points[:-1], points[1:])])
+    with np.errstate(over='ignore', invalid='ignore'):
+        finite = np.isfinite(lengths).all() and math.isfinite(float(lengths.sum()))
+    require(finite and np.all(lengths > 1e-8), 'RIG_IK_LENGTH',
+            'IK segments must have finite measurable lengths and a finite total.')
     return points, lengths
+
+
+def _reachability(points, lengths, target):
+    distance = math.dist(target, points[0])
+    require(math.isfinite(distance), 'RIG_NONFINITE', 'IK target distance exceeds finite representation.')
+    longest = int(lengths.argmax())
+    lower = max(0., math.fsum(length if i == longest else -length
+                               for i, length in enumerate(lengths)))
+    return distance, lower, bool(lower-1e-7 <= distance <= lengths.sum()+1e-7)
+
+
+def _two_bone_elbow(a, b, d):
+    """Projection and altitude of the elbow above the root-to-target segment."""
+    if a < d:
+        # Factor d²-b² when the first bone is short relative to the target.
+        x = (d-b)*(.5 + .5*(b/d)) + (a/2)*(a/d)
+    else:
+        x = d/2 + ((a-b)/d)*(a/2+b/2)
+
+    # Heron's formula with ordered sides retains the short side and the small
+    # gap at either reach limit. Factor out the longest and shortest lengths
+    # before the product so neither areas nor squared lengths must fit a float.
+    longest, middle, shortest = sorted((a, b, d), reverse=True)
+    gap = longest - middle
+    large_factors = (1 + middle/longest + shortest/longest) * (1 + (middle-shortest)/longest)
+    small_factors = ((shortest-gap)/shortest) * (1 + gap/shortest)
+    # The altitude is twice the area divided by d. Cancel d first if it is
+    # the short side. In the other cases longest/d is at most two.
+    scale = longest/2 if d == shortest else (shortest/2)*(longest/d)
+    return x, scale*math.sqrt(max(0., large_factors*small_factors))
+
+
+def chain_reachable(skeleton: dict, chain: dict, pose: dict, target) -> bool:
+    """Measure the native chain range on the supplied, possibly final, pose."""
+    points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
+    return _reachability(points, lengths, vector(target))[2]
 
 
 def validate_chain(skeleton: dict, chain: dict) -> None:
@@ -319,14 +419,51 @@ def _orient_chain(skeleton: dict, pose: dict, names: list[str], targets: np.ndar
 # Minimum FK-to-IK matching pole distance, far above the 1e-8 m pole-degeneracy
 # cutoff in _pole_perpendicular. Ordinary matches keep their reach distance.
 MIN_MATCHING_POLE_DISTANCE = 1e-6
+POLE_BEND_CUTOFF = 1e-8
 
 
 def _pole_perpendicular(direction, origin, pole):
     delta = pole-origin
     perpendicular = delta-direction*np.dot(delta, direction)
-    if np.linalg.norm(perpendicular) < 1e-8:
+    if np.linalg.norm(perpendicular) < POLE_BEND_CUTOFF:
         perpendicular = np.cross(direction, np.eye(3)[np.argmin(np.abs(direction))])
     return unit(perpendicular)
+
+
+def _pole_keeps_bend(axis, origin, pole, bend, *, two_links):
+    """Check the bend encoded by the rounded world pole."""
+    with np.errstate(over='ignore', invalid='ignore'):
+        delta = pole - origin
+    span = float(np.max(np.abs(delta)))
+    if not math.isfinite(span) or span == 0 or (not two_links and span < POLE_BEND_CUTOFF):
+        return False
+    represented = np.cross(axis, delta / span)
+    requested = np.cross(axis, bend)
+    alignment = float(np.dot(represented, requested))
+    if not alignment >= max(POLE_BEND_CUTOFF / span, 16 * np.finfo(float).eps):
+        return False
+    if not two_links:
+        return True
+    # A positive dot still admits a rotated plane if rounding erases one
+    # component of an oblique pole. Compare the unit directions decoded by
+    # the solver, including its projection arithmetic for a near-axial elbow.
+    with np.errstate(over='ignore', invalid='ignore'):
+        try:
+            decoded = _pole_perpendicular(axis, origin, pole)
+        except RigError:
+            return False
+    return math.dist(decoded, bend) <= 64 * np.finfo(float).eps
+
+
+def _two_link_is_collinear(points):
+    # Only matching poles that failed both numerical checks reach this path.
+    # Exact differences of the represented FK positions avoid inventing a
+    # bend during projection or concealing one beneath a large translation.
+    root, elbow, end = [list(map(Fraction, point)) for point in points]
+    first = [m - r for r, m in zip(root, elbow)]
+    second = [e - m for m, e in zip(elbow, end)]
+    return all(first[i] * second[j] == first[j] * second[i]
+               for i, j in ((0, 1), (0, 2), (1, 2)))
 
 
 def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
@@ -358,10 +495,8 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     names = chain['bones']
     points, lengths = _chain_points_and_lengths(skeleton, names, result)
     origin = points[0].copy()
-    distance = float(np.linalg.norm(target-origin))
-    lower = max(0., float(2*lengths.max()-lengths.sum()))
-    reachable = lower-1e-7 <= distance <= lengths.sum()+1e-7
-    direction = unit(target-origin) if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
+    distance, lower, reachable = _reachability(points, lengths, target)
+    direction = (target-origin)/distance if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
     constrained = constraint_order(skeleton, list(constraints))
     orientation = orientation if orientation is not None else chain.get('orientation')
     barrier = (_orientation_barrier(skeleton, constrained, names[-1])
@@ -418,12 +553,12 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         # world points would discard that information at distant origins.
         first = next(bone for bone in skeleton['bones'] if bone['id'] == names[1])
         first_seed = {**first['rest'], **result['bones'].get(names[1], {})}
-        source = world[root][:3, :3] @ vector(first_seed['translation'])
+        first_offset = vector(first_seed['translation'])
         target_resolution = np.array([math.ulp(float(origin[i])) + math.ulp(float(pole[i]))
                                       for i in range(3)])
         try:
             oriented = _fold_root_transform(world[parent][:3, :3] if parent else np.eye(3),
-                                            world[root][:3, :3], seed, source, pole_delta,
+                                            world[root][:3, :3], seed, first_offset, pole_delta,
                                             target_resolution)
         except np.linalg.LinAlgError as exc:
             raise RigError('RIG_SINGULAR_TRANSFORM',
@@ -444,9 +579,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         iterations = 1
     elif chain['solver'] == 'two-bone':
         d = float(np.clip(distance, max(lower, 1e-9), lengths.sum()))
-        a, b = lengths
-        x = (d*d+a*a-b*b)/(2*d)
-        y = math.sqrt(max(0., a*a-x*x))
+        x, y = _two_bone_elbow(*lengths, d)
         points[1] = origin + direction*x + _pole_perpendicular(direction, origin, pole)*y
         points[2] = origin + direction*d
         result = _orient_chain(skeleton, result, names, points)
@@ -471,36 +604,52 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
                     if np.linalg.norm(axis) < 1e-8:continue
                     axis = unit(axis);delta = points[i]-points[i-1]
                     projection = axis*np.dot(delta, axis)
-                    radius = np.linalg.norm(delta-projection)
+                    radius = math.dist(delta, projection)
                     points[i] = points[i-1]+projection+_pole_perpendicular(axis, points[i-1], pole)*radius
             result = _orient_chain(skeleton, result, names, points)
             result, current = apply_pass(result)
             changes.extend(current)
             world = evaluate_fk(skeleton, result)
             points = np.array([world[name][:3, 3] for name in names])
-            if np.linalg.norm(points[-1]-target) <= tolerance or not reachable:break
+            if math.dist(points[-1], target) <= tolerance or not reachable:break
     final = evaluate_fk(skeleton, result)[names[-1]]
-    error = float(np.linalg.norm(final[:3, 3]-target))
+    error = math.dist(final[:3, 3], target)
     orientation_error = (qangle(decompose(final)['rotation'], orientation)
                          if orientation is not None else None)
+    require(math.isfinite(error) and (orientation_error is None or math.isfinite(orientation_error)),
+            'RIG_NONFINITE', 'IK residual exceeds finite representation.')
     converged = reachable and error <= tolerance and (orientation_error is None or orientation_error <= 1e-5)
     return IKResult(result, error, bool(reachable), bool(converged), iterations, changes, orientation_error)
 
 
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     validate_chain(skeleton, chain)
-    points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
+    points, _ = _chain_points_and_lengths(skeleton, chain['bones'], pose)
     world = evaluate_fk(skeleton, pose)
-    reach = float(np.linalg.norm(points[-1]-points[0]))
+    origin = points[0]
+    reach = math.dist(points[-1], origin)
     if reach <= 1e-9:
         # A valid fully folded chain has a measurable first segment even
         # though its endpoint coincides with its root.
         pole = points[1]
     else:
-        bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
-        # Below the 1e-8 m pole-degeneracy cutoff a reach-distance pole would
-        # be replaced by an arbitrary axis, moving the elbow of a valid
-        # near-closed seed. Keep the same bend direction at a safe distance.
-        pole = points[0]+bend*max(reach, MIN_MATCHING_POLE_DISTANCE)
+        axis = unit(points[-1] - origin)
+        bend = _pole_perpendicular(axis, origin, points[1])
+        # Keep the near-closed matching pole above the degeneracy cutoff.
+        with np.errstate(over='ignore', invalid='ignore'):
+            pole = origin + bend * max(reach, MIN_MATCHING_POLE_DISTANCE)
+        # One elbow defines a two-link bend plane. A longer FABRIK chain
+        # applies the same pole around multiple distinct neighbor axes.
+        two_links = len(points) == 3
+        if np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend, two_links=two_links):
+            # The shorter pole can round away at a large origin. Try the
+            # measured elbow before classifying a two-link chain as straight.
+            if _pole_keeps_bend(axis, origin, points[1], bend, two_links=two_links):
+                pole = points[1]
+            else:
+                require(two_links and _two_link_is_collinear(points), 'RIG_IK_POLE',
+                        'FK-to-IK pole cannot represent the measured bend in world coordinates.')
+    require(np.isfinite(pole).all(), 'RIG_NONFINITE',
+            'FK-to-IK pole exceeds finite world-coordinate representation.')
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
                 orientation=decompose(world[chain['bones'][-1]])['rotation'])
