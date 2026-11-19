@@ -83,7 +83,7 @@ def admit(world,settings):
     core.require(domain['transform']['rotation']==[0,0,0,1] and len(set(domain['size']))==1
         and all(type(cells) is int for cells in domain['resolution'])
         and len(set(domain['resolution']))==1 and 8<=domain['resolution'][0]<=64 and domain['viscosity']==0,
-        'PHYSICS_GAS_UNSUPPORTED','Gas domain must be an unrotated cube at 8..64 cells/axis; viscosity control unsupported.')
+        'PHYSICS_GAS_UNSUPPORTED','Gas domain must be an unrotated cube at 8..64 integer cells/axis; viscosity control unsupported.')
     core.require(.1<=domain['size'][0]<=100 and all(abs(v)<=1000 for v in domain['transform']['translation']),
         'PHYSICS_GAS_UNSUPPORTED','Gas domain size/position exceeds supported range.')
     from fractions import Fraction
