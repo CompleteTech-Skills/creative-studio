@@ -145,11 +145,16 @@ class OwnedProcess:
 
 
 class DirectorWorkerTreeTests(unittest.TestCase):
-    def run_tree(self, mode):
+    def run_tree(self, mode, *, venv_launcher=False):
         with tempfile.TemporaryDirectory(prefix='director-worker-tree-') as directory:
             root = Path(directory).resolve()
             (root / 'tree.py').write_text(FIXTURE, encoding='utf-8')
             (root / 'harness.py').write_text(HARNESS, encoding='utf-8')
+            harness_python = sys.executable
+            if venv_launcher:
+                import venv
+                venv.EnvBuilder(with_pip=False, system_site_packages=True).create(root/'venv')
+                harness_python = root/'venv'/'Scripts'/'python.exe'
             # An independent process using the same Python executable must survive.
             sibling = subprocess.Popen(
                 [sys.executable, '-c', 'import time; time.sleep(40)'],
@@ -159,7 +164,7 @@ class DirectorWorkerTreeTests(unittest.TestCase):
             owned = []
             try:
                 harness = subprocess.Popen(
-                    [sys.executable, root / 'harness.py', ROOT / 'scripts', root, mode],
+                    [harness_python, root / 'harness.py', ROOT / 'scripts', root, mode],
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE)
                 self.assertTrue(wait_until(
@@ -223,9 +228,12 @@ class DirectorWorkerTreeTests(unittest.TestCase):
     def test_success_finishes_tree_and_preserves_unrelated_process(self):
         self.run_tree('success')
 
-    @unittest.skipUnless(os.name == 'nt', 'Normal-exit descendant cleanup uses Windows jobs')
     def test_success_stops_live_descendant_and_preserves_unrelated_process(self):
         self.run_tree('success-with-descendant')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows venv redirector')
+    def test_venv_launcher_stops_live_descendant(self):
+        self.run_tree('success-with-descendant', venv_launcher=True)
 
 
 if __name__ == '__main__':

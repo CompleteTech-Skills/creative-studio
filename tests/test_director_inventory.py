@@ -136,6 +136,38 @@ class InventoryTests(unittest.TestCase):
                                      resources={'max_memory_bytes': 129})
             self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_RESOURCE')
 
+    def test_workload_uses_matching_snapshot_measurements(self):
+        operations = ['runtime.python', 'resource.memory', 'resource.storage']
+        memory = dict(available_bytes=128, total_bytes=512, source='fixture',
+                      scope='fixture', reservation=False)
+        measure = inventory.measure
+        def fixture_measure(operation, usage):
+            return measure(operation, lambda: (256, 512))
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(inventory, 'memory_observation', return_value=memory), \
+                patch.object(inventory, 'measure', side_effect=fixture_measure):
+            root = Path(directory).resolve()/'proof'
+            result = cap.probe(request(operations, operations), root)
+            storage = self.receipt(root, result, 'resource.storage')['execution']['available_bytes']
+            def admit(resources):
+                return cap.assert_admission(result, ['runtime.python'], evidence_root=root, resources=resources)
+            if not director_contracts.artifact_reads_supported():
+                with self.assertRaises(RigError) as error:
+                    admit({'max_memory_bytes': 128})
+                self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
+                reader = patch.object(director_contracts, '_read_artifact',
+                                      side_effect=lambda base, ref: (base/ref['path']).read_bytes())
+            else:
+                from contextlib import nullcontext
+                reader = nullcontext()
+            with reader:
+                admit({'max_memory_bytes': 128, 'max_storage_bytes': storage})
+                for key, limit in [('max_memory_bytes', 128), ('max_storage_bytes', storage)]:
+                    with self.subTest(resource=key), self.assertRaises(RigError) as error:
+                        admit({key: limit+1})
+                    self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_RESOURCE')
+                    self.assertIn('measured available capacity', error.exception.report['message'])
+
     def test_invalid_public_provider_fields_fail_before_staging(self):
         fields = ('planning_provider', *inventory.PROVIDERS.values())
         invalid = ({'id': 'fixture with space'}, {'id': 'fixture\n'},
@@ -462,7 +494,7 @@ class MissingDependencyTests(unittest.TestCase):
             arguments = [str(value) for value in argv]
             if '-count_frames' in arguments:
                 return {'success': True}, json.dumps({'streams': [
-                    {'codec_type': 'video', 'nb_read_frames': 1}]})
+                    {'codec_type': 'video', 'codec_name': 'h264', 'nb_read_frames': 1}]})
             self.assertIn('libx264', arguments)
             Path(argv[-1]).write_bytes(b'synthetic codec fixture')
             return {'success': True}, ''
@@ -553,6 +585,107 @@ class MissingDependencyTests(unittest.TestCase):
                 receipt = self.receipts(root, result)['importer.blend']
                 self.assertEqual((receipt['status'], receipt['reason']), ('unavailable', reason))
                 self.assertEqual(receipt['payloads'], [])
+
+    def test_containment_failure_keeps_its_diagnostic_in_every_phase(self):
+        import sys
+        failed = ({'success': False, 'reason': 'worker-containment-failed', 'exit_code': None}, '')
+        for operation, failing_call in [('module.camera3d', 1), ('importer.blend', 1),
+                                        ('importer.blend', 2), ('blender.gpu', 1)]:
+            calls = []
+            def worker(argv, directory, timeout):
+                calls.append(argv)
+                if len(calls) == failing_call:
+                    if operation == 'blender.gpu':
+                        (Path(directory)/'failure.json').write_text('{"reason":"gpu-unavailable"}')
+                    return failed
+                (Path(directory)/'triangle.blend').write_bytes(b'BLENDER synthetic fixture')
+                return {'success': True}, 'DIRECTOR_PROBE={"version":"4.5.3"}'
+
+            with self.subTest(operation=operation, failing_call=failing_call), \
+                    tempfile.TemporaryDirectory() as directory, \
+                    patch.object(cap, '_native_importer_discovered', return_value=True), \
+                    patch.object(cap, '_worker', side_effect=worker):
+                root = Path(directory).resolve()/'proof'
+                result = cap.probe(request([operation], [operation]), root,
+                                   configuration={'blender': sys.executable})
+                receipt = self.receipts(root, result)[operation]
+                self.assertEqual(receipt['reason'], 'worker-containment-failed')
+                self.assertEqual(receipt['payloads'], [])
+                self.assertEqual([d['code'] for d in result['diagnostics']], ['CAPABILITY_WORKER_CONTAINMENT_FAILED'])
+
+    def test_inventory_requires_operation_specific_markers(self):
+        import sys
+        image = {'success': True, 'version': '13.0.0', 'decoded_pixels': 4, 'formats': ['PNG']}
+        robot = {'success': True, 'version': 'native-rig-v1', 'vertices': True, 'triangles': 1,
+                 'formats': ['GLB'], 'scope': 'procedural-robotic-fixture-only'}
+        cases = [('format.image', [image, image]), ('format.image', [{**image, 'decoded_pixels': 3}]),
+                 ('blender.engines', [image]), ('procedural.native', [robot]),
+                 ('module.scene3d', [{'success': True, 'initialization_only': True, 'executed': False,
+                                       'version': None, 'call': 'scene3d_contracts.schemas', 'schemas_checked': 1,
+                                       'extra': 'unretained-fixture-detail'}]),
+                 ('blender.engines', [{'success': True, 'version': '4.5.3', 'rendered': False,
+                                       'engines': ['CYCLES'], 'extra': 'unretained-fixture-detail'}])]
+        for operation, markers in cases:
+            text = '\n'.join('DIRECTOR_PROBE='+json.dumps(value) for value in markers)
+            with self.subTest(operation=operation, markers=markers), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(cap, '_worker', return_value=({'success': True}, text)):
+                root = Path(directory).resolve()/'proof'
+                result = cap.probe(request([operation], [operation]), root, configuration={'blender': sys.executable})
+                receipt = self.receipts(root, result)[operation]
+                self.assertFalse(receipt['initialized'])
+                self.assertFalse(receipt['execution_verified'])
+                self.assertEqual(receipt['payloads'], [])
+                self.assertNotIn(b'unretained-fixture-detail', _evidence_bytes(root))
+
+    def test_image_requires_only_expected_regular_decoded_output(self):
+        from PIL import Image
+        marker = 'DIRECTOR_PROBE={"success":true,"version":"13.0.0","decoded_pixels":4,"formats":["PNG"]}'
+        layouts = ['missing', 'wrong-pixels', 'extra-image', 'extra-directory', 'hardlink']
+        if os.name == 'posix':
+            layouts.extend(['symlink', 'fifo'])
+        for layout in layouts:
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()/'proof'
+                def worker(argv, scratch, timeout):
+                    image = Path(scratch)/'probe.png'
+                    if layout != 'missing':
+                        pixel = (1, 2, 3, 4) if layout == 'wrong-pixels' else (12, 34, 56, 78)
+                        Image.new('RGBA', (2, 2), pixel).save(image)
+                    if layout == 'extra-image':
+                        image.with_name('extra.png').write_bytes(b'unretained-fixture-detail')
+                    elif layout == 'extra-directory':
+                        image.with_name('extra').mkdir()
+                    elif layout == 'hardlink':
+                        os.link(image, root.parent/'fixture-link.png')
+                    elif layout == 'symlink':
+                        original = image.replace(root.parent/'fixture.png')
+                        image.symlink_to(original)
+                    elif layout == 'fifo':
+                        image.unlink()
+                        os.mkfifo(image)
+                    return {'success': True}, marker
+
+                with patch.object(cap, '_worker', side_effect=worker):
+                    result = cap.probe(request(['format.image'], ['format.image']), root)
+                receipt = self.receipts(root, result)['format.image']
+                self.assertFalse(receipt['execution_verified'])
+                self.assertEqual(receipt['payloads'], [])
+                self.assertEqual(list((root/'payloads').iterdir()), [])
+
+    def test_procedural_marker_requires_real_geometry(self):
+        value = dict(success=True, version='native-rig-v1', vertices=3, triangles=1,
+                     formats=['GLB'], scope='procedural-robotic-fixture-only')
+        for data in (None, b'non-geometry fixture'):
+            with self.subTest(data=data), tempfile.TemporaryDirectory() as directory:
+                def worker(argv, scratch, timeout):
+                    if data is not None:
+                        (Path(scratch)/'probe.glb').write_bytes(data)
+                    return {'success': True}, 'DIRECTOR_PROBE='+json.dumps(value)
+                root = Path(directory).resolve()/'proof'
+                with patch.object(cap, '_worker', side_effect=worker):
+                    result = cap.probe(request(['procedural.native'], ['procedural.native']), root)
+                self.assertFalse(result['value']['capabilities'][0]['execution_verified'])
+                self.assertEqual(list((root/'payloads').iterdir()), [])
 
 
 if __name__ == '__main__':

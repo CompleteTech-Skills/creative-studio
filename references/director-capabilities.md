@@ -25,7 +25,10 @@ The complete parent inventory additionally has explicit identifiers:
 - `resource.memory`, `resource.storage`: measure available host physical memory
   and free space on the evidence destination filesystem. Receipts separate these
   observations from policy ceilings. Resource admission checks both the observed
-  bytes and policy. Observations can become stale and do not reserve resources,
+  bytes and policy. A workload estimate for memory or storage automatically
+  includes the corresponding measurement when its entry exists in the snapshot.
+  Admission verifies the measurement receipt even when only a workload operation
+  was requested. Observations can become stale and do not reserve resources,
   establish per-user quota availability, or replace native worker enforcement.
   Missing supported memory APIs produce explicit unavailable evidence.
 - `blender.engines`: starts Blender and checks accepted render-engine settings;
@@ -88,11 +91,14 @@ Invalid descriptors raise `DIRECTOR_CAPABILITY_CONFIG` before staging.
 
 Worker probes have a separate timeout, bounded output, one compute thread,
 no stdin and a minimal environment without secrets. On POSIX they also have
-process-group termination and CPU/output/core limits. On Windows each worker
+process-group termination and CPU/output/core limits. The controller observes
+leader exit without reaping it, kills its original group, and checks for
+remaining live members before reading output. On Windows each worker
 tree belongs to a private native Job Object with kill-on-close and no breakaway
-permission. A trusted Python launcher starts with isolated/no-site flags and
-waits on a private parent gate; the requested tool cannot start until job
-assignment succeeds. The tool retains null stdin, the minimal environment and
+permission. The physical base Python starts the isolated/no-site launcher,
+including when the controller runs in a venv. The controller checks membership
+in its own job and releases a gate bound to the launcher's process ID.
+The tool retains null stdin, the minimal environment and
 its own exit status. Timeout, output overflow, exceptions and normal completion
 all terminate remaining job descendants, including a native importer's Blender
 grandchild. Cleanup waits at most five seconds for the job to become empty and
@@ -104,7 +110,9 @@ descendants. These jobs are process-lifetime containment, not a filesystem or
 network sandbox. They execute only fixed trusted code in an owned temporary
 directory; failure text from executables is not
 copied into public receipts. Worker scratch directories live outside the
-evidence stage. Required files are hash-bound and published through the shared
+evidence stage. Each worker result must match its operation's exact marker
+fields and expected scratch files. Only required, validated, singly linked
+regular payloads enter the evidence tree. These files are hash-bound and published through the shared
 `atomic_publish` primitives. The pinned authority must match the parent directory
 identity captured during destination admission before the stage is created
 (`pinned_directory`/`private_stage` on Linux, the descriptor-only

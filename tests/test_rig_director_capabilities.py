@@ -7,11 +7,20 @@ from pathlib import Path
 import tempfile
 import unittest
 import director_capabilities as cap
+import director_contracts
 from rig_errors import RigError,object_hash
 from test_director_capabilities import request
 
 
 class NativeCapabilityTests(unittest.TestCase):
+    def assert_native_admission(self, result, operations, root, **kwargs):
+        if director_contracts.artifact_reads_supported():
+            cap.assert_admission(result, operations, evidence_root=root, **kwargs)
+        else:
+            with self.assertRaises(RigError) as error:
+                cap.assert_admission(result, operations, evidence_root=root, **kwargs)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
+
     def test_procedural_robot_probe_retains_real_roundtrip_geometry(self):
         from rig_import import load_character_model
         with tempfile.TemporaryDirectory() as directory:
@@ -44,7 +53,7 @@ class NativeCapabilityTests(unittest.TestCase):
                                configuration={'timeout_seconds': 120})
             self.assertTrue(all(entry['execution_verified'] for entry in
                                 result['value']['capabilities']), result['diagnostics'])
-            cap.assert_admission(result, operations, evidence_root=root)
+            self.assert_native_admission(result, operations, root)
             receipts = {entry['operation']: json.loads((root/entry['probe_evidence'][0]['path']).read_bytes())
                         for entry in result['value']['capabilities']}
 
@@ -82,7 +91,7 @@ class NativeCapabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory).resolve()/'proof';result=cap.probe(request(operations,operations),path)
             self.assertTrue(all(x['execution_verified'] for x in result['value']['capabilities']),result['diagnostics'])
-            cap.assert_admission(result,operations,evidence_root=path,resources={'max_provider_calls':0})
+            self.assert_native_admission(result,operations,path,resources={'max_provider_calls':0})
             for reference in result['artifacts']:
                 evidence=json.loads((path/reference['path']).read_text())
                 self.assertEqual(evidence['execution']['vertices'],3)
@@ -90,8 +99,16 @@ class NativeCapabilityTests(unittest.TestCase):
             stripped=deepcopy(result['value'])
             stripped['capabilities'][0]['probe_evidence'][0]['dependencies']=[]
             stripped['digest']=object_hash({k:v for k,v in stripped.items() if k!='digest'})
-            with self.assertRaisesRegex(RigError,'receipt payloads differ'):
-                cap.assert_admission(stripped,operations,evidence_root=path)
+            if director_contracts.artifact_reads_supported():
+                with self.assertRaisesRegex(RigError,'receipt payloads differ'):
+                    cap.assert_admission(stripped,operations,evidence_root=path)
+            else:
+                self.assert_native_admission(stripped,operations,path)
+                from unittest.mock import patch
+                with patch.object(director_contracts,'_read_artifact',
+                                  side_effect=lambda root,ref:(root/ref['path']).read_bytes()):
+                    with self.assertRaisesRegex(RigError,'receipt payloads differ'):
+                        cap.assert_admission(stripped,operations,evidence_root=path)
             changed=deepcopy(result);changed['value']['capabilities'][0]['limits']['max_provider_calls']=100
             with self.assertRaises(RigError):cap.assert_admission(changed,operations)
             changed['value']['digest']=object_hash({k:v for k,v in changed['value'].items() if k!='digest'})

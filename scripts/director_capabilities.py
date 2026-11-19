@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 import hashlib
+from io import BytesIO
 import importlib.metadata
 import importlib.util
 import json
@@ -124,12 +125,63 @@ def _native_importer_discovered():
     return all(importlib.util.find_spec(name) is not None for name in ('numpy', 'pygltflib'))
 
 
+@contextmanager
+def _posix_completion(process):
+    """Observe exit without reaping the session leader or releasing its PID."""
+    if hasattr(os, 'waitid'):
+        def finished():
+            return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+        yield finished
+    else:
+        # CPython 3.12 on macOS has kqueue but does not expose waitid.
+        import select
+        with select.kqueue() as queue:
+            event = select.kevent(process.pid, filter=select.KQ_FILTER_PROC,
+                                  flags=select.KQ_EV_ADD, fflags=select.KQ_NOTE_EXIT)
+            try:
+                queue.control([event], 0)
+            except ProcessLookupError:
+                # A fast child exited before registration. It is still waitable.
+                yield lambda: True
+            else:
+                yield lambda: bool(queue.control(None, 1, 0))
+
+
+def _stop_group(process):
+    # No poll()/wait() has reaped the session leader. Its PGID cannot be reused
+    # for an unrelated group, including when the leader has already exited.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    deadline=time.monotonic()+5
+    process.wait(timeout=5)
+    # After reaping, only inspect the PGID. Never signal it again. Orphaned
+    # zombies may remain in the group but cannot write to the worker scratch.
+    try:
+        os.killpg(process.pid, 0)
+    except ProcessLookupError:
+        return
+    group=str(process.pid).encode()
+    while time.monotonic()<deadline:
+        states=subprocess.run(['/bin/ps','-A','-o','pgid=,stat='],capture_output=True,
+                              env={'LC_ALL':'C'},timeout=max(.01,deadline-time.monotonic()))
+        if states.returncode or states.stderr:
+            raise OSError('Could not inspect the stopped worker group.')
+        rows=[line.split() for line in states.stdout.splitlines()]
+        if not rows or any(len(row)!=2 or not row[0].isdigit() for row in rows):
+            raise OSError('Invalid worker group status.')
+        if not any(pgid==group and not state.startswith(b'Z') for pgid,state in rows):
+            return
+        time.sleep(.01)
+    raise OSError('Worker group termination did not complete.')
+
+
 def _worker(argv, directory, timeout):
     """Bound output/runtime; do not persist subprocess text or inherited secrets."""
-    output=Path(directory)/'worker-output.txt'
     env={key:value for key,value in os.environ.items() if key in
          ('PATH','SYSTEMROOT','WINDIR','LD_LIBRARY_PATH','DISPLAY','CUDA_VISIBLE_DEVICES')}
-    env.update(HOME=str(directory), TMPDIR=str(directory), PYTHONPATH=str(ROOT/'scripts'),
+    env.update(PYTHONPATH=str(ROOT/'scripts'),
                PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1')
     def limits():
         import resource
@@ -137,42 +189,43 @@ def _worker(argv, directory, timeout):
         resource.setrlimit(resource.RLIMIT_FSIZE,(16*1024**2,16*1024**2))
         resource.setrlimit(resource.RLIMIT_CPU,(timeout,timeout+1))
     process=None;reason=None
+    deadline=time.monotonic()+timeout
     try:
-        with output.open('wb') as stream, ExitStack() as cleanup:
+        with tempfile.TemporaryDirectory(prefix='director-worker-env-') as scratch, \
+                tempfile.TemporaryFile(dir=scratch) as stream, ExitStack() as cleanup:
+            # Keep native caches and transient files outside the fixed output layout.
+            env.update(HOME=scratch, TMPDIR=scratch, TEMP=scratch, TMP=scratch)
+            if os.name=='nt':
+                env.update(USERPROFILE=scratch, APPDATA=scratch, LOCALAPPDATA=scratch)
             if os.name=='nt':
                 from director_worker_windows import WindowsJob
                 try:
                     job=cleanup.enter_context(WindowsJob())
-                    process=job.start([str(a) for a in argv],directory,env,stream)
+                    process=job.start([str(a) for a in argv],directory,env,stream,deadline)
+                    finished=lambda: process.poll() is not None
                 except OSError:
                     reason='worker-containment-failed'
-            else:
+            elif os.name=='posix':
                 process=subprocess.Popen([str(a) for a in argv],cwd=directory,env=env,stdin=subprocess.DEVNULL,
                                          stdout=stream,stderr=subprocess.STDOUT,start_new_session=True,
-                                         preexec_fn=limits if os.name=='posix' else None)
-            started=time.monotonic()
+                                         preexec_fn=limits)
+                cleanup.callback(_stop_group, process)
+                finished=cleanup.enter_context(_posix_completion(process))
+            else:
+                reason='worker-containment-failed'
             if process is not None:
-                while process.poll() is None:
-                    if time.monotonic()-started>timeout:reason='timeout'
-                    elif output.stat().st_size>1024**2:reason='output-limit'
+                while not finished():
+                    if time.monotonic()>deadline:reason='timeout'
+                    elif os.fstat(stream.fileno()).st_size>1024**2:reason='output-limit'
                     if reason:
-                        if os.name=='posix':os.killpg(process.pid,signal.SIGKILL)
-                        elif os.name!='nt':process.kill()
-                        # WindowsJob closes on every exit, including exceptions
-                        # and normal completion with residual descendants.
                         break
                     time.sleep(.02)
-                if os.name!='nt':process.wait()
-        # ExitStack has terminated/drained the Windows job before reading or
-        # unlinking its output. Check fast writers that exited between polls.
-        if reason is None and output.stat().st_size>1024**2:reason='output-limit'
-        with output.open('rb') as stream:
+            cleanup.close()
+            if reason is None and os.fstat(stream.fileno()).st_size>1024**2:reason='output-limit'
+            stream.seek(0)
             raw=stream.read(1024**2)
     except (OSError,subprocess.TimeoutExpired):
-        if os.name!='nt':raise
         reason='worker-containment-failed';raw=b''
-    finally:
-        output.unlink(missing_ok=True)
     exit_code=process.returncode if process is not None else None
     if reason or exit_code:
         return {'success':False,'reason':reason or 'worker-failed','exit_code':exit_code},''
@@ -211,16 +264,21 @@ s.cycles.device='GPU'
 bpy.ops.render.render(write_still=True)
 print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string,'rendered':True,'device':s.cycles.device}))
 ''',encoding='utf-8')
-    outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1','--python',script],directory,timeout)
+    outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec',
+                          '--threads','1','--python-exit-code','1','--python',script],directory,timeout)
     if outcome['success']:
         from PIL import Image
-        with Image.open(Path(directory)/'probe.png') as image:
-            image.load();_need(image.size==(8,8),'DECODE','Probe raster dimensions differ.')
-        marker=next((line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines() if line.startswith('DIRECTOR_PROBE=')),None)
-        _need(marker is not None,'WORKER','Missing Blender result.')
-        outcome.update(version=decode_json(marker)['version'],device=decode_json(marker)['device'],render_sha256=sha256(Path(directory)/'probe.png'),resolution=[8,8])
-    elif (Path(directory)/'failure.json').is_file():
-        failure=decode_json((Path(directory)/'failure.json').read_bytes())
+        payload=_worker_bytes(Path(directory)/'probe.png')
+        with Image.open(BytesIO(payload)) as image:
+            _need(image.format=='PNG' and image.size==(8,8),'DECODE','Probe raster format or dimensions differ.')
+            image.load()
+        marker=_marker(text, {'version', 'rendered', 'device'})
+        _need(_release_version(marker['version']) and marker['rendered'] is True and
+              marker['device']==('GPU' if gpu else 'CPU'),'WORKER','Invalid Blender render result.')
+        outcome.update(version=marker['version'],device=marker['device'],
+                       render_sha256=hashlib.sha256(payload).hexdigest(),resolution=[8,8])
+    elif gpu and outcome['reason']=='worker-failed' and (Path(directory)/'failure.json').exists():
+        failure=decode_json(_worker_bytes(Path(directory)/'failure.json', limit=1024))
         if failure=={'reason':'gpu-unavailable'}:outcome['reason']='gpu-unavailable'
     return outcome
 
@@ -231,20 +289,30 @@ def _codec_probe(ffmpeg, ffprobe, operation, directory, timeout):
     result,_=_worker([ffmpeg,'-v','error','-nostdin','-f','lavfi','-i','color=red:s=16x16:r=24',
         '-frames:v','1','-an','-c:v',codec[0],'-threads','1','-pix_fmt','yuv420p','-y',output],directory,timeout)
     if result['success']:
+        payload=_worker_bytes(output)
         verified,text=_worker([ffprobe,'-v','error','-count_frames','-show_streams','-of','json',output],directory,timeout)
         if not verified['success']:return verified
-        streams=decode_json(text)['streams'];video=[s for s in streams if s['codec_type']=='video']
-        _need(len(streams)==len(video)==1 and int(video[0]['nb_read_frames'])==1,'DECODE','Codec probe did not independently decode one silent frame.')
-        result.update(codec=codec[0],decoded_frames=1,audio_streams=0,output_sha256=sha256(output))
+        report=decode_json(text)
+        streams=report.get('streams') if isinstance(report,dict) else None
+        expected_codec=operation.split('.')[1]
+        _need(isinstance(streams,list) and len(streams)==1 and isinstance(streams[0],dict)
+              and streams[0].get('codec_type')=='video' and streams[0].get('codec_name')==expected_codec
+              and str(streams[0].get('nb_read_frames'))=='1',
+              'DECODE','Codec probe did not independently decode one silent frame of the selected codec.')
+        result.update(codec=codec[0],decoded_frames=1,audio_streams=0,output_sha256=hashlib.sha256(payload).hexdigest())
     return result
 
 
-def _marker(text, message):
-    marker=next((line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines()
-                 if line.startswith('DIRECTOR_PROBE=')),None)
-    _need(marker is not None,'WORKER',message)
-    value=decode_json(marker)
-    _need(isinstance(value,dict),'WORKER',message)
+def _release_version(value):
+    return isinstance(value,str) and re.fullmatch(r'[0-9]{1,4}(?:\.[0-9]{1,4}){1,3}(?: LTS)?',value) is not None
+
+
+def _marker(text, fields):
+    markers=[line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines()
+             if line.startswith('DIRECTOR_PROBE=')]
+    _need(len(markers)==1,'WORKER','Expected exactly one worker result.')
+    value=decode_json(markers[0],max_bytes=4096)
+    _need(isinstance(value,dict) and set(value)==fields,'WORKER','Unexpected worker result fields.')
     return value
 
 
@@ -254,21 +322,31 @@ def _blend_import_probe(executable, directory, timeout):
     author=directory/'author.py';author.write_text(inventory.BLEND_AUTHOR,encoding='utf-8')
     outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1',
                           '--python-exit-code','1','--python',author],directory,timeout)
-    if not outcome['success']:return {**outcome,'reason':'blend-authoring-failed'}
-    author_version=_marker(text,'Missing Blender authoring result.').get('version')
+    if not outcome['success']:return _phase_failure(outcome,'blend-authoring-failed')
+    _check_outputs(directory, {'author.py','triangle.blend'})
+    author_version=_marker(text,{'version'})['version']
+    _need(_release_version(author_version),'WORKER','Invalid Blender author version.')
     source=directory/'triangle.blend'
-    _need(source.is_file() and not source.is_symlink(),'WORKER','Blender did not save the probe project.')
-    reader=directory/'probe.py';reader.write_text(inventory.blend_reader(executable),encoding='utf-8')
+    source_hash=hashlib.sha256(_worker_bytes(source)).hexdigest()
+    reader=directory/'probe.py'
+    with reader.open('x',encoding='utf-8') as script:
+        script.write(inventory.blend_reader(executable))
     outcome,text=_worker([sys.executable,reader],directory,timeout)
-    if not outcome['success']:return {**outcome,'reason':'native-blend-import-failed'}
-    value=_marker(text,'Missing native .blend import result.')
-    _need(value.get('vertices')==3 and value.get('triangles')==1,'GEOMETRY','Native .blend import did not decode triangle geometry.')
+    if not outcome['success']:return _phase_failure(outcome,'native-blend-import-failed')
+    value=_marker(text,{'vertices','triangles','importing_blender_version'})
+    _triangle(value)
     importer_version=value.get('importing_blender_version')
-    outcome.update(vertices=3,triangles=1,
-                   authoring_blender_version=author_version if isinstance(author_version,str) else None,
-                   importing_blender_version=importer_version if isinstance(importer_version,str) else None,
-                   source_sha256=sha256(source),importer='rig_import.load_character_model',formats=['BLEND'])
+    _need(_release_version(importer_version),'WORKER','Invalid Blender importer version.')
+    outcome.update(vertices=3,triangles=1,authoring_blender_version=author_version,
+                   importing_blender_version=importer_version,
+                   source_sha256=source_hash,importer='rig_import.load_character_model',formats=['BLEND'])
     return outcome
+
+
+def _phase_failure(outcome, reason):
+    if outcome['reason']=='worker-containment-failed':
+        return outcome
+    return {**outcome,'reason':reason}
 
 
 def _init_probe(operation, directory, timeout):
@@ -277,10 +355,26 @@ def _init_probe(operation, directory, timeout):
     script.write_text(inventory.initializer_script(operation,MODULES[operation]),encoding='utf-8')
     outcome,text=_worker([sys.executable,script],directory,timeout)
     if not outcome['success']:
-        return {**outcome,'reason':'initialization-timeout' if outcome['reason']=='timeout' else 'initialization-failed'}
-    value=_marker(text,'Missing initialization result.')
-    _need(value.get('initialization_only') is True and value.get('executed') is False,'WORKER','Initialization probe must not claim execution.')
+        return _phase_failure(outcome,'initialization-timeout' if outcome['reason']=='timeout' else 'initialization-failed')
+    acquisition=operation=='native.acquisition'
+    fields={'model_call','generation_backend'} if acquisition else {'schemas_checked'}
+    value=_marker(text,fields|{'success','initialization_only','executed','version','call'})
+    _need(value['success'] is True and value['initialization_only'] is True and value['executed'] is False
+          and (value['version'] is None or _release_version(value['version'])),'WORKER','Invalid initialization result.')
+    if acquisition:
+        valid=(value['call']=='asset_contracts.versions' and value['model_call'] is None
+               and value['generation_backend']=='installed-imagegen-not-invoked')
+    else:
+        valid=(value['call']==MODULES[operation]+'.schemas' and type(value['schemas_checked']) is int
+               and 0<value['schemas_checked']<=4096)
+    _need(valid,'WORKER','Invalid initialization details.')
     return {**outcome,**value}
+
+
+def _triangle(value):
+    _need(type(value['vertices']) is int and value['vertices']==3 and
+          type(value['triangles']) is int and value['triangles']==1,
+          'GEOMETRY','Importer did not decode triangle geometry.')
 
 
 def _import_probe(operation,directory,timeout):
@@ -304,13 +398,15 @@ def _import_probe(operation,directory,timeout):
         else:
             data=json.dumps(doc).encode();data+=b' '*((-len(data))%4);binary+=b'\x00'*((-len(binary))%4)
             source.write_bytes(struct.pack('<4sII',b'glTF',2,12+8+len(data)+8+len(binary))+struct.pack('<II',len(data),0x4E4F534A)+data+struct.pack('<II',len(binary),0x004E4942)+binary)
+    source_hash=sha256(source)
     script=Path(directory)/'probe.py'
     script.write_text("from rig_import import load_character_model\nimport json\na=load_character_model("+repr(str(source))+ ")\nprint(json.dumps({'vertices':a.geometry.vertex_count,'triangles':a.geometry.triangle_count}))\n",encoding='utf-8')
     outcome,text=_worker([sys.executable,script],directory,timeout)
     if outcome['success']:
-        value=decode_json(text)
-        _need(value['vertices']==3 and value['triangles']==1,'GEOMETRY','Importer did not decode triangle geometry.')
-        outcome.update(value,version='native-rig-v1',source_sha256=sha256(source))
+        value=decode_json(text,max_bytes=1024)
+        _need(isinstance(value,dict) and set(value)=={'vertices','triangles'},'WORKER','Unexpected importer result fields.')
+        _triangle(value)
+        outcome.update(vertices=3,triangles=1,version='native-rig-v1',source_sha256=source_hash)
     return outcome
 
 
@@ -323,16 +419,117 @@ def _inventory_probe(operation, executable, directory, timeout, usage):
     path = Path(directory)/'probe.py'
     path.write_text(script, encoding='utf-8')
     argv = ([executable, '--background', '--factory-startup', '--disable-autoexec',
-             '--threads', '1', '--python', path] if operation == 'blender.engines'
+             '--threads', '1', '--python-exit-code', '1', '--python', path] if operation == 'blender.engines'
             else [sys.executable, path])
     outcome, text = _worker(argv, directory, timeout)
     if not outcome['success']:
         return outcome
-    return {**outcome, **_marker(text, 'Missing inventory probe result.')}
+    fields={'blender.engines':{'engines','rendered'},'format.image':{'formats','decoded_pixels'},
+            'procedural.native':{'vertices','triangles','formats','scope'}}
+    value=_marker(text,fields[operation]|{'success','version'})
+    _need(value['success'] is True,'WORKER','Inventory worker did not confirm success.')
+    if operation=='blender.engines':
+        engines=value['engines']
+        valid=(_release_version(value['version']) and value['rendered'] is False and
+               isinstance(engines,list) and 0<len(engines)<=32 and
+               all(isinstance(name,str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}',name) for name in engines)
+               and engines==sorted(set(engines)))
+    elif operation=='format.image':
+        valid=(_release_version(value['version']) and value['formats']==['PNG'] and
+               type(value['decoded_pixels']) is int and value['decoded_pixels']==4)
+    else:
+        valid=(value['version']=='native-rig-v1' and value['formats']==['GLB'] and
+               value['scope']=='procedural-robotic-fixture-only' and
+               all(type(value[key]) is int and 0<value[key]<=100000 for key in ('vertices','triangles')))
+    _need(valid,'WORKER','Invalid operation-specific inventory result.')
+    if operation=='procedural.native':
+        _check_outputs(Path(directory), {'probe.py','probe.glb'})
+        # Decode with the native importer inside the same process/time bounds as
+        # other probes. The verifier reports the digest of the bytes it decoded.
+        check,report=_worker([sys.executable,'-P','-c',
+                              'from director_capabilities import _verify_robot; _verify_robot()'],
+                             directory,timeout)
+        if not check['success']:
+            return check
+        geometry=_marker(report,{'vertices','triangles','output_sha256'})
+        _need(all(type(geometry[k]) is int and geometry[k]==value[k] for k in ('vertices','triangles'))
+              and isinstance(geometry['output_sha256'],str) and
+              re.fullmatch('[0-9a-f]{64}',geometry['output_sha256']),
+              'GEOMETRY','Procedural GLB geometry differs from worker evidence.')
+        value['output_sha256']=geometry['output_sha256']
+    return {**outcome, **value}
 
 
 PAYLOAD_TYPES={'.png':'image/png','.mp4':'video/mp4','.webm':'video/webm','.obj':'text/plain',
                '.glb':'model/gltf-binary','.gltf':'model/gltf+json','.blend':'application/x-blender'}
+WORKER_PAYLOADS={'blender.cpu':'probe.png','blender.gpu':'probe.png','format.image':'probe.png',
+                 'procedural.native':'probe.glb','codec.h264':'probe.mp4','codec.vp9':'probe.webm',
+                 'codec.av1':'probe.webm',**{'importer.'+ext:'triangle.'+ext for ext in ('glb','gltf','obj','blend')}}
+
+
+def _worker_file(path):
+    info=path.lstat()
+    _need(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and
+          not getattr(info,'st_file_attributes',0)&stat.FILE_ATTRIBUTE_REPARSE_POINT,
+          'WORKER','Worker output must be an ordinary file owned by the probe.')
+
+
+def _worker_bytes(path, limit=16*1024**2):
+    from continuity_contracts import _read_regular_bytes
+    _worker_file(path)
+    data=_read_regular_bytes(path,limit=limit)
+    _need(data,'WORKER','Worker output is empty.')
+    return data
+
+
+def _verify_robot():
+    from rig_import import load_character_model
+    path=Path.cwd()/'probe.glb'
+    data=_worker_bytes(path)
+    def read_source(source, limit):
+        _need(source==path and len(data)<=limit,'GEOMETRY','Expected a self-contained procedural GLB.')
+        return data
+    geometry=load_character_model(path,source_reader=read_source).geometry
+    print('DIRECTOR_PROBE='+json.dumps(dict(vertices=geometry.vertex_count,triangles=geometry.triangle_count,
+                                            output_sha256=hashlib.sha256(data).hexdigest())))
+
+
+def _check_outputs(root, expected):
+    for path in root.iterdir():
+        _need(path.name in expected,'WORKER','Unexpected worker output.')
+        expected.remove(path.name)
+        _worker_file(path)
+    _need(not expected,'WORKER','Required worker output is missing.')
+
+
+def _retain_outputs(operation, worker, outcome, stage):
+    """Validate the complete successful scratch layout before retaining any bytes."""
+    name=WORKER_PAYLOADS.get(operation)
+    expected={name} if name else set()
+    if operation in inventory.INITIALIZED or operation in ('format.image','procedural.native','blender.engines',
+                                                           'blender.cpu','blender.gpu') or operation.startswith('importer.'):
+        expected.add('probe.py')
+    if operation=='importer.blend':
+        expected.add('author.py')
+    root=Path(worker)
+    _check_outputs(root, expected)
+    if name is None:
+        return []
+    path=root/name
+    data=_worker_bytes(path)
+    digest=hashlib.sha256(data).hexdigest()
+    if operation=='format.image':
+        from PIL import Image
+        with Image.open(BytesIO(data)) as image:
+            _need(image.format=='PNG' and image.size==(2,2) and image.mode=='RGBA' and
+                  image.tobytes()==bytes((12,34,56,78))*4,'DECODE','Image fixture pixels differ.')
+    else:
+        hash_field=('source_sha256' if operation.startswith('importer.') else
+                    'render_sha256' if operation.startswith('blender.') else 'output_sha256')
+        _need(digest==outcome[hash_field],'HASH','Verified worker output changed.')
+    target=stage/'payloads'/(digest+path.suffix)
+    target.write_bytes(data)
+    return [_reference(target,stage)]
 
 
 def _reference(path, stage, dependencies=()):
@@ -549,12 +746,8 @@ def probe(request, evidence_root, *, configuration=None):
                             else:outcome={'success':False,'reason':'native-execution-adapter-unavailable'}
                             initialized=bool(outcome['success'])
                             executed=initialized and not outcome.get('initialization_only',False)
-                            if executed:
-                                for original in sorted(Path(worker).glob('*')):
-                                    if original.is_file() and original.suffix in PAYLOAD_TYPES:
-                                        target=stage/'payloads'/(sha256(original)+original.suffix)
-                                        shutil.copyfile(original,target)
-                                        payloads.append(_reference(target,stage))
+                            if initialized:
+                                payloads=_retain_outputs(operation,worker,outcome,stage)
                         # Initialization is reported separately; it never admits work.
                         record['initialized']=initialized
                         record['execution_verified']=executed
@@ -642,7 +835,11 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
     _need(_date(value['expires_at'])>current,'EXPIRED','Capability evidence expired.')
     by_op={item['operation']:item for item in value['capabilities']}
     _need(len(by_op)==len(value['capabilities']),'DUPLICATE','Duplicate capability entries.')
-    for operation in required_operations:
+    operations=list(required_operations)
+    for key, measurement in (('max_memory_bytes','resource.memory'),('max_storage_bytes','resource.storage')):
+        if key in (resources or {}) and measurement in by_op and measurement not in operations:
+            operations.append(measurement)
+    for operation in operations:
         item=by_op.get(operation)
         _need(item is not None and item['status']=='available' and item['execution_verified'],'UNAVAILABLE','Required capability is unverified: '+operation)
         _need(bool(item['probe_evidence']),'EVIDENCE','Execution verification requires nonempty retained evidence.')

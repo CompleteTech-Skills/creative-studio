@@ -64,6 +64,10 @@ def _kernel32():
         'SetInformationJobObject': ([wintypes.HANDLE, ctypes.c_int,
                                      ctypes.c_void_p, wintypes.DWORD], wintypes.BOOL),
         'AssignProcessToJobObject': ([wintypes.HANDLE, wintypes.HANDLE], wintypes.BOOL),
+        'IsProcessInJob': ([wintypes.HANDLE, wintypes.HANDLE,
+                            ctypes.POINTER(wintypes.BOOL)], wintypes.BOOL),
+        'PeekNamedPipe': ([wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                           ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p], wintypes.BOOL),
         'TerminateJobObject': ([wintypes.HANDLE, wintypes.UINT], wintypes.BOOL),
         'QueryInformationJobObject': ([wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
                                        wintypes.DWORD, ctypes.c_void_p], wintypes.BOOL),
@@ -104,18 +108,37 @@ class WindowsJob:
     def __enter__(self):
         return self
 
-    def start(self, argv, directory, env, stream):
+    def start(self, argv, directory, env, stream, deadline):
+        import msvcrt
         # -I -S prevents site hooks, PYTHONPATH and the scratch directory from
         # executing code before assignment. The requested tool still gets env.
         self.process = subprocess.Popen(
-            [sys.executable, '-I', '-S', str(Path(__file__).resolve()), *argv],
+            [sys._base_executable, '-I', '-S', str(Path(__file__).resolve()), *argv],
             cwd=directory, env=env, stdin=subprocess.PIPE, stdout=stream,
-            stderr=subprocess.STDOUT, close_fds=True)
+            stderr=subprocess.PIPE, close_fds=True)
         # Popen owns a real process handle: no PID lookup/reuse race. CPython's
         # Windows Popen exposes that handle as _handle.
         _check(self.api.AssignProcessToJobObject(
             self.handle, int(self.process._handle)))
         self.assigned = True
+        member = wintypes.BOOL()
+        _check(self.api.IsProcessInJob(int(self.process._handle), self.handle, ctypes.byref(member)))
+        if not member.value:
+            raise OSError('Worker job membership was not confirmed.')
+        # Only the gated interpreter writes to the private handshake pipe.
+        # Check its own PID before release, even if a launcher redirects again.
+        with self.process.stderr as handshake:
+            handle=msvcrt.get_osfhandle(handshake.fileno())
+            available=wintypes.DWORD()
+            while True:
+                _check(self.api.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None))
+                if available.value >= 4:
+                    break
+                if time.monotonic() >= deadline:
+                    raise OSError('Worker gate identity was not reported in time.')
+                time.sleep(.01)
+            if int.from_bytes(handshake.read(4), 'little') != self.process.pid:
+                raise OSError('Worker gate is not the assigned process.')
         self.process.stdin.write(b'G')
         self.process.stdin.close()
         return self.process
@@ -147,6 +170,7 @@ class WindowsJob:
             finally:
                 if self.process is not None:
                     try:
+                        self.process.stderr.close()
                         if self.process.stdin is not None and not self.process.stdin.closed:
                             self.process.stdin.close()
                     except OSError:
@@ -159,13 +183,17 @@ class WindowsJob:
 
 
 def _launch():
+    import os
+    sys.stderr.buffer.write(os.getpid().to_bytes(4, 'little'))
+    sys.stderr.buffer.flush()
     if sys.stdin.buffer.read(1) != b'G' or len(sys.argv) < 2:
         return 125
     # The control pipe is never the tool's stdin. Output/cwd/environment and
     # the requested command's exit status retain their direct-worker meaning.
     sys.stdin.close()
     try:
-        return subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL, close_fds=True)
+        return subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=sys.stdout,
+                               stderr=subprocess.STDOUT, close_fds=True)
     except OSError:
         return 127
 
