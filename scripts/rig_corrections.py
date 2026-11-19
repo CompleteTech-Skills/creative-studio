@@ -35,6 +35,7 @@ def replace_fit(rig, fitted):
     ]
     for key in ('skeleton', 'controllers', 'attachments'):
         manifest[key] = fitted[key]
+    manifest['archetype'] = fitted['template_id']
     manifest['uncertainties'] = independent + fitted['uncertainties']
     _retain_anatomy_occurrences(rig)
 

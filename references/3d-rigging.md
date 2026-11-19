@@ -545,7 +545,10 @@ encoded file sizes and wall time; unavailable costs remain `null`. Discovery mak
 zero model calls and does not generate the catalog's missing animations.
 
 Template replacement and automatic refitting retain uncertainty records owned
-by independent evidence domains. Before publishing a correction or changing the
+by independent evidence domains. Both record the admitted template's declared
+archetype for capability selection and retargeting. A low-confidence fitted
+landmark remains pending until an anatomical correction changes its bound bone.
+Before publishing a correction or changing the
 active rig, the combined independent and newly fitted records must fit the
 existing schema limit. An over-limit request returns a compact count/limit error
 without copying authored evidence text into the diagnostic. The boundary includes

@@ -68,7 +68,7 @@ def mutate(root,operation,parameters=None):
             old=rig.manifest['skeleton']
             if old:fitted['skeleton']['version']=next_version(old['version'])
             replace_fit(rig, fitted)
-            rig.manifest['archetype']=fitted['template_id'];rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
+            rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
             rig.manifest['facial']['eyes']=[b['id'] for b in rig.skeleton['bones'] if b['role'].startswith('eye.')]
             if 'eyelids' in rig.manifest['facial']:
                 eyes=set(rig.manifest['facial']['eyes'])
