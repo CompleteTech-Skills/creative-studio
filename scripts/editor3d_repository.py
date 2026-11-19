@@ -282,7 +282,7 @@ def _portable_alias(name):
     return unicodedata.normalize('NFC', name).casefold()
 
 
-def _scan(root, limits, *, replacement=None):
+def _scan(root, limits, *, replacement=None, bound_content=True):
     """Bound traversal itself, rejecting links before descending."""
     import stat
     pending=[(Path(root),'')]; files={}; aliases=set(); entries=0; total=0
@@ -305,8 +305,9 @@ def _scan(root, limits, *, replacement=None):
                 else:
                     _require(stat.S_ISREG(info.st_mode), 'FILE', 'Repository contains a nonregular file.')
                     total+=info.st_size
-                    _require(len(files)<limits['max_files'] and info.st_size<=limits['max_file_bytes'] and
-                             total<=limits['max_bytes'], 'LIMIT', 'Repository exceeds file or byte limits.')
+                    if bound_content:
+                        _require(len(files)<limits['max_files'] and info.st_size<=limits['max_file_bytes'] and
+                                 total<=limits['max_bytes'], 'LIMIT', 'Repository exceeds file or byte limits.')
                     files[name]=info.st_size
     if replacement is not None:
         name, size = replacement
@@ -348,6 +349,25 @@ def _validated_limits(values):
         _require(type(value) in (int, float) and 0.1 <= value <= 3600, 'LIMIT', 'Invalid ' + name)
     return limits
 
+
+def _validate_revision_record(value, revision, limits):
+    required = {'schema_version','revision','parent','snapshot_sha256','project_sha256','scene_path',
+                'transaction_id','request_sha256','action','label','created_at','inventory'}
+    _require(isinstance(value, dict) and set(value) == required and type(value['schema_version']) is int and value['schema_version'] == FORMAT and
+             type(value['revision']) is int and value['revision'] == revision,
+             'REVISION', 'Invalid immutable revision record.')
+    _require(isinstance(value['inventory'], dict) and 0 < len(value['inventory']) <= limits['max_files'],
+             'REVISION', 'Invalid snapshot inventory.')
+    for name, record in value['inventory'].items():
+        portable_name(name)
+        _require(isinstance(record, dict) and set(record) == {'bytes','sha256'} and type(record['bytes']) is int and
+                 0 <= record['bytes'] <= limits['max_file_bytes'] and isinstance(record['sha256'], str) and
+                 re.fullmatch('[0-9a-f]{64}', record['sha256']), 'REVISION', 'Invalid immutable file record.')
+    _require(_digest(value['inventory']) == value['snapshot_sha256'], 'HASH', 'Revision inventory digest differs.')
+    _require(isinstance(value['scene_path'], str) and value['scene_path'] in value['inventory'],
+             'SCENE', 'Revision scene is absent from its inventory.')
+    _check_id(value['transaction_id'])
+    return value
 
 class EditorRepository:
     """Repository of exact native project revisions, with optimistic concurrency.
@@ -405,7 +425,7 @@ class EditorRepository:
             _sync_directory(destination.parent)
         return cls(destination)
 
-    def _head(self):
+    def _head(self, *, verify_history=False):
         value = _read_json(safe_path(self.root, 'HEAD.json', exists=True))
         _require(set(value) == {'schema_version', 'revision', 'sha256', 'undo', 'redo'} and
                  type(value['schema_version']) is int and value['schema_version'] == FORMAT and
@@ -416,6 +436,9 @@ class EditorRepository:
                  'HEAD', 'Invalid repository HEAD or undo/redo history.')
         record = self._record(value['revision'])
         _require(record['snapshot_sha256'] == value['sha256'], 'HASH', 'HEAD differs from its immutable revision.')
+        if verify_history:
+            _require(self._history_at(value['revision']) == value, 'HISTORY',
+                     'HEAD history differs from its revision actions.')
         return value
 
     def _record(self, revision, *, directory=None):
@@ -425,23 +448,7 @@ class EditorRepository:
         else:
             path = safe_path(directory, 'record.json', exists=True)
         value = _read_json(path)
-        required = {'schema_version','revision','parent','snapshot_sha256','project_sha256','scene_path',
-                    'transaction_id','request_sha256','action','label','created_at','inventory'}
-        _require(set(value) == required and type(value['schema_version']) is int and value['schema_version'] == FORMAT and
-                 type(value['revision']) is int and value['revision'] == revision,
-                 'REVISION', 'Invalid immutable revision record.')
-        _require(isinstance(value['inventory'], dict) and 0 < len(value['inventory']) <= self.limits['max_files'],
-                 'REVISION', 'Invalid snapshot inventory.')
-        for name, record in value['inventory'].items():
-            portable_name(name)
-            _require(isinstance(record, dict) and set(record) == {'bytes','sha256'} and type(record['bytes']) is int and
-                     0 <= record['bytes'] <= self.limits['max_file_bytes'] and isinstance(record['sha256'], str) and
-                     re.fullmatch('[0-9a-f]{64}', record['sha256']), 'REVISION', 'Invalid immutable file record.')
-        _require(_digest(value['inventory']) == value['snapshot_sha256'], 'HASH', 'Revision inventory digest differs.')
-        _require(isinstance(value['scene_path'], str) and value['scene_path'] in value['inventory'],
-                 'SCENE', 'Revision scene is absent from its inventory.')
-        _check_id(value['transaction_id'])
-        return value
+        return _validate_revision_record(value, revision, self.limits)
 
     def _native_root(self, revision):
         path = safe_path(self.root, f'revisions/{revision:08d}/native')
@@ -467,7 +474,7 @@ class EditorRepository:
         return _replay_history((self._record(i) for i in range(revision + 1)), self.limits['max_history'])
 
     def snapshot(self, revision=None):
-        head = self._head()
+        head = self._head(verify_history=True)
         record = self._committed_record(head['revision'] if revision is None else revision, head)
         bundle = self._bundle(record)
         if record['revision'] != head['revision']:
@@ -589,7 +596,7 @@ class EditorRepository:
         _require(isinstance(label, str) and 1 <= len(label) <= 256 and len(_bytes(request)) <= MAX_COMMAND_BYTES,
                  'COMMAND', 'Command batch exceeds limits.')
         with job_lock(self.root):
-            head = self._head()
+            head = self._head(verify_history=True)
             previous = self._existing_transaction(head, transaction_id, _digest(request))
             if previous is not None: return previous
             self._check_expected(head, expected_revision, expected_sha256)
@@ -620,7 +627,7 @@ class EditorRepository:
         _check_id(transaction_id)
         request = dict(action=action, target=target)
         with job_lock(self.root):
-            head = self._head()
+            head = self._head(verify_history=True)
             previous = self._existing_transaction(head, transaction_id, _digest(request))
             if previous is not None: return previous
             self._check_expected(head, expected_revision, expected_sha256)
@@ -735,7 +742,7 @@ class EditorRepository:
     def recover(self, transaction_id, expected_revision, *, expected_sha256=None):
         _check_id(transaction_id)
         with job_lock(self.root):
-            head = self._head()
+            head = self._head(verify_history=True)
             self._check_expected(head, expected_revision, expected_sha256)
             journal_name = hashlib.sha256(transaction_id.encode()).hexdigest() + '.json'
             path = safe_path(self.root, 'journal/' + journal_name, exists=True)
@@ -777,7 +784,7 @@ class EditorRepository:
         """Roll back only an unverified private attempt, retaining its journal."""
         _check_id(transaction_id)
         with job_lock(self.root):
-            head=self._head();self._check_expected(head,expected_revision,expected_sha256)
+            head=self._head(verify_history=True);self._check_expected(head,expected_revision,expected_sha256)
             path=safe_path(self.root,'journal/'+hashlib.sha256(transaction_id.encode()).hexdigest()+'.json',exists=True)
             item=self._journal(path)
             _require(item['status']=='building' and item['expected_revision']==head['revision'] and
@@ -785,7 +792,9 @@ class EditorRepository:
             if item['stage'] is not None:
                 stage=safe_path(self.root,'revisions/'+item['stage'])
                 if stage.exists():
-                    _scan(stage,self.limits)
+                    # A crashed builder may exceed snapshot quotas before admission.
+                    # Validate the private tree shape and entry bound before discarding it.
+                    _scan(stage,self.limits,bound_content=False)
                     shutil.rmtree(stage)
                     _sync_directory(stage.parent)
             failure_root=safe_path(self.root,'failed');failure_root.mkdir(exist_ok=True)
@@ -807,7 +816,7 @@ class EditorRepository:
         _require(callable(builder) and isinstance(label, str) and 0 < len(label) <= 256 and
                  len(_bytes(request)) <= MAX_COMMAND_BYTES, 'COMMAND', 'Invalid native adapter transaction.')
         with job_lock(self.root):
-            head = self._head()
+            head = self._head(verify_history=True)
             previous = self._existing_transaction(head, transaction_id, _digest(request))
             if previous is not None: return previous
             self._check_expected(head, expected_revision, expected_sha256)
@@ -1112,8 +1121,26 @@ class EditorRepository:
                 last = head.get('revision')
                 _require(type(last) is int and 0 <= last < limits['max_revisions'],
                          'HISTORY', 'Invalid archived HEAD revision.')
-                records = (metadata(f'revisions/{revision:08d}/record.json') for revision in range(last + 1))
-                expected = _replay_history(records, limits['max_history'])
+                revision_files = set()
+                def records():
+                    for revision in range(last + 1):
+                        prefix = f'revisions/{revision:08d}/'
+                        record_path = prefix + 'record.json'
+                        record = _validate_revision_record(metadata(record_path), revision, limits)
+                        inventory = record['inventory']
+                        _require('project.json' in inventory
+                                 and inventory['project.json']['sha256'] == record['project_sha256'],
+                                 'HASH', 'Archived revision project differs from its inventory.')
+                        revision_files.add(record_path)
+                        for name, expected in inventory.items():
+                            full_name = prefix + 'native/' + name
+                            _require(receipt['files'].get(full_name) == expected,
+                                     'HASH', 'Archived revision file differs from its immutable inventory.')
+                            revision_files.add(full_name)
+                        yield record
+                expected = _replay_history(records(), limits['max_history'])
+                _require(revision_files == {name for name in receipt['files'] if name.startswith('revisions/')},
+                         'HASH', 'Archive includes files outside its committed revision inventory.')
                 _require(_bytes(head) == _bytes(expected) == _bytes(receipt['head']),
                          'HISTORY', 'Archive HEAD history differs from its revision actions.')
                 return receipt

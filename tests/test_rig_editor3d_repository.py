@@ -600,6 +600,85 @@ raise AssertionError('writer was not excluded')
         self.assertEqual(reopened.read_file('triangle.obj', before['sha256']), source_bytes)
         self.assertEqual((self.source / 'triangle.obj').read_bytes(), source_bytes)
 
+    def test_mutation_rejects_live_head_stacks_that_disagree_with_committed_records(self):
+        self.repo.apply(0, self.move(4), 'first-move')
+        current = self.repo.apply(1, self.move(9), 'second-move')
+        head_path = self.repo.root / 'HEAD.json'
+        original = head_path.read_bytes()
+        head = json.loads(original)
+        self.assertEqual(head['undo'], [0, 1])
+        head['undo'] = [0]
+        changed = json.dumps(head).encode('utf-8')
+        head_path.write_bytes(changed)
+
+        reopened = EditorRepository(self.repo.root)
+        for action in (
+                lambda: reopened.undo(2, 'wrong-undo', expected_sha256=current['sha256']),
+                lambda: reopened.apply(2, self.move(12), 'wrong-apply', expected_sha256=current['sha256']),
+                reopened.snapshot):
+            with self.assertRaises(RigError) as refused:
+                action()
+            self.assertEqual(refused.exception.report['code'], 'EDITOR3D_HISTORY')
+        self.assertEqual(head_path.read_bytes(), changed)
+        self.assertFalse((self.repo.root / 'revisions/00000003').exists())
+        self.assertFalse(reopened.recovery())
+        head_path.write_bytes(original)
+        self.assertEqual(self.mesh_x(reopened.undo(2, 'correct-undo')), 4)
+
+    def test_discard_releases_stage_after_actual_oversized_partial_import_exit(self):
+        small = EditorRepository.create(self.source, self.root / 'bounded-editor',
+                                        limits={'max_file_bytes': 32768})
+        before = small.snapshot()
+        native = (self.source / 'triangle.obj').read_bytes()
+        child = """import os
+import sys
+from editor3d_repository import EditorRepository
+repo = EditorRepository(sys.argv[1])
+def unverified(source, destination, scene):
+    destination.mkdir()
+    (destination / 'partial.obj').write_bytes(b'x' * 32769)
+    os._exit(47)
+repo.transact_native(0, 'oversized-interruption', {}, unverified)
+"""
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts'))
+        exited = subprocess.run([sys.executable, '-B', '-c', child, str(small.root)],
+                                env=env, capture_output=True, timeout=20)
+        self.assertEqual(exited.returncode, 47)
+        reopened = EditorRepository(small.root)
+        item, = reopened.recovery()
+        self.assertEqual((item['status'], item['can_recover']), ('building', False))
+        self.assertEqual(reopened.snapshot(), before)
+        reopened.discard_incomplete('oversized-interruption', 0, expected_sha256=before['sha256'])
+        self.assertFalse((small.root / 'revisions' / item['stage']).exists())
+        self.assertFalse(reopened.recovery())
+        self.assertEqual(len(list((small.root / 'failed').glob('*.json'))), 1)
+        self.assertEqual(self.mesh_x(reopened.apply(0, self.move(8), 'after-discard')), 8)
+        self.assertEqual((self.source / 'triangle.obj').read_bytes(), native)
+
+    def test_archive_refuses_captured_payload_that_differs_from_immutable_revision(self):
+        original = self.repo.root / 'revisions/00000000/native/triangle.obj'
+        saved_bytes = original.read_bytes()
+        capture_files = self.repo._all_files
+        archive = self.root / 'drift.zip'
+
+        def drift_during_capture():
+            original.write_bytes(saved_bytes + b'\n')
+            return capture_files()
+
+        try:
+            with patch.object(self.repo, '_all_files', side_effect=drift_during_capture):
+                with self.assertRaises(RigError) as refused:
+                    self.repo.archive(archive)
+            self.assertEqual(refused.exception.report['code'], 'EDITOR3D_ARCHIVE')
+            self.assertIn('Archived revision file differs from its immutable inventory.',
+                          refused.exception.report['message'])
+            self.assertFalse(archive.exists())
+        finally:
+            original.write_bytes(saved_bytes)
+        self.repo.archive(archive)
+        restored = EditorRepository.restore_archive(archive, self.root / 'drift-control')
+        self.assertEqual(restored.snapshot(), self.repo.snapshot())
+
     def test_read_file_is_bound_to_snapshot_inventory(self):
         view=self.repo.snapshot()
         for path in ('../secret','HEAD.json','unknown.obj'):
