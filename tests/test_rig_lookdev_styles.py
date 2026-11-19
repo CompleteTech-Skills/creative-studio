@@ -1,0 +1,81 @@
+"""Opt-in rendered recipe and OCIO checks using immutable source snapshots."""
+from pathlib import Path
+import hashlib,json,os,shutil,subprocess,sys,tempfile,unittest
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from lookdev_styles import mapping_ids
+
+ROOT=Path(__file__).resolve().parents[1]
+
+
+def inspect_outputs(root):
+    import numpy as np
+    from PIL import Image
+    report=json.loads((root/'report.json').read_text())
+    if set(report['styles'])!=set(mapping_ids()):raise AssertionError('Required style outputs missing.')
+    images={}
+    for name,entry in report['styles'].items():
+        if not entry.get('effective_slot_verified') or not entry.get('linked_instance_preserved'):
+            raise AssertionError('Effective slot or source instance isolation was not verified.')
+        path=root/(name+'.png')
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=entry['png_sha256']:raise AssertionError('Style output changed.')
+        images[name]=np.asarray(Image.open(path).convert('RGB'),dtype=float)
+        if images[name].std()<2:raise AssertionError('Style output has no rendered scene variation.')
+        if entry['execution']['geometry'] in ('flat','flat-solid-glass','folded') and entry['smooth_faces']:
+            raise AssertionError('Flat recipe did not affect actual mesh faces.')
+    # Same geometry/lighting/camera changes only authored material roughness,
+    # grain or coat. Differences must reach actual saved pixel values.
+    measured={}
+    for a,b in [('clay','porcelain'),('wooden-toy','polymer-clay'),('3d-toy','low-poly-3d'),('frosted-glass','crystal')]:
+        mean=float(np.abs(images[a]-images[b]).mean());measured[a+'/'+b]=mean
+        if mean<.15:raise AssertionError('Recipe material/geometry did not change image: '+a+'/'+b)
+    colors={}
+    for name,entry in report['color'].items():
+        extension='.exr' if entry['configuration']['output']=='scene-linear-exr' else '.png'
+        path=root/('color-'+name+extension)
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=entry['file_sha256']:raise AssertionError('Color output changed.')
+        if extension=='.png':colors[name]=np.asarray(Image.open(path).convert('RGB'),dtype=float)
+    for name in ('agx','warm','exposed'):
+        difference=float(np.abs(colors[name]-colors['standard']).mean());measured['standard/'+name]=difference
+        if difference<.1:raise AssertionError('OCIO setting has no saved pixel effect: '+name)
+    import OpenEXR
+    def hdr(name):
+        with OpenEXR.File(str(root/name)) as image:
+            if image.header()['type']!=OpenEXR.scanlineimage:raise AssertionError('Expected scanline HDR output.')
+            pixels=image.channels()['RGBA'].pixels
+            if pixels.shape!=(96,96,4) or not np.isfinite(pixels).all():raise AssertionError('Invalid actual HDR samples.')
+            return pixels.copy()
+    a=hdr('color-linear.exr')
+    b=hdr('color-linear-display-changed.exr')
+    delta=float(np.max(np.abs(a-b)));measured['HDR_display_transform_delta']=delta
+    if delta>1e-6:raise AssertionError('Scene-linear output incorrectly baked display transform.')
+    (root/'measured-comparisons.json').write_text(json.dumps(measured,indent=2)+'\n')
+    return measured
+
+
+@unittest.skipUnless(os.environ.get('HATCH_LOOKDEV_STYLE_TEST')=='1','Enable HATCH_LOOKDEV_STYLE_TEST=1 for real pinned Blender recipe/OCIO renders.')
+class ActualStyleTests(unittest.TestCase):
+    def test_twelve_recipes_and_ocio_change_actual_outputs(self):
+        blender=os.environ.get('HATCH_BLENDER');self.assertTrue(blender and Path(blender).is_file())
+        retained=os.environ.get('HATCH_LOOKDEV_STYLE_EVIDENCE')
+        temporary=None if retained else tempfile.TemporaryDirectory(prefix='lookdev-styles-')
+        if temporary:self.addCleanup(temporary.cleanup)
+        root=Path(retained or temporary.name);root.mkdir(parents=True,exist_ok=True)
+        snapshot=root/'source';snapshot.mkdir()
+        for directory in ('scripts','profiles','styles','tools'):
+            shutil.copytree(ROOT/directory,snapshot/directory,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        before={str(p.relative_to(snapshot)):hashlib.sha256(p.read_bytes()).hexdigest() for p in snapshot.rglob('*') if p.is_file()}
+        (root/'source-manifest.json').write_text(json.dumps(before,sort_keys=True,indent=2))
+        output=root/'render';job=root/'job.json'
+        job.write_text(json.dumps({'scripts':[str(snapshot/'scripts')],'output':str(output)}))
+        env=os.environ.copy()
+        if env.get('HATCH_LOOKDEV_BLENDER_PYTHONPATH'):env['PYTHONPATH']=env['HATCH_LOOKDEV_BLENDER_PYTHONPATH']
+        result=subprocess.run([blender,'--background','--factory-startup','--disable-autoexec','--threads','1',
+            '--python-use-system-env','--python-exit-code','1','--python',str(snapshot/'tools/lookdev/styles_probe.py'),'--',str(job)],
+            stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,env=env,timeout=300)
+        (root/'render.log').write_text(result.stdout)
+        self.assertEqual(result.returncode,0,result.stdout[-8000:])
+        # Ignore only Blender's generated bytecode, never mutable source.
+        after={str(p.relative_to(snapshot)):hashlib.sha256(p.read_bytes()).hexdigest() for p in snapshot.rglob('*')
+               if p.is_file() and '__pycache__' not in p.parts}
+        self.assertEqual(before,after)
+        inspect_outputs(output)
