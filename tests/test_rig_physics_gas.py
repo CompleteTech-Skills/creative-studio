@@ -36,6 +36,18 @@ class GasAdmissionTests(unittest.TestCase):
             with self.subTest(mutate=mutate),self.assertRaises(core.BackendError):
                 GasBackend('/missing','/missing').validate_scene(world,settings)
 
+    def test_gas_domain_resolution_is_integral_and_bounded_by_the_adapter(self):
+        for resolution in ([16.0]*3,[7]*3,[65]*3):
+            world,_,settings=build_gas_inputs()
+            world['components'][0]['resolution']=resolution
+            cells=int(resolution[0])**3
+            world['budgets'].update(volume_cells=max(cells,world['budgets']['volume_cells']),
+                                    gas_cells=max(cells,world['budgets']['gas_cells']))
+            with self.subTest(resolution=resolution):
+                with self.assertRaises(core.BackendError) as error:
+                    GasBackend('/missing','/missing').validate_scene(world,settings)
+                self.assertEqual(error.exception.report['code'],'PHYSICS_GAS_UNSUPPORTED')
+
     def test_unrepresentable_frame_rates_are_rejected_before_launch(self):
         for numerator,denominator in [(50000,1),(24000,1001),(1,2)]:
             world,_,settings=build_gas_inputs()
@@ -47,7 +59,8 @@ class GasAdmissionTests(unittest.TestCase):
 
     def test_strict_settings_reject_malformed_unbounded_and_unknown_values(self):
         for key,value in [('render_frames',[[1]]),('render_frames',[True]),('render_size',True),
-            ('fuel',float('nan')),('vorticity',5),('new_field',1),('maximum_substeps',0)]:
+            ('fuel',float('nan')),('vorticity',5),('new_field',1),('maximum_substeps',0),
+            ('fuel',10**400),('fuel',-10**400),('reference_density',float('inf'))]:
             settings=deepcopy(DEFAULT_SETTINGS);settings[key]=value
             with self.subTest(key=key,value=value),self.assertRaises(core.BackendError):validate_settings(settings,24)
 

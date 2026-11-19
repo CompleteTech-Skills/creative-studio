@@ -53,7 +53,7 @@ def validate_settings(value, frames):
         collision_distance=(.001,10),cfl=(.1,10),render_density=(.01,100))
     for key,(low,high) in ranges.items():
         v=value[key]
-        core.require(type(v) in (int,float) and math.isfinite(v) and low<=v<=high,
+        core.require(type(v) in (int,float) and low<=v<=high and math.isfinite(v),
             'PHYSICS_GAS_SETTINGS','Gas setting outside native admission: '+key)
     for key,low,high in [('emission_end_frame',1,frames-1),('dissipation_frames',1,250),
         ('minimum_substeps',1,16),('maximum_substeps',1,16),('render_size',64,256),('render_samples',1,16)]:
@@ -81,6 +81,7 @@ def admit(world,settings):
         and not world['events'],'PHYSICS_GAS_UNSUPPORTED','This adapter supports one gas domain without rigid joints/events.')
     domain=world['components'][0]
     core.require(domain['transform']['rotation']==[0,0,0,1] and len(set(domain['size']))==1
+        and all(type(cells) is int for cells in domain['resolution'])
         and len(set(domain['resolution']))==1 and 8<=domain['resolution'][0]<=64 and domain['viscosity']==0,
         'PHYSICS_GAS_UNSUPPORTED','Gas domain must be an unrotated cube at 8..64 cells/axis; viscosity control unsupported.')
     core.require(.1<=domain['size'][0]<=100 and all(abs(v)<=1000 for v in domain['transform']['translation']),
