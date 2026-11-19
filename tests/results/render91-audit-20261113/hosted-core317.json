@@ -1,0 +1,320 @@
+{
+  "headRefOid": "c809829debf565f2030feebad3b6066b50dc43c4",
+  "mergeCommit": {
+    "oid": "3f80348f49953ef1965cd4dba86a70fee060abfb"
+  },
+  "mergedAt": "2026-11-13T13:08:20Z",
+  "state": "MERGED",
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:55:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305417",
+      "name": "Existing 2D compatibility",
+      "startedAt": "2026-11-13T12:49:08Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:53:10Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273535",
+      "name": "Existing 2D compatibility",
+      "startedAt": "2026-11-13T12:46:42Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:46Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161933/job/131891306073",
+      "name": "Model3D real payloads (ubuntu-latest)",
+      "startedAt": "2026-11-13T12:46:25Z",
+      "status": "COMPLETED",
+      "workflowName": "Model3D contract and payload verification"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:47:05Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151532/job/131891272930",
+      "name": "Model3D real payloads (ubuntu-latest)",
+      "startedAt": "2026-11-13T12:46:46Z",
+      "status": "COMPLETED",
+      "workflowName": "Model3D contract and payload verification"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:56:34Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161873/job/131891306411",
+      "name": "Delivery (ubuntu-latest)",
+      "startedAt": "2026-11-13T12:46:45Z",
+      "status": "COMPLETED",
+      "workflowName": "Public production delivery"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:58Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161780/job/131891305705",
+      "name": "Strict JPEG (ubuntu-latest)",
+      "startedAt": "2026-11-13T12:46:40Z",
+      "status": "COMPLETED",
+      "workflowName": "Strict JPEG decoder admission"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:48:38Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161917/job/131891305946",
+      "name": "Actual Blender and optional DIRECT lifecycle",
+      "startedAt": "2026-11-13T12:45:58Z",
+      "status": "COMPLETED",
+      "workflowName": "Trusted physics backend lifecycle"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:47:13Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161933/job/131891306181",
+      "name": "Model3D real payloads (windows-latest)",
+      "startedAt": "2026-11-13T12:46:20Z",
+      "status": "COMPLETED",
+      "workflowName": "Model3D contract and payload verification"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:44Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151532/job/131891272609",
+      "name": "Model3D real payloads (windows-latest)",
+      "startedAt": "2026-11-13T12:45:58Z",
+      "status": "COMPLETED",
+      "workflowName": "Model3D contract and payload verification"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T13:06:43Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161873/job/131891306355",
+      "name": "Delivery (windows-latest)",
+      "startedAt": "2026-11-13T12:46:07Z",
+      "status": "COMPLETED",
+      "workflowName": "Public production delivery"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:46Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161780/job/131891305245",
+      "name": "Strict JPEG (windows-latest)",
+      "startedAt": "2026-11-13T12:46:02Z",
+      "status": "COMPLETED",
+      "workflowName": "Strict JPEG decoder admission"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:25Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161933/job/131891306154",
+      "name": "Model3D real payloads (macos-latest)",
+      "startedAt": "2026-11-13T12:45:59Z",
+      "status": "COMPLETED",
+      "workflowName": "Model3D contract and payload verification"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:25Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151532/job/131891273079",
+      "name": "Model3D real payloads (macos-latest)",
+      "startedAt": "2026-11-13T12:45:59Z",
+      "status": "COMPLETED",
+      "workflowName": "Model3D contract and payload verification"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:56:17Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161873/job/131891305882",
+      "name": "Delivery (macos-latest)",
+      "startedAt": "2026-11-13T12:46:05Z",
+      "status": "COMPLETED",
+      "workflowName": "Public production delivery"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:37Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161780/job/131891305785",
+      "name": "Strict JPEG (macos-latest)",
+      "startedAt": "2026-11-13T12:46:13Z",
+      "status": "COMPLETED",
+      "workflowName": "Strict JPEG decoder admission"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:32Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305386",
+      "name": "3D contracts and mathematical expectations",
+      "startedAt": "2026-11-13T12:45:57Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:47:04Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273483",
+      "name": "3D contracts and mathematical expectations",
+      "startedAt": "2026-11-13T12:46:39Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:15Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305010",
+      "name": "Rig generation and real skinning",
+      "startedAt": "2026-11-13T12:45:57Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:48:30Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273524",
+      "name": "Rig generation and real skinning",
+      "startedAt": "2026-11-13T12:48:14Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:48:19Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305468",
+      "name": "Animation, constraints, contacts and IK",
+      "startedAt": "2026-11-13T12:48:04Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:48:58Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273575",
+      "name": "Animation, constraints, contacts and IK",
+      "startedAt": "2026-11-13T12:48:39Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:49:49Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305526",
+      "name": "Import/export and Khronos interoperability",
+      "startedAt": "2026-11-13T12:49:23Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:46:58Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273156",
+      "name": "Import/export and Khronos interoperability",
+      "startedAt": "2026-11-13T12:46:39Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:49:44Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305362",
+      "name": "Blender headless save/reopen and deformation",
+      "startedAt": "2026-11-13T12:46:35Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:50:48Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273525",
+      "name": "Blender headless save/reopen and deformation",
+      "startedAt": "2026-11-13T12:48:38Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:48:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305354",
+      "name": "Three.js browser playback and vertex comparison",
+      "startedAt": "2026-11-13T12:45:52Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:47:55Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273708",
+      "name": "Three.js browser playback and vertex comparison",
+      "startedAt": "2026-11-13T12:45:57Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:51:22Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305748",
+      "name": "Three-character and mechanical demonstrations",
+      "startedAt": "2026-11-13T12:49:19Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:50:13Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273595",
+      "name": "Three-character and mechanical demonstrations",
+      "startedAt": "2026-11-13T12:46:39Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:50:06Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427161757/job/131891305529",
+      "name": "Operations, local API and archive restoration",
+      "startedAt": "2026-11-13T12:48:35Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    },
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-11-13T12:48:44Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/CompleteTech-Skills/creative-studio/actions/runs/43427151721/job/131891273646",
+      "name": "Operations, local API and archive restoration",
+      "startedAt": "2026-11-13T12:46:42Z",
+      "status": "COMPLETED",
+      "workflowName": "3D rigging and compatibility gates"
+    }
+  ]
+}

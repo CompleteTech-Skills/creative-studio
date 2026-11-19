@@ -1,0 +1,16 @@
+{
+  "kind": "render91-audit-consistency-check",
+  "recorded_utc": "2026-11-13T14:01:40.538376+00:00",
+  "foundation_revision": "c809829debf565f2030feebad3b6066b50dc43c4",
+  "job_binding_revision": "ca7525d3d4c9e5671eb82819d2d3e3d97d515428",
+  "source_inventory_hashes_checked": 41,
+  "actual_test_addresses_resolved": 25,
+  "retained_source_artifacts_checked": 25,
+  "field_paths": 219,
+  "semantic_requirements": 69,
+  "all_seven_deliverables_present": true,
+  "relative_document_links_resolved": true,
+  "limitations": [
+    "Documentation/evidence consistency only, not a new independent code review or renderer acceptance."
+  ]
+}
