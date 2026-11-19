@@ -58,8 +58,14 @@ and native closure before committing a verified private/published revision.
 A transaction whose HEAD already committed is reconciled idempotently. Invalid,
 corrupt or stale journals are retained and rejected; no repair fabricates missing
 native payloads. A genuinely interrupted unverified build can be rolled back with
-`discard_incomplete`; this removes only its private attempt directory and moves
-the exact journal to `failed/` for retained diagnosis. Other writes remain blocked
+`discard_incomplete`. New building journals bind the private directory's physical
+identity and an attempt-specific marker. If a different directory occupies that
+name, or a legacy building journal lacks proof of ownership for an existing
+stage, discard preserves both the directory and the journal for inspection.
+For an owned stage that exceeds the traversal budget, discard moves the directory
+intact beside the repository and returns its path in `retained_stage`. This field
+also identifies a stage left there by an interrupted cleanup. The exact discarded
+journal moves to `failed/` for retained diagnosis. Other writes remain blocked
 until recovery or that explicit discard. External import/render job recovery
 stays with those job owners.
 

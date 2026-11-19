@@ -238,6 +238,17 @@ def _directory_identity(path):
     return info.st_dev, info.st_ino
 
 
+def _stage_identity(stage):
+    identity = _directory_identity(stage)
+    _require(identity[1] != 0 and not getattr(stage, 'is_junction', lambda: False)(),
+             'RECOVERY', 'Private stage needs a stable physical directory identity.')
+    return list(identity)
+
+
+def _stage_marker(stage_name):
+    return '.owner-' + stage_name.removeprefix('.editor-revision-')
+
+
 def _write_checkpoint_at(directory, name, payload):
     temporary = '.autosave-' + secrets.token_hex(16) + '.tmp'
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory)
@@ -463,6 +474,9 @@ class EditorRepository:
             _regular_bytes(root, name, expected, self.limits['max_file_bytes'])
         bundle = load_project(root)
         _require(bundle['inventory'] == record['inventory'], 'HASH', 'Native closure differs from saved inventory.')
+        scene = bundle['documents'].get(record['scene_path'])
+        _require(scene is not None and scene['kind'] == 'scene3d-scene',
+                 'SCENE', 'Revision scene is absent from the verified native project.')
         return bundle
 
     def _committed_record(self, revision, head):
@@ -528,18 +542,24 @@ class EditorRepository:
         _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before another edit.')
         _, undo, redo = _next_history(head, action, self.limits['max_history'])
         revision = head['revision'] + 1
-        self._space(revision, sum(self._record(head['revision'])['inventory'][n]['bytes'] for n in self._record(head['revision'])['inventory']))
+        inventory = self._record(head['revision'])['inventory']
+        self._space(revision, sum(record['bytes'] for record in inventory.values()))
         transaction_hash = _digest(request)
         journal_name = hashlib.sha256(transaction_id.encode()).hexdigest() + '.json'
         journal = safe_path(self.root, 'journal/' + journal_name)
         _require(not journal.exists(), 'RECOVERY', 'An interrupted transaction requires inspection before retry.')
+        stage = safe_path(self.root, 'revisions/.editor-revision-' + secrets.token_hex(16))
         pending = dict(schema_version=FORMAT, transaction_id=transaction_id, request_sha256=transaction_hash,
                        expected_revision=head['revision'], expected_sha256=head['sha256'], revision=revision,
-                       status='building', new_head=None, stage=None)
+                       status='building', new_head=None, stage=stage.name, stage_identity=None)
         _write_metadata(journal, pending)
         _sync_directory(self.root)
-        stage = Path(tempfile.mkdtemp(prefix='.editor-revision-', dir=safe_path(self.root, 'revisions')))
-        pending['stage'] = stage.name; _write_metadata(journal, pending)
+        stage.mkdir(mode=0o700)
+        marker = stage / _stage_marker(stage.name)
+        marker.mkdir(mode=0o700)
+        pending['stage_identity'] = _stage_identity(stage)
+        _sync_directory(stage)
+        _write_metadata(journal, pending)
         try:
             scene_path = build(stage / 'native')
             bundle = load_project(stage / 'native')
@@ -566,6 +586,8 @@ class EditorRepository:
             _sync_directory(stage.parent)
             pending.update(status='verified', new_head=next_head)
             _write_metadata(journal, pending)
+            marker.rmdir()
+            _sync_directory(stage)
             _rename_no_replace(stage, safe_path(self.root, f'revisions/{revision:08d}'))
             _sync_directory(safe_path(self.root, 'revisions'))
             pending['status'] = 'published'; _write_metadata(journal, pending)
@@ -578,11 +600,10 @@ class EditorRepository:
         except Exception:
             # A verified/published revision is retained for explicit recovery.
             # An uncommitted private build can be removed without losing native inputs.
-            if pending['status'] == 'building':
-                journal.unlink(missing_ok=True)
+            if pending['status'] == 'building' and self._discard_build(pending) is None:
+                journal.unlink()
+                _sync_directory(journal.parent)
             raise
-        finally:
-            if pending['status'] == 'building' and stage.exists(): shutil.rmtree(stage)
         snapshot = self.snapshot()
         if schedule_autosave:
             with self._autosave_lock:
@@ -664,7 +685,8 @@ class EditorRepository:
         item = _read_json(path)
         fields = {'schema_version','transaction_id','request_sha256','expected_revision','expected_sha256',
                   'revision','status','new_head','stage'}
-        _require(set(item) == fields and type(item['schema_version']) is int and item['schema_version'] == FORMAT and
+        _require(set(item) in (fields, fields | {'stage_identity'}) and
+                 type(item['schema_version']) is int and item['schema_version'] == FORMAT and
                  item['status'] in ('building','verified','published') and type(item['expected_revision']) is int and
                  type(item['revision']) is int and item['revision'] == item['expected_revision'] + 1 and
                  0 < item['revision'] < self.limits['max_revisions'], 'RECOVERY', 'Malformed transaction journal.')
@@ -676,6 +698,11 @@ class EditorRepository:
         if item['stage'] is not None:
             _require(isinstance(item['stage'],str) and re.fullmatch(r'\.editor-revision-[a-zA-Z0-9_-]+',item['stage']),
                      'RECOVERY', 'Invalid private stage path.')
+        identity = item.get('stage_identity')
+        if identity is not None:
+            _require(isinstance(identity, list) and len(identity) == 2 and
+                     all(type(part) is int and part >= 0 for part in identity) and identity[1] > 0
+                     and item['stage'] is not None, 'RECOVERY', 'Invalid private stage identity.')
         if item['status'] == 'building':
             _require(item['new_head'] is None, 'RECOVERY', 'A building transaction cannot have a new HEAD.')
         else:
@@ -711,6 +738,9 @@ class EditorRepository:
     def _verify_recovery_revision(self, item, directory):
         _require(directory.is_dir() and not getattr(directory, 'is_junction', lambda: False)(),
                  'RECOVERY', 'Recovery revision must be an ordinary directory.')
+        if directory.name == item['stage'] and 'stage_identity' in item:
+            _require(_stage_identity(directory) == item['stage_identity'],
+                     'RECOVERY', 'Verified private stage identity changed.')
         record = self._record(item['revision'], directory=directory)
         _require(type(record['parent']) is int and record['parent'] == item['expected_revision'] and
                  record['transaction_id'] == item['transaction_id'] and record['request_sha256'] == item['request_sha256'],
@@ -734,9 +764,6 @@ class EditorRepository:
         bundle = self._bundle(record, root=safe_path(directory, 'native'))
         _require(record['project_sha256'] == bundle['inventory']['project.json']['sha256'],
                  'HASH', 'Revision project digest differs from the verified native project.')
-        scene = bundle['documents'].get(record['scene_path'])
-        _require(scene is not None and scene['kind'] == 'scene3d-scene',
-                 'SCENE', 'Revision scene is absent from the verified native project.')
         return record
 
     def recover(self, transaction_id, expected_revision, *, expected_sha256=None):
@@ -765,6 +792,10 @@ class EditorRepository:
                 stage = safe_path(self.root, 'revisions/' + item['stage'])
                 _require(stage.is_dir(), 'RECOVERY', 'Verified private stage is missing.')
                 staged_record = self._verify_recovery_revision(item, stage)
+                if 'stage_identity' in item:
+                    marker = safe_path(stage, _stage_marker(stage.name))
+                    if marker.exists():
+                        marker.rmdir()
                 _sync_directory_tree(stage)
                 _rename_no_replace(stage, destination)
                 _sync_directory(destination.parent)
@@ -780,6 +811,52 @@ class EditorRepository:
             _sync_directory(path.parent)
         return self.snapshot(item['revision'])
 
+    def _discard_build(self, item):
+        if item['stage'] is None:
+            return None
+        stage = safe_path(self.root, 'revisions/' + item['stage'])
+        # A sibling on the same filesystem keeps retained, unadmitted files out
+        # of the repository's quotas and exports. Its name survives a stop here.
+        retained = safe_path(self.root.parent, '.editor-discard-' + item['stage'].removeprefix('.editor-revision-'))
+        identity = item.get('stage_identity')
+        if retained.exists():
+            _require(not stage.exists() and _stage_identity(retained) == identity, 'RECOVERY',
+                     'A different directory occupies the private cleanup path.')
+            _sync_directory(retained.parent)
+            _sync_directory(stage.parent)
+            return retained
+        if not stage.exists():
+            return None
+
+        def check_owned(directory):
+            _require(_stage_identity(directory) == identity, 'RECOVERY', 'Cannot identify the original private stage.')
+            marker = safe_path(directory, _stage_marker(stage.name))
+            _require(marker.is_dir() and not getattr(marker, 'is_junction', lambda: False)(),
+                     'RECOVERY', 'Private stage ownership marker is missing or unsafe.')
+
+        check_owned(stage)
+        try:
+            _scan(stage, self.limits, bound_content=False)
+            over_limit = False
+        except RigError as exc:
+            if exc.report['code'] != 'EDITOR3D_LIMIT':
+                raise
+            over_limit = True
+        check_owned(stage)
+        _rename_no_replace(stage, retained)
+        try:
+            check_owned(retained)
+        except (OSError, RigError):
+            _rename_no_replace(retained, stage)
+            raise
+        _sync_directory(retained.parent)
+        _sync_directory(stage.parent)
+        if over_limit:
+            return retained
+        shutil.rmtree(retained)
+        _sync_directory(retained.parent)
+        return None
+
     def discard_incomplete(self, transaction_id, expected_revision, *, expected_sha256=None):
         """Roll back only an unverified private attempt, retaining its journal."""
         _check_id(transaction_id)
@@ -789,19 +866,15 @@ class EditorRepository:
             item=self._journal(path)
             _require(item['status']=='building' and item['expected_revision']==head['revision'] and
                      item['expected_sha256']==head['sha256'], 'RECOVERY','Only an unverified current attempt can be discarded.')
-            if item['stage'] is not None:
-                stage=safe_path(self.root,'revisions/'+item['stage'])
-                if stage.exists():
-                    # A crashed builder may exceed snapshot quotas before admission.
-                    # Validate the private tree shape and entry bound before discarding it.
-                    _scan(stage,self.limits,bound_content=False)
-                    shutil.rmtree(stage)
-                    _sync_directory(stage.parent)
+            retained = self._discard_build(item)
             failure_root=safe_path(self.root,'failed');failure_root.mkdir(exist_ok=True)
             _sync_directory(self.root)
             destination=safe_path(failure_root, f'{path.stem}-{secrets.token_hex(16)}.json')
             _rename_no_replace(path,destination);_sync_directory(failure_root);_sync_directory(path.parent)
-        return dict(discarded=True,transaction_id=transaction_id,revision=head['revision'])
+        result = dict(discarded=True,transaction_id=transaction_id,revision=head['revision'])
+        if retained is not None:
+            result['retained_stage'] = str(retained)
+        return result
 
     def transact_native(self, expected_revision, transaction_id, request, builder, *, expected_sha256=None, label='Native edit'):
         """Trusted in-process extension for an existing native subsystem adapter.
@@ -1083,8 +1156,9 @@ class EditorRepository:
             _zip_directory(snapshot, DirectoryBudget())
             with zipfile.ZipFile(io.BytesIO(snapshot)) as archive:
                 entries = archive.infolist()
+                payload_bytes = sum(i.file_size for i in entries if i.filename != 'archive-receipt.json')
                 _require(0 < len(entries) <= DEFAULT_LIMITS['max_files'] + 1 and
-                         sum(i.file_size for i in entries) <= DEFAULT_LIMITS['max_bytes'], 'LIMIT', 'Archive exceeds resource limits.')
+                         payload_bytes <= DEFAULT_LIMITS['max_bytes'], 'LIMIT', 'Archive exceeds resource limits.')
                 names = set(); aliases = set()
                 for entry in entries:
                     name = portable_name(entry.filename)
@@ -1092,7 +1166,7 @@ class EditorRepository:
                     mode = entry.external_attr >> 16
                     _require(name == entry.orig_filename and name not in names and alias not in aliases and
                              not entry.is_dir() and (mode & 0o170000) in (0,0o100000) and
-                             entry.file_size <= DEFAULT_LIMITS['max_file_bytes'] and
+                             entry.file_size <= (MAX_METADATA_BYTES if name == 'archive-receipt.json' else DEFAULT_LIMITS['max_file_bytes']) and
                              (entry.file_size == 0 or entry.compress_size > 0) and
                              entry.file_size <= max(entry.compress_size, 1)*ARCHIVE_MAX_RATIO,
                              'ARCHIVE', 'Unsafe, duplicate or excessively compressed archive member.')
@@ -1102,14 +1176,8 @@ class EditorRepository:
                 receipt = decode_json(_archive_member(archive, archive.getinfo('archive-receipt.json'), snapshot))
                 _require(isinstance(receipt,dict) and set(receipt) == {'schema_version','kind','files','head'} and
                          receipt['schema_version'] == FORMAT and receipt['kind'] == 'editor3d-archive' and
-                         isinstance(receipt['files'],dict) and names == set(receipt['files']) | {'archive-receipt.json'},
+                         isinstance(receipt['files'],dict) and set(receipt['files']) == names - {'archive-receipt.json'},
                          'ARCHIVE', 'Archive does not match its receipt.')
-                for name, record in receipt['files'].items():
-                    _require(isinstance(record,dict) and set(record) == {'bytes','sha256'} and
-                             type(record['bytes']) is int and record['bytes'] == archive.getinfo(name).file_size,
-                             'ARCHIVE', 'Malformed archived file record.')
-                    raw = _archive_member(archive, archive.getinfo(name), snapshot)
-                    _require(hashlib.sha256(raw).hexdigest() == record['sha256'], 'HASH', 'Archive file hash differs.')
                 def metadata(name):
                     info = archive.getinfo(name)
                     _require(info.file_size <= MAX_METADATA_BYTES, 'LIMIT', 'Archived repository metadata exceeds its bound.')
@@ -1117,6 +1185,16 @@ class EditorRepository:
                     _require(isinstance(value, dict), 'ARCHIVE', 'Archived repository metadata must be an object.')
                     return value
                 limits = _validated_limits(metadata('repository.json')['limits'])
+                _require(len(receipt['files']) <= limits['max_files'] and payload_bytes <= limits['max_bytes'],
+                         'LIMIT', 'Archive exceeds configured repository limits.')
+                for name, record in receipt['files'].items():
+                    info = archive.getinfo(name)
+                    _require(info.file_size <= limits['max_file_bytes'], 'LIMIT', 'Archived file exceeds its configured limit.')
+                    _require(isinstance(record,dict) and set(record) == {'bytes','sha256'} and
+                             type(record['bytes']) is int and record['bytes'] == info.file_size,
+                             'ARCHIVE', 'Malformed archived file record.')
+                    raw = _archive_member(archive, info, snapshot)
+                    _require(hashlib.sha256(raw).hexdigest() == record['sha256'], 'HASH', 'Archive file hash differs.')
                 head = metadata('HEAD.json')
                 last = head.get('revision')
                 _require(type(last) is int and 0 <= last < limits['max_revisions'],
@@ -1167,6 +1245,7 @@ class EditorRepository:
                         output.write(raw)
                         output.flush(); os.fsync(output.fileno())
             restored = cls(stage)
+            _scan(stage, restored.limits)
             _require(restored._verify_all() == receipt['head'], 'HASH', 'Archive HEAD differs from receipt.')
             _require(not restored.recovery(), 'RECOVERY', 'Archive contains interrupted transactions.')
             _sync_directory_tree(stage)

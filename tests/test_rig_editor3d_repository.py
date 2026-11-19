@@ -932,6 +932,165 @@ repo.transact_native(0, 'oversized-interruption', {}, unverified)
         limits=dict(self.repo.limits,max_files=4)
         with self.assertRaises(RigError):_scan(directory,limits)
 
+    def test_commit_reads_parent_inventory_once_for_space_estimate(self):
+        counts = []
+        original_recovery = self.repo.recovery
+        original_space = self.repo._space
+        with patch.object(self.repo, '_record', wraps=self.repo._record) as read:
+            def recovery():
+                result = original_recovery()
+                read.reset_mock()
+                return result
+
+            def space(revision, estimate):
+                counts.append(read.call_count)
+                return original_space(revision, estimate)
+
+            with patch.object(self.repo, 'recovery', side_effect=recovery), \
+                 patch.object(self.repo, '_space', side_effect=space):
+                self.repo.apply(0, self.move(), 'estimate')
+        self.assertEqual(counts, [1])
+
+    def test_failed_cleanup_keeps_the_attempt_recoverable(self):
+        import editor3d_repository as module
+
+        def fail(source, destination, scene):
+            destination.mkdir()
+            raise ValueError('interrupted build')
+
+        with patch.object(module.shutil, 'rmtree', side_effect=PermissionError('busy stage')):
+            with self.assertRaises(PermissionError):
+                self.repo.transact_native(0, 'busy', {}, fail)
+        reopened = EditorRepository(self.repo.root)
+        attempt, = reopened.recovery()
+        self.assertEqual(attempt['status'], 'building')
+        reopened.discard_incomplete('busy', 0)
+        archive = self.root / 'clean.zip'
+        reopened.archive(archive)
+        self.assertEqual(EditorRepository.restore_archive(archive, self.root / 'clean').snapshot(),
+                         self.repo.snapshot())
+
+    def test_interrupted_build_journals_physical_directory_identity(self):
+        child = """import os, sys
+from editor3d_repository import EditorRepository
+def stop(source, destination, scene):
+    os._exit(43)
+EditorRepository(sys.argv[1]).transact_native(0, 'identity', {}, stop)
+"""
+        exited = subprocess.run([sys.executable, '-B', '-c', child, str(self.repo.root)],
+                                env=dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts')),
+                                capture_output=True, timeout=20)
+        self.assertEqual(exited.returncode, 43)
+        reopened = EditorRepository(self.repo.root)
+        item, = reopened.recovery()
+        stage = self.repo.root / 'revisions' / item['stage']
+        info = stage.stat(follow_symlinks=False)
+        self.assertGreater(info.st_ino, 0)
+        self.assertEqual(item['stage_identity'], [info.st_dev, info.st_ino])
+        journal, = (self.repo.root / 'journal').glob('*.json')
+        original = journal.read_bytes()
+        with patch('editor3d_repository._directory_identity', return_value=(info.st_dev, info.st_ino + 1)):
+            with self.assertRaises(RigError) as refused:
+                reopened.discard_incomplete('identity', 0)
+        self.assertEqual(refused.exception.report['code'], 'EDITOR3D_RECOVERY')
+        self.assertEqual(journal.read_bytes(), original)
+        self.assertTrue(stage.is_dir())
+        # Legacy building journals carry no proof that the named directory is theirs.
+        legacy = json.loads(original)
+        del legacy['stage_identity']
+        journal.write_text(json.dumps(legacy), encoding='utf-8')
+        with self.assertRaises(RigError):
+            reopened.discard_incomplete('identity', 0)
+        self.assertTrue(stage.exists())
+        self.assertTrue(journal.exists())
+        journal.write_bytes(original)
+        reopened.discard_incomplete('identity', 0)
+        self.assertFalse(stage.exists())
+
+    def test_discard_reports_retained_over_entry_budget_stage(self):
+        child = """import os, sys
+from editor3d_repository import EditorRepository
+def stop(source, destination, scene):
+    destination.mkdir()
+    for index in range(128):
+        (destination / str(index)).touch()
+    os._exit(41)
+EditorRepository(sys.argv[1]).transact_native(0, 'many', {}, stop)
+"""
+        repo = EditorRepository.create(self.source, self.root / 'bounded', limits={'max_files': 32})
+        exited = subprocess.run([sys.executable, '-B', '-c', child, str(repo.root)],
+                                env=dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts')),
+                                capture_output=True, timeout=20)
+        self.assertEqual(exited.returncode, 41)
+        reopened = EditorRepository(repo.root)
+        result = reopened.discard_incomplete('many', 0)
+        retained = Path(result['retained_stage'])
+        self.assertFalse(retained.is_relative_to(repo.root))
+        self.assertEqual(len(list((retained / 'native').iterdir())), 128)
+        self.assertFalse(reopened.recovery())
+        reopened.archive(self.root / 'bounded.zip')
+
+    def test_archive_receipt_has_a_separate_byte_allowance(self):
+        import editor3d_repository as module
+
+        payload = sum(record['bytes'] for record in self.repo._all_files().values())
+        # Store a matching local ceiling in the fixture's metadata before measuring it.
+        metadata = self.repo.root / 'repository.json'
+        value = json.loads(metadata.read_bytes())
+        while value['limits']['max_bytes'] != payload:
+            value['limits']['max_bytes'] = payload
+            module._write_metadata(metadata, value)
+            payload = sum(record['bytes'] for record in self.repo._all_files().values())
+        with patch.dict(module.DEFAULT_LIMITS, max_bytes=payload):
+            repo = EditorRepository(self.repo.root)
+            archive = self.root / 'exact.zip'
+            repo.archive(archive)
+            self.assertEqual(EditorRepository.restore_archive(archive, self.root / 'exact').snapshot(),
+                             repo.snapshot())
+
+    def test_restored_repository_obeys_configured_retention_limits(self):
+        import editor3d_repository as module
+
+        archive = self.root / 'saved.zip'
+        self.repo.archive(archive)
+        files = self.repo._all_files()
+        validated = module._validated_limits
+        for key, maximum in (('max_files', len(files) - 1),
+                             ('max_bytes', sum(record['bytes'] for record in files.values()) - 1)):
+            with self.subTest(key=key):
+                destination = self.root / key
+                with patch.object(module, '_validated_limits',
+                                  side_effect=lambda values: dict(validated(values), **{key: maximum})):
+                    with self.assertRaises(RigError):
+                        EditorRepository.restore_archive(archive, destination)
+                self.assertFalse(destination.exists())
+
+    def test_export_checks_selected_scene_of_every_native_revision(self):
+        import editor3d_repository as module
+
+        self.repo.apply(0, self.move(), 'move')
+        load = module.load_project
+        initial = self.repo.snapshot(0)
+        portable = self.root / 'portable.zip'
+        self.repo.archive(portable)
+
+        def load_native(path):
+            bundle = load(path)
+            if path.parent.name == '00000000':
+                bundle['documents'][initial['scene_path']]['kind'] = 'scene3d-project'
+            return bundle
+
+        with patch.object(module, 'load_project', side_effect=load_native):
+            for operation, destination in ((self.repo.archive, self.root / 'selected.zip'),
+                                           (self.repo.save_as, self.root / 'selected'),
+                                           (lambda dest: EditorRepository.restore_archive(portable, dest),
+                                            self.root / 'selected-restore')):
+                with self.subTest(operation=operation.__name__):
+                    with self.assertRaises(RigError) as refused:
+                        operation(destination)
+                    self.assertEqual(refused.exception.report['code'], 'EDITOR3D_SCENE')
+                    self.assertFalse(destination.exists())
+
     def test_trusted_adapter_must_not_publish_uninventoried_output(self):
         from editor3d_repository import _copy_closure
         before=self.repo.snapshot()
