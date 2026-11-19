@@ -1,7 +1,7 @@
-# Native GLB and glTF import
+# Native GLB, glTF and static OBJ import
 
 `ImportPipeline` in `scripts/asset_library_import.py` imports one local glTF 2.0
-or GLB into an existing canonical `AssetLibrary`. Pass an `AssetIdentity`,
+asset in GLB or glTF form, or a geometry-only OBJ, into an existing canonical `AssetLibrary`. Pass an `AssetIdentity`,
 a semantic version, `AssetMetadata`, and a file with license evidence.
 `probe(source)` inventories exact source files and embedded data and estimates
 native geometry load without producing a library version.
@@ -53,7 +53,7 @@ separate adapter. Input limits are the tighter of the library, snapshot
 and caller limits. The native preflight estimates aggregate geometry
 work before decoding. The importer checks the projected packed GLB size and
 reserves combined geometry and preview memory before assigning the remaining
-budget to the native texture reader. General Blender ingestion, OBJ, arbitrary
+budget to the native texture reader. General Blender ingestion, arbitrary
 basis changes, batch import, and general asset generation remain open in #139.
 
 Run the focused tests with the optional rig Python dependencies, Node.js,
@@ -63,6 +63,31 @@ and the pinned offline `gltf-validator` package from `tools/rig/package-lock.jso
 HATCH_GLTF_VALIDATOR_ROOT=/path/to/node_modules/gltf-validator \
   PYTHONPATH=scripts:tests python -m unittest test_rig_asset_library_import -v
 ```
+
+## Static Wavefront OBJ
+
+Pass a local `.obj` source to `import_asset` with the same metadata and license
+inputs. This profile accepts UTF-8 polygonal meshes with XYZ positions, optional
+two-component texture coordinates, and optional explicit normals. It accepts
+object and group names, and smoothing can be disabled with `s off` or `s 0`.
+The existing OBJ reader triangulates planar simple polygons, splits vertices at
+attribute seams, and maps bottom-left OBJ UVs to top-left glTF UVs. Supply
+complete UV and normal corner references within each mesh that uses them.
+Supply coordinates in right-handed Y-up and set `unit_scale` for conversion to
+meters.
+
+The profile rejects `mtllib` and `usemtl` declarations with `RIG_OBJ_MATERIAL`
+before reading any material file. Other unsupported directives or coordinate
+widths also fail the import. The OBJ parser checks the caller's time budget
+between source records and after triangulating each face. `probe` checks the
+captured geometry and inventories the single source. The preflight records
+the captured OBJ size alongside the generated glTF JSON and binary sizes.
+Import stops with `RIG_OBJ_PRECISION` if encoding positions as glTF float32
+would collapse a triangle that has area in the parsed OBJ.
+The version retains the original bytes under
+`source/model.obj` and records the original filename and SHA-256.
+Khronos validates the normalized GLB, with its receipt retained as
+`normalized-khronos.json`. The OBJ source has native geometry checks.
 
 ## Packed Blender triangle fixture
 

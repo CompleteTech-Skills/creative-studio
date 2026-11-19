@@ -74,16 +74,21 @@ def _local_uri(uri):
     return path
 
 
-def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None):
+def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None,
+                    allow_geometry_obj=False):
     """Safely capture local dependencies under the active Scene3D limits."""
     file_limit = MAX_FILE_BYTES if maximum_file_bytes is None else min(MAX_FILE_BYTES, maximum_file_bytes)
     total_limit = MAX_SOURCE_BYTES if maximum_total_bytes is None else min(MAX_SOURCE_BYTES, maximum_total_bytes)
     source = Path(source).absolute()
-    require(source.suffix.lower() in ('.glb', '.gltf'), 'Import accepts GLB or glTF.', 'SCENE3D_IMPORT_FORMAT')
+    suffix = source.suffix.lower()
+    is_obj = allow_geometry_obj and suffix == '.obj'
+    require(is_obj or suffix in ('.glb', '.gltf'),
+            'Import accepts GLB, glTF or geometry-only OBJ.' if allow_geometry_obj else 'Import accepts GLB or glTF.',
+            'SCENE3D_IMPORT_FORMAT')
     payload = read_source_bytes(source, min(file_limit, total_limit))
-    document = _json(payload, source.suffix.lower())
+    document = {} if is_obj else _json(payload, suffix)
     require(isinstance(document, dict), 'glTF root must be an object.', 'SCENE3D_IMPORT_FORMAT')
-    primary = 'model'+source.suffix.lower()
+    primary = 'model'+suffix
     resources = {}
     for collection in ('buffers', 'images'):
         entries = document.get(collection, [])
