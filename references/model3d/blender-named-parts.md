@@ -12,6 +12,11 @@ Use a new destination inside a trusted, existing directory on a filesystem
 supporting exclusive rename. Under WSL, use the Linux filesystem for the
 destination. Blender receives only the generated source GLB and the two
 projects it writes under the private working directory.
+A missing, non-directory or unwritable parent stops with `MODEL3D_EXPORT_PATH`.
+A destination that appears before publication stops with
+`MODEL3D_EXPORT_EXISTS`, and a filesystem that cannot publish without
+replacement stops with `MODEL3D_EXPORT_PUBLISH`. Nothing is published in
+either case and the private working directory is removed.
 
 With `scripts` on the Python import path, an existing geometry owner calls:
 

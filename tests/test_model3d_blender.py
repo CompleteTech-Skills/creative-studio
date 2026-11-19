@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import sys
 import tempfile
@@ -107,6 +108,49 @@ class NamedBlenderPartTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'Install Blender'):
             roundtrip_named_part(self.geometry, self.dest, executable=self.dest.parent/'absent', **self.args)
         self.assertEqual(list(self.dest.parent.iterdir()), [])
+
+    def test_unusable_destination_parent_is_a_structured_refusal(self):
+        blocker = self.dest.parent / 'file'
+        blocker.write_bytes(b'kept')
+        for destination in (self.dest.parent / 'absent' / 'result', blocker / 'result'):
+            with self.subTest(destination=destination.parent.name):
+                with self.assertRaises(RigError) as caught:
+                    roundtrip_named_part(self.geometry, destination, **self.args)
+                self.assertEqual(caught.exception.report['code'], 'MODEL3D_EXPORT_PATH')
+        self.assertEqual(blocker.read_bytes(), b'kept')
+
+    def test_publication_failures_are_structured_and_leave_no_stage(self):
+        import model3d_blender
+        from unittest import mock
+
+        def fake_run(job, *, executable=None, timeout=None):
+            for key in ('output', 'export'):
+                if key in job:
+                    Path(job[key]).write_bytes(key.encode())
+            return {'blender_version': '4.5.3'}
+
+        def racing_writer(stage, destination):
+            destination.mkdir()
+            (destination / 'other').write_bytes(b'theirs')
+            raise FileExistsError(17, 'File exists')
+
+        def unsupported(stage, destination):
+            raise OSError(22, 'Invalid argument')
+
+        for failure, code in ((racing_writer, 'MODEL3D_EXPORT_EXISTS'), (unsupported, 'MODEL3D_EXPORT_PUBLISH')):
+            with self.subTest(code=code):
+                shutil.rmtree(self.dest, ignore_errors=True)
+                with mock.patch.object(model3d_blender, '_run', fake_run), \
+                        mock.patch.object(model3d_blender, '_verify'), \
+                        mock.patch.object(model3d_blender, '_rename_no_replace', failure), \
+                        self.assertRaises(RigError) as caught:
+                    roundtrip_named_part(self.geometry, self.dest, **self.args)
+                self.assertEqual(caught.exception.report['code'], code)
+                self.assertEqual([p.name for p in self.dest.parent.iterdir() if p.name.startswith('.model3d-')], [])
+                if code == 'MODEL3D_EXPORT_EXISTS':
+                    self.assertEqual((self.dest / 'other').read_bytes(), b'theirs')
+                else:
+                    self.assertFalse(self.dest.exists())
 
     def test_float32_rounding_rejects_reversed_source_and_edited_faces(self):
         for part, origin, offset in [('body', 8192., .125), ('fin', 0., 8192.)]:
