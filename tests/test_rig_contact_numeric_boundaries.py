@@ -171,6 +171,69 @@ class RigContactNumericBoundaryTests(unittest.TestCase):
             self.assertAlmostEqual(math.dist(world[a][:3, 3], world[b][:3, 3]), 1., places=12)
         json.dumps(solved.report(), allow_nan=False)
 
+    def controlled_pose(self, tracks, target):
+        contact = dict(schema_version=1, id='hand', chain='arm', start=.5, end=1.,
+                       target=target, kind='hand')
+        clip = self.install_clip(tracks, [contact], 'two-bone-control')
+        seed = evaluate_animation(self.rig, clip, .5, contacts=False)['pose']
+        chain = self.rig.manifest['controllers']['ik'][0]
+        solved = solve_ik(self.rig.skeleton, seed, chain, target)
+        yield solved.pose, [solved.report()], None
+        native = evaluate_animation(self.rig, clip, .5)
+        yield native['pose'], native['contacts'] + native['final_contacts'], None
+        state = 'static-positive'
+        runtime = RigStateRuntime(self.rig, state, recipes={state: clip['id']},
+                                  selected=[state], blend_seconds=0.)
+        self.assertEqual(runtime.evaluate(.25)['status'], 'playing')
+        frame = runtime.evaluate(.5)
+        self.assertEqual(runtime.time, .5)
+        yield frame['pose'], frame['solve_contacts'] + frame['contacts'], frame['status']
+
+    def test_long_and_short_two_bone_segments_bend_to_target(self):
+        length = 60_000_000.
+        target = [0., length, 0.]
+        for a, b in ((length, 1.), (1., length)):
+            tracks = [step('b1', 'translation', [0.], [[0., a, 0.]]),
+                      step('b2', 'translation', [0.], [[0., b, 0.]])]
+            with self.subTest(a=a, b=b):
+                for pose, receipts, status in self.controlled_pose(tracks, target):
+                    world = self.assert_geometry(pose)
+                    root, elbow, end = (world[name][:3, 3] for name in ('b0', 'b1', 'b2'))
+                    self.assertAlmostEqual(math.dist(root, elbow), a, delta=1e-7)
+                    self.assertAlmostEqual(math.dist(elbow, end), b, delta=1e-7)
+                    # The requested positive-Z pole bends the one-metre segment
+                    # almost perpendicular to the long side in either ordering.
+                    self.assertAlmostEqual(elbow[2], 1., delta=1e-7)
+                    error = math.dist(end, target)
+                    self.assertLess(error, 1e-7)
+                    for row in receipts:
+                        self.assertTrue(row['reachable'] and row['converged'])
+                        self.assertAlmostEqual(row['residual_m'], error, delta=1e-12)
+                    if status is not None:
+                        self.assertEqual(status, 'playing')
+
+    def test_near_equal_segments_admit_only_targets_within_folded_range(self):
+        scale = float(2**29)
+        for first, target_x, reachable in ((1.0000000018626454, 1.0000001192092896, True),
+                                           (1.0000000018626458, 1.000000238418579, False)):
+            target = [target_x, 0., 0.]
+            tracks = [step('b0', 'scale', [0.], [[scale] * 3]),
+                      step('b1', 'translation', [0.], [[first, 0., 0.]]),
+                      step('b2', 'translation', [0.], [[-1., 0., 0.]])]
+            # The exactly opposing FK offsets already attain the closest endpoint.
+            minimum = (first - 1.) * scale
+            self.assertEqual(minimum - target_x, 0. if reachable else 2.**-23)
+            with self.subTest(first=first):
+                for pose, receipts, status in self.controlled_pose(tracks, target):
+                    end = self.assert_geometry(pose)['b2'][:3, 3]
+                    np.testing.assert_array_equal(end, [minimum, 0., 0.])
+                    for row in receipts:
+                        self.assertEqual(row['reachable'], reachable)
+                        self.assertEqual(row['converged'], reachable)
+                        self.assertEqual(row['residual_m'], math.dist(end, target))
+                    if status is not None:
+                        self.assertEqual(status, 'playing' if reachable else 'controls-unsatisfied')
+
     def moving_contact(self, exponents, x, *, orientation):
         # Expand X, translate a branch, then cancel the inherited scale before
         # its locked IK chain. Endpoint distances are independently known.

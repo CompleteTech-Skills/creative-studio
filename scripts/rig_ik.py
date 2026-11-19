@@ -310,8 +310,31 @@ def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
 def _reachability(points, lengths, target):
     distance = math.dist(target, points[0])
     require(math.isfinite(distance), 'RIG_NONFINITE', 'IK target distance exceeds finite representation.')
-    lower = max(0., float(lengths.max()-(lengths.sum()-lengths.max())))
+    longest = int(lengths.argmax())
+    lower = max(0., math.fsum(length if i == longest else -length
+                               for i, length in enumerate(lengths)))
     return distance, lower, bool(lower-1e-7 <= distance <= lengths.sum()+1e-7)
+
+
+def _two_bone_elbow(a, b, d):
+    """Projection and altitude of the elbow above the root-to-target segment."""
+    if a < d:
+        # Factor d²-b² when the first bone is short relative to the target.
+        x = (d-b)*(.5 + .5*(b/d)) + (a/2)*(a/d)
+    else:
+        x = d/2 + ((a-b)/d)*(a/2+b/2)
+
+    # Heron's formula with ordered sides retains the short side and the small
+    # gap at either reach limit. Factor out the longest and shortest lengths
+    # before the product so neither areas nor squared lengths must fit a float.
+    longest, middle, shortest = sorted((a, b, d), reverse=True)
+    gap = longest - middle
+    large_factors = (1 + middle/longest + shortest/longest) * (1 + (middle-shortest)/longest)
+    small_factors = ((shortest-gap)/shortest) * (1 + gap/shortest)
+    # The altitude is twice the area divided by d. Cancel d first if it is
+    # the short side. In the other cases longest/d is at most two.
+    scale = longest/2 if d == shortest else (shortest/2)*(longest/d)
+    return x, scale*math.sqrt(max(0., large_factors*small_factors))
 
 
 def chain_reachable(skeleton: dict, chain: dict, pose: dict, target) -> bool:
@@ -480,13 +503,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         iterations = 1
     elif chain['solver'] == 'two-bone':
         d = float(np.clip(distance, max(lower, 1e-9), lengths.sum()))
-        a, b = lengths
-        # Factor the difference of squares and halve before adding. Every
-        # intermediate stays bounded by a side on a feasible triangle, unlike
-        # squaring large but representable segment lengths.
-        x = d/2 + ((a-b)/d)*(a/2+b/2)
-        ratio = x/a
-        y = a*math.sqrt(max(0., (1-ratio)*(1+ratio)))
+        x, y = _two_bone_elbow(*lengths, d)
         points[1] = origin + direction*x + _pole_perpendicular(direction, origin, pole)*y
         points[2] = origin + direction*d
         result = _orient_chain(skeleton, result, names, points)

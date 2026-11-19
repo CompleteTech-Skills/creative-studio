@@ -292,6 +292,39 @@ class RigRuntimeClockValidationTests(unittest.TestCase):
         self.assertTrue(metrics['orientation_converged'])
         self.assertTrue(all(row['orientation_converged'] for row in metrics['contacts']))
 
+    def test_overlapping_positional_contact_counts_errors_and_drift_match_fk(self):
+        clip = self.contact_clip(oriented=False)
+        for chain in self.rig.manifest['controllers']['ik']:
+            chain['solver'] = 'two-bone'
+        earlier, later = clip['contacts']
+        # A target beyond full extension makes its initial residual nonzero.
+        # Its maximum residual during overlap then differs from its planted drift.
+        earlier['target'] = [0., 2.25, 0.]
+        later.update(start=.04, end=.06, target=[1., 1., 0.])
+        early_times = np.linspace(0., 1., 7, endpoint=False).tolist()
+        late_times = np.linspace(.04, .06, 7, endpoint=False).tolist()
+        times = sorted(early_times + late_times)
+        endpoints = {t: evaluate_fk(self.rig.skeleton, evaluate_animation(
+            self.rig, clip, t)['pose'])['b2'][:3, 3] for t in times}
+        metrics = contact_metrics(self.rig, clip)
+        self.assertEqual((metrics['samples'], metrics['final_samples']), (14, 21))
+        rows = {row['id']: row for row in metrics['contacts']}
+        self.assertEqual(set(rows), {earlier['id'], later['id']})
+        errors, drifts = [], []
+        for contact, active_times, expected_count in ((earlier, times, 14), (later, late_times, 7)):
+            points = [endpoints[t] for t in active_times]
+            errors.append(max(math.dist(p, contact['target']) for p in points))
+            drifts.append(max(math.dist(p, points[0]) for p in points))
+            row = rows[contact['id']]
+            self.assertEqual((row['samples'], row['final_samples']), (7, expected_count))
+            self.assertAlmostEqual(row['max_error_m'], errors[-1], delta=1e-12)
+            self.assertAlmostEqual(row['max_drift_m'], drifts[-1], delta=1e-12)
+        self.assertGreater(max(errors) - max(drifts), .1)
+        report = validate_rig(self.rig)
+        for actual in (metrics, report['metrics']):
+            self.assertAlmostEqual(actual['max_contact_error_m'], max(errors), delta=1e-12)
+            self.assertAlmostEqual(actual['max_planted_drift_m'], max(drifts), delta=1e-12)
+
     def test_validation_report_accepts_repaired_final_contacts(self):
         clip = self.contact_clip()
         report = validate_rig(self.rig)
