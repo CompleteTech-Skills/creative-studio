@@ -140,6 +140,10 @@ def _record_sha(path, maximum=MAX_RESPONSE_BYTES):
 
 
 def _record_json(path):
+    return _parse_record_json(_record_bytes(path))
+
+
+def _parse_record_json(data):
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -148,7 +152,7 @@ def _record_json(path):
             result[key] = value
         return result
     try:
-        return json.loads(_record_bytes(path).decode('utf-8'), object_pairs_hook=unique,
+        return json.loads(data.decode('utf-8'), object_pairs_hook=unique,
             parse_constant=lambda value: (_ for _ in ()).throw(ValueError('nonfinite JSON number')))
     except (json.JSONDecodeError, UnicodeError, RecursionError) as exc:
         raise ValueError('invalid analysis JSON: ' + str(exc)) from exc

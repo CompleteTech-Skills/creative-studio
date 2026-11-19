@@ -1,0 +1,794 @@
+"""Synthetic contract fixtures only; these do not count as model evidence."""
+import copy
+from contextlib import nullcontext
+import functools
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+from PIL import Image, ImageDraw, PngImagePlugin
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+import decomposition_foreground as fg
+from asset_contracts import sha
+from character_decomposition import load_decomposition, rebuild_from_annotation, save_manifest
+from decomposition_package import export_decomposition, import_decomposition
+
+def requires_foreground_publication(test):
+    @functools.wraps(test)
+    def check(self):
+        if sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir():
+            return test(self)
+        destination = Path(self.temp.name)/'unsupported-publication'
+        if 'propos' in test.__name__:
+            with patch.object(fg, 'capabilities', return_value={'available': True, 'versions': {}}), \
+                 patch.object(fg, '_weight', return_value=Path('unused')):
+                with self.assertRaisesRegex((OSError, ValueError), 'unavailable|requires|require'):
+                    fg.propose(self.root/'source/original.png', destination, weights='unused',
+                               enabled=True, origin='fixture')
+        else:
+            with self.assertRaisesRegex((OSError, ValueError), 'unavailable|requires|require'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(fg.load(self.root), self.receipt)
+        self.assertFalse(any(Path(self.temp.name).glob('.selection-*')))
+        self.assertFalse(any(Path(self.temp.name).glob('.foreground-*')))
+    return check
+
+class ForegroundContracts(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'proposals'; self.root.mkdir()
+        (self.root/'masks').mkdir(); (self.root/'source').mkdir()
+        image = Image.new('RGBA', (8, 6), (24, 60, 90, 77)); image.save(self.root/'source/original.png')
+        first = Image.new('L', image.size); first.paste(255, (0, 0, 5, 6))
+        second = Image.new('L', image.size); second.paste(255, (3, 0, 8, 6))
+        first.save(self.root/'masks/candidate-1.png'); second.save(self.root/'masks/candidate-2.png')
+        fg.intersect(first, second).save(self.root/'masks/overlap.png')
+        candidates = [{'id': 'candidate-'+str(index), 'category': 'person', 'confidence': .9,
+            'mask': fg._asset(self.root, 'masks/candidate-'+str(index)+'.png'),
+            'bbox': list(mask.getbbox()), 'pixels': fg.count(mask)} for index,mask in enumerate([first,second],1)]
+        self.receipt = {'schema_version': 1, 'kind': 'foreground-proposals',
+            'source': {'asset': fg._asset(self.root, 'source/original.png'), 'width': 8, 'height': 6,
+                       'origin': 'Synthetic fixture, no actual model execution', 'fixture': True},
+            'backend': {'name': 'torchvision-maskrcnn-coco-v1', 'weights_sha256': fg.MODEL_SHA256,
+                        'torch': '2.10.0+cpu', 'torchvision': '0.25.0+cpu', 'execution': 'local'},
+            'parameters': {'score_threshold': .7, 'mask_threshold': .5, 'threads': 2, 'max_seconds': 120, 'max_pixels': fg.MAX_PIXELS},
+            'elapsed_seconds': 1, 'candidates': candidates,
+            'overlap': fg._asset(self.root, 'masks/overlap.png'), 'overlay_renderer': fg.OVERLAY_RENDERER,
+            'uncertainty': ['Test fixture only; this receipt exercises validation, not inference.'],
+            'anatomy_recognized': False, 'review_status': 'pending'}
+        self.refresh_overlay()
+        self.save()
+
+    def refresh_overlay(self):
+        with Image.open(self.root / self.receipt['source']['asset']['path']) as image:
+            overlay = image.convert('RGBA')
+        for candidate in self.receipt['candidates']:
+            with Image.open(self.root / candidate['mask']['path']) as mask:
+                if 'overlay_renderer' in self.receipt:
+                    overlay = fg._draw_candidate(overlay, mask, candidate, fg.OVERLAY_RENDERER)
+                else:
+                    # Independent replay of the original worker.
+                    tint = Image.new('RGBA', mask.size, (255, 0, 255, 80))
+                    overlay = Image.alpha_composite(overlay, Image.composite(tint, Image.new('RGBA', mask.size), mask))
+                    draw = ImageDraw.Draw(overlay)
+                    draw.rectangle(candidate['bbox'], outline=(255, 0, 255, 255), width=2)
+                    draw.text(candidate['bbox'][:2], candidate['id'] + ': ' + candidate['category'], fill=(255, 0, 255, 255))
+        overlay.save(self.root / 'overlay.png')
+        self.receipt['overlay'] = fg._asset(self.root, 'overlay.png')
+
+    def save(self):
+        (self.root/'foreground-proposals.json').write_text(json.dumps(self.receipt))
+
+    def test_worker_model_input_composites_alpha_without_changing_source(self):
+        # This executes the worker with synthetic Torch/Torchvision stand-ins,
+        # capturing the normalized RGB actually passed to the mock model.
+        # It is not neural inference or a segmentation-quality assessment.
+        class Tensor:
+            def __init__(self, image):
+                self.image = image.copy()
+
+            def float(self):
+                return self
+
+            def __truediv__(self, divisor):
+                return tuple(value / divisor for value in self.image.tobytes())
+
+        torch = SimpleNamespace(set_num_threads=Mock(), set_num_interop_threads=Mock(),
+            get_num_threads=lambda: 1, get_num_interop_threads=lambda: 1,
+            load=Mock(return_value={}), inference_mode=nullcontext)
+        model = Mock(return_value=[{'scores': [], 'labels': [], 'masks': []}])
+        transform = Mock(side_effect=Tensor)
+        detection = SimpleNamespace(maskrcnn_resnet50_fpn=Mock(return_value=model),
+            MaskRCNN_ResNet50_FPN_Weights=SimpleNamespace(COCO_V1=SimpleNamespace(meta={'categories': []})))
+        torchvision = SimpleNamespace(transforms=SimpleNamespace(functional=SimpleNamespace(pil_to_tensor=transform)))
+        modules = {'torch': torch, 'torchvision': torchvision,
+                   'torchvision.models': SimpleNamespace(detection=detection),
+                   'torchvision.models.detection': detection}
+        weights = Path(self.temp.name) / 'mock-weights.bin'
+        weights.write_bytes(b'Synthetic mock checkpoint, not neural model weights')
+        inputs = []
+        # Distinct hidden RGB must not change any model input. Alpha controls
+        # cover nearly transparent, fractional, nearly opaque and opaque pixels.
+        controls = [(20, 60, 100, alpha) for alpha in (1, 127, 128, 254, 255)]
+        source_bytes = []
+        for index, hidden in enumerate(((0, 0, 0), (255, 0, 255), (25, 190, 77))):
+            with self.subTest(hidden=hidden):
+                stage = Path(self.temp.name) / f'worker-{index}'
+                (stage / 'source').mkdir(parents=True)
+                (stage / 'masks').mkdir()
+                source = stage / 'source/original.png'
+                rgba = Image.new('RGBA', (1 + len(controls), 1))
+                rgba.putdata([(*hidden, 0), *controls])
+                rgba.save(source)
+                before = source.read_bytes()
+                source_bytes.append(before)
+                fg.atomic_json(stage / 'input.json', {'asset': fg._asset(stage, 'source/original.png')})
+                with patch.dict(sys.modules, modules), patch.dict(os.environ), \
+                     patch.object(fg, '_weight', return_value=weights), \
+                     patch.object(fg, 'MODEL_SHA256', hashlib.sha256(weights.read_bytes()).hexdigest()):
+                    fg._worker(stage, weights, .7)
+                rgb = transform.call_args.args[0]
+                normalized = model.call_args.args[0][0]
+                inputs.append(normalized)
+                expected = [(255, 255, 255)] + [tuple(
+                    (channel * alpha + 255 * (255 - alpha) + 127) // 255
+                    for channel in (red, green, blue)) for red, green, blue, alpha in controls]
+                self.assertEqual(rgb.mode, 'RGB')
+                self.assertEqual(rgb.size, rgba.size)
+                self.assertEqual(rgb.tobytes(), bytes(value for pixel in expected for value in pixel))
+                self.assertEqual(normalized, tuple(value / 255 for pixel in expected for value in pixel))
+                self.assertEqual(source.read_bytes(), before)
+                with Image.open(source) as retained, Image.open(stage / 'overlay.png') as overlay:
+                    self.assertEqual(retained.tobytes(), rgba.tobytes())
+                    self.assertEqual(overlay.tobytes(), rgba.tobytes())
+                self.assertEqual(fg.read_json(stage / 'output.json')['candidates'], [])
+        self.assertEqual(len(inputs), len(source_bytes))
+        self.assertEqual(inputs, [inputs[0]] * len(inputs))
+        self.assertEqual(len(set(source_bytes)), len(source_bytes))
+
+    def test_valid_native_binary_masks_and_retained_overlap(self):
+        self.assertEqual(len(fg.load(self.root)['candidates']), 2)
+        self.assertEqual(fg.count(fg._mask(self.root,self.receipt['overlap'],(8,6))),12)
+
+    def test_preview_box_and_label_stay_inside_the_half_open_source_bounds(self):
+        source = Image.new('RGBA', (9, 9), (24, 60, 90, 77))
+        for box in ((2, 3, 7, 6), (3, 5, 4, 6), (8, 0, 9, 9)):
+            with self.subTest(box=box):
+                mask = Image.new('L', source.size)
+                mask.paste(255, box)
+                overlay = fg._draw_candidate(source, mask, self.receipt['candidates'][0], fg.OVERLAY_RENDERER)
+                for y in range(source.height):
+                    for x in range(source.width):
+                        if not mask.getpixel((x, y)):
+                            self.assertEqual(overlay.getpixel((x, y)), source.getpixel((x, y)))
+                self.assertEqual(overlay.getpixel((box[2] - 1, box[3] - 1)), (255, 0, 255, 255))
+
+        source = Image.new('RGBA', (60, 40), (24, 60, 90, 77))
+        mask = Image.new('L', source.size)
+        mask.paste(255, (1, 1, 59, 39))
+        mask.putpixel((40, 25), 0)
+        overlay = fg._draw_candidate(source, mask, self.receipt['candidates'][0], fg.OVERLAY_RENDERER)
+        tinted = Image.alpha_composite(source, Image.new('RGBA', source.size, (255, 0, 255, 80)))
+        self.assertEqual(overlay.getpixel((30, 25)), tinted.getpixel((30, 25)))
+        self.assertEqual(overlay.getpixel((40, 25)), source.getpixel((40, 25)))
+
+    def test_current_and_historical_previews_require_their_recorded_pixels(self):
+        del self.receipt['overlay_renderer']
+        self.refresh_overlay()
+        self.save()
+        self.assertEqual(fg.load(self.root), self.receipt)
+        self.receipt['overlay_renderer'] = fg.OVERLAY_RENDERER
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'overlay disagrees'):
+            fg.load(self.root)
+        path = self.root / 'overlay.png'
+        path.write_bytes((self.root / 'source/original.png').read_bytes())
+        self.receipt['overlay']['sha256'] = sha(path)
+        for renderer in (fg.OVERLAY_RENDERER, None):
+            if renderer is None:
+                del self.receipt['overlay_renderer']
+            self.save()
+            with self.subTest(renderer=renderer), self.assertRaisesRegex(ValueError, 'overlay disagrees'):
+                fg.load(self.root)
+
+    @requires_foreground_publication
+    def test_source_only_historical_identity_requires_unique_selection(self):
+        del self.receipt['overlay_renderer']
+        original_candidates = self.receipt['candidates']
+        self.receipt['candidates'] = original_candidates[:1]
+        overlap = self.root / self.receipt['overlap']['path']
+        Image.new('L', (8, 6)).save(overlap)
+        self.receipt['overlap']['sha256'] = sha(overlap)
+        self.refresh_overlay()
+        self.save()
+        home = Path(self.temp.name)
+        legacy_id = 'character-' + self.receipt['source']['asset']['sha256'][:12]
+        def use_historical_record(run, manifest):
+            annotation_path = run / manifest['annotation']['path']
+            canonical = json.loads(annotation_path.read_text())
+            for item in (manifest, canonical):
+                del item['extensions']['foreground_analysis']['identity_method']
+            fg.atomic_json(annotation_path, canonical)
+            manifest['annotation']['sha256'] = sha(annotation_path)
+            manifest['character']['id'] = legacy_id
+            save_manifest(run, manifest, transactional=False)
+
+        destination = home / 'single'
+        manifest = fg.select(self.root, ['candidate-1'], destination)
+        manifest['character']['id'] = legacy_id
+        save_manifest(destination, manifest, transactional=False)
+        with self.assertRaisesRegex(ValueError, 'character identity'):
+            load_decomposition(destination)
+        use_historical_record(destination, manifest)
+        self.assertEqual(load_decomposition(destination)['character']['id'], legacy_id)
+        export_decomposition(destination, home / 'single.zip')
+        import_decomposition(home / 'single.zip', home / 'restored')
+        self.assertEqual(load_decomposition(home / 'restored')['character']['id'], legacy_id)
+
+        self.receipt['candidates'] = original_candidates
+        left, right = original_candidates
+        mask = (self.root / left['mask']['path']).read_bytes()
+        (self.root / right['mask']['path']).write_bytes(mask)
+        right['mask']['sha256'] = left['mask']['sha256']
+        right.update(bbox=left['bbox'], pixels=left['pixels'])
+        overlap.write_bytes(mask)
+        self.receipt['overlap']['sha256'] = sha(overlap)
+        self.refresh_overlay()
+        self.save()
+        for n, ids in enumerate((['candidate-1'], ['candidate-1', 'candidate-2'])):
+            with self.subTest(ids=ids):
+                run = home / f'coincident-{n}'
+                manifest = fg.select(self.root, ids, run)
+                use_historical_record(run, manifest)
+                with self.assertRaisesRegex(fg.AmbiguousHistoricalSelection, 'select the intended IDs'):
+                    load_decomposition(run)
+                recovered = fg.select(run / fg.RETAINED_DIRECTORY, ids, home / f'recovered-{n}')
+                self.assertEqual(recovered['extensions']['foreground_analysis']['selected_ids'], ids)
+                self.assertNotEqual(recovered['character']['id'], legacy_id)
+
+    @requires_foreground_publication
+    def test_selection_preserves_rgba_and_portable_receipt(self):
+        before = sha(self.root/'source/original.png')
+        destination = Path(self.temp.name)/'selected'
+        selected = fg.select(self.root,['candidate-1','candidate-2'],destination)
+        self.assertTrue(selected['validation']['faithful_fidelity_passed'])
+        self.assertEqual(selected['validation']['reconstruction_error']['max_channel_error'],0)
+        self.assertEqual(selected['validation']['semantic_status'],'pending')
+        self.assertFalse(selected['analysis']['semantic_model_called'])
+        self.assertTrue(selected['source']['fixture'])
+        self.assertEqual(selected['quality']['partial_alpha_pixels'],48)
+        self.assertEqual(sha(self.root/'source/original.png'),before)
+        self.assertEqual(len(fg.load(destination/'foreground-analysis')['candidates']),2)
+        self.assertEqual(load_decomposition(destination)['source']['sha256'],before)
+
+    @requires_foreground_publication
+    def test_selection_identity_is_bound_to_original_source_and_membership(self):
+        def select_id(identifiers, label):
+            destination = Path(self.temp.name) / label
+            selected = fg.select(self.root, identifiers, destination, name=label)
+            character = load_decomposition(destination)['character']
+            self.assertEqual(character, selected['character'])
+            self.assertEqual(character['name'], label)
+            self.assertNotIn(label, character['id'])
+            return character['id']
+
+        first = ['candidate-1']
+        second = ['candidate-2']
+        first_id = select_id(first, 'first')
+        second_id = select_id(second, 'second')
+        union_id = select_id(first + second, 'group')
+        self.assertEqual(len({first_id, second_id, union_id}), 3)
+        self.assertEqual(select_id(first, 'renamed'), first_id)
+        self.assertEqual(select_id(second + first, 'reordered'), union_id)
+
+        # Even coincident detections preserve the user's explicit membership.
+        left, right = self.receipt['candidates']
+        mask_data = (self.root / right['mask']['path']).read_bytes()
+        for descriptor in (left['mask'], self.receipt['overlap']):
+            (self.root / descriptor['path']).write_bytes(mask_data)
+            descriptor['sha256'] = right['mask']['sha256']
+        left.update(bbox=right['bbox'], pixels=right['pixels'])
+        self.refresh_overlay()
+        self.save()
+        moved_id = select_id(first, 'moved')
+        self.assertNotEqual(moved_id, first_id)
+        self.assertNotEqual(moved_id, second_id)
+        self.assertEqual(select_id(second, 'same-membership'), second_id)
+
+        # Separately valid IDs for identical pixels still name distinct selections.
+        moved = Path(self.temp.name) / 'moved'
+        previous = load_decomposition(moved)
+        annotation = json.loads((moved / previous['annotation']['path']).read_text())
+        other = copy.deepcopy(previous)
+        for item in (other, annotation):
+            item['extensions']['foreground_analysis']['selected_ids'] = second
+        with self.assertRaisesRegex(ValueError, 'character identity'):
+            fg.verify_selection(moved, other, annotation)
+        for other_id in (second_id, 'character-' + previous['source']['sha256'][:12]):
+            with self.subTest(character=other_id):
+                manifest = copy.deepcopy(previous)
+                manifest['character']['id'] = other_id
+                save_manifest(moved, manifest, transactional=False)
+                with self.assertRaisesRegex(ValueError, 'character identity'):
+                    load_decomposition(moved)
+                with self.assertRaisesRegex(ValueError, 'character identity'):
+                    export_decomposition(moved, Path(self.temp.name) / 'other.zip')
+                self.assertFalse((Path(self.temp.name) / 'other.zip').exists())
+
+        source_path = self.root / self.receipt['source']['asset']['path']
+        with Image.open(source_path) as image:
+            source = image.copy()
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text('fixture', 'Different original bytes, identical pixels')
+        source.save(source_path, pnginfo=metadata)
+        self.receipt['source']['asset']['sha256'] = sha(source_path)
+        self.save()
+        self.assertNotEqual(select_id(first, 'other-source'), moved_id)
+
+    @requires_foreground_publication
+    def test_selection_flags_selected_overlap_pixels_as_ambiguous(self):
+        destination = Path(self.temp.name) / 'one-person'
+        fg.select(self.root, ['candidate-1'], destination)
+        manifest = load_decomposition(destination)
+        record = manifest['extensions']['foreground_analysis']
+        annotation = json.loads((destination / manifest['annotation']['path']).read_text())
+        self.assertEqual(annotation['extensions']['foreground_analysis'], record)
+        ambiguous = record['ambiguous_overlap']
+        self.assertEqual(ambiguous['status'], 'unresolved')
+        self.assertEqual(ambiguous['pixels'], 12)
+        self.assertEqual(ambiguous['runs'], [[y, 3, 5] for y in range(6)])
+        self.assertEqual(ambiguous['overlap_mask']['sha256'],
+                         sha(destination / ambiguous['overlap_mask']['path']))
+
+    @requires_foreground_publication
+    def test_selected_lineage_survives_package_round_trip_and_manual_correction(self):
+        home = Path(self.temp.name)
+        run = home / 'selected'
+        selected = fg.select(self.root, ['candidate-1'], run)
+        record = selected['extensions']['foreground_analysis']
+        archive = home / 'selected.zip'
+        export_decomposition(run, archive)
+        restored = home / 'restored'
+        import_decomposition(archive, restored)
+        current = load_decomposition(restored)
+        self.assertEqual(current['extensions']['foreground_analysis'], record)
+
+        # A manual correction changes the current mask while preserving the
+        # historical source-bound instance decision.
+        correction = {'schema_version': 1, 'source_sha256': current['source']['sha256'],
+                      'author': 'Synthetic reviewer', 'note': 'Correct mask membership',
+                      'foreground_mask': {'runs': [[y, 0, 2] for y in range(6)]}, 'components': []}
+        corrected = rebuild_from_annotation(restored, correction)
+        self.assertEqual(corrected['foreground']['method'], 'manually-corrected-mask')
+        self.assertNotEqual(corrected['foreground']['mask'], record['selected_mask'])
+        self.assertEqual(load_decomposition(restored)['extensions']['foreground_analysis'], record)
+
+    @requires_foreground_publication
+    def test_retained_receipt_changes_are_refused_by_run_load_and_package_export(self):
+        home = Path(self.temp.name)
+        run = home / 'selected'
+        fg.select(self.root, ['candidate-1'], run)
+        receipt_path = run / fg.RETAINED_RECEIPT
+        original = receipt_path.read_bytes()
+        receipt_path.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'foreground receipt digest'):
+            load_decomposition(run)
+        archive = home / 'archive.zip'
+        with self.assertRaisesRegex(ValueError, 'foreground receipt digest'):
+            export_decomposition(run, archive)
+        self.assertFalse(archive.exists())
+
+        receipt_path.write_bytes(original)
+        (run / fg.RETAINED_DIRECTORY / 'masks/overlap.png').unlink()
+        with self.assertRaisesRegex(ValueError, 'cannot be opened safely'):
+            load_decomposition(run)
+
+    @requires_foreground_publication
+    def test_retained_selection_geometry_and_overlap_are_recomputed(self):
+        run = Path(self.temp.name) / 'selected'
+        original = fg.select(self.root, ['candidate-1'], run)
+        annotation_path = run / original['annotation']['path']
+        original_annotation = json.loads(annotation_path.read_text())
+        for update, message in [
+            ({'selected_ids': ['candidate-2']}, 'selection geometry'),
+            ({'ambiguous_overlap': {**original['extensions']['foreground_analysis']['ambiguous_overlap'],
+                                    'pixels': 0}}, 'overlap provenance'),
+        ]:
+            with self.subTest(field=next(iter(update))):
+                manifest = copy.deepcopy(original)
+                annotation = copy.deepcopy(original_annotation)
+                for record in (manifest, annotation):
+                    record['extensions']['foreground_analysis'].update(update)
+                fg.atomic_json(annotation_path, annotation)
+                manifest['annotation']['sha256'] = sha(annotation_path)
+                save_manifest(run, manifest, transactional=False)
+                with self.assertRaisesRegex(ValueError, message):
+                    load_decomposition(run)
+
+    @requires_foreground_publication
+    def test_current_source_pin_is_verified_with_retained_receipt(self):
+        run = Path(self.temp.name) / 'selected'
+        manifest = fg.select(self.root, ['candidate-1'], run)
+        receipt_path = run / fg.RETAINED_RECEIPT
+        receipt = json.loads(receipt_path.read_text())
+        source_path = receipt_path.parent / receipt['source']['asset']['path']
+        with Image.open(source_path) as opened:
+            image = opened.copy()
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text('fixture', 'Equivalent pixels with different encoded metadata')
+        image.save(source_path, pnginfo=metadata)
+        receipt['source']['asset']['sha256'] = sha(source_path)
+        self.assertNotEqual(manifest['source']['sha256'], receipt['source']['asset']['sha256'])
+        fg.atomic_json(receipt_path, receipt)
+        annotation_path = run / manifest['annotation']['path']
+        annotation = json.loads(annotation_path.read_text())
+        for record in (manifest, annotation):
+            record['extensions']['foreground_analysis']['receipt_sha256'] = sha(receipt_path)
+        fg.atomic_json(annotation_path, annotation)
+        manifest['annotation']['sha256'] = sha(annotation_path)
+        save_manifest(run, manifest, transactional=False)
+        with self.assertRaisesRegex(ValueError, 'receipt source disagrees'):
+            load_decomposition(run)
+
+    @requires_foreground_publication
+    def test_capture_rejects_artifacts_over_cumulative_package_bound(self):
+        archive_bytes = sum(path.stat().st_size for path in self.root.rglob('*') if path.is_file())
+        home = Path(self.temp.name)
+        destination = home / 'oversized'
+        with patch.object(fg.package, 'MAX_PACKAGE_BYTES', archive_bytes - 1), \
+             patch.object(fg, 'create_decomposition', side_effect=AssertionError('unexpected create')):
+            with self.assertRaisesRegex(ValueError, 'package budget'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+        self.assertTrue(all(not list(wrapper.iterdir()) for wrapper in home.glob('.selection-*')))
+
+    def test_asset_paths_are_role_specific_and_mask_bytes_must_be_png(self):
+        original = copy.deepcopy(self.receipt)
+        for role, path in [('overlay', 'masks/overlap.png'), ('overlap', 'masks/OVERLAP.png')]:
+            with self.subTest(role=role):
+                self.receipt = copy.deepcopy(original)
+                self.receipt[role]['path'] = path
+                self.save()
+                with self.assertRaisesRegex(ValueError, f'noncanonical {role} path'):
+                    fg.load(self.root)
+        self.receipt = original
+        mask = self.root / 'masks/candidate-1.png'
+        Image.new('L', (8, 6), 255).save(mask, format='JPEG')
+        self.receipt['candidates'][0]['mask']['sha256'] = sha(mask)
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'encoded as PNG'):
+            fg.load(self.root)
+
+    def test_derived_png_refuses_changed_opacity_or_orientation(self):
+        path = self.root / 'presentation-fixture.png'
+        orientation = Image.Exif()
+        orientation[274] = 6
+        for name, metadata in (('transparency', dict(transparency=255)),
+                               ('orientation', dict(exif=orientation))):
+            with self.subTest(name=name):
+                Image.new('L', (8, 6), 255).save(path, **metadata)
+                self.assertEqual(fg._verified_image(path, sha(path)).size, (8, 6))
+                with self.assertRaisesRegex(ValueError, 'display metadata'):
+                    fg._verified_image(path, sha(path), png_only=True)
+
+    def test_current_runtime_counts_are_bound_and_historical_threads_remain_readable(self):
+        self.assertEqual(fg.load(self.root)['parameters']['threads'],2)
+        self.receipt['parameters']['threads']=1
+        self.receipt['runtime']={'torch_threads':1,'torch_interop_threads':1};self.save()
+        fg.load(self.root)
+        self.receipt['runtime']['torch_threads']=2;self.save()
+        with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_receipt_thread_counts_require_integers(self):
+        self.receipt['parameters']['threads'] = 1
+        self.receipt['runtime'] = {'torch_threads': 1, 'torch_interop_threads': 1}
+        for section, field in [('parameters', 'threads'), ('runtime', 'torch_threads')]:
+            for invalid in (True, False, 1.0):
+                with self.subTest(section=section, field=field, invalid=repr(invalid)):
+                    self.receipt[section][field] = invalid
+                    self.save()
+                    with self.assertRaisesRegex(ValueError, rf'{section}\.{field}: expected integer'):
+                        fg.load(self.root)
+                    self.receipt[section][field] = 1
+
+    @requires_foreground_publication
+    def test_unknown_duplicate_empty_selection_rejected(self):
+        for ids in [[],['bogus'],['candidate-1','candidate-1']]:
+            with self.subTest(ids=ids), self.assertRaises(ValueError):
+                fg.select(self.root,ids,Path(self.temp.name)/'bad')
+
+    @requires_foreground_publication
+    def test_proposal_timeout_cleans_pinned_stage_after_replacement(self):
+        moved = Path(self.temp.name) / 'moved-proposal'
+        foreign = None
+        def interrupt(command, **kwargs):
+            nonlocal foreign
+            payload = Path(command[3])
+            outer = Path(os.readlink(payload.parent))
+            outer.rename(moved)
+            outer.mkdir()
+            foreign = outer / 'foreign'
+            foreign.write_text('untouched')
+            raise fg.subprocess.TimeoutExpired(command, 1)
+        destination = Path(self.temp.name) / 'timed-out'
+        with patch.object(fg, 'capabilities', return_value={'available': True, 'versions': {}}), \
+             patch.object(fg, '_weight', return_value=Path('unused')), \
+             patch.object(fg.subprocess, 'run', side_effect=interrupt):
+            with self.assertRaisesRegex(ValueError, 'runtime limit'):
+                fg.propose(self.root/'source/original.png', destination, weights='unused',
+                           enabled=True, origin='fixture', max_seconds=1)
+        self.assertFalse(destination.exists())
+        self.assertEqual(foreign.read_text(), 'untouched')
+        self.assertEqual(list(moved.iterdir()), [])
+
+    @requires_foreground_publication
+    def test_propose_publishes_valid_receipt_with_backend_provenance(self):
+        versions = {'torch': '2.10.0+cpu', 'torchvision': '0.25.0+cpu'}
+        destination = Path(self.temp.name) / 'published'
+        source = self.root / 'source/original.png'
+
+        def worker(command, **kwargs):
+            stage = Path(command[3])
+            self.assertIn(int(command[6]), kwargs['pass_fds'])
+            self.assertEqual(float(command[5]), .81)
+            kwargs['stdout'].write(b'synthetic worker diagnostic\n')
+            (stage / 'progress.txt').write_text('synthetic scratch note')
+            for relative in ('masks/candidate-1.png', 'masks/candidate-2.png',
+                             'masks/overlap.png', 'overlay.png'):
+                (stage / relative).write_bytes((self.root / relative).read_bytes())
+            output = {key: self.receipt[key] for key in ('candidates', 'overlap', 'overlay')}
+            output['runtime'] = {'torch_threads': 1, 'torch_interop_threads': 1}
+            fg.atomic_json(stage / 'output.json', output)
+            return fg.subprocess.CompletedProcess(command, 0)
+
+        with patch.object(fg, 'capabilities', return_value={'available': True, 'versions': versions}), \
+             patch.object(fg, '_weight', return_value=Path('unused')), \
+             patch.object(fg.subprocess, 'run', side_effect=worker):
+            receipt = fg.propose(source, destination, weights='unused', enabled=True,
+                                 origin='Synthetic source', fixture=True, score_threshold=.81)
+
+        self.assertEqual(fg.load(destination), receipt)
+        self.assertEqual({name: receipt['backend'][name] for name in versions}, versions)
+        self.assertEqual(receipt['backend']['weights_sha256'], fg.MODEL_SHA256)
+        self.assertEqual(receipt['source']['origin'], 'Synthetic source')
+        self.assertTrue(receipt['source']['fixture'])
+        self.assertEqual(receipt['source']['asset']['sha256'], sha(source))
+        self.assertEqual((destination / receipt['source']['asset']['path']).read_bytes(), source.read_bytes())
+        self.assertEqual(receipt['runtime'], {'torch_threads': 1, 'torch_interop_threads': 1})
+        self.assertEqual(receipt['overlay_renderer'], fg.OVERLAY_RENDERER)
+        self.assertEqual(receipt['parameters']['score_threshold'], .81)
+        self.assertEqual({p.relative_to(destination).as_posix() for p in destination.rglob('*') if p.is_file()},
+                         {fg.RECEIPT_NAME, 'source/original.png', 'masks/candidate-1.png',
+                          'masks/candidate-2.png', 'masks/overlap.png', 'overlay.png'})
+        self.assertTrue(all(not list(wrapper.iterdir()) for wrapper in destination.parent.glob('.foreground-*')))
+        self.assertEqual(len(receipt['candidates']), 2)
+        self.assertEqual(receipt['review_status'], 'pending')
+
+    @requires_foreground_publication
+    def test_selection_namespace_replacement_preserves_foreign_tree(self):
+        real_create = fg.create_decomposition
+        moved = Path(self.temp.name) / 'moved-wrapper'
+        foreign = None
+        def replace_wrapper(source, run, **kwargs):
+            nonlocal foreign
+            outer = Path(os.readlink(run.parent))
+            outer.rename(moved)
+            outer.mkdir()
+            foreign = outer / 'foreign'
+            foreign.write_text('untouched')
+            return real_create(source, run, **kwargs)
+        destination = Path(self.temp.name) / 'selected-race'
+        with patch.object(fg, 'create_decomposition', side_effect=replace_wrapper):
+            fg.select(self.root, ['candidate-1'], destination)
+        self.assertEqual(foreign.read_text(), 'untouched')
+        self.assertEqual(list(moved.iterdir()), [])
+        self.assertEqual(load_decomposition(destination)['source']['sha256'], sha(self.root/'source/original.png'))
+
+    @requires_foreground_publication
+    def test_selection_failure_cleans_owned_tree_only_after_replacement(self):
+        real_create = fg.create_decomposition
+        moved = Path(self.temp.name) / 'moved-failure'
+        foreign = None
+        def replace_then_fail(source, run, **kwargs):
+            nonlocal foreign
+            outer = Path(os.readlink(run.parent))
+            outer.rename(moved)
+            outer.mkdir()
+            foreign = outer / 'foreign'
+            foreign.write_text('untouched')
+            real_create(source, run, **kwargs)
+            raise ValueError('injected failure after real creation')
+        destination = Path(self.temp.name) / 'failed-race'
+        with patch.object(fg, 'create_decomposition', side_effect=replace_then_fail):
+            with self.assertRaisesRegex(ValueError, 'injected failure'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(foreign.read_text(), 'untouched')
+        self.assertEqual(list(moved.iterdir()), [])
+
+    def test_selection_does_not_overwrite_existing_directory(self):
+        destination=Path(self.temp.name)/'exists';destination.mkdir()
+        (destination/'retained').write_text('keep')
+        with self.assertRaises(ValueError):fg.select(self.root,['candidate-1'],destination)
+        self.assertEqual((destination/'retained').read_text(),'keep')
+
+    def test_tampered_or_symlink_source_is_rejected(self):
+        path=self.root/'source/original.png';backup=self.root/'backup.png';path.rename(backup);path.symlink_to(backup)
+        with self.assertRaises(ValueError):fg.load(self.root)
+        path.unlink();backup.rename(path)
+        path.write_bytes(path.read_bytes()+b'change')
+        with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_admitted_image_hash_and_decode_share_the_same_bytes(self):
+        path = self.root/'source/original.png'
+        expected = sha(path)
+        original = fg._record_bytes
+        def replace_after_read(target, maximum):
+            data = original(target, maximum)
+            Image.new('RGBA', (8, 6), (240, 20, 20, 255)).save(path)
+            return data
+        with patch.object(fg, '_record_bytes', side_effect=replace_after_read):
+            image = fg._verified_image(path, expected)
+        self.assertEqual(image.getpixel((0, 0)), (24, 60, 90, 77))
+        self.assertNotEqual(sha(path), expected)
+
+    def test_invalid_hash_rejected_before_image_decoder(self):
+        with patch.object(fg.Image, 'open', side_effect=AssertionError('decoder called')):
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                fg._verified_image(self.root/'source/original.png', '0'*64)
+
+    def test_record_byte_bounds_preserve_default_and_reject_invalid_limits(self):
+        path = self.root/'record.bin'; path.write_bytes(b'abcde')
+        self.assertEqual(fg._record_bytes(path, 5), b'abcde')
+        with self.assertRaisesRegex(ValueError, 'bounded regular'):
+            fg._record_bytes(path, 4)
+        for bound in (True, 0, -1, 200_000_001, 5.0):
+            with self.subTest(bound=bound), self.assertRaises(ValueError):
+                fg._record_bytes(path, bound)
+
+    @requires_foreground_publication
+    def test_selection_uses_captured_source_after_live_source_changes(self):
+        original = fg._mask
+        calls = 0
+        def replace_live_source(*args):
+            nonlocal calls
+            mask = original(*args)
+            calls += 1
+            if calls == 4:
+                Image.new('RGBA', (8, 6), (240, 20, 20, 255)).save(self.root/'source/original.png')
+            return mask
+        destination = Path(self.temp.name)/'changed-selection'
+        with patch.object(fg, '_mask', side_effect=replace_live_source):
+            fg.select(self.root, ['candidate-1'], destination)
+        self.assertEqual(load_decomposition(destination)['source']['sha256'], self.receipt['source']['asset']['sha256'])
+
+    @requires_foreground_publication
+    def test_live_bundle_replacement_after_mask_read_keeps_snapshot_consistent(self):
+        original_receipt = (self.root / 'foreground-proposals.json').read_bytes()
+        original = fg._mask
+        calls = 0
+        def replace_bundle(*args):
+            nonlocal calls
+            mask = original(*args)
+            calls += 1
+            if calls == 4:
+                changed = Image.new('L', (8, 6)); changed.paste(255, (0, 0, 2, 6))
+                changed.save(self.root/'masks/candidate-1.png')
+                Image.new('L', (8, 6)).save(self.root/'masks/overlap.png')
+                candidate = self.receipt['candidates'][0]
+                candidate.update(mask=fg._asset(self.root, 'masks/candidate-1.png'),
+                                 bbox=list(changed.getbbox()), pixels=fg.count(changed))
+                self.receipt['overlap'] = fg._asset(self.root, 'masks/overlap.png')
+                self.refresh_overlay()
+                self.save()
+                fg.load(self.root)
+            return mask
+        destination = Path(self.temp.name)/'raced'
+        with patch.object(fg, '_mask', side_effect=replace_bundle):
+            fg.select(self.root, ['candidate-1'], destination)
+        kept = destination/'foreground-analysis'
+        receipt = fg.load(kept)
+        self.assertEqual((kept / 'foreground-proposals.json').read_bytes(), original_receipt)
+        self.assertEqual(receipt['candidates'][0]['pixels'], 30)
+        self.assertEqual(fg.load(self.root)['candidates'][0]['pixels'], 12)
+        with Image.open(destination/'foreground.png') as image:
+            self.assertEqual(image.getpixel((4, 0))[3], 77)
+        manifest = load_decomposition(destination)
+        annotation = json.loads((destination / manifest['annotation']['path']).read_text())
+        record = annotation['extensions']['foreground_analysis']
+        self.assertEqual(record['receipt_sha256'], sha(kept / 'foreground-proposals.json'))
+        self.assertEqual(record['ambiguous_overlap']['pixels'], 12)
+        self.assertEqual(manifest['validation']['semantic_status'], 'pending')
+
+    @requires_foreground_publication
+    def test_snapshot_tampering_before_promotion_rolls_back(self):
+        real_create = fg.create_decomposition
+        def corrupt(*args, **kwargs):
+            result = real_create(*args, **kwargs)
+            snapshot = args[1].parent/'snapshot'
+            (snapshot/'masks/candidate-1.png').write_bytes(b'malformed')
+            return result
+        destination = Path(self.temp.name)/'rollback'
+        with patch.object(fg, 'create_decomposition', side_effect=corrupt):
+            with self.assertRaises(ValueError):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+
+    @requires_foreground_publication
+    def test_mixed_snapshot_rejected_before_creation(self):
+        original = fg._record_bytes
+        def change_mask_before_capture(path, maximum):
+            if Path(path) == self.root/'masks/candidate-1.png':
+                Image.new('L', (8, 6)).save(path)
+            return original(path, maximum)
+        destination = Path(self.temp.name)/'mixed'
+        with patch.object(fg, '_record_bytes', side_effect=change_mask_before_capture), \
+             patch.object(fg, 'create_decomposition', side_effect=AssertionError('unexpected create')):
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+
+    @requires_foreground_publication
+    def test_malformed_captured_receipt_rolls_back(self):
+        (self.root/'foreground-proposals.json').write_text('{"kind":1,"kind":2}')
+        destination = Path(self.temp.name)/'malformed'
+        with self.assertRaises(ValueError):
+            fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+
+    def test_geometry_confidence_and_identity_validation(self):
+        for mutate in [lambda r:r['candidates'][0].update(pixels=1),
+                       lambda r:r['candidates'][0].update(bbox=[0,0,8,6]),
+                       lambda r:r['candidates'][0].update(confidence=.1),
+                       lambda r:r['candidates'][0].update(id='candidate-2'),
+                       lambda r:r['backend'].update(weights_sha256='0'*64),
+                       lambda r:r['backend'].update(torch='2.0.0'),
+                       lambda r:r.update(review_status='approved'),
+                       lambda r:r.update(anatomy_recognized=True)]:
+            original=copy.deepcopy(self.receipt);mutate(self.receipt);self.save()
+            with self.assertRaises(ValueError):fg.load(self.root)
+            self.receipt=original
+
+    def test_fractional_wrong_size_and_overlap_masks_rejected(self):
+        path=self.root/'masks/candidate-1.png'
+        for mode,size,value in [('L',(8,6),127),('L',(4,6),255),('RGB',(8,6),(255,255,255))]:
+            Image.new(mode,size,value).save(path)
+            self.receipt['candidates'][0]['mask']=fg._asset(self.root,'masks/candidate-1.png');self.save()
+            with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_false_overlap_rejected(self):
+        Image.new('L',(8,6)).save(self.root/'masks/overlap.png')
+        self.receipt['overlap']=fg._asset(self.root,'masks/overlap.png');self.save()
+        with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_mask_outside_original_alpha_rejected(self):
+        image=Image.new('RGBA',(8,6));image.save(self.root/'source/original.png')
+        self.receipt['source']['asset']=fg._asset(self.root,'source/original.png');self.save()
+        with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_duplicate_json_keys_and_path_traversal_rejected(self):
+        self.receipt['overlay']['path']='../overlay.png';self.save()
+        with self.assertRaises(ValueError):fg.load(self.root)
+        (self.root/'foreground-proposals.json').write_text('{"kind":1,"kind":2}')
+        with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_no_implicit_inference_or_model_download(self):
+        with self.assertRaises(ValueError):
+            fg.propose(self.root/'source/original.png',Path(self.temp.name)/'new',weights='absent',origin='Test')
+        self.assertFalse(fg.capabilities()['available'])
+        with self.assertRaises(ValueError):fg._weight(self.root/'source/original.png')
+
+    def test_invalid_options_fail_before_any_model_call(self):
+        for kwargs in [{'score_threshold':float('nan')},{'score_threshold':True},
+                       {'score_threshold':1},{'max_seconds':False},{'fixture':1}]:
+            with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):
+                fg.propose('absent','unused',weights='absent',origin='Test',enabled=True,**kwargs)
+
+if __name__=='__main__':unittest.main()

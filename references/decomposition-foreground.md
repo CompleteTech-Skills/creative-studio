@@ -1,0 +1,146 @@
+# Optional foreground instance proposals
+
+This stage runs the actual Torchvision COCO Mask R-CNN model locally and retains
+separate source-sized binary masks for detected objects. It helps select people,
+animals and other COCO objects in photographs with complex backgrounds. It does
+not detect anatomical parts, identify arbitrary fantasy/robot characters, promise
+pixel-perfect segmentation, or approve semantic quality. Missing detections and
+thin/disconnected detail remain limitations. Confidence is the model's score,
+not a calibrated likelihood or a human review.
+
+The existing alpha/solid/manual foreground modes remain available. Use source
+alpha directly when its complete silhouette is already correct; model proposals
+can omit source pixels. Inference uses internal resizing, then Torchvision
+projects masks back to source dimensions. Original bytes and RGBA samples are
+never resized or smoothed by this stage. Binary ownership is separate from source
+alpha, which the canonical decomposition applies exactly once.
+
+For inference only, decoded RGBA is composited onto a fixed opaque white
+`(255, 255, 255)` matte with Pillow alpha compositing before RGB tensor conversion.
+Fully transparent pixels therefore contribute white regardless of their hidden
+RGB, fractional alpha blends with white, and opaque RGB remains unchanged.
+This inference copy does not replace archived source bytes or source RGBA used
+for candidate support, overlays, selection, extraction or reconstruction.
+
+## Provision explicitly
+
+Use a separate environment on Linux with procfs mounted. Installation and the
+explicit download below require a network connection. Discovery, inference and
+selection run offline.
+
+```bash
+python -m venv foreground-env
+foreground-env/bin/pip install -r requirements-foreground.txt
+curl -fL https://download.pytorch.org/models/maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth \
+  -o maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth
+sha256sum maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth
+foreground-env/bin/python scripts/decomposition_foreground.py doctor \
+  --weights maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth
+```
+
+The required complete digest is
+`bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0`.
+Only this checkpoint and Torch 2.10.0 / Torchvision 0.25.0 are admitted.
+`torch.load` uses `weights_only=True`; alternate arbitrary serialized models are
+not supported. Torchvision's [official model documentation](https://docs.pytorch.org/vision/main/models/generated/torchvision.models.detection.maskrcnn_resnet50_fpn.html)
+describes the model's object categories, boxes and masks. Consult the model/data
+license terms for your intended use. No third-party weights are redistributed in
+this repository.
+
+## Propose, inspect, select
+
+```bash
+mkdir -p output
+foreground-env/bin/python scripts/decomposition_foreground.py propose \
+  photo.png output/proposals --enable-analysis --origin 'Actual source attribution' \
+  --weights maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth
+foreground-env/bin/python scripts/decomposition_foreground.py select \
+  output/proposals output/character --candidate candidate-1
+python scripts/hatch.py decompose-review-ui --run-dir output/character \
+  --destination output/review
+```
+
+`propose` requires a new output directory and explicit analysis opt-in. It runs a
+child process with one CPU thread, at most 1.5 million source pixels, 32 candidate
+masks and a configurable wall-clock limit (default 120 seconds, maximum 300).
+Current receipts retain actual Torch/interop counts. Historical v1 receipts
+with two threads remain readable; current execution uses one.
+The generated schema is `profiles/decomposition-foreground.schema.json`.
+Source images and proposal artifacts are admitted through bounded regular-file
+reads. Hash verification and image decoding use the same captured bytes, and
+selection rechecks the original digest before creating the selected run. Image
+inputs retain the existing 64 MiB encoded-byte bound; JSON records retain the
+8 MiB analysis bound. Checkpoint loading hashes and deserializes the same captured
+bytes within the explicit 200 MB checkpoint bound. These checks reject malformed
+or replaced inputs; they do not provide isolation from a hostile process with the
+same operating-system account.
+`doctor` reports missing dependencies or weights without attempting inference.
+A missing backend, a failed worker or no useful candidates leaves manual
+selection available and does not create a falsely successful character.
+
+Inspect `overlay.png`, each `masks/candidate-N.png` and `masks/overlap.png`.
+Loading recomputes every preview pixel from the admitted source and candidate
+masks in receipt order. Current receipts declare `mask-box-label-v2`. It tints
+each instance and clips its outline and bitmap label to the mask's half-open
+bounding box. A receipt without the marker must match the historical worker's
+full-canvas default-font labels and inclusive Pillow outlines.
+Candidate masks can overlap: no detection silently steals pixels from another.
+Explicitly selecting several IDs unions their masks into one imported character;
+select each separately into separate new runs for multiple characters. The union
+is a user choice, not proof those detections belong to one character. A model
+miss may be foreground, not background; no detection proves complete coverage.
+
+The selected run retains the original source, proposal receipt, all candidate
+masks and overlay in `foreground-analysis/`. Its annotation records the digest
+of the validated receipt bytes and the selected IDs. The
+`ambiguous_overlap` record gives the unresolved pixel count, source-space runs
+and retained overlap-mask digest for selected pixels shared with another
+candidate. Ownership of those pixels remains unresolved. Run loading and package
+export or import verify the retained receipt, original source, selected masks
+and overlap. Manual corrections preserve the original selection as provenance
+while allowing the current foreground mask to change. Proposal masks and the
+overlay use canonical PNG filenames, and selection admits only matching
+artifact digests within the package's cumulative size limit.
+Reload derives the character ID from the original source hash, the original
+selected mask pixels and the sorted set of explicitly selected IDs. Coincident
+instance masks can therefore name distinct characters. Older source-only IDs
+can be verified for historical previews when exactly one set of candidates
+produces the retained selection. If several sets give the same pixels, inspect
+the preserved proposal and explicitly run `select` on `foreground-analysis/`
+into a new directory. The original run stays available for inspection.
+The run has source-bound unassigned foreground,
+zero-error recomposition of selected pixels, and pending semantic review.
+The run's `analysis.semantic_model_called` remains false because this stage does
+not run the component analyzer; the retained foreground receipt separately records
+the actual local instance-model execution. Running the separate face/eye analyzer
+later does not turn these whole-object masks into anatomical parts. Use existing manual correction for bad boundaries.
+
+## Evidence boundaries
+
+`tests/test_decomposition_foreground.py` uses explicitly synthetic fixture
+receipts to test validation, overlap, malicious paths and alpha preservation; it
+also captures worker input with a synthetic mock model to check hidden-RGB
+invariance and partial/opaque-alpha controls. These are not real neural execution
+or model-quality evidence. Optional real-model tests in `tests/optional/` run through their dedicated CI
+job, keeping optional dependencies outside the strict core delivery suite. They
+use the retained NASA
+astronaut photograph and explicitly provided Penn-Fudan photographs. Dataset
+masks are used only after inference to measure output quality, never as inputs.
+Even accurate foreground segmentation is insufficient to close automatic
+anatomy, broad character diversity, or complete semantic-decomposition issues.
+
+Historical model executions and quality measurements from PR #323 are
+diagnostics for the revisions that produced them. Issue #225 remains open for
+foreground quality and selection UX. The optional Linux native test job provides
+separate revision-specific evidence.
+
+Foreground proposal and selection publication use pinned private staging and an
+exclusive descriptor-relative rename. On hosts without the required Linux
+procfs/descriptor support, these operations fail closed. The destination parent
+must already exist and contain no symbolic-link path components. Cleanup removes only
+contents of the pinned staging directory; its empty outer wrapper is retained
+for owned maintenance, including after failure. Selection does not approve the
+proposals or turn foreground masks into semantic anatomy.
+Publication copies only the receipt and its declared source, masks and preview
+into the new proposal directory. Worker inputs, raw output and diagnostics
+stay in private staging until cleanup. CI archives the published example runs.

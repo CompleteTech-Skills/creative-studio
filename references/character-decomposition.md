@@ -30,6 +30,8 @@ The installed local pipeline does **not** contain a general-purpose semantic vis
 
 An optional [resumable image-analysis controller](decomposition-analysis.md) can now execute the real local OpenCV human face/eye detector or ingest attributed external proposals. Its coarse photographic-region support is not a general-purpose anatomy model; it preserves pending review and unassigned pixels.
 
+An optional [foreground instance stage](decomposition-foreground.md) runs the pinned local Torchvision COCO model for source-sized person/animal/object masks and explicit multi-subject selection. It does not identify anatomy, replaces no source pixels, and leaves selected components semantically unassigned.
+
 The complete manual route is available offline and requires Pillow only. A separate analyzer may inspect the source and return the documented annotations. Treat its output as proposed annotations with real author/tool attribution, confidence and rationale. Do not fabricate a provider, API, model call or semantic success receipt. Semantic labels remain flexible: humanoids, quadrupeds, wings, robot housings, masks, symbols and abstract designs all use the same data-driven schema.
 
 ## Start a decomposition
