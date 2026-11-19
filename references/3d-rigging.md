@@ -549,8 +549,16 @@ zero model calls and does not generate the catalog's missing animations.
 
 Template replacement and automatic refitting retain uncertainty records owned
 by independent evidence domains. Both record the admitted template's declared
-archetype for capability selection and retargeting. A low-confidence fitted
-landmark remains pending until an anatomical correction changes its bound bone.
+archetype for capability selection and retargeting. An approved human landmark
+with confidence below `0.9` supplies the fitted head and tail and creates a
+pending anatomy record, including when the replacement template adds the bone.
+To resolve that record, submit a bone edit that changes its fitted anatomy.
+A tail edit that restores its starting position within the same correction
+leaves the record pending. A lasting edit marks the bound occurrence corrected
+and preserves its recorded landmark confidence. An independent occurrence with
+identical contents retains its own resolution. The native and loopback HTTP
+regression in `test_rig_replacement_archetype.py` checks this sequence across
+saved revisions.
 Before publishing a correction or changing the
 active rig, the combined independent and newly fitted records must fit the
 existing schema limit. An over-limit request returns a compact count/limit error

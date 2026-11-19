@@ -330,6 +330,61 @@ class ReplacementArchetypeTests(unittest.TestCase):
         self.assertEqual(loaded.manifest, returned)
         return loaded
 
+    def test_low_confidence_landmark_requires_a_lasting_edit_to_its_bound_bone(self):
+        def pelvis_records(rig):
+            anatomy = [item for item in rig.manifest["uncertainties"]
+                       if item["code"] == "RIG_ANATOMY_UNCERTAIN"]
+            bindings = rig.manifest["anatomy_uncertainty_bindings"]
+            self.assertEqual(len(anatomy), len(bindings))
+            return [(item, binding) for item, binding in zip(anatomy, bindings)
+                    if item["element"] == "pelvis"]
+
+        for route in ("native", "http"):
+            with self.subTest(route=route):
+                rig = self.native_rig() if route == "native" else self.http_rig()
+                self.assertNotIn("pelvis", [bone["id"] for bone in rig.skeleton["bones"]])
+                landmark = dict(head=[0, .5, 0], tail=[0, .7, 0], approved=True, confidence=.8)
+                correction = self.correction(rig, "quadruped")
+                correction["edits"][0]["value"]["landmarks"] = {"pelvis": landmark}
+                rig = self.apply_and_reload(route, rig, correction)
+                bone = next(b for b in rig.skeleton["bones"] if b["id"] == "pelvis")
+                self.assertEqual((bone["head"], bone["tail"]), (landmark["head"], landmark["tail"]))
+                (observation, binding), = pelvis_records(rig)
+                self.assertEqual(binding, object_hash(observation))
+                self.assertEqual(observation["resolution"], "pending")
+                self.assertEqual(observation["evidence"]["confidence"], .8)
+                self.assertEqual(observation["evidence"]["source"], "human-landmark")
+
+                # A second author records the very same observation. Only the
+                # fit-owned occurrence can be resolved by moving the pelvis.
+                rig.manifest["uncertainties"].append(deepcopy(observation))
+                save_rig(rig, operation="synthetic-independent-landmark-observation")
+                rig = load_rig(rig.root)
+
+                # The last fit restores the active anatomy after a transient fit.
+                refit = self.correction(rig, "quadruped", "quadruped")
+                refit["edits"][0]["value"]["landmarks"] = {"pelvis": dict(landmark, tail=[0, .8, 0])}
+                refit["edits"][1]["value"]["landmarks"] = {"pelvis": landmark}
+                rig = self.apply_and_reload(route, rig, refit)
+                pending_pair = [(observation, None), (observation, object_hash(observation))]
+                self.assertEqual(pelvis_records(rig), pending_pair)
+
+                move = dict(operation="bone-update", target="pelvis", value={"tail": [0, .8, 0]})
+                correction = self.correction(rig)
+                correction["edits"] = [move, dict(move, value={"tail": landmark["tail"]})]
+                rig = self.apply_and_reload(route, rig, correction)
+                bone = next(b for b in rig.skeleton["bones"] if b["id"] == "pelvis")
+                self.assertEqual(bone["tail"], landmark["tail"])
+                self.assertEqual(pelvis_records(rig), pending_pair)
+
+                correction = self.correction(rig)
+                correction["edits"] = [move]
+                rig = self.apply_and_reload(route, rig, correction)
+                bone = next(b for b in rig.skeleton["bones"] if b["id"] == "pelvis")
+                self.assertEqual(bone["tail"], move["value"]["tail"])
+                resolved = dict(observation, resolution="corrected")
+                self.assertEqual(pelvis_records(rig), [(observation, None), (resolved, object_hash(resolved))])
+
     def test_repeated_refits_at_exact_limit_keep_independent_and_owned_twins(self):
         for route in ("native", "http"):
             with self.subTest(route=route):
