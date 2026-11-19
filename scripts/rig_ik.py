@@ -612,10 +612,16 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         axis = unit(points[-1] - origin)
         bend = _pole_perpendicular(axis, origin, points[1])
         # A straight chain has no measured bend: _pole_perpendicular picks an
-        # arbitrary side, which solve_ik reproduces from any on-axis pole.
+        # arbitrary side, which solve_ik reproduces from any on-axis pole. The
+        # elbow's axis offset carries rounding that grows with the world
+        # coordinates and the segment length, so only an offset above both the
+        # absolute cutoff and that rounding counts as a measured bend.
         with np.errstate(over='ignore', invalid='ignore'):
             elbow = points[1] - origin
-            measured = not np.linalg.norm(elbow - axis * np.dot(elbow, axis)) < POLE_BEND_CUTOFF
+            offset = np.linalg.norm(elbow - axis * np.dot(elbow, axis))
+            rounding = 64 * np.finfo(float).eps * float(np.max(np.abs(points[[0, 1, -1]])))
+            measured = not offset < max(POLE_BEND_CUTOFF,
+                                        rounding * (1 + np.linalg.norm(elbow) / reach))
         # Keep the near-closed matching pole above the degeneracy cutoff.
         with np.errstate(over='ignore', invalid='ignore'):
             pole = origin + bend * max(reach, MIN_MATCHING_POLE_DISTANCE)

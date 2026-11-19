@@ -162,5 +162,37 @@ class StraightChainMatchingPoleTests(unittest.TestCase):
                     np.testing.assert_array_equal([after[name][:3, 3] for name in chain['bones']],
                                                   [before[name][:3, 3] for name in chain['bones']])
 
+    def test_exactly_straight_chain_with_rounded_elbow_offset_still_matches(self):
+        # Bounded scales place an exactly collinear chain about 1e22 from the
+        # origin. The elbow's axis offset there is rounding above the absolute
+        # 1e-8 cutoff, not a measured bend.
+        skeleton = chain_skeleton(7)
+        validate_skeleton(skeleton)
+        for origin, step in (([-1.658168018455376e+22, -1.3407743160560732e+22, 8.171286620556768e+19], [-10, -40, -1]),
+                             ([2.0441029244368707e+22, 6.144977582749839e+22, -2.0054775724344054e+18], [-31, 1, 8])):
+            delta = (np.array(step, float) * np.spacing(np.abs(origin))).tolist()
+            for solver in ('two-bone', 'fabrik'):
+                with self.subTest(origin=origin, solver=solver):
+                    chain = dict(schema_version=1, id='arm', bones=['b4', 'b5', 'b6'], solver=solver,
+                                 pole=[0., 0., 1.], tolerance=1e-6, iterations=32)
+                    pose = neutral_pose(skeleton)
+                    pose['bones']['b0'] = dict(translation=[0.] * 3, scale=[1e9] * 3)
+                    pose['bones']['b1'] = dict(translation=[0.] * 3, scale=[1e9] * 3)
+                    pose['bones']['b2'] = dict(translation=(np.array(origin) / 1e18).tolist(), scale=[1e-9] * 3)
+                    pose['bones']['b3'] = dict(translation=[0.] * 3, scale=[1e-9] * 3)
+                    pose['bones']['b4'] = dict(translation=[0.] * 3)
+                    pose['bones']['b5'] = dict(translation=delta)
+                    pose['bones']['b6'] = dict(translation=delta)
+                    validate_contract(pose, 'Pose')
+                    before = evaluate_fk(skeleton, pose)
+                    points = np.array([before[name][:3, 3] for name in chain['bones']])
+                    np.testing.assert_array_equal(points[2] - points[0], 2 * (points[1] - points[0]))
+                    with np.errstate(over='ignore'):
+                        matched = match_fk_to_ik(skeleton, pose, chain)
+                        result = solve_ik(skeleton, pose, chain, **matched)
+                    self.assertTrue(result.converged, result.report())
+                    after = evaluate_fk(skeleton, result.pose)
+                    np.testing.assert_array_equal([after[name][:3, 3] for name in chain['bones']], points)
+
 if __name__ == '__main__':
     unittest.main()
