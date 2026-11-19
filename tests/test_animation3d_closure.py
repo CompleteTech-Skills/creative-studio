@@ -222,6 +222,80 @@ class NativeClosureRegressionTests(unittest.TestCase):
                 self.assertEqual(native_registry.call_args.kwargs['payloads'], {'albedo-pixels.json': pixels})
                 self.assertIn('fixture/rig.json', snapshot.inventory)
 
+    def _shared_lookdev_materials(self):
+        import io
+        from PIL import Image
+        base = Path(__file__).resolve().parents[1] / 'examples/lookdev-contracts'
+        stream = io.BytesIO()
+        Image.new('RGBA', (16, 16), (51, 102, 153, 255)).save(stream, format='PNG')
+        pixels = stream.getvalue()
+        (self.root / 'shared.png').write_bytes(pixels)
+        # A real, bounded synthetic PNG, with exact descriptor dimensions/hash.
+        with Image.open(io.BytesIO(pixels)) as image:
+            image.load()
+            self.assertEqual(image.size, (16, 16))
+        texture = json.loads((base / 'albedo.json').read_bytes())
+        texture.update(width=16, height=16)
+        texture['file'] = dict(path='shared.png', bytes=len(pixels),
+                               sha256=hashlib.sha256(pixels).hexdigest())
+        textures = [self.put(f'shared-texture-{index}.json',
+                            {**texture, 'id': f'shared-texture-{index}'}) for index in range(4)]
+        material = json.loads((base / 'ceramic.json').read_bytes())
+        material['dependencies'] = textures
+        self.project['provenance']['sources'] = [
+            self.put(f'material-{index}.json', {**material, 'id': f'material-{index}'})
+            for index in range(2)]
+        return textures
+
+    def _observe_lookdev_retention(self):
+        from unittest.mock import patch
+        from lookdev_contracts import Registry
+        from rig_load_limits import _JSON_FACTOR
+        owners = []
+        def observe(*args, **kwargs):
+            owner = Registry(*args, **kwargs)
+            owners.append(owner)
+            return owner
+        with patch('lookdev_contracts.Registry', side_effect=observe):
+            admitted = self.check()
+        self.assertTrue(admitted['source_ready'])
+        self.assertEqual(len(owners), 2)
+        # Count actual retained decoded resources, permitting an implementation
+        # that shares one immutable resource object across the native owners.
+        retained = {}
+        for owner in owners:
+            for key, value in owner._values.items():
+                source = owner._refs[key]['path']
+                retained.setdefault(source, set()).add(id(value))
+        extra = sum((len(identities) - 1) * admitted['inventory'][name]['bytes'] * _JSON_FACTOR
+                    for name, identities in retained.items())
+        unique = sum(item['bytes'] * (_JSON_FACTOR if name.endswith('.json') else 1)
+                     for name, item in admitted['inventory'].items())
+        return admitted, unique, extra
+
+    def test_project_charges_actual_retained_lookdev_shared_descriptor_copies(self):
+        textures = self._shared_lookdev_materials()
+        admitted, unique, extra = self._observe_lookdev_retention()
+        for descriptor in textures:
+            self.assertEqual(admitted['inventory'][descriptor['path']]['sha256'], descriptor['sha256'])
+        self.assertGreaterEqual(admitted['memory_admission']['estimated_bytes'], unique + extra)
+
+    def test_project_rejects_memory_below_actual_lookdev_retained_closure(self):
+        self._shared_lookdev_materials()
+        _, unique, extra = self._observe_lookdev_retention()
+        if extra:
+            # The spare half-copy dwarfs the project budget's digit-length
+            # change. This is an owned decoded resource, not a guessed second
+            # PNG buffer: Registry validates raw pixels without retaining them.
+            self.project['budgets']['max_memory_bytes'] = unique + extra // 2
+            with self.assertRaises(RigError) as rejected:
+                self.check()
+            self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        else:
+            # Immutable deduplication is also a valid way to meet the bound.
+            self.project['budgets']['max_memory_bytes'] = unique + 4096
+            self.assertTrue(self.check()['source_ready'])
+
     def test_scene_descriptor_roles_preserve_opaque_json_and_legacy_project(self):
         from production_fixture import build_fixture_project
         from rig_load_limits import _JSON_FACTOR
@@ -256,7 +330,12 @@ class NativeClosureRegressionTests(unittest.TestCase):
         decoded.update('native/' + name for name in native_closure['documents'])
         expected_memory = sum(item['bytes'] * (_JSON_FACTOR if name in decoded else 1)
                               for name, item in expected.items())
+        expected_memory += expected['animation-project.json']['bytes'] * _JSON_FACTOR
         self.assertEqual(admitted['memory_admission']['estimated_bytes'], expected_memory)
+        original_memory_limit = admitted['documents']['animation-project.json']['budgets']['max_memory_bytes']
+        admitted['project']['budgets']['max_memory_bytes'] = 1
+        self.assertEqual(admitted['documents']['animation-project.json']['budgets']['max_memory_bytes'],
+                         original_memory_limit)
 
     def test_project_rejects_non_native_zip_compression_before_opening_member(self):
         import io
@@ -310,7 +389,8 @@ class NativeClosureRegressionTests(unittest.TestCase):
         expected = {name: dict(sha256=hashlib.sha256((self.root / name).read_bytes()).hexdigest(),
                                bytes=(self.root / name).stat().st_size) for name in paths}
         self.assertEqual(admitted['inventory'], expected)
-        expected_memory = sum(item['bytes'] for item in expected.values()) * _JSON_FACTOR
+        expected_memory = (sum(item['bytes'] for item in expected.values()) +
+                           expected['animation-project.json']['bytes']) * _JSON_FACTOR
         self.assertEqual(admitted['memory_admission']['estimated_bytes'], expected_memory)
 
     def test_project_charges_each_retained_camera_and_scene_owner_copy(self):
@@ -328,9 +408,8 @@ class NativeClosureRegressionTests(unittest.TestCase):
             new_files = set(dual['inventory']) - set(single['inventory'])
             self.assertEqual(new_files, {root_path})
             old_estimate = single['memory_admission']['estimated_bytes']
-            old_estimate += (dual['inventory'][project_name]['bytes'] -
-                             single['inventory'][project_name]['bytes'] +
-                             dual['inventory'][root_path]['bytes']) * _JSON_FACTOR
+            project_change = dual['inventory'][project_name]['bytes'] - single['inventory'][project_name]['bytes']
+            old_estimate += (2 * project_change + dual['inventory'][root_path]['bytes']) * _JSON_FACTOR
             with self.subTest(case='estimate', owner=native['kind']):
                 self.assertEqual(dual['memory_admission']['estimated_bytes'], old_estimate + shared)
             with self.subTest(case='insufficient aggregate memory', owner=native['kind']):

@@ -443,6 +443,68 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
         refresh([])
         self.assertTrue(self.check()['source_ready'])
 
+    def _historical_camera_callers(self):
+        source = Path(__file__).resolve().parents[1] / 'examples/camera3d'
+        shutil.copytree(source, self.f.root / 'camera')
+        registry = json.loads((source / 'registry.json').read_bytes())
+        current = self.f.put('camera/registry.json', registry)
+        archived = self.f.put('camera/archive.json', {**registry, 'id': 'archive-registry'})
+        track = deepcopy(self.clip['tracks'][0])
+        track.update(id='camera-focal', target=dict(kind='camera', camera_id='camera', property='focal_length'),
+                     value_type='float', default_value=50, keys=[])
+        self.clip['tracks'].append(track)
+        self.clip['dependencies'] = [current]
+        self.f.project['clips'] = [self.f.put('clip.json', self.clip, 'clip')]
+        history = {**deepcopy(self.clip), 'id': 'archive-clip', 'tracks': [track],
+                   'dependencies': [archived]}
+        return history, archived
+
+    def test_complete_historical_camera_caller_coexists_with_active_same_camera_id(self):
+        history, archived = self._historical_camera_callers()
+        self.f.project['provenance']['sources'] = [self.f.put('archive-clip.json', history, 'clip')]
+        admitted = self.check()
+        self.assertTrue(admitted['source_ready'])
+        self.assertEqual(admitted['inventory'][archived['path']]['sha256'], archived['sha256'])
+
+    def test_complete_historical_camera_caller_without_active_camera_control(self):
+        history, _ = self._historical_camera_callers()
+        self.clip['tracks'] = self.clip['tracks'][:-1]
+        self.clip['dependencies'] = []
+        self.f.project['clips'] = [self.f.put('clip.json', self.clip, 'clip')]
+        self.f.project['provenance']['sources'] = [self.f.put('archive-clip.json', history, 'clip')]
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_historical_camera_caller_cannot_borrow_active_registry_after_own_pin_removed(self):
+        history, _ = self._historical_camera_callers()
+        history['dependencies'] = []
+        self.f.project['provenance']['sources'] = [self.f.put('archive-clip.json', history, 'clip')]
+        self.assert_code('ANIMATION_OWNER')
+
+    def test_historical_project_retains_its_own_camera_caller_context(self):
+        history, archived = self._historical_camera_callers()
+        # The archived project explicitly owns the registry; its clip can use
+        # that project context without importing the active project's owner.
+        history['dependencies'] = []
+        archive_project = deepcopy(self.f.project)
+        archive_project.update(id='archive-project', scene_assets=[],
+                               clips=[self.f.put('archive-clip.json', history, 'clip')],
+                               default_render_profile={**archived, 'kind': 'render-profile'})
+        archive_project['provenance']['sources'] = []
+        self.f.project['provenance']['sources'] = [
+            self.f.put('archive-project.json', archive_project, 'project')]
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_provenance_only_clip_keeps_its_own_frame_rate(self):
+        archived = self.f.project['clips'][0]
+        self.f.project['fps'] = dict(numerator=30, denominator=1)
+        self.f.project['clips'] = []
+        self.f.project['provenance']['sources'] = [archived]
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_live_clip_frame_rate_mismatch_still_rejects(self):
+        self.f.project['fps'] = dict(numerator=30, denominator=1)
+        self.assert_code('ANIMATION_RATE')
+
     def test_provenance_scene_versions_cannot_select_active_shot_scene(self):
         historical=deepcopy(self.scene);historical.update(version='2.0.0',actors=[])
         self.f.project['provenance']['sources']=[self.f.put('historical-scene.json',historical,'scene')]

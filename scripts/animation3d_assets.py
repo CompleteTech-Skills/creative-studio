@@ -283,7 +283,11 @@ class Snapshot:
                 if local in entries:
                     return
                 validate_resource(document)
-                entries[local] = (self.destination / parent / local).read_bytes()
+                relative = str(parent / local)
+                # Each Registry retains its own parsed resources. The PNG
+                # payloads are temporary validation input for one constructor.
+                self._reserve_native_json({relative})
+                entries[local] = (self.destination / relative).read_bytes()
                 for descriptor in document['dependencies']:
                     dependency = descriptor['path']
                     payload = self.json(str(parent / dependency), descriptor['sha256'])
@@ -365,6 +369,17 @@ def verify_native(root, reference):
         return kind, value
 
 
+def _reachable_paths(edges, roots):
+    reached = set()
+    pending = list(roots)
+    while pending:
+        path = pending.pop()
+        if path not in reached:
+            reached.add(path)
+            pending.extend(edges.get(path, ()))
+    return reached
+
+
 @_admission
 def load_project(root, name='animation-project.json'):
     """Verify complete animation references, budgets and cross-file bindings.
@@ -384,10 +399,10 @@ def load_project(root, name='animation-project.json'):
         snapshot.memory_limit = min(MAX_BYTES, int(project['budgets']['max_memory_bytes']))
         require(snapshot.expanded_bytes <= snapshot.memory_limit, 'ANIMATION_LIMIT', 'Project exceeds memory admission budget.')
         require(snapshot.total <= snapshot.max_bytes, 'ANIMATION_LIMIT', 'Project exceeds work byte budget.')
-        def visit(path, expected=None, depth=0):
+        def visit(path, expected=None, depth=0, *, captured=None):
             require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Animation dependency depth exceeded.')
             require(path not in active, 'ANIMATION_CYCLE', 'Animation dependency cycle.')
-            value = snapshot.json(path, None if expected is None else expected['sha256'])
+            value = captured if captured is not None else snapshot.json(path, None if expected is None else expected['sha256'])
             require(isinstance(value, dict), 'ANIMATION_KIND', 'Animation dependency must be an object.')
             if value.get('kind') not in KINDS.values():
                 require(expected is not None, 'ANIMATION_KIND', 'Expected typed native source.')
@@ -404,7 +419,8 @@ def load_project(root, name='animation-project.json'):
                 identities[identity] = path
                 native[path] = (kind, admitted)
                 return
-            validate_contract(value)
+            if captured is None:
+                validate_contract(value)
             if expected:
                 require(value.get('id') == expected['id'] and value.get('version') == expected['version'] and
                         value['kind'] == ALIASES.get(expected['kind'], expected['kind']),
@@ -419,24 +435,41 @@ def load_project(root, name='animation-project.json'):
             for reference in current_refs + value.get('provenance', {}).get('sources', []):
                 visit(reference['path'], reference, depth+1)
             active.remove(path)
-        visit(name)
+        visit(name, captured=project)
         # A document may be reached both through provenance and a current
         # dependency. Decide binding authority after capturing every revision.
-        current_paths = set()
-        pending = [name]
-        while pending:
-            path = pending.pop()
-            if path not in current_paths:
-                current_paths.add(path)
-                pending.extend(edges.get(path, ()))
-        _validate_bindings(project, documents, native, snapshot.destination, current_paths)
-        return {'project': deepcopy(project), 'documents': deepcopy(documents),
-                'inventory': deepcopy(snapshot.inventory), 'bytes': snapshot.total,
+        current_paths = _reachable_paths(edges, [name])
+        _validate_bindings(project, documents, native, snapshot.destination, current_paths, edges)
+        # Preserve independent top-level project and document views. Transfer
+        # the rest of the privately owned receipt without copying it again.
+        project_copy = snapshot.memory_charges[name]
+        require(snapshot.expanded_bytes + snapshot.native_memory + project_copy <= snapshot.memory_limit,
+                'ANIMATION_LIMIT', 'Project receipt exceeds memory admission budget.')
+        snapshot.expanded_bytes += project_copy
+        return {'project': deepcopy(project), 'documents': documents,
+                'inventory': snapshot.inventory, 'bytes': snapshot.total,
                 'memory_admission': dict(limit_bytes=snapshot.memory_limit, estimated_bytes=snapshot.expanded_bytes + snapshot.native_memory, native_estimated_bytes=snapshot.native_memory, method='canonical-native-plus-snapshot-v1', scope='conservative data admission; not process RSS'),
                 'source_ready': True, 'scope': 'exact dependency and native target admission; no evaluated scene or render'}
 
 
-def _validate_bindings(project, documents, native, snapshot_root, current_paths):
+def _validate_bindings(project, documents, native, snapshot_root, current_paths, edges):
+    from functools import lru_cache
+
+    historical_parents = {}
+    for parent, children in edges.items():
+        if parent not in current_paths:
+            for child in children:
+                historical_parents.setdefault(child, set()).add(parent)
+
+    @lru_cache(maxsize=1)
+    def historical_context(path):
+        ancestors = _reachable_paths(historical_parents, [path])
+        roots = [ancestor for ancestor in ancestors if ancestor not in historical_parents]
+        return ancestors, _reachable_paths(edges, roots)
+
+    def authority_paths(path):
+        return current_paths if path in current_paths else historical_context(path)[1]
+
     budgets = project['budgets']
     require(not project.get('character_state_bindings'), 'ANIMATION_OWNER',
             'Character state bindings need a canonical character-to-actor owner.')
@@ -551,12 +584,13 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths)
             require(scene is not None, 'ANIMATION_TARGET', 'Node target needs a scene binding.')
             scoped_endpoint(value, scene)
             return
-        # Current targets draw authority from current references. Historical
-        # documents still undergo native validation in the captured closure.
+        # Each bare native target resolves within its consuming dependency
+        # context, including the ordinary links of an archived project.
         from animation3d_owners import _resolve_property
         candidates = []
+        eligible = authority_paths(context_path)
         for path, (kind, admitted) in native.items():
-            if context_path in current_paths and path not in current_paths:
+            if path not in eligible:
                 continue
             if ((domain == 'camera' and kind == 'camera3d-registry') or
                 (domain == 'material' and kind in ('material3d','material-instance3d','material-variant3d')) or
@@ -650,7 +684,14 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths)
             require(d['duration_frames'] <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Animation duration exceeds project budget.')
         if 'fps' in d:
             from animation3d_time import rate
-            require(rate(d['fps']) == rate(project['fps']), 'ANIMATION_RATE', 'Project documents use inconsistent frame rates.')
+            if context_path in current_paths:
+                clocks = [project['fps']]
+            else:
+                ancestors, _ = historical_context(context_path)
+                clocks = [documents[path]['fps'] for path in ancestors
+                          if documents[path]['kind'] == KINDS['project']]
+            require(all(rate(d['fps']) == rate(clock) for clock in clocks),
+                    'ANIMATION_RATE', 'Project documents use inconsistent frame rates.')
         if d['kind'] == KINDS['scene']:
             scene_owner = native_scene(d)
             # Reuse the declared native hierarchy as dependency edges; a bone
