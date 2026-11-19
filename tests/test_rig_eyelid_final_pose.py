@@ -54,7 +54,7 @@ class FinalGazeEyelidTests(unittest.TestCase):
         rig = final_pose_fixture()
         parameters = dict(gaze=gaze_target(.6), chain='chain', target=[.1, 1., 0.])
         before = deepcopy(parameters)
-        posed = pose_operation(rig, parameters)
+        posed = pose_operation(rig, {'gaze': parameters['gaze']})
         solved = solve_operation(rig, parameters)
         pose_pitch = self.assert_final_response(rig, posed)
         solve_pitch = self.assert_final_response(rig, solved['pose'])
@@ -151,7 +151,7 @@ class FinalGazeEyelidTests(unittest.TestCase):
                 expected, _ = apply_constraints(rig.skeleton,
                     gaze_at(rig, initial, parameters['gaze']),
                     rig.manifest['controllers']['constraints'])
-                self.assertEqual(pose_operation(rig, parameters), expected)
+                self.assertEqual(pose_operation(rig, dict(pose=initial, gaze=parameters['gaze'])), expected)
                 expected_solve = solve_ik(rig.skeleton, expected,
                     rig.manifest['controllers']['ik'][0], parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'])

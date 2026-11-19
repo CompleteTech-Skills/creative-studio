@@ -241,6 +241,8 @@ Unknown mutation fields fail. For HTTP `generate` and template-replacement corre
 
 Job status and portable archives record the canonical ID and the operation's `template_source` of `installed`. Resume uses that source to resolve the ID on the current installation. A saved correction contains the submitted object, and its filename is the hash of that object. A stale correction returns 409, missing jobs return 404, unauthenticated requests return 401, and occupied workers return 429.
 
+Pose and IK parameters are shared with `rig_operations.py` and use closed admission. Pose fields are `pose`, `clip`, `time`, `expressions`, `gaze`, `head_follow`, `fingers` and `appendages`; IK adds `chain`, `target`, optional `pole` and optional unit-quaternion `orientation`. Unknown fields, malformed supplied objects, booleans used as numbers, nonfinite/oversized numbers and unavailable pose references fail before evaluation. A null clip preserves the neutral default; an explicitly supplied `gaze: null` releases gaze and its owned eyelid overrides. `time` is nonnegative seconds within the numeric contract bound, and supplied controls retain their documented ranges. IK-only fields do not pass through the pose admission boundary.
+
 ## Resource limits, jobs and recovery
 
 Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one million vertices, two million triangles, 256 bones, four influences, 128 morph targets per mesh, 64 clips, 250,000 total authored keys, 120 seconds per clip, 60 FPS, two GiB estimated processing memory, 128 solver iterations, 300 seconds per external/render operation and three attempts for a failed step.
