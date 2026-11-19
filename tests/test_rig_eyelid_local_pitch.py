@@ -47,7 +47,15 @@ class EyelidLocalPitchTests(unittest.TestCase):
                 self.assertEqual(sampled['morphs']['lid.left']['lift'], .25)
 
     def test_public_pose_and_ik_keep_locked_eye_at_authored_default(self):
-        rig, _ = oriented_fixture([1., 1., 1.], axis_angle([0, 1, 0], .8))
+        self.check_locked_eye(axis_angle([0, 1, 0], .8))
+
+    def test_hinge_normalization_preserves_the_native_rest_orientation(self):
+        rest = axis_angle([7, -2, 1], .6)
+        self.assertFalse(np.array_equal(rest, rest / np.linalg.norm(rest)))
+        self.check_locked_eye(rest)
+
+    def check_locked_eye(self, rest):
+        rig, _ = oriented_fixture([1., 1., 1.], rest)
         rig.manifest['facial']['eyelids'][0].update(up_radians=1e-16, down_radians=1e-16)
         rig.manifest['controllers']['constraints'] = [dict(
             schema_version=1, id='locked-pitch', bone='eye.left', type='hinge',
@@ -63,6 +71,8 @@ class EyelidLocalPitchTests(unittest.TestCase):
         self.assertEqual(solved['report']['pose'], solved['pose'])
         for name, result in (('pose', pose), ('ik', solved['pose'])):
             with self.subTest(operation=name):
+                np.testing.assert_array_equal(
+                    qmatrix(result['bones']['eye.left']['rotation']), qmatrix(rest))
                 self.assertEqual(result['morphs']['lid.left']['lift'], .25)
                 actual = evaluate_deformation(rig, result)['lid.left']['positions']
                 at_default = dict(result, morphs={})

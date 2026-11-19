@@ -6,7 +6,7 @@ import math
 import numpy as np
 from rig_constraints import apply_constraints
 from rig_errors import require
-from rig_math import axis_angle, qmul, quaternion, unit
+from rig_math import axis_angle, qmatrix, qmul, quaternion, unit
 from rig_skeleton import evaluate_fk, hierarchy_order, rotate_bone
 
 
@@ -44,18 +44,23 @@ def validate_eyelid_bindings(rig):
 
 def _local_eye_pitch(bone, override, parent_rest):
     """Measure the final rotation of the rest gaze direction in parent space."""
+    rest = bone['rest']['rotation']
+    posed = override.get('rotation', rest)
+    # A constraint can normalize a rest quaternion without changing the FK
+    # rotation. Exact matrix equality keeps even the smallest distinct motion.
+    if np.array_equal(qmatrix(posed), qmatrix(rest)):
+        return 0.
+
     forward = unit(np.linalg.solve(parent_rest, [0., 0., 1.]))
     up = np.linalg.solve(parent_rest, [0., 1., 0.])
     up = unit(up - forward * np.dot(up, forward))
 
-    rest = np.asarray(bone['rest']['rotation'])
-    posed = np.asarray(override.get('rotation', rest))
+    rest, posed = quaternion(rest), quaternion(posed)
     scalar = np.dot(posed, rest)
     if scalar < 0:
         posed, scalar = -posed, -scalar
     # The vector part of rest * conjugate(rest) is zero. Subtract rest
     # before multiplying so cancellation cannot erase a small eye rotation.
-    # Normalize the relative rotation only after taking this difference.
     relative = qmul(posed - rest, rest * [-1., -1., -1., 1.])
     relative[3] = scalar
     relative = quaternion(relative)
