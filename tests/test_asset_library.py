@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import subprocess
 from types import SimpleNamespace
 import tempfile
 import threading
@@ -220,6 +221,30 @@ class AssetLibraryTests(unittest.TestCase):
         self.library.database.symlink_to(target)
         with self.assertRaises(RigError): self.register()
         self.assertEqual(target.read_bytes(), original)
+
+    # Public delivery treats unexpected skips as failures. Discover this control
+    # only on Windows, where junction creation is part of the test.
+    if os.name == 'nt':
+        def test_native_windows_junction_source_component_is_rejected(self):
+            target = self.root / 'source-target'
+            target.mkdir()
+            source = target / self.mesh.name
+            payload = self.mesh.read_bytes()
+            source.write_bytes(payload)
+            self.assertEqual(read_source_bytes(source, len(payload)), payload)
+
+            junction = self.root / 'source-junction'
+            result = subprocess.run(
+                ['cmd.exe', '/d', '/c', 'mklink', '/J', junction.name, target.name],
+                cwd=self.root, capture_output=True, text=True, errors='replace', timeout=15)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(junction.lstat().st_reparse_tag, stat.IO_REPARSE_TAG_MOUNT_POINT)
+
+            with self.assertRaises(RigError) as rejection:
+                read_source_bytes(junction / source.name, len(payload))
+            self.assertEqual(rejection.exception.report['code'], 'LIBRARY_SYMLINK')
+            self.assertEqual(rejection.exception.report['asset'], str(junction))
+            self.assertEqual(read_source_bytes(source, len(payload)), payload)
 
     def test_public_source_reader_rejects_invalid_bounds_and_nonregular_files(self):
         self.assertEqual(read_source_bytes(self.mesh, len(self.mesh.read_bytes())), self.mesh.read_bytes())
