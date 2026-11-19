@@ -247,8 +247,8 @@ class SearchIndex:
                 fail('CAPABILITY','Collection owner requires collections(reference).')
             library = self.libraries[alias]
             if (isinstance(owner, AssetVersions) and isinstance(owner.library, AssetLibrary)
-                    and isinstance(library, AssetLibrary) and owner.library is not library
-                    and owner.library.root.resolve() != library.root.resolve()):
+                    and isinstance(library, AssetLibrary)
+                    and not owner.library.same_owner(library)):
                 fail('REQUEST', 'Native collection owner belongs to a different library.')
         if self.usage_resolver is not None and not callable(getattr(self.usage_resolver,'bindings',None)):
             fail('CAPABILITY','Usage owner requires bindings(project_id).')

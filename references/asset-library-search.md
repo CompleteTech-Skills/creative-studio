@@ -159,3 +159,5 @@ Search bounds: 32 libraries, 4,096 selected records, 2,048 query characters,
 Full dependency, project usage, browser and parent #132/#128 acceptance remain
 open. This search slice does not complete dependency closure/locks/replacement
 acceptance in #143 or the broader #144 search integration requirements.
+
+Native collection-owner admission also verifies both handles still name their original private directories before comparing ownership. Reopening the same root is supported; a reused pathname after directory replacement cannot admit a stale handle, create a derived index, or turn an ownership failure into a successful empty rebuild. The owner identity check is read-only and runs before capture or optional provider encoding.

@@ -1,0 +1,33 @@
+{
+  "scope": "PR501 independent native directory-owner regression; no future implementation diff inspected",
+  "predecessor_commit": "d42e9a43cd18a6793e8088549d0386f241a8550e",
+  "predecessor_tree": "b6283526ccdfe9e159802930a8f6dbb891ef1e88",
+  "command": "PYTHONPATH=scripts:tests <rig-python> -m unittest -v test_asset_library_search_owner_identity",
+  "environment": {
+    "python": "3.12.14",
+    "sqlite": "3.53.1",
+    "platform": "linux"
+  },
+  "result": {
+    "exit": 1,
+    "tests": 4,
+    "failed_subtests": 14,
+    "errors": 0,
+    "skips": 0
+  },
+  "preserved_log": {
+    "location": "<local-work-dir>/oracle501-owner-predecessor.log",
+    "sha256": "1dd531b0a1166219741f7a2ad03651ba95217708ff1bcc6985381bcf30d6fe89"
+  },
+  "fixture_setup_errors": [],
+  "observed": [
+    "Independent same-root reopened native handles work and preserve both canonical libraries and source bytes.",
+    "All three stale-handle configurations create an unauthorized new index on the predecessor.",
+    "Stale collection owner with fresh library silently changes the existing index on catalog and explicit rebuild.",
+    "Both stale handles silently change the existing index on explicit rebuild, including independent handles.",
+    "Existing-good-index lexical and semantic queries and vector rebuild reject all stale configurations without encoding or byte changes.",
+    "All original and replacement canonical library and source byte preservation assertions pass."
+  ],
+  "evidence_limits": "Synthetic native libraries/storage/versions only. Dispatch-only provider double; no real embedding, Blender, browser, live service, or production evidence.",
+  "root_integration": "Tests-only commit; root remains sole integrator and controls gate inclusion."
+}

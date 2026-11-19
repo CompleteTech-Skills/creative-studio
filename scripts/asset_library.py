@@ -217,14 +217,27 @@ class AssetLibrary:
                 db.execute('CREATE TABLE durability(canonical INTEGER NOT NULL)')
                 db.execute('INSERT INTO durability VALUES(1)')
 
-    @contextmanager
-    def _connect(self, initial: bool = False) -> Iterator[sqlite3.Connection]:
+    def _check_root(self) -> None:
+        """Validate the original native directory before trusting this handle."""
         info = self.root.lstat()
         if ((info.st_dev, info.st_ino) != self._root_identity or not stat.S_ISDIR(info.st_mode) or
             self.root.is_symlink() or getattr(info, 'st_file_attributes', 0) & 0x400):
             _fail('ROOT', 'Library directory was replaced.')
         if sys.platform != 'win32' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
             _fail('ROOT', 'Library directory no longer has private ownership.')
+
+    def same_owner(self, other: AssetLibrary) -> bool:
+        """Compare live native owners without reading or changing their indexes."""
+        if not isinstance(other, AssetLibrary):
+            _fail('REQUEST', 'Native owner comparison requires another library handle.')
+        self._check_root()
+        other._check_root()
+        return (self._root_identity == other._root_identity and
+                self.root.resolve() == other.root.resolve())
+
+    @contextmanager
+    def _connect(self, initial: bool = False) -> Iterator[sqlite3.Connection]:
+        self._check_root()
         info = self.database.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or getattr(info, 'st_file_attributes', 0) & 0x400:
             _fail('DATABASE', 'Library database must be a regular unlinked-owned file.')
