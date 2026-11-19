@@ -58,6 +58,17 @@ def _oriented_bounds(record):
     return center, half_axes
 
 
+def _oriented_parts(record):
+    """Translation, rotated local centre and half axes, kept separate.
+
+    Overlap subtracts translations and local centres independently so nearby
+    boxes far from the origin are not compared through rounded world centres.
+    """
+    low, high = _box(record['local'])
+    matrix = record['matrix']
+    return matrix[:3,3], matrix[:3,:3] @ ((low + high) / 2), (matrix[:3,:3] @ np.diag((high - low) / 2)).T
+
+
 def _overlap(a, b, clearance=0):
     return bool(np.all(a[0] <= b[1]+clearance) and np.all(b[0] <= a[1]+clearance))
 
@@ -195,6 +206,7 @@ def _exact_triangle_overlap(left, right):
 
 def _triangle_intersects(left, right):
     """Separating-axis triangle intersection, including coplanar triangles."""
+    original_left, original_right = left, right
     anchor = left[0]
     with np.errstate(over='ignore'):
         relative_left, relative_right = left - anchor, right - anchor
@@ -202,11 +214,9 @@ def _triangle_intersects(left, right):
     if scale == 0 or not math.isfinite(scale):
         return _exact_triangle_overlap(left, right)
     normalized_left, normalized_right = relative_left / scale, relative_right / scale
-    uncertain = False
     for axis in _triangle_axes(normalized_left, normalized_right):
         magnitude = max(map(abs, axis))
         if magnitude == 0:
-            uncertain = True
             continue
         axis = np.asarray(axis) / magnitude
         a, b = normalized_left @ axis, normalized_right @ axis
@@ -214,9 +224,10 @@ def _triangle_intersects(left, right):
         gap = max(float(b.min() - a.max()), float(a.min() - b.max()))
         if gap > tolerance:
             return False
-        if gap >= -tolerance:
-            uncertain = True
-    return _exact_triangle_overlap(left, right) if uncertain else True
+    # Float axes only reject clearly separated pairs. Nearly parallel edges give
+    # skewed float cross products on which a separated pair can project as a
+    # clear overlap, so every remaining contact is confirmed exactly.
+    return _exact_triangle_overlap(left, right)
 
 
 def _closed(indices):
@@ -384,12 +395,16 @@ class SpatialIndex:
         """Exact SAT overlap of transformed local boxes, including shear.
 
         Geometry boxes remain conservative with respect to non-box meshes.
-        Degenerate (flat/line) bounds use world AABB broad-phase candidates.
+        Degenerate (flat/line) bounds, notably coplanar flat boxes, may be
+        reported as possible overlap because their edge axes coincide.
+        Touching counts as overlap, and separation smaller than the rounding
+        scale of the translations and local centres involved is reported as a
+        possible overlap rather than dropped.
         """
         records = self._chosen(exclude, visibility)
         require(identifier in self._records, 'Node has no geometric bounds.', 'SCENE3D_SPATIAL')
         source = self._records[identifier]
-        center, axes = _oriented_bounds(source)
+        translation, local_center, axes = _oriented_parts(source)
         # A rotated mesh's local box can have empty corners outside the
         # world bounds of its vertices. Project the box itself onto XYZ.
         source_extent = np.abs(axes).sum(axis=0)
@@ -397,10 +412,13 @@ class SpatialIndex:
         for other,record in records:
             if other == identifier:
                 continue
-            other_center, other_axes = _oriented_bounds(record)
-            delta = other_center - center
+            other_translation, other_local_center, other_axes = _oriented_parts(record)
+            delta = (other_translation - translation) + (other_local_center - local_center)
+            # Rounding in each cancelled term is bounded by its own magnitude.
+            cancelled = (np.abs(other_translation)+np.abs(translation)
+                         +np.abs(other_local_center)+np.abs(local_center))
             extent = source_extent + np.abs(other_axes).sum(axis=0)
-            if np.any(np.abs(delta) > extent + 32*np.finfo(float).eps*np.maximum(extent, np.abs(delta))):
+            if np.any(np.abs(delta) > extent + 32*np.finfo(float).eps*(np.maximum(extent, np.abs(delta))+cancelled)):
                 continue
             # Face normals from each box plus all nine edge cross products.
             candidates = [np.cross(a,b) for a,b in ((axes[0],axes[1]),(axes[1],axes[2]),(axes[2],axes[0]),
@@ -415,7 +433,8 @@ class SpatialIndex:
                 axis = axis/np.linalg.norm(axis)
                 radius = np.abs(axes@axis).sum()+np.abs(other_axes@axis).sum()
                 distance = abs(np.dot(delta,axis))
-                tolerance = 32*np.finfo(float).eps*max(float(radius),float(distance))
+                tolerance = 32*np.finfo(float).eps*(max(float(radius),float(distance))
+                                                    +float(cancelled@np.abs(axis)))
                 if distance > radius+tolerance:
                     separated = True
                     break
