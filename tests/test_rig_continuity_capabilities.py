@@ -2,12 +2,14 @@
 import copy
 from datetime import datetime, timezone, timedelta
 import hashlib
+import http.client
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -17,6 +19,7 @@ from continuity_capabilities import Admission, CapabilityRefusal, Policy, MATRIX
 from continuity_capability_owners import RigOwner, ImageMastersOwner, pointer
 from continuity_contracts import VERSION, canonical_bytes, digest
 from rig_errors import RigError
+from rig_http import RigServer
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -51,6 +54,38 @@ class CapabilityTest(unittest.TestCase):
         owner = self.rig(cap); request = self.request(cap)
         request['checks'][0].update(inputs=[owner.bound], input_types=['hatch-3d-rig'], output_types=['native-inspection'])
         return owner, request
+
+    def test_loopback_discovery_and_owner_admission(self):
+        owner, request = self.bound('geometry-inspection')
+        with RigServer(self.root, self.root, continuity=self.engine(owner)) as server:
+            thread = threading.Thread(target=server.serve_forever,
+                                      kwargs={'poll_interval': 0.01}, daemon=True)
+            thread.start()
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+            headers = {'Authorization': 'Bearer ' + server.token,
+                       'Origin': f'http://127.0.0.1:{server.server_port}'}
+            try:
+                connection.request('GET', '/v1/continuity/capabilities', headers=headers)
+                response = connection.getresponse()
+                discovery = json.loads(response.read())
+                self.assertEqual(response.status, 200, discovery)
+                self.assertEqual(discovery['kind'], 'continuity-capability-discovery')
+                self.assertEqual(len(discovery['capabilities']), len(MATRIX))
+                self.assertTrue(all(row['status'] == 'untested' for row in discovery['capabilities']))
+
+                headers['Content-Type'] = 'application/json'
+                connection.request('POST', '/v1/continuity/admit', json.dumps(request), headers)
+                response = connection.getresponse()
+                result = json.loads(response.read())
+                self.assertEqual(response.status, 200, result)
+                self.assertEqual(result['integrity'], 'verified')
+                self.assertEqual(result['outcome'], 'partial')
+                self.assertGreater(result['checks'][0]['measurements']['geometry']['vertices'], 0)
+                self.assertFalse(result['visual_approval'])
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=2)
 
     def test_discovery_is_not_execution_or_approval(self):
         result = discover()
