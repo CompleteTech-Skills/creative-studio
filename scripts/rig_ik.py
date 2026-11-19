@@ -487,6 +487,24 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     return IKResult(result, error, bool(reachable), bool(converged), iterations, changes, orientation_error)
 
 
+def _matching_bend(root, first, end, reach):
+    """Bend direction of a matched seed, resolved relative to its own scale.
+
+    The solver's absolute 1e-8 m perpendicular cutoff would discard the
+    measured bend of a valid tiny chain and substitute an arbitrary axis.
+    Use the measured perpendicular whenever it exceeds its rounding
+    uncertainty; otherwise keep the existing degenerate fallback.
+    """
+    direction = unit(end-root)
+    delta = first-root
+    raw = delta-direction*np.dot(delta, direction)
+    rounding = 64*np.finfo(float).eps*max(float(np.abs(root).max()), float(np.abs(first).max()),
+                                           float(np.abs(end).max()))
+    if np.linalg.norm(raw) > rounding*(1.+np.linalg.norm(delta)/reach):
+        return unit(raw)
+    return _pole_perpendicular(direction, root, first)
+
+
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     validate_chain(skeleton, chain)
     points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
@@ -497,7 +515,7 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         # though its endpoint coincides with its root.
         pole = points[1]
     else:
-        bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
+        bend = _matching_bend(points[0], points[1], points[-1], reach)
         # Below the 1e-8 m pole-degeneracy cutoff a reach-distance pole would
         # be replaced by an arbitrary axis, moving the elbow of a valid
         # near-closed seed. Keep the same bend direction at a safe distance.
