@@ -48,6 +48,42 @@ class AnimationIndependentClockTests(unittest.TestCase):
         with self.assertRaises(RigError):
             clock.shot_time({'frame': 19}, 20, 10, fps)
 
+    def test_shot_at_global_clock_limit_is_exact(self):
+        fps = {'numerator': 24000, 'denominator': 1001}
+        shot = (9_999_998, 2, fps)
+        start = {'frame': 9_999_998}
+        last_tick = {'frame': 9_999_999, 'subframe_ticks': 999_999}
+        end = {'frame': 10_000_000}
+        past_end = {'frame': 10_000_000, 'subframe_ticks': 1}
+        self.assertEqual(clock.shot_time(start, *shot), Fraction(0))
+        for terminal in (False, True):
+            with self.subTest(terminal=terminal):
+                self.assertEqual(clock.shot_time(last_tick, *shot, terminal=terminal),
+                                 Fraction(1_999_999 * 1001, 1_000_000 * 24_000))
+        self.assertEqual(clock.shot_time(end, *shot, terminal=True), Fraction(1001, 12_000))
+        with self.assertRaisesRegex(RigError, 'outside the shot half-open interval'):
+            clock.shot_time(end, *shot, terminal=False)
+        with self.assertRaisesRegex(RigError, 'outside the shot half-open interval'):
+            clock.shot_time(past_end, *shot, terminal=True)
+        self.assertEqual(clock.frame_position(past_end), Fraction(10_000_000_000_001, 1_000_000))
+
+    def test_shot_rejects_intervals_that_cannot_fit_the_global_clock(self):
+        fps = {'numerator': 24000, 'denominator': 1001}
+        for start, duration in ((9_999_999, 2), (10_000_000, 1), (0, 10_000_001)):
+            with self.subTest(start=start, duration=duration):
+                with self.assertRaisesRegex(RigError, 'Invalid shot interval') as error:
+                    clock.shot_time({'frame': 10_000_000}, start, duration, fps)
+                self.assertEqual(error.exception.report['code'], 'ANIMATION_SHOT')
+
+    def test_shot_requires_a_boolean_terminal_flag(self):
+        fps = {'numerator': 24000, 'denominator': 1001}
+        for terminal in ('yes', 1, 0, None):
+            for frame in (29, 30):
+                with self.subTest(terminal=terminal, frame=frame):
+                    with self.assertRaisesRegex(RigError, 'Terminal flag must be a boolean') as error:
+                        clock.shot_time({'frame': frame}, 20, 10, fps, terminal=terminal)
+                    self.assertEqual(error.exception.report['code'], 'ANIMATION_SHOT')
+
     def test_clock_rejects_inexact_and_out_of_range_values(self):
         fps = {'numerator': 24, 'denominator': 1}
         for value in [Fraction(1, 7), -1, 0.1, True]:

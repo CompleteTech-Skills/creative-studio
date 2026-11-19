@@ -57,6 +57,8 @@ class CapabilityTest(unittest.TestCase):
 
     def test_loopback_discovery_and_owner_admission(self):
         owner, request = self.bound('geometry-inspection')
+        with RigServer(self.root, self.root) as unconfigured:
+            self.assertIsNone(unconfigured.continuity)
         with RigServer(self.root, self.root, continuity=self.engine(owner)) as server:
             thread = threading.Thread(target=server.serve_forever,
                                       kwargs={'poll_interval': 0.01}, daemon=True)
@@ -64,8 +66,18 @@ class CapabilityTest(unittest.TestCase):
             connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
             headers = {'Authorization': 'Bearer ' + server.token,
                        'Origin': f'http://127.0.0.1:{server.server_port}'}
+            capabilities = '/v1/continuity/capabilities'
             try:
-                connection.request('GET', '/v1/continuity/capabilities', headers=headers)
+                for supplied, status, error in (
+                        ({}, 401, 'RIG_API_AUTH'),
+                        ({**headers, 'Origin': 'http://untrusted.invalid'}, 403, 'RIG_API_ORIGIN')):
+                    with self.subTest(error=error):
+                        connection.request('GET', capabilities, headers=supplied)
+                        response = connection.getresponse()
+                        self.assertEqual(json.loads(response.read())['error']['code'], error)
+                        self.assertEqual(response.status, status)
+
+                connection.request('GET', capabilities, headers=headers)
                 response = connection.getresponse()
                 discovery = json.loads(response.read())
                 self.assertEqual(response.status, 200, discovery)
@@ -82,6 +94,12 @@ class CapabilityTest(unittest.TestCase):
                 self.assertEqual(result['outcome'], 'partial')
                 self.assertGreater(result['checks'][0]['measurements']['geometry']['vertices'], 0)
                 self.assertFalse(result['visual_approval'])
+
+                server.continuity = None
+                connection.request('GET', capabilities, headers=headers)
+                response = connection.getresponse()
+                self.assertEqual(json.loads(response.read())['error']['code'], 'RIG_API_CONTINUITY_UNAVAILABLE')
+                self.assertEqual(response.status, 400)
             finally:
                 connection.close()
                 server.shutdown()
