@@ -215,6 +215,35 @@ assert validate_rig(rig, require_animation=True)["ok"]
 
 The facade exports model import/analysis, templates/skeleton generation, corrections, weights, FK, IK, deformation, animation/layers/blends/baking, retargeting, validation/range testing, rendering, GLB, Blender and portable packaging. Focused modules expose facial controls, sockets/grasps, state mapping and operations. Examples and numerical expectations are executable in `tests/test_rig_*.py`.
 
+Persisted `apply_rig_corrections` calls acquire the same native writer lock as
+the dispatcher and compare the handle's load/save core identity with the
+current saved manifest before writing correction or revision history. A stale
+handle raises `RIG_STALE_CORRECTION`; reload and rebase its envelope. Current
+handles retain legitimate unsaved edits. This admission identity is process
+local and does not add a manifest field or change serialized contracts.
+`persist=False` is an explicitly detached, handle-relative preview: it validates
+the envelope against the supplied handle and does not consult or change the
+saved run. A later persisted correction still requires current authority.
+
+Each persisted skeletal correction advances from the current saved skeleton
+version under the native writer lock, including repeated template replacements,
+template/bone edit sequences and corrections after unsaved public skeleton
+generation. The persistence owner compares the actual skeleton being published,
+so an expression or other edit carrying an unsaved or detached skeletal change
+also receives a fresh saved skeleton identity. Changed skeletons invalidate
+dependent skins, animations, state mappings, review and validation as ordinary
+skeletal corrections do; unchanged-skeleton edits retain their version and
+compatible skins, animations and mappings. Unsaved authored geometry and other
+edits remain part of the result; their generated version does not replace the
+saved successor identity. Detached previews continue to advance from the supplied
+handle's skeleton version.
+Earlier saved poses then fail the existing skeleton-version admission, while
+fresh compatible poses and weight-only edits retain their existing behavior.
+The synthetic regressions in `test_rig_correction_authority_regressions.py`,
+`test_rig_correction_persistence_boundary.py` and
+`test_rig_correction_published_state.py` cover issues #544/#545 in the
+operations/archive gate; they do not establish full #52/#11 acceptance.
+
 ## Local HTTP API
 
 ```bash

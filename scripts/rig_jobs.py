@@ -55,6 +55,7 @@ def save_rig(rig: RigAsset, *, bump=True, operation='save') -> dict:
         else:atomic_json(target, old)
     atomic_json(root/'rig.json', manifest)
     rig.manifest = manifest
+    rig._admitted_sha256 = rig_signature(manifest)
     if (root/'job.json').exists():
         job=read_json(root/'job.json')
         if not any(s['status']=='running' for s in job['steps'].values()):

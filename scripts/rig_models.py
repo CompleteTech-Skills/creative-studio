@@ -81,6 +81,9 @@ class RigAsset:
     root: Path | None = None
     # Runtime admission data is deliberately outside the signed source manifest.
     resource_usage: dict | None = None
+    # The core admitted by load/save, retained across ordinary in-memory edits.
+    # This is process-local provenance, not a new serialized identity contract.
+    _admitted_sha256: str | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def skeleton(self) -> dict:
@@ -571,4 +574,6 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
         require(any(r.get('expected_sha256')==rig_signature(manifest) and r.get('reviewer_kind') in ('human','agent')
                     and set(r.get('dimensions',{}))==set(REVIEW_DIMENSIONS) and all(v['verdict']=='approved' for v in r['dimensions'].values()) for r in receipts),
                 'RIG_REVIEW_MISSING','Approved status requires a matching real visual review receipt.')
-    return RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    rig = RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    rig._admitted_sha256 = rig_signature(manifest)
+    return rig
