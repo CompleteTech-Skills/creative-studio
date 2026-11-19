@@ -4,6 +4,8 @@ import argparse
 from copy import deepcopy
 import json
 
+import numpy as np
+
 from model3d_semantic import _finish,apply_pose,validate_asset
 from model3d_semantic_evidence import bind_style
 from model3d_semantic_io import load_asset,save_asset
@@ -27,7 +29,14 @@ def apply_style_materials(asset,style_id,*,parts=None,notes=''):
     """
     from style_registry import resolve_style
     require(isinstance(style_id,str) and 0<len(style_id)<=128,'MODEL3D_STYLE_UNSUPPORTED','Style selection must be a bounded registry identifier.')
-    validate_asset(asset);snapshot=resolve_style(style_id,notes=notes);resolved=snapshot['resolved_id']
+    validate_asset(asset)
+    try:
+        snapshot=resolve_style(style_id,notes=notes)
+    except RigError:
+        raise
+    except ValueError as exc:
+        raise RigError('MODEL3D_STYLE_UNSUPPORTED',str(exc)) from None
+    resolved=snapshot['resolved_id']
     require(resolved in STYLE_RECIPES,'MODEL3D_STYLE_UNSUPPORTED',
             'Executable PBR adaptations currently support clay, 3d-toy and plush only.')
     if parts is None:parts=[key for key,part in asset.parts.items() if part['meshes']]
@@ -40,6 +49,11 @@ def apply_style_materials(asset,style_id,*,parts=None,notes=''):
     require(len(asset.geometry.materials)+len(slots)<=4096,'MODEL3D_STYLE_LIMIT','Style material revisions exceed their slot budget.')
     require(all(not asset.geometry.materials[index].get('extensions') for index in slots),
             'MODEL3D_STYLE_UNSUPPORTED','Material shader extensions require their native authoring owner; core PBR factors cannot certify this adaptation.')
+    # glTF multiplies the factors by metallicRoughnessTexture (B, G); replacing
+    # only the factors would not execute the recorded metallic/roughness.
+    require(all('metallicRoughnessTexture' not in asset.geometry.materials[index].get('pbrMetallicRoughness',{})
+                for index in slots),
+            'MODEL3D_STYLE_UNSUPPORTED','A metallic-roughness texture scales the factors; this adaptation would not execute as recorded.')
     recipe=deepcopy(STYLE_RECIPES[resolved])
     styled=bind_style(asset,style_id,notes=notes,adaptations=dict(
         geometry='Existing native geometry preserved; no generated topology is implied.',
@@ -73,6 +87,13 @@ def apply_catalog_state(asset,state_id):
     require(binding['catalog_sha256']==library.sha256,'MODEL3D_STATE_STALE','State mapping belongs to a different catalog snapshot.')
     require(binding['status']=='rigid-pose' and binding['pose'] in asset.poses,
             'MODEL3D_STATE_UNAVAILABLE','This asset has no represented rigid pose for the selected state.')
+    pose=asset.poses[binding['pose']]
+    for key,value in pose.items():
+        m=np.asarray(value,dtype=float);rotation=m[:3,:3]
+        require(m.shape==(4,4) and np.array_equal(m[3],[0.,0.,0.,1.])
+                and np.allclose(rotation.T@rotation,np.eye(3),rtol=0,atol=1e-9)
+                and np.linalg.det(rotation)>0,
+                'MODEL3D_STATE_NOT_RIGID','Catalog state poses must be rigid rotations and translations: '+key)
     result=apply_pose(asset,binding['pose'])
     result.history[-1]['operation']='apply-existing-catalog-state:'+state_id
     return result

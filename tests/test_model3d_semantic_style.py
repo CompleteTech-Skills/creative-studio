@@ -69,4 +69,31 @@ class StyleExecutionTests(unittest.TestCase):
         self.assertEqual(second.geometry.materials[slot]['pbrMetallicRoughness']['roughnessFactor'],.92)
 
 
+    def test_metallic_roughness_texture_is_refused_not_misrecorded(self):
+        from io import BytesIO
+        from PIL import Image
+        from rig_models import TextureImage
+        png=BytesIO();Image.new('RGB',(2,2),(0,128,255)).save(png,format='PNG')
+        textured=deepcopy(self.asset)
+        textured.geometry.images=[TextureImage('fixture','image/png',png.getvalue())]
+        textured.geometry.textures=[{'source':0}]
+        for mesh in textured.geometry.meshes:
+            mesh.attributes['TEXCOORD_0']=np.zeros((len(mesh.positions),2))
+        textured.geometry.materials[0]['pbrMetallicRoughness']['metallicRoughnessTexture']={'index':0}
+        with self.assertRaises(RigError) as caught:apply_style_materials(textured,'plush')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_STYLE_UNSUPPORTED')
+
+    def test_unknown_style_is_a_structured_refusal(self):
+        with self.assertRaises(RigError) as caught:apply_style_materials(self.asset,'no-such-style')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_STYLE_UNSUPPORTED')
+
+    def test_catalog_state_refuses_scaled_sheared_or_mirrored_poses(self):
+        for label,edit in (('scale',lambda m:m.__setitem__((0,0),3.)),('shear',lambda m:m.__setitem__((0,1),2.)),
+                           ('mirror',lambda m:m.__setitem__((0,0),-1.))):
+            with self.subTest(label=label):
+                matrix=np.eye(4);edit(matrix)
+                asset=map_states(define_pose(self.asset,'odd',{'head':matrix}),{'waving':'odd'})
+                with self.assertRaises(RigError) as caught:apply_catalog_state(asset,'waving')
+                self.assertEqual(caught.exception.report['code'],'MODEL3D_STATE_NOT_RIGID')
+
 if __name__=='__main__':unittest.main()
