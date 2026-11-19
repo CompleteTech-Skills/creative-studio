@@ -11,11 +11,22 @@ from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
 
 
-def apply_rig_corrections(rig, correction, *, persist=True):
+def validate_correction_binding(rig, correction):
+    """Validate the bounded original envelope before resolving execution inputs."""
+    if isinstance(correction, dict) and isinstance(correction.get('edits'), list):
+        from rig_contracts import definitions
+        limit=definitions()['RigCorrection']['properties']['edits']['maxItems']
+        require(len(correction['edits']) <= limit, 'RIG_SCHEMA',
+                'Correction exceeds the edit limit.', stage='RigCorrection',
+                asset='edits', expected=limit, observed=len(correction['edits']))
     validate_contract(correction, 'RigCorrection')
     require(correction['rig_id']==rig.manifest['id'] and correction['rig_version']==rig.manifest['version']
             and correction['expected_sha256']==rig_signature(rig.manifest),
             'RIG_STALE_CORRECTION', 'Correction targets a different rig revision; rebase it against the current rig.')
+
+
+def apply_rig_corrections(rig, correction, *, persist=True, resolve_template=None):
+    validate_correction_binding(rig, correction)
     result=deepcopy(rig);skeleton_changed=False;invalidated=[]
     specs=[];evidence={}
     if result.manifest['skeleton']:
@@ -128,7 +139,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
         elif operation=='template':
             from rig_templates import generate_skeleton
             require(isinstance(value,dict) and set(value) <= {'template','landmarks'} and 'template' in value,'RIG_TEMPLATE_EDIT','Specify a template and optional landmarks.')
-            fitted=generate_skeleton(result.geometry,value['template'],landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
+            template=value['template'] if resolve_template is None else resolve_template(value['template'])
+            fitted=generate_skeleton(result.geometry,template,landmarks=value.get('landmarks'),character_id=result.manifest['character']['id'])
             for key in ('skeleton','controllers','attachments','uncertainties'):result.manifest[key]=fitted[key]
             specs=[{k:b[k] for k in ('id','role','parent','head','tail','deform','mirror','roll')} for b in fitted['skeleton']['bones']]
             evidence={b['id']:b['evidence'] for b in fitted['skeleton']['bones']};skeleton_changed=True

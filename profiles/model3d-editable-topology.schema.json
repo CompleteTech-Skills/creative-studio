@@ -1,0 +1,77 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "const": "hatch-model3d-editable-topology"
+    },
+    "mesh": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\x00-\\x1f\\x7f\\ud800-\\udfff]+(?![\\s\\S])"
+    },
+    "positions": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "minimum": -1e+100,
+          "maximum": 1e+100
+        },
+        "minItems": 3,
+        "maxItems": 3
+      },
+      "minItems": 3,
+      "maxItems": 1000000
+    },
+    "faces": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        },
+        "minItems": 3,
+        "maxItems": 256
+      },
+      "minItems": 1,
+      "maxItems": 2000000
+    },
+    "triangle_faces": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1999999
+      },
+      "minItems": 1,
+      "maxItems": 2000000
+    },
+    "normal_mode": {
+      "enum": [
+        "smooth",
+        "flat"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "mesh",
+    "positions",
+    "faces",
+    "triangle_faces",
+    "normal_mode"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch Model3D model3d-editable-topology v1",
+  "description": "Structural validation only; runtime checks references and counts. No filesystem integrity or approval claim."
+}

@@ -45,6 +45,25 @@ Shared JSON ingestion bounds document size in encoded bytes and nesting, rejects
 
 Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. Its complete version-1 shape and field types are validated independently of its hash. New records store the import scale as a number greater than zero and at most 10,000. Historical records with JSON `true` for unit scale remain readable under their original byte hashes. An imported procedural fixture stays a fixture when exported and reimported.
 
+glTF node admission retains the existing `abs(det(linear)) > 1e-12` admission,
+and additionally admits smaller determinants when the determinant after dividing
+each column by its largest absolute component exceeds `1e-12` in absolute value.
+This extends admission to well-conditioned small unit conversions without
+narrowing existing static shear or anisotropy support. It does not establish a
+new scale-invariant conditioning policy for previously accepted transforms.
+Zero axes and newly admitted almost dependent directions remain rejected.
+The complete inverse must remain finite in float64. Extreme scales whose raw determinant underflows or
+overflows, or whose inverse directions exceed the float64 squared-normalization
+budget, fail with `RIG_GLTF_NUMERIC_RANGE` before importing mesh data. The latter
+bound is `max(abs(inverse_linear)) <= sqrt(float64_max)/6`; a unit direction's
+squared transformed length is bounded by 27 times that maximum component squared.
+This is a representability limit, not a declaration of mathematical singularity.
+The same checks cover accumulated hierarchy transforms and the explicit import
+unit conversion, before decoding geometry or creating a rig run. Scene-graph
+callers still receive the original, unscaled source-world matrices.
+Static reflections and shear retain their existing
+import behavior; this does not relax the skeletal rest-transform rules above.
+
 The canonical definitions live in `scripts/rig_contracts.py`. Generated Draft 2020-12 schemas under `profiles/rig*.schema.json` cover rigs, templates, clips, poses, retarget profiles, corrections, reviews, jobs and export receipts. Nested definitions cover skeletons, bones, skin bindings and controllers. JSON Schema checks structure and field types; the runtime also checks reference graphs, unit quaternions, bind reconstruction, source hashes and safe local resource paths. See the [contract acceptance audit](rig-contracts-acceptance.md) for the current compatibility baseline and requirement-to-test mapping.
 
 ## Import, analyze, fit and bind
@@ -60,6 +79,8 @@ python scripts/rig.py test-motion --run-dir output/character
 ```
 
 GLB/glTF import handles real mesh primitives and scene instances, local or embedded buffers, interleaved and sparse accessors, PNG/JPEG textures, material references, UVs, normals, tangents, morph deltas/default weights, compatible skins and animation channels. The importer preserves an existing compatible skeleton. `auto` reports preservation instead of replacing it; replacement needs `--replace`. Unsupported required extensions, inconsistent bind shapes and missing dependencies fail with actionable errors.
+
+Use a new, nonexistent run destination. Import captures and decodes a private exact-byte source closure, builds and reopens the complete run in a sibling staging directory, then publishes it with an exclusive rename. Changing the original source after capture cannot change the retained source or its provenance. Failure before publication leaves no partial run, and an existing or racing destination is preserved, including an empty directory. The persistent sibling writer-lock file is retained for safe future locking.
 
 When static glTF node transforms are baked into canonical geometry, normals use the inverse transpose while tangent XYZ uses the forward linear transform. Base vectors are normalized, and their morph deltas use the same per-vertex normalization denominator, preserving the direction of the transformed base plus weighted deltas. Reflections retain the existing triangle-winding correction and invert tangent handedness. This assumes an authored valid normal/tangent basis; the importer does not infer UV tangents or repair artistic shading. Direction morphs require their corresponding base attribute, and zero-length direction attributes are rejected. Original source bytes remain unchanged. These attribute checks do not establish renderer or skinned shading equivalence; independent rendering remains a separate gate.
 
@@ -200,7 +221,7 @@ The facade exports model import/analysis, templates/skeleton generation, correct
 python scripts/rig.py serve --run-dir output/rig-jobs --intake input/models --port 8766
 ```
 
-The server binds only `127.0.0.1` and prints its local bearer token. Send `Authorization: Bearer TOKEN` and `Content-Type: application/json`. Cross-origin requests are refused, intake reads stay inside the chosen folder, exports stay inside the selected job, JSON bodies are limited to four MiB, connections time out, and two workers are available. There is no remote/public-server mode.
+The server binds only `127.0.0.1` and prints its local bearer token. Configured tokens must contain 24–4096 printable ASCII characters without whitespace; missing, repeated, malformed or non-ASCII authorization fields return structured `401 RIG_API_AUTH` responses. Send one `Authorization: Bearer TOKEN` field and `Content-Type: application/json`. Cross-origin requests are refused, intake reads stay inside the chosen folder, exports stay inside the selected job, JSON bodies are limited to four MiB, connections time out, and two workers are available. There is no remote/public-server mode.
 
 | Method and route | Behavior |
 | --- | --- |
@@ -216,7 +237,9 @@ The server binds only `127.0.0.1` and prints its local bearer token. Send `Autho
 | `POST /v1/rigs/{id}/pose`, `/solve-ik` | Evaluate a native pose or spatial target |
 | `POST .../retarget`, `/review` | Retarget from another local job or apply a bound review receipt |
 
-Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
+Unknown mutation fields fail. For HTTP `generate` and template-replacement corrections, use an exact installed canonical template ID such as `humanoid`. The server checks a correction's schema, 1,024-edit ceiling and current rig binding before looking up its templates. One installed catalogue serves all edits in a request. Native execution opens the installed file for each selected ID. Native Python and CLI callers can also select custom files explicitly.
+
+Job status and portable archives record the canonical ID and the operation's `template_source` of `installed`. Resume uses that source to resolve the ID on the current installation. A saved correction contains the submitted object, and its filename is the hash of that object. A stale correction returns 409, missing jobs return 404, unauthenticated requests return 401, and occupied workers return 429.
 
 ## Resource limits, jobs and recovery
 
@@ -346,6 +369,104 @@ when an orientation was requested, and `null` for position-only solves. A solve 
 and its requested orientation is within `1e-5` radians. A reachable position can
 therefore have `reachable: true` and `converged: false` when a joint limit prevents
 the orientation. Contact and grasp reports retain this angular residual.
+
+FK-to-IK matching accepts fully folded chains whose endpoint coincides with
+their root, using the already evaluated first joint position as its matching pole.
+A matching pole preserves an already closed authoritative seed and its evaluated
+joint transforms and bound geometry. Ordinary matches retain their original
+reach-based pole distance. Closure is tested within `1e-9` meters, the matched
+endpoint must also meet the chain's residual tolerance, and normalized pole/first
+segment directions must differ by at most eight machine epsilons in unit-vector
+distance. Comparing the vector difference avoids a dot product rounding a
+measurable small pole change to an apparent exact match. A finite pole
+direction must exceed `1e-9` meters. An explicitly changed pole reorients a closed
+seed's existing shape, including backfolded multisegment chains with degenerate
+neighbor axes. At the equal-length two-segment fold, either solver can also
+construct the elbow along that pole from an open seed.
+Runtime segment-length checks, joint limits, endpoint orientation, actual
+residuals and bounded convergence reporting remain authoritative.
+
+Twelve independent boundary tests exercise ordinary near-folded matching,
+small segments at large world translations, both explicit backfolded pole
+directions, actual blended skinning, length limits and the native orientation/
+constraint pass. They produced four failing methods on the previous candidate
+and passed all twelve after the correction on Linux/Python 3.12.14 (1.845s,
+exit 0, zero skips). The original thirteen #348 test methods remain unchanged.
+This is local numerical evidence; independent review and exact published-head
+checks are required before integration.
+
+The shared quaternion-between-directions helper preserves measurable small
+angles instead of snapping near-parallel directions to identity. Near opposite
+directions it uses the cross-product magnitude and `atan2`, avoiding cancellation
+in `1 + dot`; exactly opposite directions retain a stable perpendicular axis.
+Both the folded rotation and its ordinary chain-orientation pass use this same
+native helper. Four additional independently authored methods cover small pole
+changes, near-opposite changes, exact matches and controls at unit and 1,000 m
+segment scales, including translated roots. Six subtests failed on published
+`f19906ea` despite its 81-test gate passing. The corrected helper passed these
+four methods together with the twelve folded boundaries and fourteen native
+math tests: 30 tests in 1.165 seconds, exit 0, zero skips. This is synthetic
+numerical evidence, not an artistic or production acceptance claim.
+
+Independent re-review of that correction identified cancellation in oblique
+near-opposite cross products, including a valid scaled-pole control that had
+worked on the earlier source. The negative-dot hemisphere now computes its axis
+as `cross(a, a + b)` to avoid subtracting nearly equal products, with a stable
+perpendicular fallback only at machine-roundoff scale. Two further independent
+methods retain the exact oblique-opposite case and genuine angular differences
+of `1e-8` and `1e-12` radians, with a `1e-5` control. All six pole-precision
+methods, twelve folded boundaries and fourteen native math tests passed after
+this correction: 32 tests in 1.211 seconds, exit 0, zero skips. Earlier failed
+cases remain in the gate and in source history.
+
+Ten further independent methods cover explicit positive and negative pole changes
+of 1e-6 and 1e-7 radians through both declared and override inputs at 1 m and
+1000 m segment lengths. Cartesian joint and actual blended-skin oracles detect
+changes hidden by a normalized dot product. Four methods failed on 5e8d6df2
+(16 failing subcases); all ten pass with the direct unit-vector comparison,
+including exact-match, orientation, joint-limit and runtime-length controls.
+
+Six further independent native methods cover closed squares and rectangles at
+large translated roots, including microscopic segments and blended skin. Three
+methods failed on `92d5e138` across eight subcases even though its 98-test native
+gate passed. Reconstructing each joint from translated rotated positions lost
+precision and changed the internal frames. Explicit pole steering now applies
+one coherent rotation at the chain root, preserving all descendant local
+transforms before the ordinary endpoint and constraint pass. The root's new
+local TRS must remain representable. If the shortest pole swing would require
+local shear under a scaled parent, a bounded solve checks the remaining twist
+freedom about the pole. Pairwise local-column orthogonality produces three
+quartic polynomials, with at most twelve candidate roots plus the omitted
+half-turn; every candidate is verified against the original matrices. A
+representable rigid turn preserves the closed seed, while singular or genuinely
+unrepresentable transforms retain the structured transform error. The four independent
+fold modules passed all 34 methods after this correction in 0.985 seconds,
+exit 0, zero skips. Full corrected gates and fresh review remain required.
+
+Parent stretch symmetries and rigid axis permutations supply directly
+representable candidates before the polynomial fallback. Each reconstructed
+world turn must still satisfy the independent rigidity check. The pole fit
+accounts separately for the representable spacing of the supplied world
+positions, so subtraction at a translated origin cannot reject an attainable
+turn solely through coordinate rounding. Independent native controls retain
+small attainable turns, highly scaled parents, changed local scales and
+structured rejection of a nearby direction that would require shear.
+
+Pole admission intersects the candidate's positive ray with the separate
+coordinate rounding intervals of the supplied pole and origin. A distant pole
+does not borrow uncertainty from a short first segment, and an imprecise X
+coordinate cannot conceal a resolved Y/Z mismatch. The first segment comes
+from its native local offset before world translation is added. Trial local
+transforms below the native scale floor are discarded while other rigid
+candidates are checked; the original seed still passes the ordinary native
+transform validation. Three preserved independent regressions exercise both
+solvers at these distance, translation and near-floor scale boundaries.
+For an axial parent, candidate generation also checks the finite intersections
+of its rotation circle with the pole's coordinate intervals and their intervening
+arcs. Pairwise coordinate ratios give linear sine/cosine equations; this keeps
+an attainable azimuth when different world coordinates have different precision.
+Bounded normalization makes the folded steering independent of finite pole
+distance even when squaring the supplied components would overflow.
 
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
