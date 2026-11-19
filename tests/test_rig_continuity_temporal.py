@@ -236,6 +236,147 @@ class TemporalTests(unittest.TestCase):
             self.assertEqual(observed['aster']['transform'], parent_pose)
             self.assertEqual(observed['moss']['transform']['translation'], [4, 0, 0])
 
+    def test_native_cancellation_bound_scales_with_cancelled_magnitudes(self):
+        camera, child, total = 1000.1, 1000.2, 2000.3
+
+        def configure(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            nodes['camera']['parent'] = None
+            nodes['camera']['transform'] = dict(TRANSFORM, translation=[camera, 0.0, 0.0])
+            nodes['mesh']['parent'] = 'camera' if index == 0 else None
+            nodes['mesh']['transform'] = dict(TRANSFORM, translation=[child if index == 0 else total, 0.0, 0.0])
+            scene['roots'] = [node['id'] for node in scene['nodes'] if node['parent'] is None]
+
+        def plan_for(name):
+            root = Path(self.temp.name) / name
+            plan = fixture(root, configure_scene=configure)
+            for scene in plan['scenes']:
+                scene['scene_to_world']['translation'] = [-total, 0.0, 0.0]
+            return root, plan
+
+        after = dict(TRANSFORM, translation=[3.0, 0.0, 0.0])
+        root, plan = plan_for('scaled-cancellation')
+        with IdentityRegistry(Path(self.temp.name) / 'scaled.sqlite', asset_root=root) as registry:
+            head = registry.create_timeline(plan)
+            snapshot = registry.temporal_snapshot('main', 'shot-0', 2, boundary='before')['snapshot']
+            residual = snapshot['entities'][0]['transform']['translation'][0]
+            # The residual exceeds the former fixed 8-ulp floor near zero.
+            self.assertGreater(abs(residual), 8 * math.ulp(1.0))
+            registry.append_events('main', [event('scaled-origin', 2002, kind='relocate', target='aster',
+                                                  before=TRANSFORM, after=after)], expected_sha256=head)
+            self.assertEqual(registry.temporal_snapshot('main', 'shot-0', 2)['snapshot']['entities'][0]['transform'],
+                             after)
+
+        root, plan = plan_for('scaled-distinct')
+        with IdentityRegistry(Path(self.temp.name) / 'scaled-distinct.sqlite', asset_root=root) as registry:
+            head = registry.create_timeline(plan)
+            distinct = dict(TRANSFORM, translation=[1e-9, 0.0, 0.0])
+            with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
+                registry.append_events('main', [event('scaled-distinct', 2002, kind='relocate', target='aster',
+                                                      before=distinct, after=after)], expected_sha256=head)
+
+    def test_native_cancellation_bound_covers_parent_chain(self):
+        def configure(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            nodes['camera']['parent'] = None
+            nodes['camera']['transform'] = dict(TRANSFORM, translation=[1000.3, 0.0, 0.0])
+            nodes['mesh']['parent'] = 'camera' if index == 0 else None
+            nodes['mesh']['transform'] = dict(TRANSFORM, translation=[-1000.2 if index == 0 else 0.1, 0.0, 0.0])
+            scene['roots'] = [node['id'] for node in scene['nodes'] if node['parent'] is None]
+
+        after = dict(TRANSFORM, translation=[3.0, 0.0, 0.0])
+        for name, before, accepted in (('chain-authored', [0.1, 0.0, 0.0], True),
+                                       ('chain-distinct', [0.1 + 1e-9, 0.0, 0.0], False)):
+            with self.subTest(case=name):
+                root = Path(self.temp.name) / name
+                plan = fixture(root, configure_scene=configure)
+                # The second scene seeds the same entity unparented at exactly 0.1.
+                with IdentityRegistry(Path(self.temp.name) / (name + '.sqlite'), asset_root=root) as registry:
+                    head = registry.create_timeline(plan)
+                    seed = registry.temporal_snapshot('main', 'shot-0', 2, boundary='before')['snapshot']
+                    self.assertGreater(abs(seed['entities'][0]['transform']['translation'][0] - 0.1),
+                                       8 * math.ulp(1.0))
+                    move = event(name, 2002, kind='relocate', target='aster',
+                                 before=dict(TRANSFORM, translation=before), after=after)
+                    if accepted:
+                        registry.append_events('main', [move], expected_sha256=head)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
+                            registry.append_events('main', [move], expected_sha256=head)
+
+    def test_native_bounds_use_norms_for_rotations_and_stay_linear_in_depth(self):
+        from continuity_temporal import _native_bounds, _same_transform, _seed_bound
+        from rig_math import decompose
+        from scene3d_math import local_matrix
+        half = math.sqrt(0.5)
+        identity = dict(translation=[0.0, 0.0, 0.0], rotation=[0.0, 0.0, 0.0, 1.0], scale=[1.0, 1.0, 1.0])
+
+        def native(chain, outer):
+            nodes, parent, world = [], None, None
+            for index, transform in enumerate(chain):
+                nodes.append(dict(id='n%d' % index, parent=parent, transform=transform))
+                parent = 'n%d' % index
+                world = local_matrix(transform) if world is None else world @ local_matrix(transform)
+            value = decompose(local_matrix(outer) @ world)
+            floor, relative, conditioned = _seed_bound(_native_bounds(dict(nodes=nodes), outer)[parent], value)
+            return value, dict(floor=floor, relative=relative, conditioned=conditioned)
+
+        # A 90 degree scene_to_world rotation leaves ulp-sized error in entries
+        # that are exactly zero; an authored zero component must still match.
+        turn = dict(identity, rotation=[0.0, half, 0.0, half])
+        value, bound = native([dict(identity, translation=[1000.0, 0.0, 0.0])], turn)
+        self.assertNotEqual(value['translation'][0], 0.0)
+        self.assertTrue(_same_transform(value, dict(identity, translation=[0.0, 0.0, -1000.0],
+                                                   rotation=turn['rotation']), native=True, **bound))
+
+        # Unit-magnitude chains at the contract depth keep a tight bound and
+        # still reject a millimetre offset; scale roundoff grows with depth.
+        quarter = [0.0, 0.0, math.sin(math.pi / 8), math.cos(math.pi / 8)]
+        chain = [dict(identity, translation=[1.0, 0.0, 0.0], rotation=quarter) for _ in range(64)]
+        value, bound = native(chain, identity)
+        self.assertLess(max(bound['floor']), 1e-9)
+        exact = dict(value, scale=[1.0, 1.0, 1.0])
+        self.assertTrue(_same_transform(value, exact, native=True, **bound))
+        offset = dict(value, translation=[value['translation'][0] + 1e-9] + value['translation'][1:])
+        self.assertFalse(_same_transform(value, offset, native=True, **bound))
+
+        # Non-uniform parent scale conditions the decomposed rotation; the exact
+        # authored rotation [.5,-.5,-.5,-.5] and scale must still match.
+        value, bound = native([dict(identity, rotation=[0.0, 0.0, half, half], scale=[100.0, 1.0, 1.0]),
+                               dict(identity, rotation=[0.0, half, 0.0, half])], identity)
+        self.assertNotEqual(value['rotation'], [0.5, -0.5, -0.5, -0.5])
+        authored = dict(identity, rotation=[0.5, -0.5, -0.5, -0.5], scale=[1.0, 1.0, 100.0])
+        self.assertTrue(_same_transform(value, authored, native=True, **bound))
+        self.assertFalse(_same_transform(value, dict(authored, scale=[1.0, 1.0, 100.0 + 1e-9]), native=True, **bound))
+
+        # Thin scale conditions rotation only; translation and scale stay tight.
+        value, bound = native([dict(identity, translation=[100.0, 0.0, 0.0], scale=[1.0, 1.0, 1e-8])], identity)
+        self.assertTrue(_same_transform(value, dict(value), native=True, **bound))
+        moved = dict(value, translation=[100.0 + 1e-6, 0.0, 0.0])
+        stretched = dict(value, scale=[1.0, 1.0, 1.01e-8])
+        self.assertFalse(_same_transform(value, moved, native=True, **bound))
+        self.assertFalse(_same_transform(value, stretched, native=True, **bound))
+
+        # The translation floor grows linearly with composed levels at a fixed
+        # magnitude (factor L+1 with L counting scene_to_world).
+        leaf = dict(identity, translation=[1.0, 0.0, 0.0])
+        _, shallow = native([leaf], identity)
+        _, deep = native([dict(identity) for _ in range(63)] + [leaf], identity)
+        self.assertAlmostEqual(deep['floor'][0] / shallow['floor'][0], 66 / 3)
+
+        # Alternating extreme scales make the conditioned bound meaningless;
+        # comparisons are refused rather than accepting any rotation.
+        with self.assertRaisesRegex(ValueError, 'LIMIT'):
+            native([dict(identity, scale=[1e4, 1e-4, 1.0]), dict(identity, scale=[1e-4, 1e4, 1.0])],
+                   dict(identity, scale=[1e4, 1e-4, 1.0]))
+
+        # Scale products that overflow while the world stays finite fail closed.
+        swap = [0.5, 0.5, 0.5, 0.5]
+        chain = [dict(identity, translation=[1.0, 1.0, 1.0], rotation=swap, scale=[1e9, 1e-9, 1.0])
+                 for _ in range(36)]
+        with self.assertRaisesRegex(ValueError, 'LIMIT'):
+            native(chain, identity)
+
     def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
         coordinate = 999999999999.0
         angle_component = math.sqrt(0.5)
