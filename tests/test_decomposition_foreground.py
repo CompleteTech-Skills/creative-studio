@@ -1,13 +1,16 @@
 """Synthetic contract fixtures only; these do not count as model evidence."""
 import copy
+from contextlib import nullcontext
 import functools
+import hashlib
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from PIL import Image, PngImagePlugin
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import decomposition_foreground as fg
@@ -64,6 +67,73 @@ class ForegroundContracts(unittest.TestCase):
 
     def save(self):
         (self.root/'foreground-proposals.json').write_text(json.dumps(self.receipt))
+
+    def test_worker_model_input_composites_alpha_without_changing_source(self):
+        # This executes the worker with synthetic Torch/Torchvision stand-ins,
+        # capturing the normalized RGB actually passed to the mock model.
+        # It is not neural inference or a segmentation-quality assessment.
+        class Tensor:
+            def __init__(self, image):
+                self.image = image.copy()
+
+            def float(self):
+                return self
+
+            def __truediv__(self, divisor):
+                return tuple(value / divisor for value in self.image.tobytes())
+
+        torch = SimpleNamespace(set_num_threads=Mock(), set_num_interop_threads=Mock(),
+            get_num_threads=lambda: 1, get_num_interop_threads=lambda: 1,
+            load=Mock(return_value={}), inference_mode=nullcontext)
+        model = Mock(return_value=[{'scores': [], 'labels': [], 'masks': []}])
+        transform = Mock(side_effect=Tensor)
+        detection = SimpleNamespace(maskrcnn_resnet50_fpn=Mock(return_value=model),
+            MaskRCNN_ResNet50_FPN_Weights=SimpleNamespace(COCO_V1=SimpleNamespace(meta={'categories': []})))
+        torchvision = SimpleNamespace(transforms=SimpleNamespace(functional=SimpleNamespace(pil_to_tensor=transform)))
+        modules = {'torch': torch, 'torchvision': torchvision,
+                   'torchvision.models': SimpleNamespace(detection=detection),
+                   'torchvision.models.detection': detection}
+        weights = Path(self.temp.name) / 'mock-weights.bin'
+        weights.write_bytes(b'Synthetic mock checkpoint, not neural model weights')
+        inputs = []
+        # Distinct hidden RGB must not change any model input. Alpha controls
+        # cover nearly transparent, fractional, nearly opaque and opaque pixels.
+        controls = [(20, 60, 100, alpha) for alpha in (1, 127, 128, 254, 255)]
+        source_bytes = []
+        for index, hidden in enumerate(((0, 0, 0), (255, 0, 255), (25, 190, 77))):
+            with self.subTest(hidden=hidden):
+                stage = Path(self.temp.name) / f'worker-{index}'
+                (stage / 'source').mkdir(parents=True)
+                (stage / 'masks').mkdir()
+                source = stage / 'source/original.png'
+                rgba = Image.new('RGBA', (1 + len(controls), 1))
+                rgba.putdata([(*hidden, 0), *controls])
+                rgba.save(source)
+                before = source.read_bytes()
+                source_bytes.append(before)
+                fg.atomic_json(stage / 'input.json', {'asset': fg._asset(stage, 'source/original.png')})
+                with patch.dict(sys.modules, modules), patch.dict(os.environ), \
+                     patch.object(fg, '_weight', return_value=weights), \
+                     patch.object(fg, 'MODEL_SHA256', hashlib.sha256(weights.read_bytes()).hexdigest()):
+                    fg._worker(stage, weights, .7)
+                rgb = transform.call_args.args[0]
+                normalized = model.call_args.args[0][0]
+                inputs.append(normalized)
+                expected = [(255, 255, 255)] + [tuple(
+                    (channel * alpha + 255 * (255 - alpha) + 127) // 255
+                    for channel in (red, green, blue)) for red, green, blue, alpha in controls]
+                self.assertEqual(rgb.mode, 'RGB')
+                self.assertEqual(rgb.size, rgba.size)
+                self.assertEqual(rgb.tobytes(), bytes(value for pixel in expected for value in pixel))
+                self.assertEqual(normalized, tuple(value / 255 for pixel in expected for value in pixel))
+                self.assertEqual(source.read_bytes(), before)
+                with Image.open(source) as retained, Image.open(stage / 'overlay.png') as overlay:
+                    self.assertEqual(retained.tobytes(), rgba.tobytes())
+                    self.assertEqual(overlay.tobytes(), rgba.tobytes())
+                self.assertEqual(fg.read_json(stage / 'output.json')['candidates'], [])
+        self.assertEqual(len(inputs), len(source_bytes))
+        self.assertEqual(inputs, [inputs[0]] * len(inputs))
+        self.assertEqual(len(set(source_bytes)), len(source_bytes))
 
     def test_valid_native_binary_masks_and_retained_overlap(self):
         self.assertEqual(len(fg.load(self.root)['candidates']), 2)

@@ -216,7 +216,9 @@ def _worker(stage, weights, threshold):
     torch.set_num_interop_threads(1)
     source = read_json(stage / 'input.json')
     rgba = _verified_image(stage / source['asset']['path'], source['asset']['sha256']).convert('RGBA')
-    rgb = rgba.convert('RGB')
+    # Inference alone uses an opaque white matte, so hidden RGB cannot influence
+    # detections and fractional alpha contributes its visible composited color.
+    rgb = Image.alpha_composite(Image.new('RGBA', rgba.size, (255, 255, 255, 255)), rgba).convert('RGB')
     _weight(weights)
     model = maskrcnn_resnet50_fpn(weights=None, weights_backbone=None,
                                    box_detections_per_img=MAX_CANDIDATES)

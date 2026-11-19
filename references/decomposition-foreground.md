@@ -15,6 +15,13 @@ projects masks back to source dimensions. Original bytes and RGBA samples are
 never resized or smoothed by this stage. Binary ownership is separate from source
 alpha, which the canonical decomposition applies exactly once.
 
+For inference only, decoded RGBA is composited onto a fixed opaque white
+`(255, 255, 255)` matte with Pillow alpha compositing before RGB tensor conversion.
+Fully transparent pixels therefore contribute white regardless of their hidden
+RGB, fractional alpha blends with white, and opaque RGB remains unchanged.
+This inference copy does not replace archived source bytes or source RGBA used
+for candidate support, overlays, selection, extraction or reconstruction.
+
 ## Provision explicitly
 
 Use a separate environment on Linux with procfs mounted. Installation and the
@@ -100,7 +107,9 @@ later does not turn these whole-object masks into anatomical parts. Use existing
 
 `tests/test_decomposition_foreground.py` uses explicitly synthetic fixture
 receipts to test validation, overlap, malicious paths and alpha preservation; it
-is not model-quality evidence. Optional real-model tests in `tests/optional/` run through their dedicated CI
+also captures worker input with a synthetic mock model to check hidden-RGB
+invariance and partial/opaque-alpha controls. These are not real neural execution
+or model-quality evidence. Optional real-model tests in `tests/optional/` run through their dedicated CI
 job, keeping optional dependencies outside the strict core delivery suite. They
 use the retained NASA
 astronaut photograph and explicitly provided Penn-Fudan photographs. Dataset
