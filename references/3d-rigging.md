@@ -383,9 +383,10 @@ tilts the neighbour axis by about `eps*scale/|axis|`, which changes the
 steering angle by the difference of the current point's and pole offset's
 cotangents against that axis, plus each perpendicular's own rounding. It grows
 as the axis shortens or aligns with the pole offset at nested near-pi folds.
-Pole coordinate magnitude enters only the pole perpendicular's rounding, so
-small resolvable changes, including `1e-12` radians at exact coordinates and
-`1e-6` radians with a pole a million meters away, still steer. A single
+Pole coordinate magnitude enters only the pole perpendicular's rounding. For
+bends of at least `1e-2` radians, small changes such as `1e-12` radians at exact
+coordinates and `1e-6` radians with a pole a million meters away still steer;
+near-straight chains resolve proportionally coarser changes. A single
 matching pole cannot preserve folds that alternate sides of their neighbour
 axes, such as unequal nested gaps or 6+ joint zigzags; that contract is
 tracked separately in #551. Closure is tested within `1e-9` meters, the matched
