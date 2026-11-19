@@ -183,6 +183,15 @@ python scripts/rig.py archive --run-dir output/character --destination output/ch
 python scripts/rig.py restore --file output/character.zip --destination output/restored-character
 ```
 
+`restore` reports input failures as structured errors. Malformed or truncated
+package containers and CRC or decompression failures report `RIG_ARCHIVE_FORMAT`.
+Unsupported compression methods or ZIP extraction features report
+`RIG_ARCHIVE_FORMAT`, and a selected optional Python codec that is unavailable
+reports `RIG_ARCHIVE_CODEC`. Corrupt native bundles inside a hash-consistent
+package keep the native loader's `RIG_BINARY` code. Errno-bearing filesystem
+failures and output writes remain distinct. Nothing is published and only the
+attempt's private staging directory is removed.
+
 GLB/glTF exports contain actual skins, JOINTS/WEIGHTS attributes, column-major inverse-bind matrices, parented joint nodes, materials/textures/morph targets and executable channels. Both GLB and embedded-buffer `.gltf` are supported. The latter is self-contained for atomic promotion. IK controls, constraint solvers and contact systems remain native authoring information; the portable export carries evaluated results.
 
 Blender export imports the real animated GLB, retains editable armatures/vertex groups/skin modifiers/materials/shape keys and named action slots, adds target/pole controls and socket definitions, saves `.blend`, then reopens it in a separate process. The adapter compares independently evaluated joint and vertex samples and re-exports a GLB. Baked playback is the default. Enable the armature's `hatch_live_ik` property to edit live target controls. Native limit types and exact socket semantics are retained in the embedded manifest; not every native control has an equivalent Blender authoring constraint. See the explicit limitations before round-tripping authoring controls.
