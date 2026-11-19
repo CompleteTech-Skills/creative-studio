@@ -236,6 +236,45 @@ class DirectorWorkerTreeTests(unittest.TestCase):
     def test_venv_launcher_stops_live_descendant(self):
         self.run_tree('success-with-descendant', venv_launcher=True)
 
+    def test_darwin_group_permission_with_only_zombies_is_complete(self):
+        with patch.object(sys, 'path', [str(ROOT/'scripts'), *sys.path]):
+            import director_capabilities as cap
+        for stage, effects in (('signal', [PermissionError()]),
+                               ('probe', [None, PermissionError()])):
+            with self.subTest(stage=stage):
+                process = SimpleNamespace(pid=42, wait=Mock(return_value=0))
+                signal_group = Mock(side_effect=effects)
+                inspect = Mock(return_value=SimpleNamespace(
+                    returncode=0, stderr=b'', stdout=b' 42 Z\n 77 R\n'))
+                with patch.object(cap, 'sys', SimpleNamespace(platform='darwin')), \
+                        patch.object(cap, 'os', SimpleNamespace(killpg=signal_group)), \
+                        patch.object(cap, 'signal', SimpleNamespace(SIGKILL=9)), \
+                        patch.object(cap, 'subprocess', SimpleNamespace(run=inspect)):
+                    cap._stop_group(process)
+                expected = [call(42, 9)]
+                if stage == 'probe':
+                    expected.append(call(42, 0))
+                self.assertEqual(signal_group.call_args_list, expected)
+                process.wait.assert_called_once_with(timeout=5)
+                inspect.assert_called_once()
+
+    def test_darwin_group_permission_with_live_member_stays_failed(self):
+        with patch.object(sys, 'path', [str(ROOT/'scripts'), *sys.path]):
+            import director_capabilities as cap
+        process = SimpleNamespace(pid=42, wait=Mock())
+        signal_group = Mock(side_effect=PermissionError())
+        inspect = Mock(return_value=SimpleNamespace(
+            returncode=0, stderr=b'', stdout=b' 42 Z\n 42 S\n 77 R\n'))
+        with patch.object(cap, 'sys', SimpleNamespace(platform='darwin')), \
+                patch.object(cap, 'os', SimpleNamespace(killpg=signal_group)), \
+                patch.object(cap, 'signal', SimpleNamespace(SIGKILL=9)), \
+                patch.object(cap, 'subprocess', SimpleNamespace(run=inspect)):
+            with self.assertRaises(PermissionError):
+                cap._stop_group(process)
+        signal_group.assert_called_once_with(42, 9)
+        inspect.assert_called_once()
+        process.wait.assert_not_called()
+
     def test_kqueue_observes_exit_and_closes_without_reaping(self):
         with patch.object(sys, 'path', [str(ROOT/'scripts'), *sys.path]):
             import director_capabilities as cap

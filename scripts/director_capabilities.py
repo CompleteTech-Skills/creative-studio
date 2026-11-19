@@ -147,14 +147,34 @@ def _posix_completion(process):
                 yield lambda: bool(queue.control(None, 1, 0))
 
 
+def _group_has_live_members(pid, deadline):
+    states = subprocess.run(['/bin/ps', '-A', '-o', 'pgid=', '-o', 'stat='],
+                            capture_output=True, env={'LC_ALL': 'C'},
+                            timeout=max(.01, deadline-time.monotonic()))
+    if states.returncode or states.stderr:
+        raise OSError('Could not inspect the stopped worker group.')
+    rows = [line.split() for line in states.stdout.splitlines()]
+    if not rows or any(len(row) != 2 or not row[0].isdigit() for row in rows):
+        raise OSError('Invalid worker group status.')
+    group = str(pid).encode()
+    return any(pgid == group and not state.startswith(b'Z') for pgid, state in rows)
+
+
 def _stop_group(process):
     # No poll()/wait() has reaped the session leader. Its PGID cannot be reused
     # for an unrelated group, including when the leader has already exited.
+    deadline = time.monotonic()+5
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    deadline=time.monotonic()+5
+    except PermissionError:
+        # Darwin's group signal excludes zombies and may return EPERM when
+        # every group member is already a zombie. Inspect while the PID is pinned.
+        if sys.platform != 'darwin' or _group_has_live_members(process.pid, deadline):
+            raise
+        process.wait(timeout=5)
+        return
     process.wait(timeout=5)
     # After reaping, only inspect the PGID. Never signal it again. Orphaned
     # zombies may remain in the group but cannot write to the worker scratch.
@@ -162,16 +182,11 @@ def _stop_group(process):
         os.killpg(process.pid, 0)
     except ProcessLookupError:
         return
-    group=str(process.pid).encode()
+    except PermissionError:
+        if sys.platform != 'darwin':
+            raise
     while time.monotonic()<deadline:
-        states=subprocess.run(['/bin/ps','-A','-o','pgid=,stat='],capture_output=True,
-                              env={'LC_ALL':'C'},timeout=max(.01,deadline-time.monotonic()))
-        if states.returncode or states.stderr:
-            raise OSError('Could not inspect the stopped worker group.')
-        rows=[line.split() for line in states.stdout.splitlines()]
-        if not rows or any(len(row)!=2 or not row[0].isdigit() for row in rows):
-            raise OSError('Invalid worker group status.')
-        if not any(pgid==group and not state.startswith(b'Z') for pgid,state in rows):
+        if not _group_has_live_members(process.pid, deadline):
             return
         time.sleep(.01)
     raise OSError('Worker group termination did not complete.')
