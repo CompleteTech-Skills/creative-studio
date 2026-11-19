@@ -174,6 +174,21 @@ class WorkerVerification(Temporary):
                 self.assertEqual(color.verify_config(stage, self.inventory), self.inventory['closure_sha256'])
             self.assertFalse(stage.exists())
 
+    def test_snapshot_under_symlinked_temporary_ancestor(self):
+        real = self.root.parent/(self.root.name+'-real-tmp'); real.mkdir()
+        alias = self.root.parent/(self.root.name+'-alias-tmp')
+        try:
+            alias.symlink_to(real, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f'directory symlinks unavailable: {exc}')
+        self.addCleanup(alias.unlink)
+        self.addCleanup(lambda: real.rmdir() if real.exists() and not any(real.iterdir()) else None)
+        with patch.object(tempfile, 'tempdir', str(alias)):
+            with color.snapshot_config(self.root, self.inventory) as stage:
+                self.assertTrue(stage.is_relative_to(real.resolve()))
+                self.assertEqual((stage/'luts/shaper.spi1d').read_bytes(), LUT_PAYLOAD)
+            self.assertFalse(stage.exists())
+
     def test_changed_lut_bytes_or_extra_files_fail_closed(self):
         (self.root/'luts/shaper.spi1d').write_bytes(LUT_PAYLOAD.replace(b'1.0\n}', b'0.9\n}'))
         with self.assertRaises(ValueError):
@@ -271,6 +286,9 @@ class PinnedTransforms(Temporary):
         linear = color.make_plan(self.root, self.inventory, self.source, target='scene-linear',
                                  display='', view='', look='')
         self.assertIsNone(linear['output_calibration_max_error'])
+        graded = color.make_plan(self.root, self.inventory, self.source, look='Brighter')
+        self.assertIsNone(graded['output_calibration_max_error'])
+        self.assertEqual(graded['output_transfer'], 'srgb')
         self.assertEqual(linear['output_transfer'], 'linear')
 
     def test_invalid_plans_fail_closed(self):

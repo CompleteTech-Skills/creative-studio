@@ -280,7 +280,9 @@ def snapshot_config(root, inventory):
     inventory = validate_inventory(inventory)
     verify_config(root, inventory)
     with tempfile.TemporaryDirectory(prefix='cinematics-color-') as temporary:
-        stage = Path(temporary)
+        # The platform temporary directory may sit below a symlinked ancestor
+        # (macOS /var, Windows 8.3 short names); the stage itself is private.
+        stage = Path(temporary).resolve(strict=True)
         for row in inventory['files']:
             payload = _bytes(root, row['path'], MAX_FILE_BYTES)
             _need(len(payload) == row['bytes'] and _hash(payload) == row['sha256'], 'color profile changed during snapshot')
@@ -433,7 +435,11 @@ def make_plan(root, inventory, source, *, target='sdr-srgb', display='sRGB', vie
         _need(max(abs(a-b) for key in measured for a, b in zip(measured[key], source['primaries'][key])) < 5e-5,
               'declared source primaries disagree with the actual OCIO transform to CIE XYZ D65')
         value['measured_source_primaries'] = measured
-        value['output_calibration_max_error'] = None if target == 'scene-linear' else _calibrate_srgb(config, ocio, source['working_space'])
+        calibration = None if target == 'scene-linear' else _calibrate_srgb(config, ocio, source['working_space'])
+        # The oracle measures only the Standard view without a look. Other
+        # views and explicit looks are deliberately non-identity, so the
+        # display check above remains a gate but is not reported as their error.
+        value['output_calibration_max_error'] = calibration if (view, look) == ('Standard', '') else None
         _processor(config, ocio, value)
     value['plan_sha256'] = object_hash(value)
     return value
