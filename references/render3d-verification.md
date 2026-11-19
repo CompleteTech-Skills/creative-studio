@@ -195,9 +195,11 @@ to be an independently materialized regular file. The original stat record
 returned by `open_payload` must report exactly one hard link before capture;
 the held descriptor is checked again after the read, and final inventory
 metadata retains the same single-link requirement. Missing link-count evidence
-fails closed for result outputs. This rejects aliases between canonical output
-names and aliases outside the candidate, even if their bytes and declared
-hashes match. Separate files containing identical pixels remain valid.
+fails closed for result outputs. This rejects hard-link aliases between canonical
+output names and hard-link aliases outside the candidate, even if their bytes
+and declared hashes match. It does not discover arbitrary external symbolic
+links to a canonical result file. Separate files containing identical pixels
+remain valid.
 
 This is a result-output materialization policy. Standalone `verify_image` and
 `decode_image` intentionally continue to inspect an explicitly supplied linked
@@ -212,3 +214,37 @@ These checks concern the captured source and observed inventory. They do not
 freeze the live publication candidate, prevent every later alias or byte change,
 or replace the controller's retention/revalidation responsibility described
 above. The existing capture-evidence limitation remains in the returned report.
+
+
+## Complete legacy EXR scanline consumption
+
+Compression IDs 0–9 retain their full-size raw fallback and native HALF/FLOAT
+pixel decoding. Before native decoding, the verifier now checks each bounded
+compressed chunk and its internal streams: exact RLE output, exact zlib input
+and transformed length, PIZ bitmap/Huffman extents, B44 block extents, and DWA
+classified channel sizes, component extents and consumed AC coefficient words.
+Huffman table location comes from actual code-length entries; its advisory
+length field and ignored padding retain their existing compatibility. DWA
+classification uses serialized rules and the last matching channel rule.
+Declared lengths do not authorize allocation before geometry and working-budget
+checks. These checks supplement the native pixel decoder and do not establish
+scene, lighting or artistic correctness.
+
+Format references are pinned to OpenEXR v3.5.4:
+[codec dispatch/raw fallback](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/compression.c),
+[Huffman frames](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/internal_huf.c),
+[PIZ](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/internal_piz.c),
+[PXR24](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/internal_pxr24.c),
+[B44](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/internal_b44.c),
+and [DWA](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.5.4/src/lib/OpenEXRCore/internal_dwa_compressor.h).
+
+The independent positive suite generates 40 RGBA and eight scalar-Z files with
+the installed native writer, makes 96 public verification/decode calls across
+all ten codecs and both precisions, and checks four additional native-only
+layered/custom DWA fixtures. Those custom layouts are not public color/depth
+admission evidence. Bounded refusal controls alter tiny native-writer fixtures
+and assert rejection before native decoder construction; they do not claim
+malformed native decoding. Native positive controls also retain advisory
+Huffman metadata and the DWA deflate AC representation. The dedicated workflow
+requires both test modules and the original verifier suite to execute with no
+skips.

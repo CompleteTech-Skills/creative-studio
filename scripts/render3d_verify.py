@@ -292,6 +292,7 @@ def _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels=False):
 
     seen = set()
     compression = None
+    channels = []
     expected_window = (0, 0, resolution[0]-1, resolution[1]-1)
     while True:
         attribute = name()
@@ -329,6 +330,7 @@ def _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels=False):
                         'corrupt-output', 'EXR channel precision or sampling differs from request.')
                 require(linear in (0, 1) and reserved == b'\x00'*3,
                         'corrupt-output', 'Malformed EXR channel metadata.')
+                channels.append((channel, precision))
                 decoded_bytes = resolution[0]*resolution[1]*len(channel_names)*(8 if pixels else 4)
                 require(decoded_bytes <= memory_bytes, 'system-memory',
                         'EXR preview arrays exceed memory budget.' if pixels else 'EXR decoded channels exceed memory budget.')
@@ -366,6 +368,11 @@ def _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels=False):
             scanlines.add(line)
             boundary = offset+8+length
             require(boundary <= end, 'corrupt-output', 'Truncated EXR pixel payload.')
+            require(length <= memory_bytes, 'system-memory', 'EXR compressed chunk exceeds verification memory budget.')
+            from exr_consumption import verify_chunk
+            payload = stream.read(length)
+            require(len(payload) == length, 'corrupt-output', 'Truncated EXR pixel payload.')
+            verify_chunk(payload, compression, resolution[0], min(rows, height - line), channels, memory_bytes)
         require(boundary == end, 'corrupt-output', 'Unexpected bytes after EXR chunks.')
     stream.seek(0)
 

@@ -46,7 +46,10 @@ jobs:
           import sys
           import unittest
 
-          suite = unittest.defaultTestLoader.discover("tests", pattern="test_render3d_verify.py")
+          suite = unittest.TestSuite(
+              unittest.defaultTestLoader.discover("tests", pattern=pattern)
+              for pattern in ("test_render3d_verify*.py", "test_render3d_codec_compatibility.py")
+          )
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           if result.testsRun == 0 or result.skipped:
               raise SystemExit("The complete independent image verification suite must execute without skips.")
