@@ -104,7 +104,7 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
     inventory = manifest.get('files', [])
     require(isinstance(inventory,list) and 1 <= len(inventory) <= 256,
             'MODEL3D_REFERENCE', 'Canonical inventory must be a bounded nonempty list.')
-    names = set(); total = 0; runtime = None; has_normalized = False
+    names = set(); total = 0; runtime = None; normalized = None
     for item in inventory:
         require(isinstance(item,dict) and {'path','sha256','bytes'} <= set(item),
                 'MODEL3D_REFERENCE', 'Canonical inventory record is incomplete.')
@@ -125,9 +125,16 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
         total += int(count)
         require(total <= 256*1024**2, 'MODEL3D_REFERENCE', 'Canonical version inventory exceeds its byte limit.')
         if name == 'runtime/asset.glb': runtime = item
-        if name == 'normalized.glb': has_normalized = True
+        if name == 'normalized.glb': normalized = item
     registered = None
-    if runtime is None and has_normalized:
+    # Bind the selected bytes before choosing a compatibility bridge. A same-
+    # byte legacy alias must not suppress the native source/fixture checks, and
+    # an unrelated legacy entry must not override verified normalized geometry.
+    native_selection = normalized is not None and (
+        runtime is None or geometry_record['path'] == 'normalized.glb'
+        or (normalized['sha256'], normalized['bytes']) ==
+           (geometry_record['sha256'], geometry_record['bytes']))
+    if native_selection:
         runtime, registered_files, registered = _normalized_evidence(manifest)
         require(geometry_record['media_type'] == runtime['mime_type'],
                 'MODEL3D_REFERENCE', 'Canonical normalized entry media type differs from the geometry record.')

@@ -23,7 +23,7 @@ from model3d_mesh_asset import build_asset
 from model3d_mesh_import import import_canonical
 from model3d_validation import validate_file
 from rig_errors import RigError
-from rig_gltf import export_geometry
+from rig_gltf import GltfBuilder, export_geometry, read_gltf
 from rig_interop import validate_gltf
 from rig_models import Geometry, Mesh
 import test_rig_asset_library_import as native_fixture
@@ -47,25 +47,58 @@ class RegisteredProvenanceTests(unittest.TestCase):
         self.license.write_text('Synthetic engineering fixture. CC0-1.0.\n', encoding='utf-8')
 
     def native_registration(self, positions=FIXED_TRIANGLE, triangles=((0, 1, 2),),
-                            original_name='roundtrip.glb'):
-        geometry = Geometry([Mesh('triangle', np.asarray(positions, dtype=float),
-                                  np.asarray(triangles, dtype=int), name='Triangle')], [{}])
+                            original_name='roundtrip.glb', deformation=None,
+                            embedded_fixture=True):
+        mesh = Mesh('triangle', np.asarray(positions, dtype=float),
+                    np.asarray(triangles, dtype=int), name='Triangle')
+        if deformation == 'morph':
+            mesh.morphs = {'move': {'POSITION': np.asarray(((0., 0., 1.),) * 3)}}
+            mesh.morph_defaults = {'move': 1.}
+        geometry = Geometry([mesh], [{}])
         original = self.root / original_name
-        export_geometry(geometry, original, provenance={'fixture': True})
+        export_geometry(geometry, original,
+                        provenance={'fixture': True} if embedded_fixture else None)
+        if deformation in ('animation', 'skin'):
+            document = read_gltf(original)
+            builder = GltfBuilder()
+            builder.json = deepcopy(document.json)
+            builder.binary = bytearray(document.buffers[0])
+            if deformation == 'animation':
+                time = builder.accessor([0., 1.], 'SCALAR', bounds=True)
+                motion = builder.accessor([[0., 0., 0.], [1., 0., 0.]], 'VEC3')
+                builder.json['animations'] = [dict(name='move',
+                    samplers=[dict(input=time, output=motion, interpolation='LINEAR')],
+                    channels=[dict(sampler=0, target=dict(node=0, path='translation'))])]
+            else:
+                attributes = builder.json['meshes'][0]['primitives'][0]['attributes']
+                attributes['JOINTS_0'] = builder.accessor([[0, 1, 0, 0]] * 3,
+                                                          'VEC4', component=5121)
+                attributes['WEIGHTS_0'] = builder.accessor([[1., 0., 0., 0.]] * 3, 'VEC4')
+                binds = np.stack([np.eye(4), np.eye(4)])
+                binds[1, 1, 3] = -1.
+                builder.json['nodes'] += [dict(name='Root joint', children=[2]),
+                                           dict(name='Tip joint', translation=[0., 1., 0.])]
+                builder.json['nodes'][0]['skin'] = 0
+                builder.json['scenes'][0]['nodes'].append(1)
+                builder.json['skins'] = [dict(joints=[1, 2], skeleton=1,
+                    inverseBindMatrices=builder.accessor(binds, 'MAT4'))]
+            builder.write(original)
         ref = ImportPipeline(self.library).import_asset(
             original, identity=native_fixture.IDENTITY, version='1.0.0',
             metadata=native_fixture.METADATA, license_file=self.license,
             fixture=True, unit_scale=1)
         return ref, self.library.resolve(ref)
 
-    def synthetic_blender_claim(self, positions=FIXED_TRIANGLE, triangles=((0, 1, 2),)):
+    def synthetic_blender_claim(self, positions=FIXED_TRIANGLE, triangles=((0, 1, 2),),
+                                *, mutate_report=None, deformation=None):
         """Rebind a genuine packed native import to a synthetic Blender claim.
 
         Preserve producer packing, actual Khronos receipts, and resource evidence.
         Rehash every changed record; register through the real AssetLibrary API.
-        The only false semantic assertion is that this is the fixed Blender mesh.
+        Stage receipts are synthetic, internally consistent declarations: they
+        are not process measurements or evidence that Blender ran.
         """
-        ref, manifest = self.native_registration(positions, triangles)
+        ref, manifest = self.native_registration(positions, triangles, deformation=deformation)
         staging = self.root / 'forged-envelope'
         staging.mkdir()
         paths = {}
@@ -89,6 +122,30 @@ class RegisteredProvenanceTests(unittest.TestCase):
             original_filename='fixture.blend', original_path=retained['path'],
             source_bytes=retained['bytes'], source_sha256=retained['sha256'],
             derivative_path=intermediate['path'], derivative_sha256=intermediate['sha256'])
+        # Match the existing fixed producer's complete receipt shape. These
+        # invented process values test consistency only, never authentication.
+        from asset_import_blender import MAX_LOG_BYTES, WORKER
+        from asset_library_contracts import MAX_FILE_BYTES
+        limits = ImportPipeline(self.library).limits
+        memory = limits['memory_bytes']
+        byte_limit = min(MAX_FILE_BYTES, limits['source_bytes'], limits['dependency_bytes'])
+        report['blender'].update(
+            worker_sha256=hashlib.sha256(WORKER.read_bytes()).hexdigest(),
+            shared_wall_timeout_seconds=limits['timeout_seconds'],
+            command_policy='private-cwd/fixed-package-worker/no-shell/factory/autoexec-disabled')
+        for stage in ('create', 'reopen'):
+            report['blender'][stage] = dict(status='completed', exit_code=0,
+                argv=['/usr/bin/prlimit', f'--as={memory * 8}',
+                      f'--cpu={limits["timeout_seconds"]}', f'--fsize={byte_limit}',
+                      '--nofile=128:128', '--', '<blender>', '--background',
+                      '--factory-startup', '--disable-autoexec', '--threads', '2',
+                      '--python-exit-code', '1', '--python', '<worker>', '--', stage],
+                cwd='<workspace>', seconds=.05, peak_rss_bytes=64 * 1024**2,
+                peak_rss_source='linux-wait4', resident_budget_bytes=memory,
+                virtual_limit_bytes=memory * 8, log_limit_bytes=MAX_LOG_BYTES,
+                log_sha256=hashlib.sha256(('synthetic ' + stage).encode()).hexdigest())
+        if mutate_report is not None:
+            mutate_report(report['blender'])
         paths['import-report.json'].write_text(json.dumps(report), encoding='utf-8')
         report_record = file_record(paths['import-report.json'], 'import-report.json', 'evidence')
         inventory[report_record['path']] = report_record

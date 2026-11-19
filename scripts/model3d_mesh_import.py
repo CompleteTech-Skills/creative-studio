@@ -10,6 +10,7 @@ from pathlib import Path
 import copy
 import hashlib
 import math
+import re
 import tempfile
 from typing import Any
 
@@ -76,6 +77,54 @@ def import_mesh(path, *, scale=1., limits=None, blender=None):
     return import_snapshot(path, scale=scale, limits=limits, blender=blender)
 
 
+def _blender_receipts(blender, original, intermediate):
+    """Check retained execution-claim consistency, not authorship authenticity."""
+    from asset_import_blender import MAX_LOG_BYTES, WORKER
+    from asset_library import read_source_bytes
+    from asset_library_contracts import MAX_FILE_BYTES
+
+    timeout = blender.get('shared_wall_timeout_seconds')
+    require(type(timeout) in (int, float) and (type(timeout) is int or math.isfinite(timeout))
+            and timeout == int(timeout) and 0 < timeout <= 2**63 - 1
+            and blender.get('worker_sha256') == hashlib.sha256(read_source_bytes(WORKER, 65536)).hexdigest()
+            and blender.get('command_policy') ==
+            'private-cwd/fixed-package-worker/no-shell/factory/autoexec-disabled',
+            'MODEL3D_NORMALIZATION', 'Blender evidence requires the pinned worker and bounded command policy.')
+    elapsed = 0
+    budgets = []
+    for mode in ('create', 'reopen'):
+        stage = blender.get(mode)
+        require(isinstance(stage, dict), 'MODEL3D_NORMALIZATION',
+                'Blender evidence requires both retained worker stages.')
+        memory, peak = stage.get('resident_budget_bytes'), stage.get('peak_rss_bytes')
+        seconds, argv = stage.get('seconds'), stage.get('argv')
+        require(stage.get('status') == 'completed' and type(stage.get('exit_code')) is int
+                and stage['exit_code'] == 0 and stage.get('cwd') == '<workspace>'
+                and type(memory) is int and 384 * 1024**2 <= memory <= 2**63 - 1
+                and type(peak) is int and 0 < peak <= memory
+                and stage.get('peak_rss_source') == 'linux-wait4'
+                and stage.get('virtual_limit_bytes') == memory * 8
+                and stage.get('log_limit_bytes') == MAX_LOG_BYTES
+                and isinstance(stage.get('log_sha256'), str)
+                and re.fullmatch(r'[0-9a-f]{64}', stage['log_sha256']) is not None
+                and type(seconds) in (int, float) and (type(seconds) is int or math.isfinite(seconds))
+                and 0 <= seconds < timeout
+                and isinstance(argv, list) and len(argv) > 3 and isinstance(argv[3], str)
+                and re.fullmatch(r'--fsize=[1-9][0-9]{0,19}', argv[3]) is not None,
+                'MODEL3D_NORMALIZATION', 'Blender worker stage must record successful bounded execution.')
+        byte_limit = int(argv[3].split('=', 1)[1])
+        expected = ['/usr/bin/prlimit', f'--as={memory * 8}', f'--cpu={timeout}',
+                    f'--fsize={byte_limit}', '--nofile=128:128', '--', '<blender>',
+                    '--background', '--factory-startup', '--disable-autoexec', '--threads', '2',
+                    '--python-exit-code', '1', '--python', '<worker>', '--', mode]
+        require(argv == expected and max(original['bytes'], intermediate['bytes']) <= byte_limit <= MAX_FILE_BYTES,
+                'MODEL3D_NORMALIZATION', 'Blender worker stage has a contradictory command or file budget.')
+        budgets.append((memory, byte_limit))
+        elapsed += seconds
+    require(budgets[0] == budgets[1] and elapsed < timeout,
+            'MODEL3D_NORMALIZATION', 'Blender stages must share the retained resource and wall-time budgets.')
+
+
 def _blender_source(root, inventory, provenance, report, conversion):
     from asset_import_blender import BLENDER_BUILD, BLENDER_VERSION
 
@@ -111,6 +160,7 @@ def _blender_source(root, inventory, provenance, report, conversion):
             and report.get('original_filename') == 'roundtrip.glb'
             and report.get('source_sha256') == intermediate['sha256'],
             'MODEL3D_NORMALIZATION', 'Import report must bind the exact Blender source and intermediate GLB.')
+    _blender_receipts(blender, original, intermediate)
     with (root/_BLENDER_ORIGINAL).open('rb') as retained:
         require(retained.read(7) == b'BLENDER', 'MODEL3D_NORMALIZATION',
                 'Retained original is missing the Blender file signature.')
@@ -138,7 +188,8 @@ def _gltf_sources(inventory, provenance, report):
 def _check_blender_triangle(model):
     """Compare decoded world-space geometry with the fixed producer fixture."""
     meshes = model.geometry.meshes
-    require(len(meshes) == 1 and meshes[0].triangles.shape == (1, 3)
+    require(not model.clips and not any(mesh.morphs for mesh in meshes)
+            and len(meshes) == 1 and meshes[0].triangles.shape == (1, 3)
             and len(meshes[0].positions) == 3,
             'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has a different triangle topology.')
     vertices = [tuple(meshes[0].positions[index]) for index in meshes[0].triangles[0]]
@@ -202,6 +253,11 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
         raise RigError('MODEL3D_NORMALIZATION', 'Cannot verify the retained glTF resource closure.') from exc
     require(object_hash([files, embedded]) == resource_evidence,
             'MODEL3D_NORMALIZATION', 'Report inventory differs from the retained glTF resource closure.')
+    if blender:
+        require(not document.json.get('skins') and not document.json.get('animations')
+                and all(not mesh.get('weights') and all(not primitive.get('targets')
+                        for primitive in mesh['primitives']) for mesh in document.json.get('meshes', [])),
+                'MODEL3D_NORMALIZATION', 'The fixed Blender fixture cannot contain skin, animation or morph channels.')
     # The exact registered length is enough for the producer's packing plan.
     # It also avoids reserving its full configured output limit for a small GLB.
     document.limits = {**document.limits, 'source_bytes': int(normalized['bytes'])}
