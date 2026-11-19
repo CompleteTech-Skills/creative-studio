@@ -313,6 +313,48 @@ class NativeClosureRegressionTests(unittest.TestCase):
         expected_memory = sum(item['bytes'] for item in expected.values()) * _JSON_FACTOR
         self.assertEqual(admitted['memory_admission']['estimated_bytes'], expected_memory)
 
+    def test_project_charges_each_retained_camera_and_scene_owner_copy(self):
+        from rig_load_limits import _JSON_FACTOR
+        from scene3d_contracts import load_project as load_scene_project
+
+        def check_two_owners(root_path, native, shared_paths):
+            project_name = 'animation-project.json'
+            single = self.check()
+            self.project['provenance']['sources'] = [
+                self.put(root_path, {**native, 'id': 'archived-owner'})
+            ]
+            dual = self.check()
+            shared = sum(single['inventory'][path]['bytes'] for path in shared_paths) * _JSON_FACTOR
+            new_files = set(dual['inventory']) - set(single['inventory'])
+            self.assertEqual(new_files, {root_path})
+            old_estimate = single['memory_admission']['estimated_bytes']
+            old_estimate += (dual['inventory'][project_name]['bytes'] -
+                             single['inventory'][project_name]['bytes'] +
+                             dual['inventory'][root_path]['bytes']) * _JSON_FACTOR
+            with self.subTest(case='estimate', owner=native['kind']):
+                self.assertEqual(dual['memory_admission']['estimated_bytes'], old_estimate + shared)
+            with self.subTest(case='insufficient aggregate memory', owner=native['kind']):
+                self.project['budgets']['max_memory_bytes'] = old_estimate + shared // 2
+                with self.assertRaises(RigError) as rejected:
+                    self.check()
+                self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+            self.project['budgets']['max_memory_bytes'] = 10000000
+            self.project['provenance']['sources'] = []
+
+        base = Path(__file__).resolve().parents[1] / 'examples/camera3d'
+        shutil.copytree(base, self.root / 'camera')
+        registry = json.loads((base / 'registry.json').read_bytes())
+        self.project['default_render_profile'] = self.put('camera/registry.json', registry, 'render-profile')
+        check_two_owners('camera/archived-registry.json', registry,
+                         ['camera/' + ref['path'] for ref in registry['resources']])
+        self.project.pop('default_render_profile')
+
+        scene, _ = self.native_scene()
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        native = load_scene_project(self.root / 'native')
+        check_two_owners('native/archived-project.json', native['project'],
+                         ['native/' + name for name in native['documents'] if name != 'project.json'])
+
     def test_project_pins_rig_manifest_and_applies_remaining_geometry_caps(self):
         from unittest.mock import patch
         from rig_models import load_geometry, load_rig

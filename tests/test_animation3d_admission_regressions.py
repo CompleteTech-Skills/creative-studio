@@ -407,6 +407,42 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
         constraint.pop('target');constraint['target_position']=[0,0,0]
         self.assert_code('ANIMATION_CONSTRAINT')
 
+    def test_historical_camera_registry_cannot_supply_or_shadow_current_owner(self):
+        source = Path(__file__).resolve().parents[1] / 'examples/camera3d'
+        shutil.copytree(source, self.f.root / 'camera')
+        registry = json.loads((source / 'registry.json').read_bytes())
+        current = self.f.put('camera/registry.json', registry)
+        history = self.f.put('camera/history.json', {**registry, 'id': 'historical-registry'})
+        track = deepcopy(self.clip['tracks'][0])
+        track.update(id='camera-focal', target=dict(kind='camera', camera_id='camera', property='focal_length'),
+                     value_type='float', default_value=50, keys=[])
+        self.clip['tracks'].append(track)
+
+        def refresh(dependencies):
+            self.clip['dependencies'] = dependencies
+            self.f.project['clips'] = [self.f.put('clip.json', self.clip, 'clip')]
+
+        self.f.project['provenance']['sources'] = [history]
+        refresh([])
+        with self.subTest(case='historical owner alone'):
+            self.assert_code('ANIMATION_OWNER')
+
+        self.f.project['provenance']['sources'] = []
+        refresh([current])
+        self.assertTrue(self.check()['source_ready'])
+        self.f.project['provenance']['sources'] = [history]
+        with self.subTest(case='current owner alongside history'):
+            admitted = self.check()
+            self.assertTrue(admitted['source_ready'])
+            self.assertEqual(admitted['inventory'][history['path']]['sha256'], history['sha256'])
+
+        self.clip['tracks'].remove(track)
+        history_clip = {**deepcopy(self.clip), 'id': 'historical-clip',
+                        'tracks': [track], 'dependencies': [history]}
+        self.f.project['provenance']['sources'] = [self.f.put('historical-clip.json', history_clip, 'clip')]
+        refresh([])
+        self.assertTrue(self.check()['source_ready'])
+
     def test_provenance_scene_versions_cannot_select_active_shot_scene(self):
         historical=deepcopy(self.scene);historical.update(version='2.0.0',actors=[])
         self.f.project['provenance']['sources']=[self.f.put('historical-scene.json',historical,'scene')]
