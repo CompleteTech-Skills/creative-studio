@@ -30,6 +30,12 @@ METADATA = dict(description='Authored test geometry', category='geometry',
                 author='Test author', publisher='Test author', source_url='local:test-fixture',
                 license='CC0-1.0', allowed_uses=['test'], keywords=[], style_refs=[],
                 capabilities=[], review_status='unreviewed')
+STATIC_OBJ = (b'# exact source with CRLF and tab indentation\r\n'
+              b"o Baker's Panel\r\n"
+              b'\tv\t0 0 0\r\nv 2 0 0\r\nv 2 1 0\r\nv 0 1 0\r\n'
+              b'vt 0 0\r\nvt 1 0\r\nvt 1 1\r\nvt 0 1\r\nvt 0.25 0.5\r\n'
+              b'vn 0 0 1\r\ns off\r\n'
+              b'f 1/1/1 2/2/1 3/3/1\r\nf -4/5/1 -2/3/1 -1/4/1\r\n')
 
 
 @unittest.skipUnless(shutil.which('node') and (VALIDATOR / 'package.json').is_file(),
@@ -112,6 +118,255 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(doc['textures'], [dict(source=0)])
         self.assertEqual(doc['buffers'][0].keys(), {'byteLength'})
         self.assertTrue(load_character_model(normalized).report['fixture'])
+
+    def test_static_obj_retains_exact_bytes_and_mesh_attributes(self):
+        source = self.root / 'authored.OBJ'
+        payload = STATIC_OBJ
+        source.write_bytes(payload)
+        probe = self.pipeline.probe(source)
+        self.assertEqual(probe['format'], 'obj')
+        self.assertTrue(probe['geometry_validated'])
+        self.assertEqual(probe['files'], [dict(path='model.obj', roles=['source'],
+                         sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload))])
+        preflight = probe['preflight']
+        self.assertEqual(preflight['obj_source_bytes'], len(payload))
+        self.assertEqual(preflight['generated_binary_bytes'], 4 * (5 * (3 + 2 + 3) + 6))
+        generated_json = preflight['generated_json_bytes']
+        self.assertGreater(generated_json, len(payload))
+        self.assertEqual(preflight['encoded_bytes'], 28 + generated_json + (-generated_json % 4)
+                         + preflight['generated_binary_bytes'])
+        reference = self.import_source(source, unit_scale=2, fixture=True)
+        source.unlink()
+        reopened = AssetLibrary(self.library_path)
+        manifest = reopened.resolve(reference)
+        self.assertEqual(manifest['compatibility']['formats'], ['glb', 'obj'])
+        self.assertEqual(manifest['provenance']['sources'][0]['format'], 'obj')
+        self.assertEqual(manifest['provenance']['source_records'][0]['original_filename'], 'authored.OBJ')
+        self.assertEqual(reopened.read_file(reference, 'source/model.obj'), payload)
+        self.assertNotIn('source-khronos.json', manifest['publication']['inventory'])
+        report = resolve_import(reopened, reference)
+        self.assertEqual(report['source_validation'], 'native-geometry')
+        self.assertEqual(report['preflight'], preflight)
+        self.assertEqual(report['source_sha256'], hashlib.sha256(payload).hexdigest())
+        output = reopened.read_file(reference, 'normalized.glb')
+        validation = json.loads(reopened.read_file(reference, 'normalized-khronos.json'))
+        self.assertEqual(validation['validator'], '2.0.0-dev.3.10')
+        self.assertTrue(validation['ok'])
+        self.assertEqual(validation['issues']['numErrors'], 0)
+        self.assertEqual(validation['asset_sha256'], hashlib.sha256(output).hexdigest())
+        normalized = self.root / 'obj.glb'
+        normalized.write_bytes(output)
+        document = read_gltf(normalized)
+        mesh = document.json['meshes'][0]
+        self.assertEqual(mesh['name'], "Baker's Panel")
+        primitive = mesh['primitives'][0]
+        self.assertEqual(document.accessor(primitive['indices']).ravel().tolist(), [0, 1, 2, 3, 2, 4])
+        self.assertEqual(set(primitive['attributes']), {'POSITION', 'TEXCOORD_0', 'NORMAL'})
+        accessors = {name: document.accessor(index).tolist()
+                     for name, index in primitive['attributes'].items()}
+        self.assertEqual(accessors['POSITION'], [[0, 0, 0], [2, 0, 0], [2, 1, 0], [0, 0, 0], [0, 1, 0]])
+        self.assertEqual(accessors['TEXCOORD_0'], [[0, 1], [1, 1], [1, 0], [0.25, 0.5], [0, 0]])
+        self.assertEqual(accessors['NORMAL'], [[0, 0, 1]] * 5)
+        model = load_character_model(normalized)
+        self.assertEqual(model.geometry.meshes[0].positions.max(axis=0).tolist(), [4, 2, 0])
+        self.assertEqual(model.geometry.triangle_count, 2)
+        self.assertFalse(model.clips)
+
+    def test_static_obj_keeps_objects_distinct_when_they_share_a_group(self):
+        source = self.root / 'objects.obj'
+        source.write_bytes(b'o Top\ng panel visible\n'
+                           b'v 0 0 5\nv 1 0 5\nv 0 1 5\nf 1 2 3\n'
+                           b'o Bottom\ng panel visible\n'
+                           b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 4 5 6\n'
+                           b'o Top\ng panel visible\nf 4 5 6\n')
+        reference = self.import_source(source)
+        normalized = self.root / 'objects.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        self.assertEqual(self.library.read_file(reference, 'source/model.obj'), source.read_bytes())
+        self.assertEqual(len(document.json['nodes']), 3)
+        meshes = document.json['meshes']
+        self.assertEqual([mesh['name'] for mesh in meshes], ['Top', 'Bottom', 'Top'])
+        self.assertEqual([mesh['extras']['hatchObj'] for mesh in meshes], [
+            dict(object='Top', object_index=1, groups=['panel', 'visible']),
+            dict(object='Bottom', object_index=2, groups=['panel', 'visible']),
+            dict(object='Top', object_index=3, groups=['panel', 'visible']),
+        ])
+        for mesh, height in zip(meshes, (5., 0., 0.), strict=True):
+            primitive, = mesh['primitives']
+            positions = document.accessor(primitive['attributes']['POSITION'])
+            self.assertEqual(positions[:, 2].tolist(), [height, height, height])
+            self.assertEqual(document.accessor(primitive['indices']).ravel().tolist(), [0, 1, 2])
+
+    def test_static_obj_keeps_unnamed_declarations_distinct(self):
+        source = self.root / 'unnamed.obj'
+        source.write_bytes(b'v 0 0 0\nv 1 0 0\nv 0 1 0\ng panel\nf 1 2 3\n'
+                           b'o\nf 1 2 3\no\nf 1 2 3\n')
+        reference = self.import_source(source)
+        normalized = self.root / 'unnamed.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        self.assertEqual(len(document.json['nodes']), 3)
+        self.assertEqual([mesh['extras']['hatchObj'] for mesh in document.json['meshes']], [
+            dict(groups=['panel']),
+            dict(object='', object_index=1, groups=['panel']),
+            dict(object='', object_index=2, groups=['panel']),
+        ])
+
+    def test_static_obj_quad_omits_unsupplied_attributes(self):
+        source = self.root / 'quad.obj'
+        source.write_bytes(b'v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n')
+        reference = self.import_source(source)
+        normalized = self.root / 'quad.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        primitive = document.json['meshes'][0]['primitives'][0]
+        self.assertEqual(set(primitive['attributes']), {'POSITION'})
+        self.assertEqual(document.accessor(primitive['attributes']['POSITION']).shape, (4, 3))
+        self.assertEqual(document.accessor(primitive['indices']).size, 6)
+
+    def test_static_obj_rejects_materials_and_over_budget_geometry_before_publication(self):
+        source = self.root / 'mesh.obj'
+        geometry = b'v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n'
+        for statement in (b'mtllib palette.mtl\n', b'usemtl default\n'):
+            with self.subTest(statement=statement):
+                source.write_bytes(geometry + statement)
+                for operation in (self.pipeline.probe, self.import_source):
+                    with self.assertRaises(RigError) as error:
+                        operation(source)
+                    self.assertEqual(error.exception.report['code'], 'RIG_OBJ_MATERIAL')
+        source.write_bytes(geometry)
+        self.pipeline = ImportPipeline(self.library, limits={'triangles': 1})
+        with self.assertRaises(RigError) as error:
+            self.import_source(source)
+        self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_TRIANGLES')
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_static_obj_admits_generated_graph_before_builder_allocation(self):
+        source = self.root / 'groups.obj'
+        groups = ''.join(f'g panel-{index}\nf 1 2 3\n' for index in range(140))
+        source.write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\n' + groups, encoding='utf-8')
+        self.pipeline = ImportPipeline(self.library, limits={'memory_bytes': 2 * 1024**2})
+        with patch('asset_library_import.build_static_gltf') as build:
+            with self.assertRaises(RigError) as error:
+                self.import_source(source)
+        self.assertEqual(error.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assertGreater(error.exception.report['observed'], error.exception.report['expected'])
+        build.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_static_obj_rejects_quoted_directives(self):
+        source = self.root / 'quoted.obj'
+        source.write_bytes(STATIC_OBJ.replace(b'f ', b'"f" '))
+        with self.assertRaises(RigError) as error:
+            self.pipeline.probe(source)
+        self.assertEqual(error.exception.report['code'], 'RIG_OBJ_RECORD')
+
+    def test_static_obj_rejects_triangles_collapsed_by_glb_position_precision(self):
+        source = self.root / 'precision.obj'
+        cases = [
+            b'v 16777216 0 0\nv 16777217 0 0\nv 16777216 1 0\n',
+            b'v 16777216 0 0\nv 16777217 1 0\nv 16777216 2 0\n',
+            b'v 0 0 0\nv 1e-200 0 0\nv 0 1e-200 0\n',
+        ]
+        with patch('asset_library_import.build_static_gltf') as build:
+            for vertices in cases:
+                with self.subTest(vertices=vertices):
+                    source.write_bytes(vertices + b'f 1 2 3\n')
+                    for operation in (self.pipeline.probe, self.import_source):
+                        with self.assertRaises(RigError) as error:
+                            operation(source)
+                        self.assertEqual(error.exception.report['code'], 'RIG_OBJ_PRECISION')
+            build.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_static_obj_keeps_preexisting_degeneracy(self):
+        source = self.root / 'collinear.obj'
+        source.write_bytes(b'v 16777216 0 0\nv 16777217 0 0\nv 16777218 0 0\nf 1 2 3\n')
+        self.assertTrue(self.pipeline.probe(source)['geometry_validated'])
+        reference = self.import_source(source)
+        self.assertEqual(resolve_import(self.library, reference)['native_observation']['triangles'], 1)
+
+    def test_static_obj_rejects_face_created_from_collinear_source(self):
+        source = self.root / 'expanded-line.obj'
+        # The source steps are both (1, 1, 0). The middle x coordinate
+        # rounds down in a float32 accessor, turning the line into a face.
+        source.write_bytes(b'v 16777216 0 0\nv 16777217 1 0\nv 16777218 2 0\nf 1 2 3\n')
+        before = {p.relative_to(self.library_path): p.read_bytes()
+                  for p in self.library_path.rglob('*') if p.is_file()}
+        for operation in (self.pipeline.probe, self.import_source):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaises(RigError) as error:
+                    operation(source)
+                self.assertEqual(error.exception.report['code'], 'RIG_OBJ_PRECISION')
+                after = {p.relative_to(self.library_path): p.read_bytes()
+                         for p in self.library_path.rglob('*') if p.is_file()}
+                self.assertEqual(after, before)
+
+    def test_static_obj_rejects_winding_loss_before_publication(self):
+        source = self.root / 'winding.obj'
+
+        def stored_files():
+            return {p.relative_to(self.library_path): p.read_bytes()
+                    for p in self.library_path.rglob('*') if p.is_file()}
+
+        before = stored_files()
+        # The planar face goes from +1 to -2 in XY. The two tilted faces
+        # have respectively zero and slightly negative exact normal dots.
+        for third in ('3 0', '2.5 1', '2.5000000000000004 1'):
+            source.write_text(f'v 16777216 0 0\nv 16777217 1 0\nv 16777218 {third}\nf 1 2 3\n')
+            for operation in (self.pipeline.probe, self.import_source):
+                with self.subTest(third=third, operation=operation.__name__):
+                    with self.assertRaises(RigError) as error:
+                        operation(source)
+                    self.assertEqual(error.exception.report['code'], 'RIG_OBJ_PRECISION')
+                    self.assertEqual(stored_files(), before)
+
+    def test_static_obj_preserves_acute_winding_near_right_angle(self):
+        source = self.root / 'tilted.obj'
+        # Moving one binary64 step below 2.5 makes the 3D normal dot
+        # positive, even though the XY projection still reverses.
+        source.write_text('v 16777216 0 0\nv 16777217 1 0\nv 16777218 2.4999999999999996 1\nf 1 2 3\n')
+        self.assertTrue(self.pipeline.probe(source)['geometry_validated'])
+        reference = self.import_source(source)
+        normalized = self.root / 'tilted.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        primitive = document.json['meshes'][0]['primitives'][0]
+        points = document.accessor(primitive['attributes']['POSITION'])
+        self.assertEqual(points[document.accessor(primitive['indices']).ravel()].tolist(),
+                         [[16777216, 0, 0], [16777216, 1, 0], [16777218, 2.5, 1]])
+
+    def test_static_obj_normalizes_finite_large_normals(self):
+        source = self.root / 'large-normal.obj'
+        source.write_bytes(STATIC_OBJ.replace(b'vn 0 0 1', b'vn 0 0 1e300'))
+        self.assertTrue(self.pipeline.probe(source)['geometry_validated'])
+        reference = self.import_source(source)
+        normalized = self.root / 'normal.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        attributes = document.json['meshes'][0]['primitives'][0]['attributes']
+        self.assertEqual(document.accessor(attributes['NORMAL']).tolist(), [[0, 0, 1]] * 5)
+
+    def test_static_obj_checks_caller_deadline_after_triangulation(self):
+        from rig_obj import triangulate_polygon
+
+        source = self.root / 'timed.obj'
+        source.write_bytes(b'v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n')
+        self.pipeline = ImportPipeline(self.library, limits={'timeout_seconds': 1})
+        clock = 10
+
+        def advance_on_triangulation(points):
+            nonlocal clock
+            clock = 11
+            return triangulate_polygon(points)
+
+        with patch('rig_obj.monotonic', side_effect=lambda: clock), patch(
+                'rig_obj.triangulate_polygon', side_effect=advance_on_triangulation) as triangulate:
+            with self.assertRaises(RigError) as error:
+                self.pipeline.probe(source)
+        triangulate.assert_called_once()
+        self.assertEqual(error.exception.report['code'], 'RIG_OBJ_TIMEOUT')
 
     def test_real_animated_glb_keeps_skin_morph_material_and_animation_records(self):
         path = ROOT / 'examples/rig-3d/humanoid/exports/character.glb'
