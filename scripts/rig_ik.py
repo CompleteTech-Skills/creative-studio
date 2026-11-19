@@ -614,8 +614,10 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         # A straight chain has no measured bend: _pole_perpendicular picks an
         # arbitrary side, which solve_ik reproduces from any on-axis pole. The
         # elbow's axis offset carries rounding that grows with the world
-        # coordinates and the segment length, so only an offset above both the
-        # absolute cutoff and that rounding is a bend whose loss must refuse.
+        # coordinates and the segment length. This conservative test only
+        # decides whether a bend that neither pole represents must refuse; a
+        # genuine near-closed bend may fall below it, but the elbow pole below
+        # is always tried first.
         with np.errstate(over='ignore', invalid='ignore'):
             elbow = points[1] - origin
             offset = np.linalg.norm(elbow - axis * np.dot(elbow, axis))
