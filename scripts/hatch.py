@@ -1029,6 +1029,9 @@ def fail(root, data, name, token, reason, *, budget_usage=None):
 def repair(root, data, name, reason):
     if not reason.strip():
         raise ValueError('specific repair reason required')
+    # Repairing one state may proceed while another runs; a stale snapshot
+    # must not replace that running handoff's newer pending usage.
+    _require_current_handoff(root, data)
     affected = descendants(data, name)
     if any(j['status'] == 'running' for j in data['jobs'] if j['id'] in affected):
         raise ValueError('reconcile affected running handoffs before repair')

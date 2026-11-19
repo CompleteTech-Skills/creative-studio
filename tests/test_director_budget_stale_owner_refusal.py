@@ -121,7 +121,7 @@ class StaleOwnerRefusalTests(unittest.TestCase):
         self.assert_refusal_and_recovery(stale, lambda budget, job: budget.reconcile(),
                                         calls=2, amount='0.25')
 
-    def check_limits_with_pending_usage(self, *, stale):
+    def check_limits_with_pending_usage(self, *, stale, write=None):
         token = self.claim()['token']
         with hatch.ownership(self.root):
             earlier = hatch.manifest(self.root)
@@ -145,12 +145,19 @@ class StaleOwnerRefusalTests(unittest.TestCase):
             original = digests()
             if stale:
                 with self.assertRaises((RigError, ValueError)):
-                    hatch.configure_limits(self.root, earlier, Namespace(max_calls=1))
+                    if write is None:
+                        hatch.configure_limits(self.root, earlier, Namespace(max_calls=1))
+                    else:
+                        write(earlier)
                 self.assertEqual(digests(), original)
-            else:
+            elif write is None:
                 result = hatch.configure_limits(self.root, current, Namespace(max_calls=1))
                 self.assertEqual(result['limits']['generation_calls'], 1)
                 self.assertEqual(hatch.manifest(self.root)['limits']['generation_calls'], 1)
+            else:
+                write(current)
+                # A current repair legitimately appends its note to prompts.
+                original = digests()
 
             hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
             recovered = digests()
@@ -174,6 +181,20 @@ class StaleOwnerRefusalTests(unittest.TestCase):
 
     def test_current_limits_update_preserves_pending_native_usage(self):
         self.check_limits_with_pending_usage(stale=False)
+
+    def repair_unrelated_state(self, data):
+        other = next(job['id'] for job in data['jobs'] if job['id'] != 'base'
+                     and 'base' not in hatch.descendants(data, job['id']))
+        result = hatch.repair(self.root, data, other, 'stale snapshot probe')
+        self.assertNotIn('base', result['pending'])
+
+    def test_stale_repair_preserves_pending_native_usage(self):
+        # Repairing a different state is allowed while base runs, but a stale
+        # snapshot must not replace the newer pending usage on disk.
+        self.check_limits_with_pending_usage(stale=True, write=self.repair_unrelated_state)
+
+    def test_current_repair_preserves_pending_native_usage(self):
+        self.check_limits_with_pending_usage(stale=False, write=self.repair_unrelated_state)
 
 
 if __name__ == '__main__':
