@@ -172,6 +172,32 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(model.geometry.triangle_count, 2)
         self.assertFalse(model.clips)
 
+    def test_static_obj_keeps_objects_distinct_when_they_share_a_group(self):
+        source = self.root / 'objects.obj'
+        source.write_bytes(b'o Top\ng panel visible\n'
+                           b'v 0 0 5\nv 1 0 5\nv 0 1 5\nf 1 2 3\n'
+                           b'o Bottom\ng panel visible\n'
+                           b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 4 5 6\n'
+                           b'o Top\ng panel visible\nf 4 5 6\n')
+        reference = self.import_source(source)
+        normalized = self.root / 'objects.glb'
+        normalized.write_bytes(self.library.read_file(reference, 'normalized.glb'))
+        document = read_gltf(normalized)
+        self.assertEqual(self.library.read_file(reference, 'source/model.obj'), source.read_bytes())
+        self.assertEqual(len(document.json['nodes']), 3)
+        meshes = document.json['meshes']
+        self.assertEqual([mesh['name'] for mesh in meshes], ['Top', 'Bottom', 'Top'])
+        self.assertEqual([mesh['extras']['hatchObj'] for mesh in meshes], [
+            dict(object='Top', object_index=1, groups=['panel', 'visible']),
+            dict(object='Bottom', object_index=2, groups=['panel', 'visible']),
+            dict(object='Top', object_index=3, groups=['panel', 'visible']),
+        ])
+        for mesh, height in zip(meshes, (5., 0., 0.), strict=True):
+            primitive, = mesh['primitives']
+            positions = document.accessor(primitive['attributes']['POSITION'])
+            self.assertEqual(positions[:, 2].tolist(), [height, height, height])
+            self.assertEqual(document.accessor(primitive['indices']).ravel().tolist(), [0, 1, 2])
+
     def test_static_obj_quad_omits_unsupplied_attributes(self):
         source = self.root / 'quad.obj'
         source.write_bytes(b'v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n')
@@ -245,6 +271,22 @@ class NativeImportTests(unittest.TestCase):
         self.assertTrue(self.pipeline.probe(source)['geometry_validated'])
         reference = self.import_source(source)
         self.assertEqual(resolve_import(self.library, reference)['native_observation']['triangles'], 1)
+
+    def test_static_obj_rejects_face_created_from_collinear_source(self):
+        source = self.root / 'expanded-line.obj'
+        # The source steps are both (1, 1, 0). The middle x coordinate
+        # rounds down in a float32 accessor, turning the line into a face.
+        source.write_bytes(b'v 16777216 0 0\nv 16777217 1 0\nv 16777218 2 0\nf 1 2 3\n')
+        before = {p.relative_to(self.library_path): p.read_bytes()
+                  for p in self.library_path.rglob('*') if p.is_file()}
+        for operation in (self.pipeline.probe, self.import_source):
+            with self.subTest(operation=operation.__name__):
+                with self.assertRaises(RigError) as error:
+                    operation(source)
+                self.assertEqual(error.exception.report['code'], 'RIG_OBJ_PRECISION')
+                after = {p.relative_to(self.library_path): p.read_bytes()
+                         for p in self.library_path.rglob('*') if p.is_file()}
+                self.assertEqual(after, before)
 
     def test_static_obj_rejects_winding_loss_before_publication(self):
         source = self.root / 'winding.obj'

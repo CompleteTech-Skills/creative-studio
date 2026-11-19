@@ -77,6 +77,32 @@ class AssetLibraryTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(reopened.read_file(reference, self.files[0]['path'])).hexdigest(),
                          self.files[0]['sha256'])
 
+    def test_tab_indented_geometry_retains_its_legacy_sealed_format(self):
+        payload = b'\tv 0 0 0\n\tv 1 0 0\n\tv 0 1 0\n\tf 1 2 3\n'
+        self.mesh.write_bytes(payload)
+        # This is the original exact header classification for the same bytes.
+        legacy_file = dict(self.files[0], bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest(),
+                           format='binary', mime_type='application/octet-stream')
+        prior = deepcopy(self.manifest)
+        prior['files'][0] = legacy_file
+        prior['provenance']['sources'][0] = legacy_file
+        sealed = seal(prior)
+        reference = self.register(sealed)
+        self.assertEqual(file_record(self.mesh, legacy_file['path'], 'geometry'), legacy_file)
+        self.assertEqual(self.library.resolve(reference), sealed)
+        self.assertEqual(self.library.read_file(reference, legacy_file['path']), payload)
+
+    def test_legacy_obj_header_is_still_a_header_only_registration(self):
+        payload = b'v \nf \n'
+        self.mesh.write_bytes(payload)
+        record = dict(self.files[0], bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest(),
+                      format='obj', mime_type='model/obj')
+        manifest = deepcopy(self.manifest)
+        manifest['files'][0] = record
+        manifest['provenance']['sources'][0] = record
+        reference = self.register(seal(manifest))
+        self.assertEqual(self.library.read_file(reference, record['path']), payload)
+
     def test_immutable_versions_and_false_latest_are_rejected(self):
         reference = self.register()
         with self.assertRaises(RigError): self.register()

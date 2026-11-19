@@ -56,7 +56,10 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
     vertices, uv, normals, groups, dependencies = [], [], [], {}, [path]
     materials = [dict(name='Default material')];material_ids = {'default': 0};images = [];textures = []
     total_texture_pixels = 0
-    current_group, current_material = 'mesh', 0
+    current_group, current_material = ('' if geometry_only else 'mesh'), 0
+    current_object = None
+    object_index = 0
+    group_members = {}
 
     def check_deadline():
         require(monotonic() < deadline, 'RIG_OBJ_TIMEOUT',
@@ -126,7 +129,16 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
             for name in values:material_file(name)
         elif key == 'usemtl':
             name = ' '.join(values);require(name in material_ids, 'RIG_MTL', 'Referenced material is undefined.');current_material = material_ids[name]
-        elif key in ('g', 'o'):current_group = ' '.join(values) or 'mesh'
+        elif key in ('g', 'o'):
+            label = ' '.join(values)
+            if not geometry_only:
+                current_group = label or 'mesh'
+            elif key == 'o':
+                object_index += 1
+                current_object = (object_index, label) if label else None
+            else:
+                current_group = label
+                group_members[label] = values
         elif key == 'f':
             require(3 <= len(values) <= 256, 'RIG_OBJ_FACE', 'OBJ faces need 3–256 vertices.')
             triangle_count += len(values) - 2
@@ -145,7 +157,7 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
                     index = index-1 if index > 0 else length+index
                     require(0 <= index < length, 'RIG_OBJ_INDEX', 'OBJ face references an invalid vertex/UV/normal.');indices.append(index)
                 require(indices[0] is not None, 'RIG_OBJ_INDEX', 'OBJ face requires vertex positions.');face.append(tuple(indices))
-            bucket = groups.setdefault((current_group, current_material), [])
+            bucket = groups.setdefault((current_group, current_material, current_object), [])
             triangles = triangulate_polygon(np.asarray([vertices[v[0]] for v in face], float))
             if geometry_only:
                 check_deadline()
@@ -154,7 +166,16 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
             if geometry_only:
                 require(len(groups) <= 10000, 'RIG_LIMIT_NODES', 'OBJ groups exceed the native node limit.')
     meshes = []
-    for i, ((name, material), faces) in enumerate(groups.items()):
+    obj_partitions = []
+    for i, ((group, material, object_scope), faces) in enumerate(groups.items()):
+        name = object_scope[1] if object_scope is not None else group or 'mesh'
+        if geometry_only:
+            partition = {}
+            if object_scope is not None:
+                partition.update(object=object_scope[1], object_index=object_scope[0])
+            if group:
+                partition['groups'] = group_members[group]
+            obj_partitions.append((len(group), partition))
         lookup = {};position_array = [];uv_array = [];normal_array = [];triangles = []
         has_uv = all(v[1] is not None for f in faces for v in f)
         has_normals = all(v[2] is not None for f in faces for v in f)
@@ -193,7 +214,7 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
     validate_geometry(geometry, limits)
     if geometry_only:
         check_deadline()
-        return ImportedModel(geometry, dependencies, report={})
+        return ImportedModel(geometry, dependencies, report={'obj_partitions': obj_partitions})
     report = analyze_geometry(geometry, limits)
     report.update(import_format='.obj', scale_conversion=scale, preserved_existing_rig=False, preserved_animation_clips=0,
                   source_sha256=hashlib.sha256(entry_bytes).hexdigest(), warnings=['OBJ imports geometry/materials only; skeletons and animations are not present in this format.',

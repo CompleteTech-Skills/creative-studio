@@ -157,10 +157,13 @@ def _check_obj_float32_triangles(geometry):
                 error = 32 * precision.eps * np.sum(original_scale * target_scale, axis=1) + precision.tiny
             for index in np.flatnonzero(changed & (dot <= error)):
                 original_exact = _exact_obj_area_components(source[index])
+                target_exact = _exact_obj_area_components(rounded[index])
                 if any(original_exact):
-                    target_exact = _exact_obj_area_components(rounded[index])
                     require(sum(a * b for a, b in zip(original_exact, target_exact)) > 0,
                             'RIG_OBJ_PRECISION', 'Converting OBJ to glTF precision loses triangle orientation.')
+                else:
+                    require(not any(target_exact), 'RIG_OBJ_PRECISION',
+                            'Converting OBJ to glTF precision creates a face from collinear vertices.')
 
 
 def _inspect_source(snapshot, limits):
@@ -170,16 +173,18 @@ def _inspect_source(snapshot, limits):
 
     from rig_obj import import_obj
 
-    geometry = import_obj(path, limits=limits, geometry_only=True).geometry
+    imported = import_obj(path, limits=limits, geometry_only=True)
+    geometry = imported.geometry
+    partitions = imported.report['obj_partitions']
     # The supported accessors use 32-bit values. Reserve the retained arrays,
     # builder buffers and scratch, and the synthesized JSON graph up front.
     geometry_bytes = packed_bytes = 0
     metadata_workspace = 4096
-    for mesh in geometry.meshes:
+    for mesh, (group_chars, _) in zip(geometry.meshes, partitions, strict=True):
         arrays = (mesh.positions, mesh.triangles, *mesh.attributes.values())
         geometry_bytes += sum(array.nbytes for array in arrays)
         packed_bytes += 4 * sum(array.size for array in arrays)
-        metadata_workspace += 16384 + 64 * (len(mesh.id) + len(mesh.name))
+        metadata_workspace += 16384 + 64 * (len(mesh.id) + len(mesh.name) + group_chars)
     output_limit = min(MAX_FILE_BYTES, limits['source_bytes'], limits['dependency_bytes'])
     require(28 + packed_bytes <= output_limit, 'ASSET_IMPORT_LIMIT',
             'Converted OBJ binary cannot fit in the normalized GLB budget.')
@@ -191,7 +196,10 @@ def _inspect_source(snapshot, limits):
                   limits, 'OBJ coordinate precision')
     _check_obj_float32_triangles(geometry)
     builder = build_static_gltf(geometry, generate_normals=False)
-    del geometry
+    for mesh, (_, partition) in zip(builder.json['meshes'], partitions, strict=True):
+        if partition:
+            mesh['extras']['hatchObj'] = partition
+    del geometry, imported, partitions
     document = GltfDocument(path, builder.json, [builder.binary], limits)
     encoder = json.JSONEncoder(ensure_ascii=False, separators=(',', ':'), allow_nan=False)
     json_bytes = sum(len(fragment.encode('utf-8')) for fragment in encoder.iterencode(document.json))
@@ -472,7 +480,8 @@ class ImportPipeline:
         if blender is not None:
             roles.update({'source/fixture.blend': 'source', 'source/model.glb': 'evidence'})
         paths = {path: root / path for path in roles}
-        records = {path: file_record(paths[path], path, role) for path, role in roles.items()}
+        records = {path: file_record(paths[path], path, role, allow_indented_obj=is_obj and path in original)
+                   for path, role in roles.items()}
         sources = [records[path] for path in original]
         created = timestamp()
         origin = 'Native local static OBJ import' if is_obj else 'Native local glTF import'

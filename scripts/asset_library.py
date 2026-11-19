@@ -141,8 +141,8 @@ def read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES,
                        asset=str(path)) from exc
 
 
-def detect_format(payload: bytes) -> tuple[AssetFormat, str]:
-    """Header recognition, not a geometric/semantic format validator."""
+def detect_format(payload: bytes, *, allow_indented_obj: bool = False) -> tuple[AssetFormat, str]:
+    """Recognize headers using the historical default and an explicit OBJ profile."""
     if payload.startswith(b'glTF'): return 'glb', 'model/gltf-binary'
     if payload.startswith(b'\x89PNG\r\n\x1a\n'): return 'png', 'image/png'
     if payload.startswith(b'\xff\xd8\xff'): return 'jpeg', 'image/jpeg'
@@ -156,22 +156,25 @@ def detect_format(payload: bytes) -> tuple[AssetFormat, str]:
         except (RigError, ValueError): pass
     try:
         lines = payload.decode('utf-8').splitlines()
-        needed = {'v', 'f'}
-        for line in lines:
-            fields = line.split(maxsplit=1)
-            if len(fields) == 2:
-                needed.discard(fields[0])
-                if not needed:
-                    return 'obj', 'model/obj'
+        if any(line.startswith('v ') for line in lines) and any(line.startswith('f ') for line in lines):
+            return 'obj', 'model/obj'
+        if allow_indented_obj:
+            needed = {'v', 'f'}
+            for line in lines:
+                fields = line.split(maxsplit=1)
+                if len(fields) == 2:
+                    needed.discard(fields[0])
+                    if not needed:
+                        return 'obj', 'model/obj'
     except UnicodeError: pass
     return 'binary', 'application/octet-stream'
 
 
 def file_record(source: _SourcePath, path: str, role: str = 'source',
-                required: bool = True) -> AssetFile:
+                required: bool = True, *, allow_indented_obj: bool = False) -> AssetFile:
     portable_path(path)
     payload = read_source_bytes(source, MAX_FILE_BYTES)
-    fmt, mime = detect_format(payload)
+    fmt, mime = detect_format(payload, allow_indented_obj=allow_indented_obj)
     return AssetFile(path=path, role=role, sha256=hashlib.sha256(payload).hexdigest(),
                      bytes=len(payload), format=fmt, mime_type=mime, required=required)
 
@@ -310,7 +313,10 @@ class AssetLibrary:
                                                          code='LIMIT', label='File byte count'))
             if len(payload) != f['bytes'] or hashlib.sha256(payload).hexdigest() != f['sha256']:
                 _fail('HASH', 'Payload hash/size differs from the declared exact bytes.', f['path'])
-            if detect_format(payload) != (f['format'], f['mime_type']):
+            # Explicit OBJ records support the normalized adapter's full whitespace
+            # grammar. Other exact records keep their historical header classification.
+            header = detect_format(payload, allow_indented_obj=f['format'] == 'obj')
+            if header != (f['format'], f['mime_type']):
                 _fail('FORMAT', 'Payload header does not match the recorded format.', f['path'])
             payloads[f['sha256']] = payload
         identity, version = manifest['identity']['id'], manifest['version']
