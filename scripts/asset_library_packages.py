@@ -16,7 +16,7 @@ import zipfile
 
 from asset_library import AssetLibrary, read_source_bytes
 from asset_library_contracts import canonical_bytes, load_manifest, portable_path, validate
-from asset_library_dependencies import DependencyGraph, location_key, dependency_edges
+from asset_library_dependencies import DependencyGraph, location, location_key, dependency_edges
 from rig_errors import RigError, decode_json, object_hash
 from production_sources import (_new_destination, _publish_stage, _portable_inventory,
     create_source_bundle, restore_source_bundle, verify_source_bundle, SOURCE_INDEX)
@@ -33,6 +33,25 @@ PACKAGE_TYPES = ('asset', 'collection', 'prefab', 'scene', 'project', 'library')
 
 def fail(code, message):
     raise RigError('LIBRARY_PACKAGE_' + code, message)
+
+
+def _destination(value):
+    try:
+        return _new_destination(value)
+    except RigError:
+        raise
+    except (OSError, ValueError) as exc:
+        fail('DESTINATION', str(exc))
+
+
+def _publish(stage, destination):
+    # A destination created by another writer during staging is retained.
+    try:
+        _publish_stage(stage, destination)
+    except RigError:
+        raise
+    except (OSError, ValueError) as exc:
+        fail('DESTINATION', str(exc))
 
 
 def _keys(value, names, label):
@@ -80,7 +99,10 @@ def _inventory(root):
         expected_directories.update('/'.join(parts[:i]) for i in range(1, len(parts)))
     if seen_directories != expected_directories:
         fail('INVENTORY', 'Package has unexpected empty directory members.')
-    _portable_inventory(result)
+    try:
+        _portable_inventory(result)
+    except ValueError as exc:
+        fail('PATH', str(exc))
     return result
 
 
@@ -144,7 +166,7 @@ def create_package(graph: DependencyGraph, roots: list, destination, *, package_
         fail('CONTEXT', 'Context files must be an explicit bounded path mapping.')
     if package_type in ('scene', 'project') and not context_files:
         fail('CONTEXT', 'Scene/project packages require their consumer documents.')
-    destination = _new_destination(destination)
+    destination = _destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if scopes is None:
         scopes = {'default': roots}
@@ -217,7 +239,7 @@ def create_package(graph: DependencyGraph, roots: list, destination, *, package_
         report = verify_package(stage)
         for lock in locks.values():
             graph.verify_lock(lock)
-        _publish_stage(stage, destination)
+        _publish(stage, destination)
         return {**report, 'package': str(destination), 'created': True}
     finally:
         if stage.exists():
@@ -271,13 +293,19 @@ def _verify(root):
         if '/' in name or len(name) > 64 or path != 'locks/' + name + '.json':
             fail('SCHEMA', 'Noncanonical scope/lock path.')
         locks[name] = decode_json(_read(root, path, MAX_INDEX_BYTES))
+        if not isinstance(locks[name], dict) or not isinstance(locks[name].get('graph'), dict):
+            fail('SCHEMA', 'Scoped lock must be a dependency-lock object.')
     if not isinstance(index['assets'], list) or not 1 <= len(index['assets']) <= 4096:
         fail('LIMIT', 'Package asset inventory exceeds bounds.')
     expected = set(index['locks'].values()); libraries = {}; manifests = []; gates = []; fixture = True
     locations = []; manifest_cache = {}
     for asset in index['assets']:
         _keys(asset, ('location', 'manifest'), 'Package asset')
-        node = asset['location']; token = location_key(node)
+        node = asset['location']
+        # Bind the canonical locator exactly; extra or malformed fields cannot verify.
+        if location(node) != node:
+            fail('SCHEMA', 'Package asset location is not an exact canonical locator.')
+        token = location_key(node)
         if token in locations:
             fail('DUPLICATE', 'Duplicate asset locations.')
         locations.append(token)
@@ -298,6 +326,8 @@ def _verify(root):
                 fail('INCOMPLETE', 'Required asset file is not in package inventory: ' + record['path'])
     if not isinstance(index['context'], list) or len(index['context']) > 256:
         fail('CONTEXT', 'Invalid context inventory.')
+    if not all(isinstance(path, str) for path in index['context']):
+        fail('CONTEXT', 'Context entries must be package paths.')
     if len(set(index['context'])) != len(index['context']):
         fail('CONTEXT', 'Duplicate context file.')
     for path in index['context']:
@@ -427,7 +457,7 @@ def inspect_package(root) -> dict:
 
 def restore_package(root, destination) -> dict:
     """Restore into a new isolated canonical library, preserving exact manifests."""
-    destination = _new_destination(destination)
+    destination = _destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix='.asset-library-restore-', dir=destination.parent))
     try:
@@ -464,7 +494,7 @@ def restore_package(root, destination) -> dict:
             ref = dict(id=manifest['identity']['id'], version=manifest['version'], sha256=manifest['manifest_sha256'])
             if library.resolve(ref) != manifest:
                 fail('RESTORE', 'Restored version differs.')
-        _publish_stage(stage, destination)
+        _publish(stage, destination)
         return {**report, 'restored': str(destination), 'library': str(destination / 'library')}
     finally:
         if stage.exists():
@@ -474,7 +504,7 @@ def restore_package(root, destination) -> dict:
 def create_transport(root, destination, *, part_size=65535) -> dict:
     """Reuse the existing ordered, hash-verified source-parts transport."""
     index, _, report = _verify(root)
-    destination = _new_destination(destination)
+    destination = _destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix='.asset-transport-', dir=destination.parent))
     try:
@@ -485,7 +515,7 @@ def create_transport(root, destination, *, part_size=65535) -> dict:
         verified = verify_transport(bundle)
         if verified['package_sha256'] != report['package_sha256']:
             fail('HASH', 'Source package changed during transport creation.')
-        _publish_stage(bundle, destination)
+        _publish(bundle, destination)
         return {**result, 'bundle': str(destination / SOURCE_INDEX),
                 'package_sha256': report['package_sha256']}
     finally:
@@ -499,6 +529,9 @@ def _unpack_transport(root):
     base = root if root.is_dir() else root.parent
     index_path = root / SOURCE_INDEX if root.is_dir() else root
     index = decode_json(read_source_bytes(index_path, MAX_INDEX_BYTES))
+    if (not isinstance(index, dict) or not isinstance(index.get('parts', []), list) or
+            not all(isinstance(p, dict) and isinstance(p.get('path'), str) for p in index.get('parts', []))):
+        fail('SCHEMA', 'Transport index must list its parts.')
     expected = {SOURCE_INDEX} | {p['path'] for p in index.get('parts', [])}
     if _inventory(base) != expected:
         fail('INCOMPLETE', 'Transport has missing or extra members.')
@@ -521,7 +554,7 @@ def restore_transport(root, destination) -> dict:
 def create_archive(root, destination) -> dict:
     """ZIP transport reuses the existing strict generic archive guard."""
     index, _, report = _verify(root)
-    destination = _new_destination(destination)
+    destination = _destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix='.asset-zip-', dir=destination.parent))
     try:
@@ -546,10 +579,48 @@ def create_archive(root, destination) -> dict:
         from atomic_publish import _rename_no_replace
         import hatch
         with hatch.ownership(destination, resolve_leaf=False):
-            _new_destination(destination); _rename_no_replace(archive, destination)
+            _destination(destination)
+            try:
+                _rename_no_replace(archive, destination)
+            except OSError as exc:
+                fail('DESTINATION', str(exc))
         return {**report, 'archive': str(destination)}
     finally:
         shutil.rmtree(stage)
+
+
+def _extract_archive(raw, temporary):
+    import io
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            if any((e.external_attr >> 16) & 0o170000 not in (0, 0o100000) for e in archive.infolist()):
+                fail('PATH', 'Archive special-file members are forbidden.')
+            if len(archive.infolist()) > MAX_FILES + 1 or any(e.file_size > MAX_FILE_BYTES for e in archive.infolist()):
+                fail('LIMIT', 'Archive member/count exceeds asset package limits.')
+            if sum(e.file_size for e in archive.infolist()) > MAX_BYTES + MAX_INDEX_BYTES:
+                fail('LIMIT', 'Archive expansion exceeds asset package limit.')
+            # Verify the exact same bounded snapshot, never a changed path.
+            snapshot = temporary / 'input.zip'; snapshot.write_bytes(raw)
+            receipt = verify_archive(snapshot)
+            if not isinstance(receipt, dict) or receipt.get('kind') != 'asset-library-package-transport':
+                fail('TYPE', 'Archive is not an asset package transport.')
+            files = receipt.get('files')
+            if not isinstance(files, dict) or not all(isinstance(name, str) for name in files):
+                fail('SCHEMA', 'Archive receipt must list its files.')
+            names = list(files)
+            for name in names:
+                portable_path(name)
+            # Case-insensitive volumes would otherwise merge aliased members.
+            _portable_inventory(names)
+            target = temporary / 'package'; target.mkdir()
+            for name in names:
+                output = target / name; output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(archive.read(name))
+            return target
+    except RigError:
+        raise
+    except (zipfile.BadZipFile, KeyError, OSError, ValueError, RuntimeError, EOFError) as exc:
+        fail('ARCHIVE', 'Archive cannot be read as a package transport: ' + str(exc))
 
 
 @contextmanager
@@ -557,26 +628,8 @@ def _unpack_archive(path):
     # Bound source before ZIP metadata parsing; shared guard rejects traversal,
     # duplicate members, symlinks, noncanonical names and inventory mismatch.
     raw = read_source_bytes(path, MAX_FILE_BYTES)
-    import io
-    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-        if any((e.external_attr >> 16) & 0o170000 not in (0, 0o100000) for e in archive.infolist()):
-            fail('PATH', 'Archive special-file members are forbidden.')
-        if len(archive.infolist()) > MAX_FILES + 1 or any(e.file_size > MAX_FILE_BYTES for e in archive.infolist()):
-            fail('LIMIT', 'Archive member/count exceeds asset package limits.')
-        if sum(e.file_size for e in archive.infolist()) > MAX_BYTES + MAX_INDEX_BYTES:
-            fail('LIMIT', 'Archive expansion exceeds asset package limit.')
-        # Verify the exact same bounded snapshot, never a changed path.
-        with tempfile.TemporaryDirectory(prefix='asset-zip-read-') as temporary:
-            snapshot = Path(temporary) / 'input.zip'; snapshot.write_bytes(raw)
-            receipt = verify_archive(snapshot)
-            if receipt.get('kind') != 'asset-library-package-transport':
-                fail('TYPE', 'Archive is not an asset package transport.')
-            target = Path(temporary) / 'package'; target.mkdir()
-            for name in receipt['files']:
-                portable_path(name)
-                output = target / name; output.parent.mkdir(parents=True, exist_ok=True)
-                output.write_bytes(archive.read(name))
-            yield target
+    with tempfile.TemporaryDirectory(prefix='asset-zip-read-') as temporary:
+        yield _extract_archive(raw, Path(temporary))
 
 
 def verify_package_archive(path) -> dict:

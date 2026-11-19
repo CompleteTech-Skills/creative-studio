@@ -283,4 +283,97 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'bounds'): verify_package(self.package)
 
 
+
+class StructuredPackageErrorTests(unittest.TestCase):
+    """Malformed but self-consistent packages fail with LIBRARY_PACKAGE_* codes."""
+    setUp = PackageTests.setUp
+    read_index = PackageTests.read_index
+    reseal = PackageTests.reseal
+
+    def replace_member(self, path, payload, index=None):
+        index = deepcopy(self.read_index() if index is None else index)
+        (self.package / path).write_bytes(payload)
+        index['members'][path] = dict(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+        self.reseal(index)
+
+    def refused(self, call, code):
+        with self.assertRaises(RigError) as caught:
+            call()
+        self.assertEqual(caught.exception.report['code'], 'LIBRARY_PACKAGE_' + code)
+
+    def test_malformed_lock_is_structured_and_inspection_survives(self):
+        self.replace_member('locks/default.json', b'[]')
+        self.refused(lambda: verify_package(self.package), 'SCHEMA')
+        self.refused(lambda: restore_package(self.package, self.root / 'restored'), 'SCHEMA')
+        self.assertFalse((self.root / 'restored').exists())
+        report = inspect_package(self.package)
+        self.assertFalse(report['verified'])
+
+    def test_asset_location_must_be_the_exact_canonical_locator(self):
+        original = self.read_index()
+        for change in ('extra-key', 'extra-reference-key', 'string'):
+            with self.subTest(change=change):
+                index = deepcopy(original); node = index['assets'][0]['location']
+                if change == 'extra-key':
+                    node['unbound'] = 'attacker'
+                elif change == 'extra-reference-key':
+                    node['reference']['unbound'] = 'attacker'
+                else:
+                    index['assets'][0]['location'] = 'x'
+                self.reseal(index)
+                with self.assertRaises(RigError):
+                    verify_package(self.package)
+                with self.assertRaises(RigError):
+                    restore_package(self.package, self.root / ('restored-' + change))
+                self.assertFalse((self.root / ('restored-' + change)).exists())
+        self.reseal(original)
+        self.assertTrue(verify_package(self.package)['verified'])
+
+    def test_nonstring_context_entry_is_structured(self):
+        index = deepcopy(self.read_index()); index['context'] = [{}]; self.reseal(index)
+        self.refused(lambda: verify_package(self.package), 'CONTEXT')
+
+    def test_resealed_index_guards_reject_with_their_codes(self):
+        original = self.read_index()
+        edited = deepcopy(original); edited['package_id'] = 'edited'
+        (self.package / INDEX).write_bytes(canonical_bytes(edited))
+        self.refused(lambda: verify_package(self.package), 'HASH')
+        self.reseal(original)
+        extra = b'unreferenced'
+        (self.package / 'context').mkdir(exist_ok=True)
+        index = deepcopy(original)
+        index['members']['context/extra.json'] = dict(bytes=len(extra), sha256=hashlib.sha256(extra).hexdigest())
+        (self.package / 'context/extra.json').write_bytes(extra); self.reseal(index)
+        self.refused(lambda: verify_package(self.package), 'INVENTORY')
+
+    def test_directory_symlink_member_is_refused(self):
+        outside = self.root / 'outside'; outside.mkdir()
+        (self.package / 'linked').symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(RigError):
+            verify_package(self.package)
+
+    def test_existing_destination_is_structured(self):
+        (self.root / 'taken').mkdir()
+        self.refused(lambda: restore_package(self.package, self.root / 'taken'), 'DESTINATION')
+
+    def test_aliased_scope_names_are_structured(self):
+        self.refused(lambda: create_package(self.graph, [], self.root / 'aliased', package_id='aliased',
+                     scopes={'A': [locator('local', self.character)], 'a': [locator('local', self.mesh)]}), 'PATH')
+
+    def test_malformed_transport_index_is_structured(self):
+        bundle = self.root / 'bundle'; create_transport(self.package, bundle, part_size=4096)
+        (bundle / 'sources-index.json').write_bytes(b'[]')
+        self.refused(lambda: verify_transport(bundle), 'SCHEMA')
+
+    def test_malformed_archives_are_structured(self):
+        broken = self.root / 'broken.zip'; broken.write_bytes(b'not a zip')
+        self.refused(lambda: verify_package_archive(broken), 'ARCHIVE')
+        self.refused(lambda: restore_package_archive(broken, self.root / 'from-broken'), 'ARCHIVE')
+        self.assertFalse((self.root / 'from-broken').exists())
+        empty = self.root / 'empty.zip'
+        with zipfile.ZipFile(empty, 'w') as archive:
+            archive.writestr('payload.txt', b'x')
+        with self.assertRaises(RigError):
+            verify_package_archive(empty)
+
 if __name__ == '__main__': unittest.main()
