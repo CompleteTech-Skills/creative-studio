@@ -1,0 +1,95 @@
+import os
+from pathlib import Path
+import tempfile
+import unittest
+
+import numpy as np
+
+from model3d_blender import roundtrip_named_part, _verify
+from rig_errors import RigError, read_json, sha256
+from rig_models import Geometry, Mesh
+
+
+def fixture_geometry():
+    points = np.array([[0, 0, 0], [1, 0, 0], [0, 2, 0], [0, 0, .5]], float)
+    faces = np.array([[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]])
+    return Geometry([Mesh('body', points, faces, name='Shell', region='central'),
+                     Mesh('fin', points / 2 + [2, 0, 1], faces.copy(), name='Fin mesh', region='side')],
+                    [{'name': 'Clay', 'pbrMetallicRoughness': {
+                        'baseColorFactor': [.5, .25, .125, 1], 'metallicFactor': .2, 'roughnessFactor': .75}}])
+
+
+class NamedBlenderPartTests(unittest.TestCase):
+    def setUp(self):
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        self.dest = Path(work.name) / 'result'
+        self.geometry = fixture_geometry()
+        self.args = dict(part='fin', offset_m=[.125, .25, -.5], base_color=[.25, .125, .75, 1], fixture=True)
+
+    def test_invalid_edits_preserve_destination(self):
+        for edit in (dict(part='absent'), dict(offset_m=[float('nan'), 0, 0]), dict(offset_m=[0, 0, 0]),
+                     dict(offset_m=[True, 0, 0]), dict(base_color=[1, 1, 1, .5]),
+                     dict(base_color=[.5, .25, .125, 1]), dict(fixture=1), dict(timeout=0)):
+            with self.subTest(edit=edit), self.assertRaises(RigError):
+                roundtrip_named_part(self.geometry, self.dest, **{**self.args, **edit})
+            self.assertFalse(self.dest.exists())
+
+    def test_profile_rejects_truncated_names_and_unsupported_attributes(self):
+        self.geometry.meshes[0].name = 'é' * 32
+        with self.assertRaisesRegex(RigError, '63 UTF-8 bytes'):
+            roundtrip_named_part(self.geometry, self.dest, **self.args)
+        self.geometry.meshes[0].name = 'body'
+        self.geometry.meshes[0].attributes['TEXCOORD_0'] = np.zeros((4, 2))
+        with self.assertRaisesRegex(RigError, 'triangle indices only'):
+            roundtrip_named_part(self.geometry, self.dest, **self.args)
+        self.assertFalse(self.dest.exists())
+
+    def test_existing_destination_is_preserved(self):
+        self.dest.mkdir()
+        (self.dest/'retained').write_bytes(b'original')
+        with self.assertRaisesRegex(RigError, 'new destination'):
+            roundtrip_named_part(self.geometry, self.dest, **self.args)
+        self.assertEqual((self.dest/'retained').read_bytes(), b'original')
+
+    def test_missing_runtime_cannot_publish_a_partial_result(self):
+        with self.assertRaisesRegex(RigError, 'Install Blender'):
+            roundtrip_named_part(self.geometry, self.dest, executable=self.dest.parent/'absent', **self.args)
+        self.assertEqual(list(self.dest.parent.iterdir()), [])
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST') == '1', 'Enable pinned Blender integration.')
+    def test_native_shared_material_and_mesh_coordinates_survive_both_reopens(self):
+        original = fixture_geometry()
+        report = roundtrip_named_part(self.geometry, self.dest, **self.args)
+        self.assertEqual(read_json(self.dest/'receipt.json'), report)
+        self.assertEqual(report['verified_parts'], ['body', 'fin'])
+        self.assertEqual(report['triangles_per_export'], 8)
+        self.assertTrue(report['edit']['copy_material'])
+        self.assertEqual(len(set(report['files'].values())), 5)
+        for filename, digest in report['files'].items():
+            self.assertEqual(sha256(self.dest/filename), digest)
+        for mesh in self.geometry.meshes:
+            np.testing.assert_array_equal(mesh.positions, original.by_id()[mesh.id].positions)
+        self.assertEqual(self.geometry.materials, original.materials)
+        # The independent reader must reject the pre-edit artifact presented as the result.
+        with self.assertRaisesRegex(RigError, 'oriented triangles'):
+            _verify(self.dest/'reopened-source.glb', self.geometry, 'fin', np.array(self.args['offset_m']),
+                    self.args['base_color'], 'edited.fin', True)
+        for edit in ('reverse-body-face', 'recolor-body'):
+            with self.subTest(edit=edit):
+                changed = fixture_geometry()
+                if edit == 'reverse-body-face':
+                    face = changed.meshes[0].triangles[0]
+                    face[:] = face[::-1].copy()
+                else:
+                    changed.materials[0]['pbrMetallicRoughness']['baseColorFactor'][0] = 0
+                with self.assertRaises(RigError):
+                    _verify(self.dest/'edited.glb', changed, 'fin', np.array(self.args['offset_m']),
+                            self.args['base_color'], 'edited.fin', True)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST') == '1', 'Enable pinned Blender integration.')
+    def test_native_unshared_material_keeps_its_name(self):
+        self.geometry.meshes = self.geometry.meshes[1:]
+        result = roundtrip_named_part(self.geometry, self.dest, **self.args)
+        self.assertFalse(result['edit']['copy_material'])
+        self.assertEqual(result['edit']['material_name'], 'Clay')
