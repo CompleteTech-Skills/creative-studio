@@ -335,7 +335,8 @@ def _saved_rig_admission(paths, expected, inventory, native, limits):
 @contextmanager
 def _loaded_saved_rig(root, root_identity, source, dependencies, requested):
     from rig_gltf import MATERIAL_EXTENSIONS
-    from rig_models import load_rig
+    from rig_import import _decode_texture
+    from rig_models import load_rig, retained_extension_groups
     from rig_skeleton import validate_skeleton
     from rig_skinning import validate_skin
 
@@ -371,15 +372,39 @@ def _loaded_saved_rig(root, root_identity, source, dependencies, requested):
                 if skeleton is None or mesh_id not in meshes:
                     fail('NATIVE_DOCUMENT', 'saved skin requires its native mesh and skeleton')
                 validate_skin(skin, meshes[mesh_id], skeleton, limits)
+            # The native scanner already reserved four RGBA working copies.
+            # Reuse that reservation plus combined headroom for one strict
+            # decode at a time. The decoder uses half its input memory limit.
+            admission = report['analysis_preflight']
+            effective = report['source_preflight']['limits']
+            available = effective['memory_bytes'] - admission['estimated_memory_bytes']
+            available += 4 * admission['texture_rgba_bytes']
+            image_limits = dict(effective, memory_bytes=2 * available,
+                                source_bytes=effective['dependency_bytes'])
+            for image in rig.geometry.images:
+                mime, _ = _decode_texture(image.data, image_limits)
+                if mime != image.mime_type:
+                    raise RigError('RIG_TEXTURE_FORMAT', 'Saved texture MIME type differs from its decoded format.')
             extensions = set(rig.geometry.extensions_used)
-            for material in rig.geometry.materials:
-                extensions.update(material.get('extensions', {}))
+            unsupported = extensions - MATERIAL_EXTENSIONS
+            for category, group in retained_extension_groups(rig.geometry.materials, rig.geometry.textures,
+                                                              rig.geometry.samplers):
+                if category == 'materials':
+                    extensions.update(group)
+                    unsupported.update(group.keys() - MATERIAL_EXTENSIONS)
+                    if 'KHR_texture_transform' in group:
+                        unsupported.add('materials/KHR_texture_transform')
+                elif category == 'texture_bindings' and 'KHR_texture_transform' in group:
+                    extensions.add('KHR_texture_transform')
+                    unsupported.update(category + '/' + name for name in group if name != 'KHR_texture_transform')
+                else:
+                    unsupported.update(category + '/' + name for name in group)
             partial_material = ((extensions & MATERIAL_EXTENSIONS)
                                 - {'KHR_materials_unlit', 'KHR_texture_transform'})
             report.update(fixture=rig.manifest['source']['fixture'], image_preflight=None, animation_preflight=None,
                           source_features=dict(extensions_used=sorted(extensions & MATERIAL_EXTENSIONS),
                                                extensions_required=None,
-                                               unsupported_extensions=sorted(digest(name) for name in extensions - MATERIAL_EXTENSIONS),
+                                               unsupported_extensions=sorted(digest(name) for name in unsupported),
                                                partial_material_extensions=sorted(partial_material),
                                                animation_channels=[dict(clip=index, target_sha256=digest(track['target']),
                                                                         path=track['path'])
@@ -566,7 +591,7 @@ def _inspect_asset(root, root_identity, source, *, dependencies=(), landmarks=No
         with _loaded_saved_rig(root, root_identity, source, dependencies, limits) as (model, refs, caps, encoded, report):
             return _inspection_receipt(root, root_identity, model.geometry, model.manifest['skeleton'],
                                        model.weights, [], refs, caps, encoded, report, landmarks, distances, variants,
-                                       coordinates=COORDINATES,
+                                       coordinates=deepcopy(COORDINATES),
                                        owners=['rig_models.load_rig', 'rig_skeleton.evaluate_fk'])
     with _loaded(root, root_identity, source, dependencies, limits) as (model, hierarchy, refs, caps, encoded):
         return _inspection_receipt(root, root_identity, model.geometry, model.skeleton, model.weights,

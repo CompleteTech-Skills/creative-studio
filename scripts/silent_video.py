@@ -6,6 +6,7 @@ renderers supply exact PNG inventories and never supply arbitrary FFmpeg flags.
 from __future__ import annotations
 
 import argparse
+import codecs
 import copy
 from contextlib import contextmanager, ExitStack
 from fractions import Fraction
@@ -13,7 +14,7 @@ import hashlib
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
 import stat
@@ -26,7 +27,7 @@ from PIL import Image
 from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
                             private_stage_supported)
 from production_contracts import _structural, read_json
-from rig_errors import directory_capability, normalize_root, open_payload, safe_path
+from rig_errors import RigError, directory_capability, normalize_root, open_payload, safe_path
 from production_render import fps_fraction, file_hash
 
 MAX_FRAMES = 18000
@@ -43,6 +44,16 @@ PROFILES = {
                  'extension': '.webm', 'pixel_format': 'yuv420p', 'alpha': 'opaque',
                  'color': 'untagged-sdr', 'precision': 8, 'crf': 30, 'preset': 'good'},
 }
+VERIFY_INPUT_OPTIONS = ('-format_whitelist', 'mov,matroska,webm', '-protocol_whitelist', 'file')
+
+
+# Query only verifier-owned facts, without selecting away any stream types.
+PROBE_STREAM_FIELDS = ('codec_type', 'codec_name', 'pix_fmt', 'width', 'height',
+                       'nb_read_frames', 'sample_aspect_ratio', 'display_aspect_ratio',
+                       'color_range', 'color_space', 'color_transfer', 'color_primaries',
+                       'avg_frame_rate', 'time_base')
+PROBE_FORMAT_FIELDS = ('format_name', 'duration')
+PROBE_STREAM_TYPES = frozenset(('video', 'audio', 'subtitle', 'data', 'attachment'))
 
 
 def _obj(properties):
@@ -125,12 +136,16 @@ def _open_source(root, relative):
         yield stream
 
 
-def _read_frame(root, relative):
+def _read_frame(root, relative, *, index=None):
     try:
         with _open_source(root, relative) as stream:
             data = stream.read(MAX_FRAME_BYTES+1)
-    except OSError as exc:
-        raise ValueError('frame cannot be safely read: '+str(relative)) from exc
+    except (ValueError, OSError):
+        # Descriptor errors can carry the caller's path in both their text and
+        # structured report. Export a new verifier-owned error, never that
+        # path-bearing exception. Inventory indices are safe identities.
+        suffix = '' if index is None else ' at index '+str(index)
+        raise ValueError('source frame cannot be safely read'+suffix) from None
     if not 0 < len(data) <= MAX_FRAME_BYTES:
         raise ValueError('frame exceeds encoded byte limit')
     return data
@@ -207,7 +222,7 @@ def build_source(root, frame_paths, fps, origin='synthetic'):
         raise ValueError('bounded ordered frame paths required')
     frames, size, total = [], None, 0
     for index, relative in enumerate(frame_paths):
-        data = _read_frame(root, relative)
+        data = _read_frame(root, relative, index=index)
         total += len(data)
         if total > MAX_SOURCE_BYTES:
             raise ValueError('source inventory exceeds byte budget')
@@ -239,7 +254,8 @@ def source_from_blender_manifest(root, manifest):
     """
     expected = {'schema_version', 'kind', 'engine', 'fps', 'frames'}
     if (not isinstance(manifest, dict) or set(manifest) != expected or
-            manifest['schema_version'] != 1 or manifest['kind'] != 'blender-frame-manifest' or
+            type(manifest['schema_version']) is not int or manifest['schema_version'] != 1 or
+            manifest['kind'] != 'blender-frame-manifest' or
             manifest['engine'] not in ('CYCLES', 'BLENDER_EEVEE_NEXT') or
             not isinstance(manifest['frames'], list)):
         raise ValueError('unsupported Blender frame manifest')
@@ -273,11 +289,140 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
-def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
-    """Bound both process duration and captured evidence, including fast exits."""
+def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
+    """Export bounded diagnostics with stable aliases for command-owned paths."""
+    def diagnostic_path(value):
+        # Interpret transcript paths lexically, independently of this host.
+        # Windows rooted paths (without a drive) still identify private paths;
+        # is_absolute() rejects them on Windows and rejects drive paths on POSIX.
+        windows = PureWindowsPath(value)
+        return windows if value.startswith('\\') or windows.is_absolute() else PurePosixPath(value)
+
+    result = copy.deepcopy(evidence)
+    roles = {'probe': 'ffprobe', 'timeline': 'ffprobe', 'decode': 'ffmpeg',
+             'pixel_decode': 'ffmpeg', 'encode': 'ffmpeg',
+             'ffprobe': 'ffprobe', 'ffmpeg': 'ffmpeg'}
+    records = []
+    for name, value in result.items():
+        if not isinstance(value, dict) or not isinstance(value.get('command'), list):
+            continue
+        role = roles.get(name, tool_role)
+        if role not in ('ffmpeg', 'ffprobe'):
+            # Encoding and verification supply their verifier-owned role.
+            # Generic subprocess/capability helpers retain the historical
+            # basename contract for other local tools.
+            role = diagnostic_path(value['command'][0]).name if value['command'] else 'media-tool'
+        records.append((value, role))
+    substitutions = {}
+    for record, role in records:
+        for index, argument in enumerate(record['command']):
+            if not isinstance(argument, str):
+                continue
+            path = diagnostic_path(argument)
+            if not path.root:
+                continue
+            if index == 0:
+                substitutions[argument] = role
+            else:
+                substitutions[argument] = '<media-workdir>/' + path.name
+            if path.parent != path.parent.parent:
+                substitutions.setdefault(str(path.parent), '<media-tool-dir>' if index == 0 else '<media-workdir>')
+    # Native diagnostics use filesystem bytes decoded through the transcript's
+    # UTF-8 replacement boundary, which can differ from POSIX surrogateescape.
+    # Also admit slash-normalized or JSON-escaped Windows spellings.
+    for path, alias in list(substitutions.items()):
+        for spelling in (path, os.fsencode(path).decode('utf-8', 'replace')):
+            substitutions.setdefault(spelling, alias)
+            substitutions.setdefault(spelling.replace('\\', '/'), alias)
+            substitutions.setdefault(json.dumps(spelling)[1:-1], alias)
+    ordered = sorted(substitutions, key=len, reverse=True)
+    # Match known absolute path tokens, including a directory followed by a
+    # separator. A prefix inside some other name is not that command-owned path.
+    path_start = re.compile(r'(?<![\w./\\-])')
+    path_tokens = re.compile(path_start.pattern + r'(?:' +
+                             '|'.join(re.escape(path) for path in ordered) +
+                             r')(?![\w.-])') if ordered else None
+    def redact(value, truncated=False):
+        if truncated:
+            # Capture can end inside a known path, before its complete name or
+            # parent is available to replace. Suppress that suffix as well.
+            for path in ordered:
+                start = max(0, len(value) - len(path) + 1)
+                position = value.find(path[0], start)
+                while position >= 0:
+                    if path_start.match(value, position) and path.startswith(value[position:]):
+                        value = value[:position] + '<media-path-truncated>'
+                        break
+                    position = value.find(path[0], position + 1)
+        if path_tokens is not None:
+            value = path_tokens.sub(lambda match: substitutions[match.group()], value)
+        return value
+    def bounded(value, truncated=False):
+        encoded = redact(value, truncated).encode('utf-8')
+        return encoded[:limit].decode('utf-8', 'ignore'), len(encoded) > limit
+    for record, role in records:
+        original_command = record['command']
+        # argv[0] is executable identity, not a search term for its transcript.
+        # A physical executable may be named 'video', 'h264', 'streams', etc.;
+        # replacing that basename in raw probe JSON would falsify observed facts.
+        record['command'] = list(original_command)
+        if original_command:
+            if diagnostic_path(original_command[0]).root:
+                record['command'][0] = role
+            record['command'][1:] = [
+                redact(value) if isinstance(value, str) else value
+                for value in original_command[1:]]
+        for field in ('stdout', 'stderr'):
+            if field not in record:
+                continue  # A failed launch has no observed process transcript.
+            transcript = record[field]
+            if field == 'stderr' and original_command:
+                # Native tools may prefix an error line with their program
+                # basename. Only this labelled diagnostic position denotes the
+                # executable; the same text elsewhere remains observed data.
+                basename = diagnostic_path(original_command[0]).name
+                if basename and basename != role:
+                    transcript = re.sub(r'(?m)^' + re.escape(basename) + r'(?=: )',
+                                        lambda match: role, transcript)
+            record[field], clipped = bounded(transcript, record.get(field + '_truncated', False))
+            if clipped:
+                record[field + '_truncated'] = True
+    return result, bounded(message, truncated=True)[0]
+
+
+def _run(command, limits, *, cancel=None, output=None, pass_fds=(), tool_role=None):
+    """Bound process duration and retain bounded observed failure transcripts."""
     start = time.monotonic()
+    failure = None
+    termination_requested = False
+    # This boundary serves only media capability, encode and verification
+    # commands. Inherited reporting can write or disclose an unrelated path;
+    # forced ANSI color can split diagnostic path tokens. Keep their native
+    # diagnostics plain and report-free without changing the parent's environment.
+    # Dynamic-loader instrumentation can emit unrelated deployment paths before
+    # the media executable starts. Preserve ordinary configuration but exclude
+    # loader overrides and reporting controls from this native child boundary.
+    excluded = {'FFREPORT', 'AV_LOG_FORCE_COLOR', 'GCONV_PATH', 'LOCPATH', 'NLSPATH', 'MALLOC_TRACE'}
+    environment = {key: value for key, value in os.environ.items()
+                   if key.upper() not in excluded
+                   and not key.upper().startswith(('LD_', 'DYLD_', '_RLD_'))}
+    environment['AV_LOG_FORCE_NOCOLOR'] = '1'
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                                       pass_fds=pass_fds, env=environment)
+        except OSError as exc:
+            # Popen never returned a media process. An errno is an observed
+            # launch failure, not an exit status or a tool transcript; do not
+            # copy OSError's caller-controlled filename into the report.
+            record = {'command': list(command), 'started': False,
+                      'launch_error': {'errno': exc.errno}, 'stdout': '', 'stderr': ''}
+            evidence, message = _failure_diagnostics({'command_failure': record},
+                'media command launch failed: could not start (OS error '+str(exc.errno)+')', limits['max_log_bytes'],
+                tool_role=tool_role)
+            failure = ValueError(message)
+            failure.evidence = evidence
+            raise failure from None
         try:
             while True:
                 status = process.poll()
@@ -292,16 +437,49 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
                 if status is not None:
                     break
                 time.sleep(.02)
+        except ValueError as exc:
+            failure = exc
         finally:
             if process.poll() is None:
+                termination_requested = True
                 process.kill()
             process.wait()
-        stdout.seek(0); stderr.seek(0)
-        out = stdout.read().decode('utf-8', 'strict')
-        err = stderr.read().decode('utf-8', 'replace')
-    if status:
-        raise ValueError('media command failed ('+str(status)+'): '+err[-2000:])
-    return {'command': command, 'exit_status': status, 'stdout': out, 'stderr': err}
+        record = {'command': list(command), 'exit_status': process.returncode}
+        for name, stream in (('stdout', stdout), ('stderr', stderr)):
+            stream.seek(0)
+            raw = stream.read(limits['max_log_bytes']+1)
+            truncated = len(raw) > limits['max_log_bytes']
+            raw = raw[:limits['max_log_bytes']]
+            # Replacement characters and partial UTF-8 tails must not expand
+            # the retained transcript beyond the configured byte ceiling.
+            # A capture boundary is not an invalid input character. Defer an
+            # incomplete trailing code point so it cannot hide a known path
+            # prefix behind an inserted replacement character during redaction.
+            decoder = codecs.getincrementaldecoder('utf-8')('replace')
+            normalized = decoder.decode(raw, final=not truncated).encode('utf-8')
+            record[name] = normalized[:limits['max_log_bytes']].decode('utf-8', 'ignore')
+            if truncated or len(normalized) > limits['max_log_bytes']:
+                record[name+'_truncated'] = True
+            if name == 'stdout':
+                try:
+                    raw.decode('utf-8', 'strict')
+                except UnicodeDecodeError:
+                    if not truncated and failure is None:
+                        failure = ValueError('media command emitted invalid UTF-8 stdout')
+    if failure is None and record['exit_status']:
+        failure = ValueError('media command failed ('+str(record['exit_status'])+')')
+    if failure is not None:
+        record['termination_requested'] = termination_requested
+        if str(failure) == 'media command exceeded timeout':
+            record['timed_out'] = True
+        if str(failure) == 'media command exceeded evidence byte budget':
+            record['evidence_limit_exceeded'] = True
+        evidence, message = _failure_diagnostics({'command_failure': record}, str(failure), limits['max_log_bytes'],
+                                                tool_role=tool_role)
+        failure.args = (message,)
+        failure.evidence = evidence
+        raise failure
+    return record
 
 
 def _advertised_names(transcript, flags):
@@ -342,9 +520,9 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
 def _snapshot(request, root, directory):
     source = request['source']
     for frame in source['frames']:
-        data = _read_frame(root, frame['path'])
+        data = _read_frame(root, frame['path'], index=frame['index'])
         if len(data) != frame['bytes'] or hashlib.sha256(data).hexdigest() != frame['sha256']:
-            raise ValueError('source frame missing/stale: '+frame['path'])
+            raise ValueError('source frame missing/stale at index '+str(frame['index']))
         im = _image(data, (source['width'], source['height']))
         im.close()
         if directory is not None:
@@ -415,6 +593,29 @@ def _fraction(value, label):
         raise ValueError('invalid '+label+' in probe') from exc
 
 
+def _probe_integer(value, label):
+    """Admit observed integral ffprobe fields without lossy float coercion."""
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and re.fullmatch(r'[+-]?[0-9]+', value):
+        return int(value)
+    raise ValueError('invalid '+label+' in probe')
+
+
+def _probe_json(transcript):
+    """Refuse ambiguous native transcripts before deriving observable facts."""
+    def unique_members(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate member in probe JSON')
+            result[key] = value
+        return result
+    def invalid_constant(value):
+        raise ValueError('nonstandard numeric constant in probe JSON')
+    return json.loads(transcript, object_pairs_hook=unique_members, parse_constant=invalid_constant)
+
+
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
     """Probe ALL streams, enumerate presentation timestamps and strictly decode."""
     validate_request(request)
@@ -424,13 +625,30 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     before = file_hash(path)
     profile, source, limits = PROFILES[request['profile']], request['source'], request['limits']
     encoder, probe = _binary('ffmpeg', ffmpeg), _binary('ffprobe', ffprobe)
-    inspected = _run([probe, '-v', 'error', '-count_frames', '-show_streams', '-show_format',
-                      '-of', 'json', str(path.resolve())], limits, cancel=cancel)
+    def execute(stage, command, **options):
+        try:
+            observed = _run(command, limits, cancel=cancel,
+                            tool_role='ffprobe' if stage in ('probe', 'timeline') else 'ffmpeg', **options)
+        except ValueError as exc:
+            failed = getattr(exc, 'evidence', {}).get('command_failure')
+            if diagnostics is not None and failed is not None:
+                diagnostics[stage] = failed
+            raise
+        if diagnostics is not None:
+            diagnostics[stage] = observed
+        return observed
+
+    entries = 'stream='+','.join(PROBE_STREAM_FIELDS)+':format='+','.join(PROBE_FORMAT_FIELDS)
+    inspected = execute('probe', [probe, *VERIFY_INPUT_OPTIONS, '-v', 'error', '-count_frames', '-show_entries', entries,
+                      '-of', 'json', str(path.resolve())])
     try:
-        data = json.loads(inspected['stdout'])
+        data = _probe_json(inspected['stdout'])
         streams = data['streams']
         if not isinstance(streams, list) or any(not isinstance(x, dict) for x in streams):
             raise ValueError('malformed stream list')
+        if any(not isinstance(stream.get('codec_type'), str) or
+               stream['codec_type'] not in PROBE_STREAM_TYPES for stream in streams):
+            raise ValueError('unknown or malformed stream type in probe')
         if diagnostics is not None:
             diagnostics.update(video_stream_count=sum(x.get('codec_type') == 'video' for x in streams),
                                audio_stream_count=sum(x.get('codec_type') == 'audio' for x in streams),
@@ -441,49 +659,58 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         video = streams[0]
         expected_count = len(source['frames'])
         if (video.get('codec_name') != profile['codec'] or video.get('pix_fmt') != profile['pixel_format'] or
+                type(video.get('width')) is not int or type(video.get('height')) is not int or
                 video.get('width') != source['width'] or video.get('height') != source['height'] or
-                int(video.get('nb_read_frames', -1)) != expected_count):
+                _probe_integer(video.get('nb_read_frames', -1), 'frame count') != expected_count):
             raise ValueError('encoded codec/pixel format/dimensions/frame count mismatch')
         if video.get('sample_aspect_ratio') != '1:1':
             raise ValueError('encoded sample aspect ratio mismatch')
         dar = Fraction(source['width'], source['height'])
-        if Fraction(video.get('display_aspect_ratio', '0:1').replace(':', '/')) != dar:
+        display_aspect = video.get('display_aspect_ratio', '0:1')
+        if not isinstance(display_aspect, str):
+            raise ValueError('invalid display aspect ratio in probe')
+        if Fraction(display_aspect.replace(':', '/')) != dar:
             raise ValueError('encoded display aspect ratio mismatch')
         if video.get('color_range', 'unknown') not in ('unknown', 'tv'):
             raise ValueError('unexpected color range')
         for key in ('color_space', 'color_transfer', 'color_primaries'):
             if video.get(key, 'unknown') not in ('unknown', 'unspecified'):
                 raise ValueError('unexpected color properties for untagged SDR profile')
-        formats = set(data['format']['format_name'].split(','))
+        container = data['format']
+        if not isinstance(container, dict) or not isinstance(container.get('format_name'), str):
+            raise ValueError('invalid container format in probe')
+        formats = set(container['format_name'].split(','))
         if profile['container'] not in formats:
             raise ValueError('encoded container mismatch')
         fps = fps_fraction(source['fps'])
         if _fraction(video['avg_frame_rate'], 'frame rate') != fps:
             raise ValueError('encoded rational frame rate mismatch')
         tick = _fraction(video['time_base'], 'time base')
-        duration = Fraction(data['format']['duration'])
+        duration = _fraction(container['duration'], 'duration')
         if abs(duration - Fraction(expected_count, 1)/fps) > 2*tick:
             raise ValueError('encoded presentation duration mismatch')
-    except (KeyError, TypeError, ZeroDivisionError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, ZeroDivisionError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('malformed/incomplete ffprobe evidence') from exc
-    timeline = _run([probe, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
+    timeline = execute('timeline', [probe, *VERIFY_INPUT_OPTIONS, '-v', 'error', '-select_streams', 'v:0', '-show_frames',
                      '-show_entries', 'frame=best_effort_timestamp,pkt_duration', '-of', 'json', str(path.resolve())],
-                    limits, cancel=cancel)
+                    )
     try:
-        frames = json.loads(timeline['stdout'])['frames']
+        frames = _probe_json(timeline['stdout'])['frames']
         if len(frames) != expected_count:
             raise ValueError('decoded frame enumeration mismatch')
-        times = [int(frame['best_effort_timestamp'])*tick for frame in frames]
+        times = [_probe_integer(frame['best_effort_timestamp'], 'frame timestamp')*tick for frame in frames]
         for i, stamp in enumerate(times):
             if abs(stamp-Fraction(i, 1)/fps) > tick or i and stamp <= times[i-1]:
                 raise ValueError('missing/duplicate/out-of-order presentation timestamp')
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (KeyError, TypeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError('malformed frame timestamp evidence') from exc
-    decoded = _run([encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
-                    '-err_detect', 'explode', '-i', str(path.resolve()), '-map', '0:v:0',
-                    '-an', '-sn', '-dn', '-f', 'null', '-'], limits, cancel=cancel)
+    decoded = execute('decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
+                    '-err_detect', 'explode', *VERIFY_INPUT_OPTIONS, '-i', str(path.resolve()), '-map', '0:v:0',
+                    '-an', '-sn', '-dn', '-f', 'null', '-'])
+    if decoded.get('stderr_truncated'):
+        raise ValueError('strict decode diagnostics were truncated')
     if decoded['stderr'].strip():
-        raise ValueError('strict decode reported errors: '+decoded['stderr'][-2000:])
+        raise ValueError('strict decode reported errors')
     pixel_checks = []
     if root is not None:
         _snapshot(request, root, None)
@@ -491,11 +718,11 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         with tempfile.TemporaryDirectory(prefix='silent-pixels-') as tmp:
             for index in sorted({0, expected_count//2, expected_count-1}):
                 output = Path(tmp)/('decoded-%d.png' % index)
-                _run([encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
-                      '-i', str(path.resolve()), '-map', '0:v:0', '-an', '-sn', '-dn',
+                execute('pixel_decode', [encoder, '-hide_banner', '-loglevel', 'error', '-nostdin', '-xerror',
+                      *VERIFY_INPUT_OPTIONS, '-i', str(path.resolve()), '-map', '0:v:0', '-an', '-sn', '-dn',
                       '-vf', 'select=eq(n\\,%d)' % index, '-frames:v', '1', '-threads', '1',
-                      str(output)], limits, cancel=cancel, output=output)
-                expected = _image(_read_frame(root, source['frames'][index]['path']),
+                      str(output)], output=output)
+                expected = _image(_read_frame(root, source['frames'][index]['path'], index=index),
                                   (source['width'], source['height']))
                 with Image.open(output) as decoded_frame:
                     actual = decoded_frame.convert('RGB')
@@ -520,47 +747,93 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             'visual_review': 'not-performed'}
 
 
-def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None):
+def _check_historical_probe(path, request, recorded, *, ffprobe=None):
+    """Compare the full historical protocol privately on the verified snapshot."""
+    try:
+        observed = _run([_binary('ffprobe', ffprobe), *VERIFY_INPUT_OPTIONS,
+                         '-v', 'error', '-count_frames', '-show_streams', '-show_format',
+                         '-of', 'json', str(path.resolve())], request['limits'], tool_role='ffprobe')
+        if (observed['exit_status'] != 0 or observed['stderr'] or
+                observed.get('stdout_truncated') or observed.get('stderr_truncated')):
+            raise ValueError('incomplete historical probe')
+        original, actual = _probe_json(recorded), _probe_json(observed['stdout'])
+        for data in (original, actual):
+            if not isinstance(data, dict) or not isinstance(data.get('format'), dict):
+                raise ValueError('malformed historical probe')
+            data['format'].pop('filename', None)
+        matches = _digest(original) == _digest(actual)
+    except (ValueError, OSError, TypeError, KeyError, RecursionError, OverflowError):
+        # Historical metadata is not an exported diagnostic transcript. Keep
+        # the primary field-limited verification evidence and a fixed refusal.
+        raise ValueError('historical silent probe could not be independently verified') from None
+    if not matches:
+        raise ValueError('corrupt silent verification evidence')
+
+
+def verify_export(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None,
+                  _historical_probe=None):
     """Verify a private exact-byte snapshot, then recheck the caller's artifact.
 
     This prevents an untrusted producer switching a path between probe/decode
     subprocesses. The receipt identifies bytes, never mutable pathname identity.
     """
-    validate_request(request)
-    path = Path(path).absolute()
-    if path.is_symlink() or not path.is_file():
-        raise ValueError('artifact is missing or a symlink')
-    limit = request['limits']['max_output_bytes']
-    with tempfile.TemporaryDirectory(prefix='silent-verify-') as tmp:
-        snapshot = Path(tmp)/('artifact'+PROFILES[request['profile']]['extension'])
-        digest = hashlib.sha256()
-        count = 0
-        with _open_source(path.parent, path.name) as source, snapshot.open('xb') as output:
-            for chunk in iter(lambda: source.read(1024*1024), b''):
-                count += len(chunk)
-                if count > limit:
-                    raise ValueError('artifact exceeds byte budget')
-                output.write(chunk)
-                digest.update(chunk)
-        diagnostics = {'schema_version': 1, 'verified': False, 'artifact_sha256': digest.hexdigest(),
-                       'request_sha256': _digest(request), 'source_manifest_sha256': _digest(request['source'])}
-        try:
+    try:
+        validate_request(request)
+    except ValueError:
+        raise ValueError('invalid silent verification request') from None
+    diagnostics = {'schema_version': 1, 'verified': False,
+                   'request_sha256': _digest(request), 'source_manifest_sha256': _digest(request['source'])}
+    try:
+        path = Path(path).absolute()
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('artifact is missing or a symlink')
+        limit = request['limits']['max_output_bytes']
+        with tempfile.TemporaryDirectory(prefix='silent-verify-') as tmp:
+            snapshot = Path(tmp)/('artifact'+PROFILES[request['profile']]['extension'])
+            digest = hashlib.sha256()
+            count = 0
+            try:
+                with _open_source(path.parent, path.name) as source, snapshot.open('xb') as output:
+                    for chunk in iter(lambda: source.read(1024*1024), b''):
+                        count += len(chunk)
+                        if count > limit:
+                            raise ValueError('artifact exceeds byte budget')
+                        output.write(chunk)
+                        digest.update(chunk)
+            except (RigError, OSError):
+                raise ValueError('artifact could not be safely read for verification') from None
+            # A partial or refused read cannot establish the artifact identity.
+            # Publish this digest only after descriptor validation and close.
+            diagnostics.update(artifact_sha256=digest.hexdigest(),
+                               artifact_sha256_scope='verification-snapshot', artifact_bytes=count)
             result = _verify_snapshot(snapshot, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
                                       cancel=cancel, diagnostics=diagnostics)
-        except ValueError as exc:
-            exc.evidence = diagnostics
-            raise
-        checked = hashlib.sha256()
-        checked_bytes = 0
-        with _open_source(path.parent, path.name) as original:
-            for chunk in iter(lambda: original.read(1024*1024), b''):
-                checked_bytes += len(chunk)
-                if checked_bytes > limit:
-                    raise ValueError('artifact changed beyond byte budget')
-                checked.update(chunk)
-        if digest.hexdigest() != result['artifact_sha256'] or checked.hexdigest() != result['artifact_sha256']:
-            raise ValueError('artifact changed during independent verification')
+            if _historical_probe is not None:
+                _check_historical_probe(snapshot, request, _historical_probe, ffprobe=ffprobe)
+            checked = hashlib.sha256()
+            checked_bytes = 0
+            try:
+                with _open_source(path.parent, path.name) as original:
+                    for chunk in iter(lambda: original.read(1024*1024), b''):
+                        checked_bytes += len(chunk)
+                        if checked_bytes > limit:
+                            raise ValueError('artifact changed beyond byte budget')
+                        checked.update(chunk)
+            except (ValueError, OSError):
+                raise ValueError('artifact could not be safely reread after independent verification') from None
+            if digest.hexdigest() != result['artifact_sha256'] or checked.hexdigest() != result['artifact_sha256']:
+                raise ValueError('artifact changed during independent verification')
         return result
+    except (ValueError, OSError) as exc:
+        if isinstance(exc, RigError):
+            exc = ValueError('media verification descriptor validation failed')
+        elif isinstance(exc, OSError):
+            exc = ValueError('media verification filesystem operation failed (OS error '+str(exc.errno)+')')
+        evidence, message = _failure_diagnostics(
+            {**getattr(exc, 'evidence', {}), **diagnostics}, str(exc), request['limits']['max_log_bytes'])
+        exc.evidence = evidence
+        exc.args = (message,)
+        raise exc from None
 
 
 def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=None):
@@ -569,16 +842,21 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
     contract['properties']['encode'] = contract['properties']['probe']
     contract['properties']['path'] = {'type': 'string', 'minLength': 1, 'maxLength': 1024}
     _structural(receipt, contract, 'silent receipt')
-    actual = verify_export(path, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe)
+    command = receipt['probe']['command']
+    historical_full_probe = ('-show_entries' not in command and
+                             '-show_streams' in command and '-show_format' in command)
+    actual = verify_export(path, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe,
+                           _historical_probe=receipt['probe']['stdout'] if historical_full_probe else None)
     for key in ('artifact_sha256', 'artifact_bytes', 'source_manifest_sha256', 'request_sha256',
                 'video_stream_count', 'audio_stream_count', 'other_stream_count', 'frame_count',
                 'fps', 'duration', 'timebase_tolerance', 'profile'):
         if receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
-    old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
-    for data in (old_probe, new_probe):
-        data['format'].pop('filename', None)
-    if old_probe != new_probe or receipt['timeline']['stdout'] != actual['timeline']['stdout']:
+    old_probe, new_probe = _probe_json(receipt['probe']['stdout']), _probe_json(actual['probe']['stdout'])
+    # Full historical observations were compared privately against the same
+    # exact-byte snapshot. Current observations bind every queried field.
+    if ((not historical_full_probe and _digest(old_probe) != _digest(new_probe)) or
+            receipt['timeline']['stdout'] != actual['timeline']['stdout']):
         raise ValueError('corrupt silent verification evidence')
     if any(receipt[key]['exit_status'] != 0 or receipt[key]['stderr'] for key in ('probe', 'timeline', 'decode')):
         raise ValueError('failed command evidence cannot verify a receipt')
@@ -663,7 +941,7 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         if _input_snapshot_state(inputs, expected_inputs, hash_bytes=False) != input_state:
             raise ValueError('private encoder inputs changed before encoding')
         execution = _run(command, request['limits'], cancel=cancel, output=output,
-                         pass_fds=(source_fd, input_authority.fd))
+                         pass_fds=(source_fd, input_authority.fd), tool_role='ffmpeg')
         if cancel is not None and cancel():
             raise ValueError('silent export cancelled before verification')
         receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
@@ -706,8 +984,14 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'capabilities': result = capabilities()
-        elif args.command == 'verify-export': result = verify_export(args.artifact, read_json(args.request), root=args.root)
-        else: result = encode(read_json(args.request), args.root, args.destination)
+        else:
+            try:
+                request = read_json(args.request)
+                validate_request(request)
+            except (ValueError, OSError, OverflowError):
+                raise ValueError('silent media request could not be safely read or validated') from None
+            if args.command == 'verify-export': result = verify_export(args.artifact, request, root=args.root)
+            else: result = encode(request, args.root, args.destination)
         print(json.dumps(result, indent=2, sort_keys=True, allow_nan=False))
     except (ValueError, OSError) as exc:
         print(json.dumps({**getattr(exc, 'evidence', {}), 'schema_version': 1, 'verified': False, 'error': str(exc)}))

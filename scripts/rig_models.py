@@ -102,6 +102,40 @@ _MATERIAL_TEXTURE_SLOTS = {
 }
 
 
+def retained_extension_groups(materials, textures, samplers):
+    """Yield extension dictionaries at retained material-resource locations."""
+    from rig_gltf import MATERIAL_EXTENSIONS
+
+    def group(item):
+        extensions = item.get('extensions', {})
+        require(isinstance(extensions, dict), 'RIG_MATERIAL', 'Extensions must be an object.')
+        return extensions
+
+    for category, resources in (('textures', textures), ('samplers', samplers)):
+        for resource in resources:
+            yield category, group(resource)
+    for material in materials:
+        declared = group(material)
+        yield 'materials', declared
+        pbr = material.get('pbrMetallicRoughness', {})
+        yield 'pbrMetallicRoughness', group(pbr)
+        containers = [(material, ('normalTexture', 'occlusionTexture', 'emissiveTexture')),
+                      (pbr, ('baseColorTexture', 'metallicRoughnessTexture'))]
+        # Only known extension schemas define additional material containers.
+        # An unknown outer extension already marks the receipt partial.
+        for name, payload in declared.items():
+            if name in MATERIAL_EXTENSIONS and name != 'KHR_texture_transform':
+                yield 'material_extensions', group(payload)
+                containers.append((payload, _MATERIAL_TEXTURE_SLOTS.get(name, ())))
+        for container, slots in containers:
+            for slot in slots:
+                if slot in container:
+                    binding = group(container[slot])
+                    yield 'texture_bindings', binding
+                    if 'KHR_texture_transform' in binding:
+                        yield 'texture_transforms', group(binding['KHR_texture_transform'])
+
+
 def _material_number(value, label: str, *, minimum=None, maximum=None) -> None:
     # Compare ints before isfinite (which converts to float) so even malicious
     # huge native integers fail with a domain diagnostic rather than OverflowError.
@@ -476,7 +510,8 @@ def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_ta
                                  materials=len(meta['materials']), images=len(meta['images']),
                                  textures=len(meta['textures']), samplers=len(meta['samplers']),
                                  extension_tokens=len(meta['extensions_used']) + sum(
-                                     len(material.get('extensions', {})) for material in meta['materials']),
+                                     len(group) for _, group in retained_extension_groups(
+                                         meta['materials'], meta['textures'], meta['samplers'])),
                                  mesh_channels=sum(len(mesh['attributes']) + sum(map(len, mesh['morphs'].values()))
                                                    for mesh in meta['meshes']))
             else:

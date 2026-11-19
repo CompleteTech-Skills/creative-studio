@@ -15,11 +15,37 @@ STATUSES={'analyze':'geometry-analyzed','auto':'skeleton-generated','weights':'w
 def mutate(root,operation,parameters=None):
     parameters=parameters or {}
     require(operation in STATUSES,'RIG_OPERATION','Unsupported mutation operation.')
-    fields={'analyze':{'require_animation'},'auto':{'template','replace','landmarks'},'weights':{'method','regions','iterations'},
-            'validate':{'require_animation'},'test-motion':{'require_animation'},'correct':{'correction'},'review':{'receipt'},
+    fields={'analyze':{'require_animation'},'auto':{'template','replace','landmarks','template_source'},'weights':{'method','regions','iterations'},
+            'validate':{'require_animation'},'test-motion':{'require_animation'},'correct':{'correction','template_source'},'review':{'receipt'},
             'configure':{'limits'},'animate':{'clip','id','keyframes','fps','loop','contacts','events','reduce'},
             'retarget':{'source','clip','profile','partial'},'state-map':{'recipes','selected','pack','approved_props'}}
     require(set(parameters)<=fields[operation],'RIG_OPERATION_SCHEMA','Unexpected operation parameter.',observed=sorted(set(parameters)-fields[operation]))
+    installed = 'template_source' in parameters
+    if installed:
+        require(parameters['template_source'] == 'installed', 'RIG_OPERATION_SCHEMA', 'Unknown template source.')
+
+    resolve_template = None
+
+    def admit_templates(rig):
+        nonlocal resolve_template
+        from rig_templates import installed_template_paths
+        if operation == 'correct':
+            from rig_corrections import validate_correction_binding
+            correction = parameters['correction']
+            validate_correction_binding(rig, correction)
+            identifiers = []
+            for edit in correction['edits']:
+                if edit['operation'] == 'template':
+                    value = edit['value']
+                    require(isinstance(value, dict) and 'template' in value, 'RIG_API_TEMPLATE',
+                            'Template corrections require an exact installed template ID.')
+                    require(set(value) <= {'template', 'landmarks'}, 'RIG_TEMPLATE_EDIT',
+                            'Specify a template and optional landmarks.')
+                    identifiers.append(value['template'])
+        else:
+            identifiers = [parameters.get('template', 'humanoid')]
+        resolve_template = installed_template_paths(identifiers).__getitem__
+
     def action(rig):
         artifacts=[];result={}
         if operation=='analyze':
@@ -36,12 +62,19 @@ def mutate(root,operation,parameters=None):
                         and isinstance(landmarks['landmarks'],dict),
                         'RIG_LANDMARK_SOURCE','Landmarks must be bound to the exact source model hash.')
                 landmarks=landmarks['landmarks']
-            fitted=generate_skeleton(rig.geometry,parameters.get('template','humanoid'),landmarks=landmarks,character_id=rig.manifest['id'])
+            template=parameters.get('template','humanoid')
+            if resolve_template is not None:template=resolve_template(template)
+            fitted=generate_skeleton(rig.geometry,template,landmarks=landmarks,character_id=rig.manifest['id'])
             old=rig.manifest['skeleton']
             if old:fitted['skeleton']['version']=next_version(old['version'])
             for key in ('skeleton','controllers','attachments','uncertainties'):rig.manifest[key]=fitted[key]
             rig.manifest['archetype']=fitted['template_id'];rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
             rig.manifest['facial']['eyes']=[b['id'] for b in rig.skeleton['bones'] if b['role'].startswith('eye.')]
+            if 'eyelids' in rig.manifest['facial']:
+                eyes=set(rig.manifest['facial']['eyes'])
+                rig.manifest['facial']['eyelids']=[binding for binding in rig.manifest['facial']['eyelids'] if binding['eye'] in eyes]
+            from rig_facial import validate_eyelid_bindings
+            validate_eyelid_bindings(rig)
             save_rig(rig,operation='generate-skeleton');result=dict(bones=len(rig.skeleton['bones']),uncertainties=len(fitted['uncertainties']),job_status=fitted['status'])
         elif operation=='weights':
             from rig_skinning import generate_skin_weights
@@ -60,7 +93,7 @@ def mutate(root,operation,parameters=None):
             require(ok,'RIG_VALIDATION_FAILED','Numerical validation failed; inspect the retained report.',asset=name,preserved=str(rig.root))
         elif operation=='correct':
             from rig_corrections import apply_rig_corrections
-            _,result=apply_rig_corrections(rig,parameters['correction'])
+            _,result=apply_rig_corrections(rig,parameters['correction'],resolve_template=resolve_template)
         elif operation=='review':
             from rig_review import apply_review
             result=apply_review(rig,parameters['receipt']);result['job_status']='review-approved' if result['status']=='approved' else 'needs-correction'
@@ -85,14 +118,15 @@ def mutate(root,operation,parameters=None):
             rig.manifest['state_mapping'].update(result['mapping']);save_rig(rig,operation='map-selected-states')
             atomic_json(rig.root/'animations/state-mapping.json',result);artifacts=['animations/state-mapping.json']
         return dict(result=result,artifact_paths=artifacts,**({'job_status':result['job_status']} if 'job_status' in result else {}))
-    return run_step(root,operation,parameters,action,status=STATUSES[operation])
+    return run_step(root,operation,parameters,action,status=STATUSES[operation],
+                    admit=admit_templates if installed else None)
 
 
 def pose_operation(rig,parameters):
     from rig_contracts import validate_contract
     from rig_skeleton import neutral_pose
     from rig_animation import evaluate_animation,save_pose
-    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls
+    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls,refresh_gaze_eyelids
     from rig_constraints import apply_constraints
     pose=deepcopy(parameters['pose']) if isinstance(parameters.get('pose'),dict) else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
     validate_contract(pose,'Pose')
@@ -102,16 +136,19 @@ def pose_operation(rig,parameters):
     if parameters.get('fingers'):pose=finger_controls(rig,pose,**parameters['fingers'])
     if parameters.get('appendages'):pose=appendage_controls(rig,pose,**parameters['appendages'])
     pose,_=apply_constraints(rig.skeleton,pose,rig.manifest['controllers']['constraints'])
+    if parameters.get('gaze'):pose=refresh_gaze_eyelids(rig,pose)
     validate_contract(pose,'Pose')
     return pose
 
 
 def solve_operation(rig,parameters):
     from rig_ik import solve_ik
+    from rig_facial import refresh_gaze_eyelids
     chain=next((c for c in rig.manifest['controllers']['ik'] if c['id']==parameters['chain']),None)
     require(chain is not None,'RIG_IK_CHAIN','Requested IK chain does not exist.')
     result=solve_ik(rig.skeleton,pose_operation(rig,parameters),chain,parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'],orientation=parameters.get('orientation'))
+    if parameters.get('gaze'):result.pose=refresh_gaze_eyelids(rig,result.pose)
     return dict(pose=result.pose,report=result.report())
 
 

@@ -83,7 +83,9 @@ Texture slot color spaces describe portable glTF semantics. Their UV binding
 uses the texture transform coordinate set when specified, otherwise the base
 coordinate set or glTF default of zero. Optional extensions outside supported coverage yield partial
 evidence. Recognized material extensions with semantics beyond the projected
-fields also yield partial material coverage. The native reader rejects
+fields also yield partial material coverage. Saved rigs count retained material, texture,
+sampler and texture-binding extension occurrences during admission. Unobserved
+extensions at these locations keep material identity unknown. The native reader rejects
 unsupported required extensions.
 
 The comparison reports main-file byte identity and full closure byte identity.

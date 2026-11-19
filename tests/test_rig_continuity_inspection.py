@@ -161,6 +161,22 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertEqual(json.loads(cli.stdout), comparison['right'])
         self.assertFalse((self.root / '.restored.rig.lock').exists())
 
+    def test_saved_receipt_coordinates_do_not_alias_owner_or_other_receipts(self):
+        from unittest.mock import patch
+
+        from rig_contracts import COORDINATES
+        from rig_test_helpers import fixture
+
+        rig = fixture(self.root)
+        request = self.native_request(rig.root)
+        left = inspect_asset(self.root, **request)
+        right = inspect_asset(self.root, **request)
+        with patch.dict(COORDINATES):
+            left['inspection']['coordinates']['unit'] = 'edited-fixture-unit'
+            self.assertEqual(COORDINATES['unit'], 'meter')
+            self.assertEqual(right['inspection']['coordinates']['unit'], 'meter')
+            self.assertEqual(right['sha256'], digest(right['inspection']))
+
     def test_saved_rig_requires_exact_consumed_inventory_and_analysis_budget(self):
         from unittest.mock import patch
         from rig_errors import RigError
@@ -230,6 +246,129 @@ class ContinuityInspectionTests(unittest.TestCase):
                 self.assertIsNone(comparison['observed_material_identity'])
                 self.assertIsNone(comparison['material_identity'])
                 self.assertTrue(comparison['needs_visual_review'])
+
+    def test_retained_resource_extensions_leave_saved_material_identity_unknown(self):
+        from rig_jobs import create_run
+
+        extension = 'EXT_fixture_mode'
+        for location in ('textures', 'samplers', 'texture_bindings', 'pbrMetallicRoughness',
+                         'material_extensions', 'texture_transforms'):
+            requests = []
+            for mode in (1, 2):
+                folder = self.root / (location + str(mode))
+                folder.mkdir()
+                source, builder = gltf(folder)
+                body = builder.json
+                body['extensionsUsed'] = [extension]
+                body['samplers'] = [{}]
+                body['textures'][0]['sampler'] = 0
+                material = body['materials'][0]
+                pbr = material['pbrMetallicRoughness']
+                binding = pbr['baseColorTexture']
+                if location == 'material_extensions':
+                    body['extensionsUsed'].append('KHR_materials_unlit')
+                    material['extensions'] = {'KHR_materials_unlit': {}}
+                    target = material['extensions']['KHR_materials_unlit']
+                elif location == 'texture_transforms':
+                    body['extensionsUsed'].append('KHR_texture_transform')
+                    binding['extensions'] = {'KHR_texture_transform': {}}
+                    target = binding['extensions']['KHR_texture_transform']
+                else:
+                    target = {'textures': body['textures'][0], 'samplers': body['samplers'][0],
+                              'pbrMetallicRoughness': pbr, 'texture_bindings': binding}[location]
+                target['extensions'] = {extension: {'mode': mode}}
+                builder.write(source)
+                rig = create_run(source, folder / 'saved', identifier='fixture')
+                requests.append(self.native_request(rig.root))
+            with self.subTest(location=location):
+                comparison = compare_assets(self.root, *requests)
+                self.assertFalse(comparison['byte_identity'])
+                self.assertIsNone(comparison['material_identity'])
+                for side in ('left', 'right'):
+                    report = comparison[side]['inspection']
+                    self.assertEqual(report['material_coverage'], 'partial')
+                    self.assertIn(digest(location + '/' + extension), report['source_features']['unsupported_extensions'])
+                    self.assertNotIn(extension, json.dumps(report))
+
+    def test_saved_resource_extension_budget_counts_occurrences_before_array_load(self):
+        from rig_jobs import create_run
+        from unittest.mock import patch
+
+        source, builder = gltf(self.root)
+        names = ['EXT_fixture_' + str(index) for index in range(43)]
+        builder.json['extensionsUsed'] = names
+        group = {name: {} for name in names}
+        builder.json['samplers'] = [{'extensions': group}]
+        builder.json['textures'][0].update(sampler=0, extensions=group)
+        builder.json['materials'][0]['pbrMetallicRoughness']['baseColorTexture']['extensions'] = group
+        builder.write(source)
+        rig = create_run(source, self.root / 'saved', identifier='fixture')
+        request = self.native_request(rig.root)
+        with patch('rig_models._materialize_array', side_effect=AssertionError('materialized')):
+            with self.assertRaisesRegex(ValueError, 'CONTINUITY_INSPECTION_LIMIT'):
+                inspect_asset(self.root, **request)
+
+    def test_saved_image_is_decoded_before_material_comparison(self):
+        from rig_errors import RigError
+        from rig_jobs import create_run, save_rig
+
+        source, _ = gltf(self.root)
+        original = create_run(source, self.root / 'original-texture', identifier='original-texture')
+        unchanged = self.native_request(original.root)
+        self.assertTrue(compare_assets(self.root, unchanged, unchanged)['material_identity'])
+
+        for name, error in (('truncated', 'RIG_TEXTURE_DECODE'), ('wrong-mime', 'RIG_TEXTURE_FORMAT')):
+            malformed = create_run(source, self.root / name, identifier=name)
+            saved = malformed.geometry.images[0]
+            if name == 'truncated':
+                saved.data = saved.data[:33]
+            else:
+                saved.mime_type = 'image/jpeg'
+            save_rig(malformed, operation='fixture-change-saved-image')
+            with self.subTest(name=name), self.assertRaises(RigError) as caught:
+                compare_assets(self.root, unchanged, self.native_request(malformed.root))
+            self.assertEqual(caught.exception.report['code'], error)
+
+    def test_saved_image_uses_already_admitted_pixel_capacity(self):
+        from rig_errors import RigError
+        from rig_jobs import create_run, save_rig
+
+        path, builder = gltf(self.root)
+        image = io.BytesIO()
+        Image.new('RGB', (2048, 2048), (20, 40, 60)).save(image, format='PNG')
+        builder.json['images'] = [dict(mimeType='image/png', bufferView=builder.view(image.getvalue()))]
+        builder.write(path)
+        limits = dict(memory_bytes=80 * 1024**2)
+        rig = create_run(path, self.root / 'large-texture', identifier='large-texture')
+        rig.manifest['limits'].update(limits)
+        save_rig(rig, operation='fixture-limit-saved-image-admission')
+        request = self.native_request(rig.root)
+        default = inspect_asset(self.root, **request)['inspection']
+        explicit = inspect_asset(self.root, **request, limits=limits)['inspection']
+        self.assertEqual(explicit['native_analysis_admission'], default['native_analysis_admission'])
+        self.assertEqual(explicit['material_coverage'], 'supported-profile')
+        self.assertEqual(explicit['material_sha256'], default['material_sha256'])
+        lower = explicit['native_analysis_admission']['estimated_memory_bytes'] - 1
+        with self.assertRaises(RigError) as caught:
+            inspect_asset(self.root, **request, limits=dict(memory_bytes=lower))
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+
+    def test_saved_external_image_uses_dependency_cap(self):
+        from rig_jobs import create_run, save_rig
+
+        path, _ = gltf(self.root, name='external.gltf', external=True)
+        texture = self.root / 'texture.png'
+        channels = np.random.default_rng(557).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+        Image.fromarray(channels).save(texture)
+        rig = create_run(path, self.root / 'external-texture', identifier='external-texture')
+        original = rig.root / rig.manifest['source']['path']
+        source_limit = original.stat().st_size
+        self.assertGreater(texture.stat().st_size, source_limit)
+        rig.manifest['limits']['source_bytes'] = source_limit
+        save_rig(rig, operation='fixture-separate-texture-cap')
+        report = inspect_asset(self.root, **self.native_request(rig.root))['inspection']
+        self.assertEqual(report['native_load_admission']['limits']['source_bytes'], source_limit)
+        self.assertEqual(report['material_coverage'], 'supported-profile')
 
     def test_material_change_is_measured_between_saved_rigs(self):
         from rig_jobs import save_rig
