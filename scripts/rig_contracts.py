@@ -146,6 +146,10 @@ def definitions() -> dict:
                    provenance=provenance, limits=limits,
                    review=obj(dict(status={'enum': ['pending', 'approved', 'rejected']}, receipts=arr(file_ref))),
                    validation=arr(file_ref)))
+    # Historical manifests have no binding field. Their original bytes and
+    # signatures remain valid; new native fits bind each anatomy occurrence.
+    rig['properties']['anatomy_uncertainty_bindings'] = arr(
+        {'anyOf': [digest, {'type': 'null'}]}, 0, 1024)
     template_bone = obj(dict(id=identifier, role=identifier, parent=nullable_id, head=vec, tail=vec,
                              deform=boolean, mirror=nullable_id, roll=num),
                         ['id', 'role', 'parent', 'head', 'tail', 'deform'])

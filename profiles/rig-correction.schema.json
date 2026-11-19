@@ -4620,6 +4620,22 @@
           },
           "minItems": 0,
           "maxItems": 250000
+        },
+        "anatomy_uncertainty_bindings": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 1024
         }
       },
       "required": [

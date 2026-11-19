@@ -1,0 +1,37 @@
+{
+  "scope": "Native uncertainty occurrence preservation in ordinary save, load and correction workflows",
+  "issue": 52,
+  "pull_request": 486,
+  "frozen_implementation": "528d3cabeab5094452595656a81fbc6f35787cba",
+  "frozen_tree": "19f2982af01b8a2c93966b5bc6fc8fcc6b2b61e7",
+  "review_comparison_base": "a2f5191db920cc132921747b1dda80dfa0f5269e",
+  "test_file": "tests/test_rig_uncertainty_occurrence_mutation.py",
+  "test_file_sha256": "cd70ada251eeb9efaf430164d05bd4ccd99dddba47b442da4338387d87fa5003",
+  "environment": "Linux, Python 3.12.14, installed rig test dependencies, repository root",
+  "command": "PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 PYTHONPATH=scripts:tests python -m unittest -v test_rig_uncertainty_occurrence_mutation",
+  "frozen_execution": {
+    "exit_code": 1,
+    "tests": 4,
+    "passed": 2,
+    "assertion_failures": 2,
+    "errors": 0,
+    "skipped": 0,
+    "original_execution_log_sha256": "3a82992e562d71c0fff5771d5e543729f7a90ba041e379c6ac5028331a4770b7",
+    "failed": {
+      "test_direct_correction_preserves_opaque_copy_before_generic_save": "Native correction and reload succeeded. Actual observations contained only gripper. Expected gripper followed by the complete original pending jaw.left observation.",
+      "test_equal_count_save_never_transfers_ownership_to_surviving_copy": "Save, reload, dispatcher correction and final reload succeeded. Actual observations contained gripper and jaw.right. Expected the complete original pending jaw.left observation between them."
+    },
+    "passed_controls": {
+      "test_reordered_observations_cannot_reacquire_ownership_by_value": "After reversing the surviving left-jaw and gripper occurrences and appending a new observation, removing the bone retained the pending left-jaw record and preserved inventory order.",
+      "test_unaffected_fitted_observation_follows_renamed_and_corrected_bone": "Renaming the independently fitted gripper moved its pending observation. A later roll correction changed only that observation to corrected."
+    }
+  },
+  "fixture": "A local synthetic GLB is imported and fitted with the native robotic template and three omitted landmarks. A generic save introduces an independent copy of a fitted uncertainty. No test assigns or inspects ownership metadata. All four cases check original source and existing revision/correction files byte-for-byte across writes and reloads.",
+  "historical_evidence": {
+    "independent_probe_sha256": "c73c582c7ce395b90bee202b90e332656cec93eaa63b3ea68c0e2812fb1b1f3e",
+    "independent_report_sha256": "ec9c229535a88a1a182bd6176df3e69ca0656e56f7fb86625ffe6b5d5d05be32",
+    "prior_frozen_tests": {"focused_passed": 61, "legacy_passed": 32, "skipped": 0},
+    "scope": "Those separately recorded 93 passing tests ran before the new four-test module existed. Their logs and the original four native probe outcomes remain bound to their original revisions."
+  },
+  "evidence_level": "Executed offline synthetic native Python workflows. The four-test run establishes the frozen failures and passing controls only. It does not verify a proposed fix, CI, artistic acceptance or completion of the parent issue."
+}

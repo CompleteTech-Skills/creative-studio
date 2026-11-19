@@ -5,6 +5,7 @@ import unittest
 
 from rig_test_helpers import fixture
 from rig_corrections import apply_rig_corrections
+from rig_demo import make_geometry
 from rig_errors import RigError, read_json, sha256, timestamp
 from rig_models import load_rig, rig_signature
 from rig_operations import mutate
@@ -85,6 +86,97 @@ class RigCorrectionValidationTests(unittest.TestCase):
         self.assertTrue(updated.weights)
         self.assertTrue(updated.clips)
         self.assertTrue(list((updated.root/'rig/corrections').glob('*.json')))
+
+    def test_template_replacement_preserves_fitted_landmark_uncertainty(self):
+        _, template, landmarks, _ = make_geometry('robotic')
+        target, other = list(landmarks)[:2]
+        for name in (target, other):
+            landmarks[name].update(source='human-landmark', confidence=.5)
+        replace = dict(operation='template', target='robotic',
+                       value=dict(template=template, landmarks=landmarks))
+        result = mutate(self.rig.root, 'correct', {'correction': self.correction([replace])})
+        self.assertEqual(result['status'], 'succeeded')
+        self.rig = load_rig(self.rig.root)
+        bones = {bone['id']: bone for bone in self.rig.skeleton['bones']}
+        issues = {issue['element']: issue for issue in self.rig.manifest['uncertainties']}
+        self.assertEqual(set(bones), set(landmarks))
+        self.assertEqual(set(issues), {target, other})
+        for name in (target, other):
+            self.assertEqual(bones[name]['head'], landmarks[name]['head'])
+            self.assertEqual(bones[name]['tail'], landmarks[name]['tail'])
+            self.assertEqual(issues[name]['code'], 'RIG_ANATOMY_UNCERTAIN')
+            self.assertEqual(issues[name]['evidence'], bones[name]['evidence'])
+            self.assertEqual(issues[name]['evidence'], dict(source='human-landmark', confidence=.5,
+                                                           reference=landmarks[name]['reference']))
+            self.assertEqual(issues[name]['resolution'], 'pending')
+
+        tail = list(landmarks[target]['tail'])
+        tail[2] += .01
+        update = dict(operation='bone-update', target=target, value={'tail': tail})
+        result = mutate(self.rig.root, 'correct', {'correction': self.correction([update])})
+        self.assertEqual(result['status'], 'succeeded')
+        self.rig = load_rig(self.rig.root)
+        updated = next(bone for bone in self.rig.skeleton['bones'] if bone['id'] == target)
+        issues = {issue['element']: issue for issue in self.rig.manifest['uncertainties']}
+        self.assertEqual(updated['tail'], tail)
+        self.assertEqual(updated['evidence']['confidence'], 1.)
+        self.assertEqual(issues[target]['resolution'], 'corrected')
+        self.assertEqual(issues[other]['resolution'], 'pending')
+
+        result = mutate(self.rig.root, 'correct', {'correction': self.correction([update, replace])})
+        self.assertEqual(result['status'], 'succeeded')
+        refitted = load_rig(self.rig.root)
+        self.assertEqual({issue['element']: issue['resolution'] for issue in refitted.manifest['uncertainties']},
+                         {target: 'pending', other: 'pending'})
+
+    def test_uncertainty_follows_renamed_bone_until_correction_or_removal(self):
+        _, template, landmarks, _ = make_geometry('robotic')
+        target = 'jaw.left'
+        renamed = 'left-jaw'
+        landmarks[target].update(source='human-landmark', confidence=.5)
+        replace = dict(operation='template', target='robotic',
+                       value=dict(template=template, landmarks=landmarks))
+        rename = dict(operation='bone-update', target=target, value={'id': renamed})
+
+        def apply(*edits):
+            result = mutate(self.rig.root, 'correct', {'correction': self.correction(list(edits))})
+            self.assertEqual(result['status'], 'succeeded')
+            self.rig = load_rig(self.rig.root)
+
+        apply(replace, rename)
+        bones = {bone['id']: bone for bone in self.rig.skeleton['bones']}
+        self.assertNotIn(target, bones)
+        bone = bones[renamed]
+        issue, = self.rig.manifest['uncertainties']
+        self.assertEqual((issue['element'], issue['resolution']), (renamed, 'pending'))
+        self.assertEqual(bone['evidence'], issue['evidence'])
+        self.assertEqual(bone['evidence']['confidence'], .5)
+        for value in ({}, {'id': renamed, 'tail': bone['tail']}, {'tail': list(map(str, bone['tail']))}):
+            apply(dict(operation='bone-update', target=renamed, value=value))
+            self.assertEqual(self.rig.manifest['uncertainties'], [issue])
+            self.assertEqual(next(b['evidence'] for b in self.rig.skeleton['bones'] if b['id']==renamed),
+                             issue['evidence'])
+
+        tail = list(bone['tail'])
+        tail[2] += .01
+        update = dict(operation='bone-update', target=renamed, value={'tail': tail})
+        restore = dict(operation='bone-update', target=renamed, value={'tail': list(map(str, bone['tail']))})
+        apply(update, restore)
+        self.assertEqual(next(b for b in self.rig.skeleton['bones'] if b['id']==renamed), bone)
+        self.assertEqual(self.rig.manifest['uncertainties'], [issue])
+
+        apply(update)
+        self.assertEqual(self.rig.manifest['uncertainties'], [dict(issue, resolution='corrected')])
+
+        remove = dict(operation='bone-remove', target=renamed, value=None)
+        fields = {key: bone[key] for key in ('role', 'parent', 'head', 'tail', 'deform', 'roll')}
+        add = dict(operation='bone-add', target=renamed, value=fields)
+        apply(replace, rename, remove)
+        self.assertEqual(self.rig.manifest['uncertainties'], [])
+        self.assertNotIn(renamed, [b['id'] for b in self.rig.skeleton['bones']])
+        apply(add)
+        self.assertEqual(self.rig.manifest['uncertainties'], [])
+        self.assertIn(renamed, [b['id'] for b in self.rig.skeleton['bones']])
 
     def test_rename_and_unbound_skeleton_corrections_remain_valid(self):
         edits = [dict(operation='bone-update', target='b1', value={'id': 'elbow', 'head': [.1, 1, 0]})]

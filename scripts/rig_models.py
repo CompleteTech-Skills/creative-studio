@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections import Counter
+from copy import deepcopy
 import hashlib
 import io
 import json
@@ -81,12 +83,150 @@ class RigAsset:
     root: Path | None = None
     # Runtime admission data is deliberately outside the signed source manifest.
     resource_usage: dict | None = None
+    # References to the admitted record occurrences, never serialized. Retaining
+    # the objects distinguishes equal-valued observations through generic edits.
+    _anatomy_occurrences: list[tuple[dict, str | None]] = field(
+        default_factory=list, init=False, repr=False, compare=False)
 
     @property
     def skeleton(self) -> dict:
         require(self.manifest.get('skeleton') is not None, 'RIG_NO_SKELETON',
                 'Generate or import a skeleton before this operation.')
         return self.manifest['skeleton']
+
+
+class _AnatomyOccurrence(dict):
+    """An ordinary JSON record with nonserialized occurrence metadata."""
+    __slots__ = ('_origin', '_scope')
+
+    def __init__(self, value):
+        super().__init__(value)
+        self._origin = object()
+        self._scope = None
+
+    def __copy__(self):
+        return type(self)(self)
+
+    def __deepcopy__(self, memo):
+        copied = type(self)({})
+        memo[id(self)] = copied
+        copied.update(deepcopy(dict(self), memo))
+        # The owning array can carry the origin into its own copy.
+        copied._origin = self._origin
+        return copied
+
+
+class _UncertaintyRecords(list):
+    """Keep ownership inside copies of an admitted uncertainty array."""
+    __slots__ = ('_scope',)
+
+    def __init__(self, records=(), *, scope=None):
+        super().__init__(records)
+        self._scope = object() if scope is None else scope
+
+    def __add__(self, records):
+        return type(self)(list.__add__(self, records), scope=self._scope)
+
+    def __radd__(self, records):
+        return type(self)(list.__add__(records, self), scope=self._scope)
+
+    def __deepcopy__(self, memo):
+        copied = type(self)()
+        memo[id(self)] = copied
+        for issue in self:
+            record = deepcopy(issue, memo)
+            if isinstance(issue, _AnatomyOccurrence) and issue._scope is self._scope:
+                record._scope = copied._scope
+            copied.append(record)
+        return copied
+
+
+def _anatomy_binding_inputs(manifest):
+    """Read the bounded occurrence list before persistence or binary loading."""
+    issues = manifest.get('uncertainties')
+    require(isinstance(issues, list) and len(issues) <= 1024 and
+            all(isinstance(issue, dict) for issue in issues),
+            'RIG_SCHEMA', 'Rig uncertainty records must be a bounded array.')
+    records = [issue for issue in issues if issue.get('code') == 'RIG_ANATOMY_UNCERTAIN']
+    bindings = manifest.get('anatomy_uncertainty_bindings', [])
+    require(isinstance(bindings, list) and len(bindings) <= 1024 and
+            all(value is None or isinstance(value, str) and len(value) == 64 and
+                all(character in '0123456789abcdef' for character in value)
+                for value in bindings),
+            'RIG_SCHEMA', 'Anatomy uncertainty bindings must contain bounded digests or nulls.')
+    skeleton = manifest.get('skeleton')
+    bones = skeleton.get('bones', []) if isinstance(skeleton, dict) else []
+    bones = bones if isinstance(bones, list) else []
+    names = {bone['id'] for bone in bones if isinstance(bone, dict) and
+             isinstance(bone.get('id'), str)}
+    return records, bindings, names
+
+
+def normalize_anatomy_bindings(manifest, *, occurrences=()):
+    """Demote stale occurrence metadata; only an explicit fit may bind it."""
+    records, bindings, names = _anatomy_binding_inputs(manifest)
+    # A historical manifest without ownership metadata already treats all
+    # records as independent. Preserve that representation and signature on resave.
+    if 'anatomy_uncertainty_bindings' not in manifest:
+        return
+    # Only records admitted by the loader or a native owner can carry bindings.
+    # A digest and array position alone cannot distinguish an opaque duplicate
+    # from the fitted occurrence that a generic caller removed or reordered.
+    admitted = {id(issue): (issue, binding) for issue, binding in occurrences}
+    origins = {issue._origin: (issue, binding) for issue, binding in occurrences
+               if isinstance(issue, _AnatomyOccurrence)}
+    # An untouched array may still be in the old order after a records-only
+    # edit. When the caller also edits the array, each surviving occurrence
+    # must agree with its current entry as well as its admitted digest.
+    bindings_edited = bindings != [binding for _, binding in occurrences]
+    current = manifest['uncertainties']
+    scope = current._scope if isinstance(current, _UncertaintyRecords) else None
+    counts = Counter(id(issue) for issue in current)
+    # Count every record that could claim an origin: admitted originals (by
+    # id) and copies in this array's scope (by fallback). An admitted original
+    # kept beside its own copy still owns the occurrence; records that can
+    # never bind must not unbind the one that can.
+    copies = Counter(issue._origin for issue in records
+                     if isinstance(issue, _AnatomyOccurrence)
+                     and (issue._scope is scope or id(issue) in admitted))
+    normalized = []
+    for index, issue in enumerate(records):
+        owner, binding = admitted.get(id(issue), (None, None))
+        if (owner is None and scope is not None and isinstance(issue, _AnatomyOccurrence)
+                and issue._scope is scope and copies[issue._origin] == 1):
+            # Only the exact array copy can carry a former occurrence.
+            owner, binding = origins.get(issue._origin, (None, None))
+        if bindings_edited and (index >= len(bindings) or bindings[index] != binding):
+            binding = None
+        normalized.append(binding if owner is not None and counts[id(issue)] == 1 and
+                          binding is not None and binding == object_hash(issue) and
+                          issue.get('element') in names else None)
+    manifest['anatomy_uncertainty_bindings'] = normalized
+
+
+def validate_anatomy_bindings(manifest):
+    """Validate present metadata without changing historical manifest identity."""
+    if 'anatomy_uncertainty_bindings' not in manifest:
+        return
+    records, bindings, names = _anatomy_binding_inputs(manifest)
+    require(len(bindings) == len(records) and all(
+        binding is None or binding == object_hash(issue) and issue.get('element') in names
+        for issue, binding in zip(records, bindings)),
+        'RIG_UNCERTAINTY_BINDING', 'Anatomy uncertainty bindings differ from their native occurrences.')
+
+
+def _retain_anatomy_occurrences(rig):
+    """Retain already validated native bindings to the actual record objects."""
+    validate_anatomy_bindings(rig.manifest)
+    retained = _UncertaintyRecords()
+    for issue in rig.manifest['uncertainties']:
+        if issue.get('code') == 'RIG_ANATOMY_UNCERTAIN':
+            issue = _AnatomyOccurrence(issue)
+            issue._scope = retained._scope
+        retained.append(issue)
+    rig.manifest['uncertainties'] = retained
+    records, bindings, _ = _anatomy_binding_inputs(rig.manifest)
+    rig._anatomy_occurrences = list(zip(records, bindings or [None] * len(records)))
 
 
 # Texture fields in the material extensions already supported by rig_gltf.
@@ -501,6 +641,7 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     manifest_budget = LoadBudget(preliminary)
     manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True),
                                  expected_hash=expected_manifest_sha256), 'Rig')
+    validate_anatomy_bindings(manifest)
     captured_manifest_bytes = manifest_budget.json_bytes
     limits = effective_limits(manifest['limits'], limits)
     _preflight_load(root, manifest, limits, verify_source, max_total_morph_targets=max_total_morph_targets,
@@ -571,4 +712,6 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
         require(any(r.get('expected_sha256')==rig_signature(manifest) and r.get('reviewer_kind') in ('human','agent')
                     and set(r.get('dimensions',{}))==set(REVIEW_DIMENSIONS) and all(v['verdict']=='approved' for v in r['dimensions'].values()) for r in receipts),
                 'RIG_REVIEW_MISSING','Approved status requires a matching real visual review receipt.')
-    return RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    rig = RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    _retain_anatomy_occurrences(rig)
+    return rig

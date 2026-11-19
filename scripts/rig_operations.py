@@ -53,7 +53,7 @@ def mutate(root,operation,parameters=None):
             result=analyze_geometry(rig.geometry,rig.manifest['limits']);atomic_json(rig.root/'validation/geometry.json',result);artifacts=['validation/geometry.json']
         elif operation=='auto':
             from rig_templates import generate_skeleton
-            from rig_contracts import validate_contract
+            from rig_corrections import replace_fit
             if rig.manifest['skeleton'] and not parameters.get('replace',False):
                 return dict(preserved_existing_rig=True,bones=len(rig.skeleton['bones']))
             landmarks=parameters.get('landmarks')
@@ -67,15 +67,18 @@ def mutate(root,operation,parameters=None):
             fitted=generate_skeleton(rig.geometry,template,landmarks=landmarks,character_id=rig.manifest['id'])
             old=rig.manifest['skeleton']
             if old:fitted['skeleton']['version']=next_version(old['version'])
-            for key in ('skeleton','controllers','attachments','uncertainties'):rig.manifest[key]=fitted[key]
-            rig.manifest['archetype']=fitted['template_id'];rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
+            replace_fit(rig, fitted)
+            rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
             rig.manifest['facial']['eyes']=[b['id'] for b in rig.skeleton['bones'] if b['role'].startswith('eye.')]
             if 'eyelids' in rig.manifest['facial']:
                 eyes=set(rig.manifest['facial']['eyes'])
                 rig.manifest['facial']['eyelids']=[binding for binding in rig.manifest['facial']['eyelids'] if binding['eye'] in eyes]
             from rig_facial import validate_eyelid_bindings
             validate_eyelid_bindings(rig)
-            save_rig(rig,operation='generate-skeleton');result=dict(bones=len(rig.skeleton['bones']),uncertainties=len(fitted['uncertainties']),job_status=fitted['status'])
+            uncertainties = rig.manifest['uncertainties']
+            status = 'needs-correction' if any(issue['resolution'] == 'pending' for issue in uncertainties) else fitted['status']
+            save_rig(rig,operation='generate-skeleton')
+            result=dict(bones=len(rig.skeleton['bones']),uncertainties=len(uncertainties),job_status=status)
         elif operation=='weights':
             from rig_skinning import generate_skin_weights
             rig.weights=generate_skin_weights(rig.geometry,rig.skeleton,method=parameters.get('method','auto'),
