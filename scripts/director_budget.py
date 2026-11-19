@@ -125,6 +125,29 @@ def _validate_state(state):
     return state
 
 
+@_exact
+def _reservation_payload(*, operation_id, provider, estimate, retry_allowance,
+                         unknown_price=False, unknown_price_cap=None, evidence=None):
+    _id(operation_id); _id(provider)
+    _need(type(retry_allowance) is int and 0 <= retry_allowance <= 16, 'INPUT', 'Retries must be bounded from zero to sixteen.')
+    _need(type(unknown_price) is bool, 'INPUT', 'Unknown-price policy must be explicit.')
+    amounts = _quantities(estimate, unknown=True)
+    missing_price = amounts['amount'] is None
+    if missing_price:
+        _need(unknown_price and unknown_price_cap is not None, 'PRICE', 'Unknown-priced work requires explicit policy and monetary cap.')
+        cap = _number(unknown_price_cap, 'amount')
+        _need(cap > 0, 'PRICE', 'Unknown-priced work requires a positive monetary cap.')
+        amounts['amount'] = str(cap)
+    _need(all(value is not None for value in amounts.values()), 'ESTIMATE', 'Unknown nonmonetary estimates cannot be reserved.')
+    bound = {key: str(Decimal(value) * (retry_allowance + 1)) for key,value in amounts.items()}
+    proof = _evidence(evidence)
+    _need(not (unknown_price or missing_price or Decimal(amounts['amount']) > 0) or proof, 'EVIDENCE', 'Monetary estimates require retained rate or unknown-price policy evidence.')
+    payload = dict(operation_id=operation_id, provider=provider, estimate=amounts, retry_allowance=retry_allowance,
+                   unknown_price=unknown_price, evidence=proof)
+    return payload, bound
+
+
+
 class BudgetLedger:
     """Immutable snapshots under one ownership lock; expected SHA is the CAS token."""
 
@@ -237,22 +260,9 @@ class BudgetLedger:
     @_exact
     def reserve(self, *, operation_id, provider, estimate, retry_allowance, expected_revision, idempotency_key,
                 unknown_price=False, unknown_price_cap=None, evidence=None):
-        _id(operation_id); _id(provider)
-        _need(type(retry_allowance) is int and 0 <= retry_allowance <= 16, 'INPUT', 'Retries must be bounded from zero to sixteen.')
-        _need(type(unknown_price) is bool, 'INPUT', 'Unknown-price policy must be explicit.')
-        amounts = _quantities(estimate, unknown=True)
-        missing_price = amounts['amount'] is None
-        if missing_price:
-            _need(unknown_price and unknown_price_cap is not None, 'PRICE', 'Unknown-priced work requires explicit policy and monetary cap.')
-            cap = _number(unknown_price_cap, 'amount')
-            _need(cap > 0, 'PRICE', 'Unknown-priced work requires a positive monetary cap.')
-            amounts['amount'] = str(cap)
-        _need(all(value is not None for value in amounts.values()), 'ESTIMATE', 'Unknown nonmonetary estimates cannot be reserved.')
-        bound = {key: str(Decimal(value) * (retry_allowance + 1)) for key,value in amounts.items()}
-        proof = _evidence(evidence)
-        _need(not (unknown_price or missing_price or Decimal(amounts['amount']) > 0) or proof, 'EVIDENCE', 'Monetary estimates require retained rate or unknown-price policy evidence.')
-        payload = dict(operation_id=operation_id, provider=provider, estimate=amounts, retry_allowance=retry_allowance,
-                       unknown_price=unknown_price, evidence=proof)
+        payload, bound = _reservation_payload(operation_id=operation_id, provider=provider,
+            estimate=estimate, retry_allowance=retry_allowance, unknown_price=unknown_price,
+            unknown_price_cap=unknown_price_cap, evidence=evidence)
         def mutate(state):
             _need(provider in state['provider_limits'], 'PROVIDER', 'Provider has no explicit budget policy.')
             _need(len(state['reservations']) < MAX_RESERVATIONS, 'LIMIT', 'Too many reservations.')
@@ -288,7 +298,7 @@ class BudgetLedger:
             row['attempts'].append(dict(usage=amounts,outcome=outcome,evidence=proof,idempotency_key=idempotency_key))
             if outcome in ('complete','failed'):
                 row['state']='settled';row['held']={key:'0' for key in METRICS}
-            elif outcome=='uncertain':row['state']='uncertain'
+            else:row['state']='uncertain' if outcome=='uncertain' else 'reserved'
             return {'reservation_id':reservation_id,'state':row['state'],'spent':deepcopy(row['spent']),'held':deepcopy(row['held']),
                     'over_budget':any(Decimal(row['spent'][key]) > Decimal(row['reserved'][key]) for key in METRICS)}
         return self._change(expected_revision,idempotency_key,'settle',payload,mutate)
@@ -382,3 +392,583 @@ def execute(ledger, request, *, evidence_root, provider='local', unknown_price_c
                    currency=None,measurement_source='director-budget-ledger'),provenance_receipts=references)
     validate_method_result(method,result,request)
     return result
+
+
+
+NATIVE_OWNER_FILE = 'director-budget-owner.json'
+
+
+def _require_unrestored_budget(record):
+    """Existing native/project restore receipts never renew accounting authority."""
+    history = record.get('history', [])
+    _need(isinstance(history, list) and all(isinstance(item, dict) for item in history),
+          'RESTORED', 'Accounting requires intact native restoration history.')
+    _need(not any(item.get('event') in ('restored', 'project-restored') for item in history),
+          'RESTORED', 'Restored runs/projects cannot authorize budgeted work without a reconciliation transaction.')
+
+
+def _native_owner_identity(owner, ledger_root, genesis):
+    return dict(schema_version=1, kind='native-budget-owner',
+                owner_location_sha256=object_hash(str(owner)),
+                ledger_path=ledger_root.relative_to(owner).as_posix(), genesis=genesis)
+
+
+def _native_enrollment(root, data, *, recovery=False):
+    import hatch
+    if recovery:
+        config = data.get('director_budget')
+        _need(isinstance(config, dict) and
+              isinstance(config.get('request_sha256'), str) and
+              re.fullmatch(r'[0-9a-f]{64}', config['request_sha256']),
+              'BINDING', 'Recovery requires the original native enrollment digest.')
+        request_hash = config['request_sha256']
+    else:
+        request_hash = hatch.input_digest(Path(root) / 'pet_request.json')
+    return dict(run_id=data['run_id'], run_location_sha256=object_hash(str(Path(root).resolve())),
+                request_sha256=request_hash)
+
+def _read_native_owner(path):
+    """Read a bounded owner association and its monotonic enrollment identities."""
+    _need(not path.is_symlink(), 'PATH', 'Native owner association cannot be a link.')
+    value = decode_json(_read_source_bytes(path, MAX_BYTES))
+    fields = {'schema_version', 'kind', 'owner_location_sha256', 'ledger_path', 'genesis', 'enrollments'}
+    _need(isinstance(value, dict) and set(value) == fields and
+          value['schema_version'] == 1 and value['kind'] == 'native-budget-owner',
+          'BINDING', 'Malformed native owner association.')
+    enrollments = value['enrollments']
+    _need(isinstance(enrollments, list) and 0 < len(enrollments) <= MAX_RESERVATIONS,
+          'BINDING', 'Native enrollment inventory is missing or exceeds its bound.')
+    identities, locations = set(), set()
+    for entry in enrollments:
+        _need(isinstance(entry, dict) and set(entry) == {
+            'run_id', 'run_location_sha256', 'request_sha256'},
+            'BINDING', 'Malformed native enrollment identity.')
+        _id(entry['run_id'])
+        _need(all(isinstance(entry[key], str) and re.fullmatch(r'[0-9a-f]{64}', entry[key])
+                  for key in ('run_location_sha256', 'request_sha256')),
+              'BINDING', 'Malformed native enrollment digest.')
+        _need(entry['run_id'] not in identities and entry['run_location_sha256'] not in locations,
+              'BINDING', 'Native enrollment identities cannot be replaced or duplicated.')
+        identities.add(entry['run_id']); locations.add(entry['run_location_sha256'])
+    return value
+
+
+def _native_owner_binding(owner, ledger_root, genesis, *, create=False, enrollment=None):
+    """One ledger association; enrollment append requires existing Hatch ownership."""
+    import hatch
+    expected = _native_owner_identity(owner, ledger_root, genesis)
+    path = owner / NATIVE_OWNER_FILE
+    _need(not path.is_symlink(), 'PATH', 'Native owner association cannot be a link.')
+    exists = path.exists()
+    if exists:
+        stored = _read_native_owner(path)
+        _need({key: stored[key] for key in expected} == expected,
+              'BINDING', 'Native owner already belongs to a different ledger or location.')
+        enrollments = stored['enrollments']
+    else:
+        _need(create and enrollment is not None, 'BINDING', 'Native owner ledger association is missing.')
+        enrollments = []
+    changed = not exists
+    if enrollment is not None:
+        matches = [entry for entry in enrollments if entry['run_id'] == enrollment['run_id']
+                   or entry['run_location_sha256'] == enrollment['run_location_sha256']]
+        if matches:
+            _need(matches == [enrollment], 'BINDING', 'Native enrollment identity cannot be replaced.')
+        else:
+            _need(create, 'BINDING', 'Native accounting enrollment is missing from its owner.')
+            _need(len(enrollments) < MAX_RESERVATIONS, 'BINDING', 'Native enrollment inventory is full.')
+            enrollments = enrollments + [deepcopy(enrollment)]
+            changed = True
+    if changed:
+        hatch.atomic(path, dict(expected, enrollments=enrollments))
+    return expected
+
+
+def reject_legacy_budget_rollback(root, data):
+    """An earlier unbudgeted snapshot cannot erase enrollment retained by its owner."""
+    root = Path(root).resolve()
+    location = object_hash(str(root))
+    for owner in (root, *root.parents):
+        path = owner / NATIVE_OWNER_FILE
+        if not path.exists() and not path.is_symlink():
+            continue
+        stored = _read_native_owner(path)
+        _need(stored['owner_location_sha256'] == object_hash(str(owner)),
+              'BINDING', 'Native accounting owner was relocated without reconciliation.')
+        _need(not any(entry['run_id'] == data['run_id'] or
+                      entry['run_location_sha256'] == location for entry in stored['enrollments']),
+              'BINDING', 'A previously enrolled run cannot fall back to unbudgeted ownership.')
+
+
+def require_production_budget(root, state, run, data):
+    """Validate the existing production association; caller keeps native ownership."""
+    root, run = Path(root).resolve(), Path(run).resolve()
+    if 'director_budget' not in data:
+        _need('director_budget' not in state, 'BINDING',
+              'Every acquisition in this budgeted project must opt into its ledger.')
+        return
+    _require_unrestored_budget(state)
+    budget = NativeBudget(run, data)
+    _need(budget.owner == root, 'BINDING', 'Production acquisition must use its project budget owner.')
+    expected = _native_owner_binding(root, budget.ledger.root, budget.config['genesis'])
+    _need(state.get('director_budget') == expected, 'BINDING',
+          'Production workflow and acquisition must reference the same authoritative ledger.')
+
+
+def bind_native_budget(root, ledger_root, *, owner_root=None, provider, estimate,
+                       retry_allowance, evidence, unknown_price=False, unknown_price_cap=None):
+    """Opt a fresh Hatch run into one existing project ledger; never submit work."""
+    import hatch
+    root = Path(root).resolve()
+    owner = root if owner_root is None else Path(owner_root).resolve()
+    ledger_root = Path(ledger_root).absolute()
+    project = next((parent for parent in root.parents if (parent / 'project.json').is_file()), None)
+    _need(project is None or owner == project, 'BINDING',
+          'A production acquisition must opt in under its containing project owner.')
+    _need(root.is_relative_to(owner) and ledger_root.is_relative_to(owner),
+          'PATH', 'Native run and ledger must belong to the declared owner directory.')
+    _need(ledger_root != root and ledger_root.resolve() == ledger_root,
+          'PATH', 'Use a separate canonical ledger directory.')
+    ledger = BudgetLedger(ledger_root); snapshot = ledger.snapshot()
+    _id(provider); estimate = _quantities(estimate, unknown=True); evidence = _evidence(evidence)
+    _need(len(evidence) < 128 and type(unknown_price) is bool, 'INPUT', 'Bounded explicit native policy required.')
+    if unknown_price_cap is not None:
+        unknown_price_cap = str(_number(unknown_price_cap, 'amount'))
+    _need(_number(estimate['provider_calls'], 'provider_calls') >= 1,
+          'ESTIMATE', 'Every native attempt must reserve at least one provider call.')
+    _verify_evidence(ledger.root, evidence)
+    _need(provider in snapshot['state']['provider_limits'], 'PROVIDER', 'Provider has no explicit budget policy.')
+    _need(type(retry_allowance) is int and 0 <= retry_allowance <= 16,
+          'INPUT', 'Retries must be bounded from zero to sixteen.')
+    config = dict(schema_version=1, owner_depth=len(root.relative_to(owner).parts),
+                  ledger_path=ledger_root.relative_to(owner).as_posix(),
+                  genesis=next(ledger_root.glob('00000000-*.json')).stem[9:],
+                  provider=provider, estimate=deepcopy(estimate), retry_allowance=retry_allowance,
+                  evidence=deepcopy(evidence), unknown_price=unknown_price, unknown_price_cap=unknown_price_cap)
+    from contextlib import ExitStack
+    with hatch.ownership(owner), ExitStack() as locks:
+        if root != owner:
+            locks.enter_context(hatch.ownership(root))
+        data = hatch.manifest(root)
+        _require_unrestored_budget(data)
+        config.update(run_id=data['run_id'], fixture=data['fixture_mode'],
+                      request_sha256=hatch.digest(root / 'pet_request.json'),
+                      run_location_sha256=object_hash(str(root)))
+        existing = data.get('director_budget')
+        if existing is not None:
+            _need(existing == config, 'BINDING', 'Native accounting policy cannot be replaced.')
+        else:
+            _need(not any(entry.get('event') == 'claim' for job in data['jobs'] for entry in job['history']),
+                  'BINDING', 'Opt in before the first native claim; existing expenditure cannot be invented.')
+        association = _native_owner_identity(owner, ledger_root, config['genesis'])
+        project_state = None
+        if (owner / 'project.json').is_file():
+            import production_workflow as workflow
+            project_state = workflow._state(owner)
+            _require_unrestored_budget(project_state)
+            _need(project_state.get('director_budget', association) == association, 'BINDING',
+                  'Production project already belongs to a different ledger.')
+            for binding in project_state['generation_bindings'].values():
+                bound = workflow.safe_path(owner, binding['run_path'])
+                if bound == root:
+                    continue
+                bound_data = hatch.manifest(bound)
+                _need('director_budget' in bound_data, 'BINDING',
+                      'Opt existing unclaimed project acquisitions into the same ledger first.')
+                # Existing associations are checked before any configuration is published.
+                previous = NativeBudget(bound, bound_data)
+                _need(previous.owner == owner and previous.ledger.root == ledger_root,
+                      'BINDING', 'Existing project acquisition uses a different ledger.')
+        _native_owner_binding(owner, ledger_root, config['genesis'], create=True,
+                              enrollment=_native_enrollment(root, data))
+        if project_state is not None and 'director_budget' not in project_state:
+            project_state['director_budget'] = association
+            workflow._save(owner, project_state)
+        if existing is not None:
+            return deepcopy(config)
+        data['director_budget'] = config
+        hatch.save(root, data)
+    return deepcopy(config)
+
+
+class NativeBudget:
+    """Accounting hooks called only while the existing Hatch owner holds its lock.
+
+    The native manifest journals accounting intents; the ledger alone owns
+    reservations and balances. This object never claims, fails or ingests a job.
+    One bounded operation per job is supported; a completed operation cannot be
+    silently reopened by repair. Start a separately identified run for new work.
+    """
+
+    @classmethod
+    def for_run(cls, root, data, *, recovery=False):
+        _need(type(recovery) is bool, 'INPUT', 'Recovery mode must be explicit.')
+        if 'director_budget' not in data:
+            reject_legacy_budget_rollback(root, data)
+            return None
+        return cls(root, data, recovery=recovery)
+
+    def __init__(self, root, data, *, recovery=False):
+        _need(type(recovery) is bool, 'INPUT', 'Recovery mode must be explicit.')
+        self.recovery = recovery
+        self.root, self.data = Path(root).resolve(), data
+        _require_unrestored_budget(data)
+        self.config = data['director_budget']
+        config = self.config
+        _need(isinstance(config, dict) and set(config) == {
+            'schema_version', 'owner_depth', 'ledger_path', 'genesis', 'provider', 'estimate',
+            'retry_allowance', 'evidence', 'unknown_price', 'unknown_price_cap',
+            'run_id', 'fixture', 'request_sha256', 'run_location_sha256'},
+            'BINDING', 'Malformed native accounting policy.')
+        import hatch
+        if not recovery:
+            hatch._require_current_authority(data)
+        _need(config['run_location_sha256'] == object_hash(str(self.root)), 'BINDING',
+              'Relocated opted-in runs cannot authorize work; preserve the original owner location.')
+        _need(config['run_id'] == data['run_id'] and config['fixture'] is data['fixture_mode'] and
+              (recovery or config['request_sha256'] == hatch.input_digest(self.root / 'pet_request.json')),
+              'BINDING', 'Native accounting identity or original request changed.')
+        depth = config['owner_depth']
+        _need(config['schema_version'] == 1 and type(depth) is int and 0 <= depth < len(self.root.parents),
+              'PATH', 'Invalid native accounting owner.')
+        owner = self.root if depth == 0 else self.root.parents[depth - 1]
+        self.owner = owner
+        project_state = owner / 'production-workflow.json'
+        if project_state.is_file():
+            _require_unrestored_budget(hatch.input_json(project_state))
+        from pathlib import PurePosixPath
+        relative = config['ledger_path']
+        _need(isinstance(relative, str) and relative and '\\' not in relative and ':' not in relative,
+              'PATH', 'Ledger path must be portable.')
+        parts = PurePosixPath(relative)
+        _need(not parts.is_absolute() and '..' not in parts.parts and parts.as_posix() == relative and relative != '.',
+              'PATH', 'Ledger path escapes its owner.')
+        ledger_root = owner.joinpath(*parts.parts)
+        self.ledger = BudgetLedger(ledger_root)
+        self.ledger.snapshot()
+        _need(next(ledger_root.glob('00000000-*.json')).stem[9:] == config['genesis'],
+              'BINDING', 'Native ledger identity changed.')
+        _verify_evidence(ledger_root, config['evidence'])
+        _native_owner_binding(owner, ledger_root, config['genesis'],
+                              enrollment=_native_enrollment(self.root, data, recovery=recovery))
+        for job in data['jobs']:
+            operation = job.get('budget_operation')
+            if operation is None:
+                continue
+            _need(isinstance(operation.get('input_hashes'), dict) and
+                  operation['input_hashes'].get('pet_request.json') == config['request_sha256'],
+                  'BINDING', 'Native operation differs from its original request enrollment.')
+            expected = 'native-' + object_hash({
+                'run_id': data['run_id'], 'job': job['id'], 'inputs': operation['input_hashes'],
+                'fixture': data['fixture_mode'], 'policy': config})
+            request = operation['reservation_request']
+            _need(operation['operation_id'] == expected and request['operation_id'] == expected and
+                  request['idempotency_key'] == expected + ':reserve' and
+                  all(request[key] == config[key] for key in
+                      ('provider', 'estimate', 'retry_allowance', 'unknown_price', 'unknown_price_cap')) and
+                  request['evidence'][:-1] == config['evidence'] and
+                  len(request['evidence']) == len(config['evidence']) + 1,
+                  'BINDING', 'Native operation or accounting policy was rebound.')
+        for job in data['jobs']:
+            self._check_claim_bindings(job)
+
+    def _check_claim_bindings(self, job):
+        """Authenticate retained claim identities before any accounting replay."""
+        _need(any(item is job for item in self.data['jobs']), 'BINDING',
+              'Native accounting requires this owner job.')
+        claims = [entry for entry in job['history'] if entry.get('event') == 'claim']
+        operation = job.get('budget_operation')
+        if operation is None:
+            _need(not claims, 'BINDING', 'A budgeted native claim lost its original operation.')
+            return None
+        attempts = operation['attempts']
+        _need(isinstance(attempts, list) and len(attempts) <= 128 and
+              all(isinstance(token, str) and token for token in attempts) and
+              len(set(attempts)) == len(attempts), 'BINDING',
+              'Native attempt identities must be unique and bounded.')
+        claimed = {}
+        for claim in claims:
+            token = claim.get('token')
+            _need(isinstance(token, str) and token in attempts and token not in claimed and
+                  claim.get('input_hashes') == operation['input_hashes'],
+                  'BINDING', 'Native claim differs from its original admitted input identity.')
+            claimed[token] = claim
+        for event in operation['events']:
+            token = event['payload']['token']
+            if token is None:
+                _need(event['payload']['outcome'] in ('unstarted', 'canceled-known'),
+                      'BINDING', 'Only explicit nonexecution releases omit a native token.')
+            else:
+                _need(isinstance(token, str) and token in claimed, 'BINDING',
+                      'Native usage lacks its original published claim.')
+        if job['status'] == 'running':
+            _need(job.get('token') in claimed and
+                  job.get('input_hashes') == operation['input_hashes'],
+                  'BINDING', 'Active native job differs from its original admitted claim.')
+        return operation
+
+    def _save(self):
+        import hatch
+        hatch.save(self.root, self.data)
+
+    def _proof(self, value):
+        with tempfile.TemporaryDirectory(prefix='.native-budget-', dir=self.ledger.root.parent) as temporary:
+            path = Path(temporary) / 'intent.json'
+            path.write_text(json.dumps(value, sort_keys=True, allow_nan=False), encoding='utf-8')
+            return self.ledger.retain_evidence(path)
+
+    def _reserve(self, operation):
+        if self.recovery:
+            # Recovery may acknowledge an already committed admission but
+            # cannot call the ledger reserve mutation or manufacture capacity.
+            request = operation['reservation_request']
+            snapshot = self.ledger.snapshot()
+            events = [event for event in snapshot['state']['events']
+                      if event['idempotency_key'] == request['idempotency_key']]
+            _need(len(events) == 1 and events[0]['action'] == 'reserve',
+                  'BINDING', 'Recovery requires an already committed native reservation.')
+            payload, bound = _reservation_payload(**{key: request[key] for key in
+                ('operation_id', 'provider', 'estimate', 'retry_allowance',
+                 'unknown_price', 'unknown_price_cap', 'evidence')})
+            receipt = events[0]['receipt']
+            row = snapshot['state']['reservations'].get(receipt.get('reservation_id'))
+            _need(events[0]['payload'] == payload and isinstance(row, dict) and
+                  row['id'] == receipt['reservation_id'] and
+                  row['operation_id'] == operation['operation_id'] and
+                  row['provider'] == self.config['provider'] and
+                  row['reserved'] == bound and row['unknown_price'] == payload['unknown_price'] and
+                  receipt.get('reserved') == bound and receipt.get('state') == 'reserved',
+                  'BINDING', 'Recovery reservation differs from its committed admission.')
+            return deepcopy(receipt)
+        options = deepcopy(operation['reservation_request'])
+        return self.ledger.reserve(**options, expected_revision=self.ledger.snapshot()['sha256'])
+
+    def _apply(self, operation, event):
+        payload = event['payload']
+        options = dict(outcome=payload['outcome'], evidence=event['evidence'],
+                       idempotency_key=event['key'], expected_revision=self.ledger.snapshot()['sha256'])
+        if payload['outcome'] in ('unstarted', 'canceled-known'):
+            receipt = self.ledger.release(operation['reservation_id'], **options)
+        else:
+            receipt = self.ledger.settle(operation['reservation_id'], usage=payload['usage'], **options)
+        if event.get('receipt') != receipt:
+            event['receipt'] = receipt
+            self._save()
+        return receipt
+
+    def reconcile(self):
+        """Replay durable accounting only. Never infer that a provider did not run."""
+        # Validate the complete journal before replaying even an earlier valid
+        # operation. An invalid identity cannot trigger incidental accounting.
+        for job in self.data['jobs']:
+            self._check_claim_bindings(job)
+        for job in self.data['jobs']:
+            operation = job.get('budget_operation')
+            if operation is None:
+                continue
+            snapshot = self.ledger.snapshot()
+            key = operation['reservation_request']['idempotency_key']
+            if not any(event['idempotency_key'] == key for event in snapshot['state']['events']):
+                _need(not operation.get('reservation_id') and not operation['events'],
+                      'BINDING', 'Native accounting refers to an absent reservation.')
+                continue  # Admission never committed; only an explicit claim may retry it.
+            receipt = self._reserve(operation)
+            _need(operation.get('reservation_id', receipt['reservation_id']) == receipt['reservation_id'],
+                  'BINDING', 'Native reservation identity changed.')
+            if operation.get('reservation_id') != receipt['reservation_id']:
+                operation['reservation_id'] = receipt['reservation_id']
+                self._save()
+            for event in operation['events']:
+                self._apply(operation, event)
+
+    @_exact
+    def before_claim(self, job, input_hashes):
+        """Persist an intent and reserve before Hatch exposes its existing token."""
+        _need(not self.recovery, 'STATE', 'Recovery cannot authorize new native work.')
+        _need(any(item is job for item in self.data['jobs']), 'BINDING', 'Native admission requires this owner job.')
+        _need(isinstance(input_hashes, dict) and input_hashes.get('pet_request.json') == self.config['request_sha256'],
+              'BINDING', 'Native admission inputs differ from original enrollment.')
+        import uuid
+        self.reconcile()
+        operation = job.get('budget_operation')
+        _need(operation is None or operation['input_hashes'] == input_hashes, 'BINDING',
+              'Budgeted inputs changed before reservation admission.')
+        if operation is None:
+            identifier = 'native-' + object_hash({
+                'run_id': self.data['run_id'], 'job': job['id'], 'inputs': input_hashes,
+                'fixture': self.data['fixture_mode'], 'policy': self.config})
+            request = {key: deepcopy(self.config[key]) for key in
+                       ('provider', 'estimate', 'retry_allowance', 'unknown_price', 'unknown_price_cap')}
+            request.update(operation_id=identifier, idempotency_key=identifier + ':reserve',
+                           evidence=deepcopy(self.config['evidence']))
+            operation = dict(operation_id=identifier, input_hashes=deepcopy(input_hashes),
+                             reservation_request=request, attempts=[], events=[])
+            request['evidence'].append(self._proof({
+                'kind': 'native-budget-intent', 'run_id': self.data['run_id'], 'job': job['id'],
+                'fixture': self.data['fixture_mode'], 'operation_id': identifier,
+                'input_hashes': input_hashes, 'policy': self.config}))
+            job['budget_operation'] = operation
+            self._save()
+        receipt = self._reserve(operation)
+        if operation.get('reservation_id') != receipt['reservation_id']:
+            _need('reservation_id' not in operation, 'BINDING', 'Native reservation identity changed.')
+            operation['reservation_id'] = receipt['reservation_id']
+            self._save()
+        _need(operation['input_hashes'] == input_hashes, 'BINDING',
+              'Budgeted inputs changed; reconcile this operation before preparing new work.')
+        row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
+        _need(row['state'] == 'reserved', 'UNCERTAIN', 'Only reserved known work may issue a native attempt.')
+        attempts = operation['attempts']
+        claimed = {entry.get('token') for entry in job['history'] if entry.get('event') == 'claim'}
+        pending_token = attempts[-1] if attempts and attempts[-1] not in claimed else None
+        if attempts and pending_token is None:
+            events = [event for event in operation['events'] if event['payload']['token'] == attempts[-1]]
+            _need(events and events[-1]['payload']['outcome'] == 'retry',
+                  'STATE', 'The previous native attempt needs an evidenced retry outcome.')
+        _need(pending_token is not None or len(attempts) < self.config['retry_allowance'] + 1,
+              'EXCEEDED', 'Native retry allowance exhausted.')
+        estimate = operation['reservation_request']['estimate']
+        amount = self.config['unknown_price_cap'] if estimate['amount'] is None else estimate['amount']
+        next_bound = {**estimate, 'amount': amount}
+        _need(all(Decimal(row['held'][key]) >= _number(next_bound[key], key) for key in METRICS),
+              'EXCEEDED', 'Remaining reservation cannot cover another bounded attempt.')
+        state = self.ledger.snapshot()['state']
+        for provider in (None, self.config['provider']):
+            spent, held = _totals(state, provider)
+            limits = state['limits'] if provider is None else state['provider_limits'][provider]
+            _need(all(spent[key] + held[key] <= Decimal(limits[key]) for key in METRICS),
+                  'EXCEEDED', 'Actual overrun blocks further native admission.')
+        if pending_token is not None:
+            return pending_token  # No native claim was published; reuse its exact intent.
+        token = uuid.uuid4().hex
+        attempts.append(token)
+        self._save()
+        return token
+
+    def record(self, job, token, observation):
+        """Retain actual deltas before native finalization; replay never charges twice.
+
+        Evidence must already be retained in this ledger. Known reconciliation
+        explicitly names every earlier uncertain observation for the same token.
+        """
+        operation = self._check_claim_bindings(job)
+        _need(operation is not None and isinstance(token, str) and
+              token in operation['attempts'] and
+              any(entry.get('event') == 'claim' and entry.get('token') == token
+                  for entry in job['history']), 'BINDING',
+              'Usage must belong to this job and its original published native claim.')
+        # Earlier durable usage and the reservation association are authoritative
+        # only after every retained claim has been authenticated.
+        self.reconcile()
+        _need(isinstance(observation, dict) and set(observation) == {
+            'id', 'outcome', 'usage', 'evidence', 'measurement_source', 'resolves'},
+            'INPUT', 'Native outcomes require one complete actual-usage observation.')
+        _id(observation['id'])
+        _need(observation['outcome'] in ('complete', 'failed', 'retry', 'uncertain'),
+              'INPUT', 'Unsupported native budget outcome.')
+        _need(isinstance(observation['measurement_source'], str) and
+              0 < len(observation['measurement_source'].strip()) <= 1024,
+              'EVIDENCE', 'Describe the actual usage measurement source.')
+        _need(isinstance(observation['resolves'], list) and
+              all(isinstance(value, str) for value in observation['resolves']) and
+              len(set(observation['resolves'])) == len(observation['resolves']),
+              'INPUT', 'Uncertain observation identities must be explicit and unique.')
+        amounts = _quantities(observation['usage'], unknown=True)
+        proof = _evidence(observation['evidence'])
+        _need(0 < len(proof) < 128, 'EVIDENCE', 'Actual usage requires one to 127 retained evidence references.')
+        _verify_evidence(self.ledger.root, proof)
+        _need(observation['outcome'] == 'uncertain' or all(value is not None for value in amounts.values()),
+              'USAGE', 'Unknown usage retains the native claim and reservation.')
+        payload = dict(token=token, **deepcopy(observation))
+        payload['usage'] = amounts
+        key = 'native-observation-' + object_hash([operation['operation_id'], observation['id']])
+        existing = next((event for event in operation['events'] if event['key'] == key), None)
+        if existing is not None:
+            _need(existing['payload'] == payload, 'IDEMPOTENCY', 'Native observation identity was reused.')
+            self._apply(operation, existing)
+            return deepcopy(existing['receipt'])
+        _need(job['status'] == 'running' and job.get('token') == token, 'STATE',
+              'New usage observations require the original active native claim.')
+        row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
+        _need(row['state'] in ('reserved', 'uncertain'), 'STATE',
+              'Final accounting requires exact outcome replay, not another observation.')
+        pending = set()
+        for event in operation['events']:
+            item = event['payload']
+            if item['token'] == token:
+                pending.difference_update(item['resolves'])
+                if item['outcome'] == 'uncertain':
+                    pending.add(item['id'])
+        _need(set(observation['resolves']) <= pending, 'INPUT', 'Unknown uncertainty reconciliation identity.')
+        _need(observation['outcome'] == 'uncertain' or set(observation['resolves']) == pending,
+              'UNCERTAIN', 'Resolve every uncertain observation before releasing or retrying native work.')
+        retained = proof + [self._proof({
+            'kind': 'native-budget-usage', 'fixture': self.data['fixture_mode'],
+            'operation_id': operation['operation_id'], **payload})]
+        event = dict(key=key, payload=payload, evidence=retained)
+        operation['events'].append(event)
+        self._save()
+        self._apply(operation, event)
+        return deepcopy(event['receipt'])
+
+    def release(self, job, *, idempotency_key, outcome, evidence):
+        """Release only an evidenced nonrunning remainder, retaining all spend."""
+        _id(idempotency_key)
+        _need(outcome in ('unstarted', 'canceled-known'), 'INPUT', 'Explicit safe cancellation outcome required.')
+        _need(job['status'] != 'running', 'UNCERTAIN', 'Active native ownership cannot be released.')
+        operation = job.get('budget_operation')
+        _need(operation is not None, 'MISSING', 'Native operation has no reservation intent.')
+        self.reconcile()
+        claimed = {entry.get('token') for entry in job['history'] if entry.get('event') == 'claim'}
+        _need(outcome != 'unstarted' or not claimed.intersection(operation['attempts']),
+              'STATE', 'A published native claim cannot be canceled as unstarted.')
+        proof = _evidence(evidence)
+        _need(0 < len(proof) < 128, 'EVIDENCE', 'Cancellation requires retained nonexecution evidence.')
+        _verify_evidence(self.ledger.root, proof)
+        payload = dict(token=None, id=idempotency_key, outcome=outcome, evidence=proof)
+        key = 'native-release-' + object_hash([operation['operation_id'], idempotency_key])
+        existing = next((event for event in operation['events'] if event['key'] == key), None)
+        if existing is None:
+            row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
+            _need(row['state'] == 'reserved', 'UNCERTAIN', 'Only a known reserved remainder can be released.')
+            retained = proof + [self._proof({
+                'kind': 'native-budget-release', 'fixture': self.data['fixture_mode'],
+                'operation_id': operation['operation_id'], **payload})]
+            existing = dict(key=key, payload=payload, evidence=retained)
+            operation['events'].append(existing)
+            self._save()
+        _need(existing['payload'] == payload, 'IDEMPOTENCY', 'Cancellation identity was reused.')
+        return self._apply(operation, existing)
+
+    def authorize_finalization(self, job, token, observation):
+        """An old accounting receipt never authorizes a newer native transition."""
+        self.reconcile()
+        _need(job['status'] == 'running' and job.get('token') == token,
+              'STATE', 'Finalization requires the original active native token.')
+        operation = job['budget_operation']
+        events = [event for event in operation['events'] if event['payload']['token'] == token]
+        _need(bool(events), 'STATE', 'Native finalization requires current accounting evidence.')
+        latest = events[-1]
+        _need(latest['payload']['id'] == observation['id'] and
+              latest['payload']['outcome'] == observation['outcome'] and
+              observation['outcome'] in ('retry', 'complete', 'failed'),
+              'STATE', 'This accounting receipt is not the current native outcome.')
+        pending = set()
+        for event in events:
+            payload = event['payload']
+            pending.difference_update(payload['resolves'])
+            if payload['outcome'] == 'uncertain':
+                pending.add(payload['id'])
+        row = self.ledger.snapshot()['state']['reservations'][operation['reservation_id']]
+        expected = 'reserved' if observation['outcome'] == 'retry' else 'settled'
+        _need(not pending and row['state'] == expected and row['attempts'] and
+              row['attempts'][-1]['idempotency_key'] == latest['key'],
+              'UNCERTAIN', 'Current uncertainty or later ledger usage prevents native finalization.')
+
+    def status(self):
+        """Report estimates separately from measured deltas and unresolved usage."""
+        snapshot = self.ledger.snapshot()
+        return {'ledger_revision': snapshot['sha256'], 'provider': self.config['provider'],
+                'limits': deepcopy(snapshot['state']['limits']),
+                'reservations': deepcopy(snapshot['state']['reservations']),
+                'measurement_note': 'spent sums known deltas only; inspect attempts for unavailable measurements.'}
