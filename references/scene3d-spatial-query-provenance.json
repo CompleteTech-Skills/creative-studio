@@ -1,35 +1,62 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "owner": "Scene62 canonical spatial query owner",
   "source_commit": "8238c3ede4e6f674d1303325c8d1257ed7e6738f",
   "archived_query_transport": "40463e707a503beb9e494cf65956e85a825f7730",
   "recovery_base": "ab6c05fa99b4ee5df47433d8967c91eb730788c6",
   "transport_base": "d6d06eb9dbba94e6b38dc64ede2138d7b96452c2",
+  "restoration_commit": "d4721182329c0018a6b4ea5c60a6aa21e922f5d0",
+  "first_review_corrections": "aa0c4fa88c454fb5a04ced5b0cee9c2630b4dd57",
+  "numeric_review_base": "42b520038a3728508d73ecd349dbb24db8d6917a",
   "files": {
     "scripts/scene3d_spatial.py": {
-      "sha256": "3360e766a48dc880537c61d11a42e0ff108e1eccdf56e7fad24b58a95fd90737",
-      "source_blob": "5d30b848fcfb50de55641e80c423c529cbd617cc",
-      "byte_identical": true
+      "archived_transport_and_restoration": {
+        "git_blob": "5d30b848fcfb50de55641e80c423c529cbd617cc",
+        "sha256": "3360e766a48dc880537c61d11a42e0ff108e1eccdf56e7fad24b58a95fd90737"
+      },
+      "current": {
+        "git_blob": "48d8f04430a53266f15b5909c2229e323f0a58a5",
+        "sha256": "44e9d324697bcb8b1b08e636b95d3b9d8a86971139cbac544c1aab31d45c2d5a"
+      },
+      "byte_identical_to_archived_transport": false
     },
     "scripts/scene3d_sweep.py": {
-      "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47",
-      "source_blob": "085c4c2c2385106af4f543371827dd4ee4cf9992",
-      "byte_identical": true
+      "archived_transport_and_restoration": {
+        "git_blob": "085c4c2c2385106af4f543371827dd4ee4cf9992",
+        "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47"
+      },
+      "current": {
+        "git_blob": "d35d5a03dc276a80c3949e59f02b88e4938be7f4",
+        "sha256": "9fb847d8131ab4070a93604239f1ca0f5a01d5061fad191f406c493efe5117b4"
+      },
+      "byte_identical_to_archived_transport": false
     },
     "tests/test_rig_scene3d_spatial_queries.py": {
-      "sha256": "4b956ae891e021af09cc7fca18981649b697c6af418f43f6bd162a997949e48a",
-      "source_blob": "1cd12e0e69b73e2883b0219f3e6361bd7ac6aa49",
-      "byte_identical": true
+      "archived_transport_and_restoration": {
+        "git_blob": "1cd12e0e69b73e2883b0219f3e6361bd7ac6aa49",
+        "sha256": "4b956ae891e021af09cc7fca18981649b697c6af418f43f6bd162a997949e48a"
+      },
+      "current": {
+        "git_blob": "bea6087daef1cffe70ad4767d91b6b04bb40d110",
+        "sha256": "cc29f89d840f437dc58621bc722f03b9b8dcf6e2be716563ce6957037adff61c"
+      },
+      "byte_identical_to_archived_transport": false
     },
     "tests/test_rig_scene3d_sweep.py": {
-      "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2",
-      "source_blob": "acb8c753fe0e335095a22b581edc933c38c44014",
-      "byte_identical": true
+      "archived_transport_and_restoration": {
+        "git_blob": "acb8c753fe0e335095a22b581edc933c38c44014",
+        "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2"
+      },
+      "current": {
+        "git_blob": "b0a13683c1dca25b6cb3c7448391db8bf83c1382",
+        "sha256": "5d7d1665dac8a96824c335530082c10f1d875288a3bcb37ef78b8ff8ca81c953"
+      },
+      "byte_identical_to_archived_transport": false
     }
   },
   "review_history": "Retained original independent source review: coordination scene-program/review-scene62-initial.md; whole integration candidate requires new independent review.",
   "scope": "Canonical query transport first prepared for Director38. Current recovery covers the query and sweep modules.",
-  "tests": "Both suites are byte-identical to the archived query transport, including the cumulative shared-query-budget regression.",
+  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow.",
   "resource_limits": {
     "vertices": 1000000,
     "triangles": 1000000,

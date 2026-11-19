@@ -75,56 +75,54 @@ def _ray_box(origin, direction, low, high, limit):
     return True
 
 
-def _closest_triangle(point, triangle):
-    # Normalize scale before dot products (barycentric determinants have length^4).
-    anchor = triangle[0]
-    scale = float(np.max(np.abs(triangle-anchor)))
-    if scale == 0:
-        return anchor
-    normalized = (triangle-anchor)/scale
-    return anchor+scale*_closest_triangle_unit((point-anchor)/scale,normalized)
+def _triangle_frame(triangle):
+    # Scaling each edge by a power of two preserves its direction exactly.
+    # Crossing the two shorter edges avoids subtracting nearly equal long edges.
+    edges = np.roll(triangle, -1, axis=0) - triangle
+    scales = np.max(np.abs(edges), axis=1)
+    _, exponents = np.frexp(scales)
+    scaled_edges = np.ldexp(edges, -exponents[:, None])
+    longest = int(np.argmax(scales))
+    normal = np.cross(scaled_edges[(longest+1) % 3], scaled_edges[(longest+2) % 3])
+    normal_length = math.hypot(*normal)
+    if normal_length:
+        normal /= normal_length
+    return edges, scaled_edges, exponents, normal
 
 
-def _closest_triangle_unit(point, triangle):
-    # Closest point in triangle Voronoi regions, including degenerate edges.
-    a, b, c = triangle
-    if np.linalg.norm(np.cross(b-a,c-a)) == 0:
-        candidates = []
-        for u,v in ((a,b),(b,c),(c,a)):
-            edge = v-u
-            denom = np.dot(edge,edge)
-            candidates.append(u if denom < EPS else u+np.clip(np.dot(point-u,edge)/denom,0,1)*edge)
-        return min(candidates,key=lambda p:np.dot(p-point,p-point))
-    ab, ac, ap = b-a, c-a, point-a
-    d1, d2 = np.dot(ab, ap), np.dot(ac, ap)
-    if d1 <= 0 and d2 <= 0:
-        return a
-    bp = point-b
-    d3, d4 = np.dot(ab, bp), np.dot(ac, bp)
-    if d3 >= 0 and d4 <= d3:
-        return b
-    vc = d1*d4-d3*d2
-    if vc <= 0 and d1 >= 0 and d3 <= 0:
-        return a+(d1/(d1-d3))*ab
-    cp = point-c
-    d5, d6 = np.dot(ab, cp), np.dot(ac, cp)
-    if d6 >= 0 and d5 <= d6:
-        return c
-    vb = d5*d2-d1*d6
-    if vb <= 0 and d2 >= 0 and d6 <= 0:
-        return a+(d2/(d2-d6))*ac
-    va = d3*d6-d5*d4
-    if va <= 0 and d4-d3 >= 0 and d5-d6 >= 0:
-        return b+((d4-d3)/((d4-d3)+(d5-d6)))*(c-b)
-    total = va+vb+vc
-    if total == 0:
-        candidates = []
-        for u, v in ((a,b),(b,c),(c,a)):
-            edge = v-u
-            denom = np.dot(edge,edge)
-            candidates.append(u if denom < EPS else u+np.clip(np.dot(point-u,edge)/denom,0,1)*edge)
-        return min(candidates, key=lambda p: np.dot(p-point,p-point))
-    return a+ab*(vb/total)+ac*(vc/total)
+def _closest_triangle(point, triangle, *, frame=None, face_only=False):
+    # Project onto the face, then test its three edge half-planes in the
+    # dominant coordinate plane. Gram determinants can lose the entire area
+    # of a long, thin triangle when they subtract nearly equal dot products.
+    edges, scaled_edges, exponents, normal = _triangle_frame(triangle) if frame is None else frame
+    if np.any(normal):
+        projected = point - ((point - triangle[0]) @ normal) * normal
+        axis = int(np.argmax(np.abs(normal)))
+        i, j = (axis+1) % 3, (axis+2) % 3
+        offset = projected - triangle
+        sides = scaled_edges[:, i]*offset[:, j] - scaled_edges[:, j]*offset[:, i]
+        if np.all(np.sign(normal[axis]) * sides >= 0):
+            return projected
+    if face_only:
+        return None
+
+    # Outside the face, or on a degenerate triangle, select the nearest
+    # point on its three finite segments. A zero-length segment is a vertex.
+    candidates = []
+    for vertex, edge, direction, exponent in zip(triangle, edges, scaled_edges, exponents):
+        length_squared = direction @ direction
+        if length_squared:
+            along = np.ldexp((point - vertex) @ direction, -exponent) / length_squared
+            candidates.append(vertex + np.clip(along, 0, 1)*edge)
+        else:
+            candidates.append(vertex)
+    closest = candidates[0]
+    for candidate in candidates[1:]:
+        difference = candidate - closest
+        # Comparing on the bisector avoids subtracting two long, nearly equal distances.
+        if (point - closest - .5*difference) @ difference > 0:
+            closest = candidate
+    return closest
 
 
 def _triangle_intersects(left, right):
@@ -467,11 +465,13 @@ class SpatialIndex:
             tested += len(record['triangles'])
             require(tested <= MAX_QUERY_TESTS, 'Nearest query budget exceeded.', 'SCENE3D_SPATIAL_LIMIT')
             for index, triangle in enumerate(record['triangles']):
-                closest = _closest_triangle(point,triangle)
-                distance = float(np.linalg.norm(closest-point))
+                anchor = triangle[0]
+                local_point = point - anchor
+                closest = _closest_triangle(local_point, triangle - anchor)
+                distance = math.hypot(*(closest - local_point))
                 if distance <= limit and (best is None or (distance,identifier,index) <
                                           (best['distance'],best['node'],best['triangle'])):
-                    best = dict(node=identifier,triangle=index,distance=distance,point=closest.tolist(),revision=self._revision)
+                    best = dict(node=identifier,triangle=index,distance=distance,point=(anchor+closest).tolist(),revision=self._revision)
         return best
 
     def frustum(self, planes, *, exclude=(), visibility='all'):
@@ -505,9 +505,11 @@ def snap_grid(value, step, *, origin=(0,0,0)):
     """Nearest world/local grid point, halves away from zero deterministically."""
     step = _positive(step,'grid step')
     origin = _vec(origin,'grid origin')
-    scaled = (_vec(value)-origin)/step
-    require(np.isfinite(scaled).all(), 'Grid computation overflow.', 'SCENE3D_SPATIAL')
-    return (origin+np.sign(scaled)*np.floor(np.abs(scaled)+0.5)*step).tolist()
+    with np.errstate(over='ignore', invalid='ignore'):
+        scaled = (_vec(value)-origin)/step
+        result = origin + np.sign(scaled)*np.floor(np.abs(scaled)+0.5)*step
+    require(np.isfinite(result).all(), 'Grid computation overflow.', 'SCENE3D_SPATIAL')
+    return result.tolist()
 
 
 def snap_scale(value, step):

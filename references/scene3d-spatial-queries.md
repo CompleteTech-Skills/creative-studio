@@ -1,9 +1,11 @@
 # Canonical spatial queries for actual geometry consumers
 
-This recovers the canonical Scene62 query implementation preserved in the
-Director38 integration. The source commits and unchanged module blobs are
-recorded in `scene3d-spatial-query-provenance.json`. The query API is available
-independently of placement, environment generation and temporal constraints.
+The canonical Scene62 query implementation came from the archived Director38
+integration. The four module and test blobs restored at `d47211823` matched
+that archive. Subsequent review corrections changed all four files.
+`scene3d-spatial-query-provenance.json` records the lineage and provides the
+archived and current Git blob IDs and SHA-256 digests for each path. Both
+identities describe Git file content, including its line endings.
 
 Construct `SpatialIndex(graph, meshes)` using actual node-local vertex arrays and
 integer triangle topology under matching SceneGraph node IDs. The index applies
@@ -23,17 +25,23 @@ containment work and rejects at two million operations. It never silently switch
 to a bounds-only result when topology or budgets are unsupported.
 
 Positive `clearance` belongs only to conservative AABB `overlap` queries. Exact
-mesh overlap does not promise positive triangle clearance. Sphere sweeps are
-provided by the unchanged canonical companion module; nested/cavity/interior-
-overlapping closed components reject explicitly in that separate operation.
+mesh overlap does not promise positive triangle clearance. Sphere sweeps reject
+nested, cavity or interior-overlapping closed components.
+
+`nearest` projects onto the triangle face and checks its edges, including on
+thin triangles. Sphere sweeps validate contact in the triangle's coordinate
+frame before returning world-space points. The sweep accepts endpoints and
+geometry coordinates with absolute values up to 10¹² metres and positive radii
+up to 10¹² metres. Grid and scale snapping raise a spatial error if the snapped
+result exceeds the finite number range.
 
 Run the actual query regressions with the optional rig test environment:
 
 ```
-PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_spatial_queries test_rig_scene3d_sweep -v
+PYTHONPATH=scripts:tests python -B -m unittest test_rig_scene3d_spatial_queries test_rig_scene3d_sweep test_rig_scene3d_evaluate -v
 ```
 
-Both modules are explicitly registered in the rig schema/math gate. Ordinary 2D
+The spatial query and sphere sweep suites are registered in the rig schema/math gate. Ordinary 2D
 compatibility excludes their `test_rig_` names and needs no NumPy installation.
 The final consuming candidate still requires a new independent whole-head review,
 current hosted checks and actual native geometry validation. Historical source

@@ -47,22 +47,26 @@ def _roots(offset, velocity, radius):
     return sorted((near_root / speed, far_root / speed))
 
 
-def _triangle_hit(start, delta, radius, triangle, closest):
-    nearest=closest(start,triangle)
-    tolerance=max(radius*1e-9,8*np.finfo(float).eps*max(float(np.max(np.abs(triangle))),float(np.max(np.abs(start)))))
+def _triangle_hit(start, delta, radius, triangle):
+    from scene3d_spatial import _closest_triangle, _triangle_frame
+    # Keep contact validation and normals in the triangle's own frame.
+    # Adding a world translation to a computed point can round away a gap.
+    anchor = triangle[0]
+    triangle = triangle - anchor
+    start = start - anchor
+    frame = _triangle_frame(triangle)
+    nearest = _closest_triangle(start, triangle, frame=frame)
     gap=float(np.linalg.norm(start-nearest))
-    candidates=[0.] if gap <= radius else []
+    candidates = [(0., False)] if gap <= radius else []
     a,b,c=triangle
-    normal=np.cross(b-a,c-a)
-    norm=float(np.linalg.norm(normal))
-    if norm > 0:
-        normal/=norm
+    normal = frame[3]
+    if np.any(normal):
         denominator=float(delta@normal)
         if denominator != 0:
             distance=float((start-a)@normal)
-            candidates.extend((sign*radius-distance)/denominator for sign in (-1,1))
+            candidates.extend(((sign*radius-distance)/denominator, True) for sign in (-1,1))
     for vertex in triangle:
-        candidates.extend(_roots(start-vertex,delta,radius))
+        candidates.extend((t, False) for t in _roots(start-vertex,delta,radius))
     for p,q in ((a,b),(b,c),(c,a)):
         edge=q-p;length=float(edge@edge)
         if length == 0:
@@ -72,25 +76,30 @@ def _triangle_hit(start, delta, radius, triangle, closest):
         velocity=delta-edge*float(delta@edge)/length
         for t in _roots(perpendicular,velocity,radius):
             along=float((offset+delta*t)@edge)/length
-            if -1e-12 <= along <= 1+1e-12:
-                candidates.append(t)
-    for t in sorted(candidates):
+            if 0 <= along <= 1:
+                candidates.append((t, False))
+    for t, face_only in sorted(candidates):
         if not 0 <= t <= 1:
             continue
         t=min(1.,max(0.,float(t)))
-        center=start+delta*t;point=closest(center,triangle)
+        travel = delta*t
+        center = start + travel
+        point = _closest_triangle(center, triangle, frame=frame, face_only=face_only)
+        if point is None:
+            continue  # A plane crossing outside the triangle is never a face hit.
         separation=center-point;distance=float(np.linalg.norm(separation))
+        tolerance = max(radius*1e-9, 8*np.finfo(float).eps*float(np.max(np.abs(travel))))
         if distance > radius+tolerance:
             continue
         if distance > 0:
             outward=separation/distance
-        elif norm > 0:
+        elif np.any(normal):
             outward=normal if float(delta@normal)<=0 else -normal
         elif np.linalg.norm(delta)>0:
             outward=-delta/np.linalg.norm(delta)
         else:
             outward=np.array([1.,0.,0.])
-        return dict(fraction=t,normal=outward.tolist(),point=point.tolist(),center=center.tolist())
+        return dict(fraction=t,normal=outward.tolist(),point=(point+anchor).tolist(),center=(center+anchor).tolist())
     return None
 
 
@@ -189,7 +198,7 @@ def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
                 require(not contained,'Closed sweep has no unambiguous material escape boundary.','SCENE3D_SPATIAL')
             if best is not None and best['fraction']==0:continue
         for triangle_id,triangle in enumerate(triangles):
-            hit=_triangle_hit(start,delta,radius,triangle,_closest_triangle)
+            hit=_triangle_hit(start,delta,radius,triangle)
             if hit is not None:
                 hit.update(node=node,triangle=triangle_id,revision=index._revision)
                 if best is None or (hit['fraction'],node,triangle_id)<(best['fraction'],best['node'],best['triangle']):

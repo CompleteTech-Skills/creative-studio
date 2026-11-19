@@ -12,7 +12,7 @@ import numpy as np
 from rig_errors import RigError
 from scene3d_contracts import read_document
 from scene3d_graph import SceneGraph
-from scene3d_spatial import SpatialIndex, _QueryBudget
+from scene3d_spatial import SpatialIndex, _QueryBudget, snap_grid, snap_scale
 ROOT = Path(__file__).resolve().parents[1]
 
 def box(width=1, height=1, depth=1):
@@ -162,6 +162,29 @@ class SpatialQueryTests(unittest.TestCase):
         graph.isolate(['camera'])
         self.assertIsNone(index.ground([2.1,2,.1],visibility='editor'))
         self.assertIsNotNone(index.ground([2.1,2,.1],visibility='render'))
+
+    def test_nearest_preserves_thin_triangle_interior(self):
+        graph = self.graph()
+        graph.set_transform('mesh', dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1]))
+        vertices = [[0,0,0], [1,0,0], [1,0,1e-8]]
+        point = [.75, 0, 2.5e-9]
+        for face in ([0,1,2], [1,2,0], [0,2,1]):
+            with self.subTest(face=face):
+                index = SpatialIndex(graph, {'mesh': dict(vertices=vertices, triangles=[face])})
+                hit = index.nearest(point, max_distance=0)
+                self.assertIsNotNone(hit)
+                self.assertEqual(hit['point'], point)
+                self.assertEqual(hit['distance'], 0)
+                above = index.nearest([point[0], .05, point[2]])
+                self.assertAlmostEqual(above['distance'], .05, places=15)
+                np.testing.assert_allclose(above['point'], point, rtol=0, atol=1e-20)
+
+    def test_grid_and_scale_snapping_refuse_unrepresentable_result(self):
+        for snap in (snap_grid, snap_scale):
+            with self.subTest(snap=snap.__name__):
+                with self.assertRaisesRegex(RigError, 'overflow'):
+                    snap([1.7e308] * 3, 1e308)
+                self.assertEqual(snap([1.4e308] * 3, 1e308), [1e308] * 3)
 
 
     def test_frustum_inward_planes_and_transformed_bounds(self):

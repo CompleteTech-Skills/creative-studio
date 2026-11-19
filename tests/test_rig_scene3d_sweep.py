@@ -61,6 +61,36 @@ class SphereSweepTests(unittest.TestCase):
         # The path overlaps the triangle's padded AABB but misses its vertex and edges.
         self.assertIsNone(index.sweep_sphere([-2000, .18, -.1], [2000, .18, -.1], radius))
 
+    def test_sweep_hits_thin_triangle_face(self):
+        vertices = [[0,0,0], [1,0,0], [1,0,1e-8]]
+        radius = 6.25e-10
+        for face in ([0,1,2], [1,2,0], [0,2,1]):
+            with self.subTest(face=face):
+                index = self.index(vertices, [face])
+                hit = index.sweep_sphere([.75,1,2.5e-9], [.75,-1,2.5e-9], radius)
+                self.assertIsNotNone(hit)
+                self.assertAlmostEqual(hit['fraction'], (1-radius)/2, places=15)
+                np.testing.assert_allclose(hit['normal'], [0,1,0], rtol=0, atol=1e-12)
+                np.testing.assert_allclose(hit['point'], [.75,0,2.5e-9], rtol=0, atol=1e-18)
+
+    def test_sweep_preserves_edge_clearance_under_large_translation(self):
+        z = .5009765625
+        clearance = (z - .5) / math.sqrt(2)
+        for base in (0, 2**39, -(2**39)):
+            with self.subTest(base=base):
+                index = self.index([[base,0,0], [base,0,1], [base+1,0,0]])
+                start, end = [base+.5,1,z], [base+.5,-1,z]
+                self.assertIsNone(index.sweep_sphere(start, end, .0001))
+                self.assertIsNone(index.sweep_sphere([base+.5,2**39,z], [base+.5,-(2**39),z], .0001))
+                radius = .001
+                height = math.sqrt(radius**2 - clearance**2)
+                hit = index.sweep_sphere(start, end, radius)
+                self.assertIsNotNone(hit)
+                self.assertAlmostEqual(hit['fraction'], (1-height)/2, places=14)
+                np.testing.assert_allclose(hit['normal'],
+                                           [(z-.5)/2/radius, height/radius, (z-.5)/2/radius],
+                                           rtol=0, atol=1e-10)
+
     def test_long_oblique_vertex_tangent_and_near_miss(self):
         index = self.index(vertices=[[0,0,0]] * 3)
         # (-4, 3) is exactly perpendicular to the (3, 4) path and has length 5.
