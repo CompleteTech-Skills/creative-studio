@@ -245,7 +245,13 @@ Huffman table location comes from actual code-length entries; its advisory
 length field and ignored padding retain their existing compatibility. DWA
 classification uses serialized rules and the last matching channel rule.
 Declared lengths do not authorize allocation before geometry and working-budget
-checks. These checks supplement the native pixel decoder and do not establish
+checks. Each EXR zlib check reserves space for the retained compressed input,
+a possible copied input suffix, and the decoded component plus one overflow
+byte. DWA component views also retain the rest of their parent chunk.
+Channel verification checks the minimum and maximum for NaN and infinity
+without allocating a full-image boolean array. A single FLOAT depth channel
+therefore needs four decoded sample bytes per pixel during this check.
+These checks supplement the native pixel decoder and do not establish
 scene, lighting or artistic correctness.
 
 The verifier reads each scanline offset at its table index and walks one

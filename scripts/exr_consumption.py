@@ -69,7 +69,9 @@ class _Bits:
 
 
 def _inflate(data, expected, memory_bytes):
-    require(0 <= expected and len(data) + expected + 1 <= memory_bytes,
+    # This fresh decoder receives one input. It may copy a suffix of it
+    # into unused_data or unconsumed_tail while input and output are live.
+    require(0 <= expected and 2 * len(data) + expected + 1 <= memory_bytes,
             'system-memory', 'EXR codec verification exceeds its working budget.')
     try:
         decoder = zlib.decompressobj()

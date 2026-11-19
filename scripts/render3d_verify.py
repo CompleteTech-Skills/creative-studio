@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
 import hashlib
+import math
 import os
 from pathlib import Path
 import platform
@@ -446,8 +447,12 @@ def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
             data=reader.channel(name,Imath.PixelType(Imath.PixelType.FLOAT))
             require(len(data) == width*height*4,'corrupt-output','EXR channel is incomplete.')
             values=np.frombuffer(data,dtype=np.float32)
-            require(np.isfinite(values).all(),'corrupt-output','EXR contains nonfinite pixels.')
-            result[name]=dict(type='half' if bit_depth==16 else 'float',minimum=float(values.min()),maximum=float(values.max()))
+            # Both reductions propagate NaN, and either infinity appears at an
+            # extremum. Checking the two scalars needs no per-pixel mask.
+            minimum, maximum = float(values.min()), float(values.max())
+            require(math.isfinite(minimum) and math.isfinite(maximum),
+                    'corrupt-output', 'EXR contains nonfinite pixels.')
+            result[name]=dict(type='half' if bit_depth==16 else 'float',minimum=minimum,maximum=maximum)
             if pixels:pixel_channels[name]=values.reshape((height,width))
         report=dict(channels=result, decoder='OpenEXR',decoder_version=OpenEXR.__version__,resolution=[width,height],bit_depth=bit_depth)
         if pixels:report['_pixels']=pixel_channels

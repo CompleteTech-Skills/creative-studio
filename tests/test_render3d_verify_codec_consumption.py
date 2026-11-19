@@ -183,6 +183,54 @@ class CodecConsumption(unittest.TestCase):
                                           pass_name='depth', memory_bytes=budget)
                 np.testing.assert_array_equal(decoded['Z'], values)
 
+    def test_scalar_float_verify_at_decoded_channel_budget(self):
+        width, height = self.resolution
+        values = np.arange(width * height, dtype=np.float32).reshape(height, width)
+        def write():
+            with OpenEXR.File({'compression': OpenEXR.NO_COMPRESSION}, {'Z': values}) as writer:
+                writer.write(str(self.path))
+
+        write()
+        options = dict(output=output('exr', 32, passes=['depth']), resolution=self.resolution,
+                       pass_name='depth', memory_bytes=values.nbytes)
+        # Observe the actual ufunc output while the real decoder owns the channel.
+        # At this boundary only scalar statistics fit alongside the pixel buffer.
+        isfinite = np.isfinite
+        mask_sizes = []
+        def observe_finiteness(samples):
+            result = isfinite(samples)
+            if isinstance(result, np.ndarray):
+                mask_sizes.append(result.size)
+            return result
+
+        with mock.patch.object(np, 'isfinite', observe_finiteness):
+            report = verify_image(self.path, **options)
+        self.assertEqual(report['channels']['Z'], dict(type='float', minimum=0., maximum=127.))
+        self.assertFalse(any(mask_sizes), mask_sizes)
+        with self.assertRaises(Render3DError) as refused:
+            verify_image(self.path, **dict(options, memory_bytes=values.nbytes - 1))
+        self.assertEqual(refused.exception.report['category'], 'system-memory')
+
+        for value in (np.nan, np.inf, -np.inf):
+            with self.subTest(value=value):
+                values[2, 2] = value
+                write()
+                with self.assertRaisesRegex(Render3DError, 'nonfinite'):
+                    verify_image(self.path, **options)
+
+    def test_zip_inflate_working_budget_includes_input_suffix(self):
+        data = self.original('ZIP', depth=32, scalar=True)
+        _, payload = chunk(data)
+        width, height = self.resolution
+        budget = 2 * len(payload) + width * height * 4 + 1
+        options = dict(output=output('exr', 32, passes=['depth']), resolution=self.resolution,
+                       pass_name='depth')
+        report = verify_image(self.path, memory_bytes=budget, **options)
+        self.assertEqual(report['channels']['Z'], dict(type='float', minimum=.25, maximum=.25))
+        with self.assertRaises(Render3DError) as refused:
+            verify_image(self.path, memory_bytes=budget - 1, **options)
+        self.assertEqual(refused.exception.report['category'], 'system-memory')
+
     def test_dwa_decoded_ac_words_are_consumed_by_all_native_blocks(self):
         for codec in ('DWAA', 'DWAB'):
             with self.subTest(codec=codec):
