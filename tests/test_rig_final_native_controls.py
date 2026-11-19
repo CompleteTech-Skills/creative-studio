@@ -24,6 +24,12 @@ class FinalNativeControls(unittest.TestCase):
     def test_final_validation_measures_all_active_position_contacts(self):
         self.check_control('test_rig_active_position_contacts.py')
 
+    def test_oblique_world_axes_do_not_make_an_invertible_parent_singular(self):
+        self.check_control('test_rig_fold_balanced_oblique.py')
+
+    def test_two_valid_parents_keep_small_independent_axis(self):
+        self.check_control('test_rig_fold_balanced_two_parents.py')
+
 
 if __name__ == '__main__':
     unittest.main()

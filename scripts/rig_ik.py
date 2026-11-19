@@ -162,6 +162,8 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
             'Closed-chain pole steering needs an invertible parent transform.')
     normalized_parent = parent / parent_columns
     row_scales = np.max(np.abs(normalized_parent), axis=1)
+    require(np.all(row_scales > 0), 'RIG_SINGULAR_TRANSFORM',
+            'Closed-chain pole steering needs an invertible parent transform.')
     relative_parent = normalized_parent / row_scales[:, None]
     parent_mantissa, parent_exponent = np.frexp(parent_columns)
     column_mantissa, column_exponent = np.frexp(column_scales)
@@ -177,10 +179,14 @@ def _fold_root_transform(parent, root, seed, source, target, target_resolution):
     eps = np.finfo(float).eps
     parent_axes = np.linalg.svd(parent)
     stretches = parent_axes[1]
-    require(stretches[-1] > 0, 'RIG_SINGULAR_TRANSFORM',
+    # SVD of the unbalanced world matrix can round an independent small axis
+    # to zero. Its vectors still guide symmetry candidates, but singularity
+    # admission belongs to the same balanced system used by the actual solve.
+    require(math.isfinite(np.linalg.cond(relative_parent)), 'RIG_SINGULAR_TRANSFORM',
             'Closed-chain pole steering needs an invertible parent transform.')
     root_condition = np.linalg.cond(scaled_root)
-    conditioning = max(stretches[0] / stretches[-1], root_condition)
+    conditioning = max(stretches[0] / stretches[-1] if stretches[-1] > 0 else math.inf,
+                       root_condition)
     roundoff = min(16 * conditioning, 65536) * eps
     # This scalar only filters candidate generators. Final pole admission uses
     # the independently resolved coordinate intervals below, so a large X
