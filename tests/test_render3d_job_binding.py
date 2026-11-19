@@ -210,6 +210,51 @@ class JobBindingTests(unittest.TestCase):
         self.assertEqual(recovered['successful'],[5])
         self.assertEqual(recovered['reused'],[])
 
+    def _interrupted_delivery(self, case, job, destination):
+        code="""import os,sys
+from pathlib import Path
+from render3d_jobs import JobStore
+from test_render3d_jobs import JobTests
+store=JobStore(sys.argv[1])
+store._finish_delivery=lambda *args:os._exit(77)
+store.materialize(sys.argv[2],Path(sys.argv[3]),JobTests().verify)
+"""
+        run=subprocess.run([sys.executable,'-c',code,str(case.store.root),job,str(destination)],
+                           env={**os.environ,'PYTHONPATH':os.pathsep.join(map(str,(ROOT/'scripts',ROOT/'tests')))},
+                           capture_output=True,text=True,timeout=30)
+        self.assertEqual(run.returncode,77,run.stderr)
+        self.assertTrue(destination.is_dir())
+
+    def test_interrupted_delivery_reconciles_after_later_deliveries(self):
+        case=self.case;job=case.submit()
+        while (lease:=case.store.claim(job)):
+            output,result=case.output(lease);case.store.publish(lease,output,result,case.verify)
+        first=case.root/'first'
+        self._interrupted_delivery(case,job,first)
+        staged=(first/'result.json').read_bytes()
+        store=JobStore(case.store.root)
+        store.materialize(job,case.root/'second',case.verify)
+        store.materialize(job,case.root/'third',case.verify)
+        self.assertEqual(store.materialize(job,first,case.verify)['job'],job)
+        self.assertEqual((first/'result.json').read_bytes(),staged)
+        published=[e for e in store.status(job)['events'] if e['event']=='delivery-published']
+        self.assertEqual(sorted(json.loads(e['detail'])['destination'] if isinstance(e['detail'],str)
+                                else e['detail']['destination'] for e in published),
+                         sorted(str(case.root/name) for name in ('first','second','third')))
+
+    def test_interrupted_delivery_still_refuses_after_a_frame_affecting_event(self):
+        case=self.case;job=case.submit()
+        while (lease:=case.store.claim(job)):
+            output,result=case.output(lease);case.store.publish(lease,output,result,case.verify)
+        first=case.root/'first'
+        self._interrupted_delivery(case,job,first)
+        store=JobStore(case.store.root)
+        with store._transaction() as db:
+            store._event(db,job,'cache-reuse-reverified',dict(frame=0,receipt_sha256='0'*64))
+        with self.assertRaises(Render3DError) as refused:
+            store.materialize(job,first,case.verify)
+        self.assertIn('reconciling delivery',str(refused.exception))
+
     def test_process_exit_after_delivery_rename_reconciles_only_exact_bytes_and_inode(self):
         import shutil
         case=self.case;job=case.submit()

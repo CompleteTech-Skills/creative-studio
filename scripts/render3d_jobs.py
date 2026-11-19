@@ -223,6 +223,10 @@ def _delivery_stage(parent, destination):
         yield stage,identity,publish
 
 
+# Events that cannot change the frames an earlier delivery intent recorded.
+RECONCILABLE_DELIVERY_EVENTS = frozenset({'delivery-published'})
+
+
 class JobStore:
     """One local store may coordinate independent processes on the same host.
 
@@ -307,6 +311,8 @@ class JobStore:
             db.close()
 
     def _event(self, db, job, event, detail=None):
+        # Invariant: each revision bump is exactly one events row for the job;
+        # delivery reconciliation reads the events since an intent's revision.
         db.execute('INSERT INTO events(job,at,event,detail) VALUES (?,?,?,?)',
                    (job,self.clock(),event,_dump(detail or {})))
         db.execute('UPDATE jobs SET revision=revision+1 WHERE id=?',(job,))
@@ -1075,7 +1081,14 @@ class JobStore:
                     and not destination.is_symlink() and destination.is_dir(),
                     'ownership','Delivery destination already exists.')
             self._check_delivery_state(db,state)
-            require(state['revision']==pending['revision'],
+            # Later deliveries do not change the frames this intent delivered.
+            # Any other event since the intent (resume, re-render, cache
+            # rebinding, recovery) still refuses.
+            later=state['revision']-pending['revision']
+            require(later>=0,'ownership','Job changed while reconciling delivery.')
+            events=[row['event'] for row in db.execute(
+                'SELECT event FROM events WHERE job=? ORDER BY seq DESC LIMIT ?',(job,later))]
+            require(len(events)==later and set(events)<=RECONCILABLE_DELIVERY_EVENTS,
                     'ownership','Job changed while reconciling delivery.')
             if os.name=='nt':
                 payload=stack.enter_context(parent.pin_child(destination.name))
