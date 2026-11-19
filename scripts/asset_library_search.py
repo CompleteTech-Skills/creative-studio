@@ -85,7 +85,10 @@ def parse_query(query):
              'material':'material','textures':'texture','texture':'texture',
              'cameras':'camera','camera':'camera','lights':'light','light':'light','lighting':'light',
              'environments':'environment','environment':'environment','props':'prop','prop':'prop'}
-    tokens = re.findall(r'[\w]+', normalized, re.UNICODE)
+    # The documented compatibility clause names an explicit caller-supplied
+    # requirement, not asset metadata. Preserve genuine words outside it.
+    lexical = re.sub(r'\bcompatible with this (?:animation )?rig\b', '', normalized)
+    tokens = re.findall(r'[\w]+', lexical, re.UNICODE)
     found = sorted({kinds[t] for t in tokens if t in kinds})
     if len(found) == 1:
         constraints['kind'] = found
@@ -138,9 +141,8 @@ class ProviderRegistry:
     def __init__(self):
         self._providers = {}
 
-    def register(self, name, provider):
-        _identifier(name)
-        if name in self._providers: fail('PROVIDER','Provider is already registered.')
+    @staticmethod
+    def _validate(provider):
         for field in ('model_id','model_version'):
             text = getattr(provider,field,None)
             if not isinstance(text,str) or not 1 <= len(text) <= 256:
@@ -149,6 +151,11 @@ class ProviderRegistry:
             if type(getattr(provider,field,None)) is not bool:
                 fail('PROVIDER','Provider must declare runtime, credential and transmission gates.')
         if not callable(getattr(provider,'encode',None)): fail('PROVIDER','Provider cannot encode.')
+
+    def register(self, name, provider):
+        _identifier(name)
+        if name in self._providers: fail('PROVIDER','Provider is already registered.')
+        self._validate(provider)
         self._providers[name] = provider
 
     def get(self, name, *, enabled=False, authorize_private_metadata=False):
@@ -157,6 +164,7 @@ class ProviderRegistry:
         if name not in self._providers: fail('PROVIDER','Unknown embedding provider/model.')
         provider = self._providers[name]
         if not enabled: fail('PROVIDER','Embedding providers are disabled by default.')
+        self._validate(provider)
         if not provider.runtime_available: fail('PROVIDER','Embedding runtime is unavailable.')
         if provider.requires_credentials and not provider.credentials_available:
             fail('PROVIDER','Embedding credentials are unavailable.')
@@ -238,6 +246,9 @@ class SearchIndex:
 
     def _admit_owners(self):
         """Reject unsupported optional adapters before touching the derived index."""
+        for library in self.libraries.values():
+            if isinstance(library, AssetLibrary):
+                library.same_owner(library)
         if not isinstance(self.versions,dict) or set(self.versions)-set(self.libraries):
             fail('CAPABILITY','Collection owners must map configured library aliases.')
         if self.project_ids and self.usage_resolver is None:
@@ -355,7 +366,12 @@ class SearchIndex:
         revision=hashlib.sha256(payload).hexdigest()
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            db.execute('DELETE FROM entries');db.execute('DELETE FROM words');db.execute('DELETE FROM vectors')
+            db.execute('DELETE FROM entries');db.execute('DELETE FROM vectors')
+            # A stale inverted index may be unable to interpret its old content
+            # for DELETE. Explicit rebuild replaces only this derived FTS table
+            # in the same transaction; failure preserves the previous cache.
+            db.execute('DROP TABLE words')
+            db.execute('CREATE VIRTUAL TABLE words USING fts5(text)')
             db.execute("DELETE FROM state WHERE key IN ('snapshot','revision','embedding')")
             for number,entry in enumerate(snapshot['entries'],1):
                 text=self._text(entry)
@@ -400,6 +416,9 @@ class SearchIndex:
                 fail('INDEX','Derived row differs from source snapshot; rebuild it.')
         words=db.execute('SELECT rowid,text FROM words ORDER BY rowid').fetchall()
         if words!=[(r[0],r[2]) for r in stored]:fail('INDEX','Derived lexical rows differ; rebuild it.')
+        # FTS5 checks its inverted postings against its own verified content.
+        # This command checks consistency; it does not rebuild or repair rows.
+        db.execute("INSERT INTO words(words, rank) VALUES('integrity-check', 1)")
         return expected,state
 
     def rebuild_embeddings(self,registry,name,*,enabled=False,authorize_private_metadata=False):
@@ -410,6 +429,8 @@ class SearchIndex:
             revision,_=self._current(db)
             rows=db.execute('SELECT id,text FROM entries ORDER BY id').fetchall()
         version=(provider.model_id,provider.model_version)
+        if registry.get(name,enabled=enabled,authorize_private_metadata=authorize_private_metadata) is not provider:
+            fail('PROVIDER','Provider changed before encoding.')
         vectors=_vectors(provider.encode([r[1] for r in rows]),len(rows)) if rows else []
         if (provider.model_id,provider.model_version)!=version:fail('PROVIDER','Provider identity changed during encoding.')
         if sum(len(canonical_bytes(v)) for v in vectors)>MAX_INDEX_BYTES//4:
@@ -469,6 +490,8 @@ class SearchIndex:
         if filters is not None and not isinstance(filters,dict):fail('REQUEST','Filters must be an object.')
         filters=_filters(dict(filters) if filters is not None else {})
         for name,value in parsed['constraints'].items():
+            if name in filters and filters[name] != value:
+                fail('REQUEST','Explicit filter contradicts the parsed query constraint: '+name)
             if name not in filters: filters[name]=value
         if sort not in ('relevance','name','created_at','version'):fail('REQUEST','Unknown sort.')
         _integer(limit,1,MAX_RESULTS)
@@ -499,6 +522,8 @@ class SearchIndex:
                     embedding_identity['model_id']!=adapter.model_id or embedding_identity['model_version']!=adapter.model_version):
                     fail('EMBEDDING','Embedding model/version differs; rebuild vectors.')
                 version=(adapter.model_id,adapter.model_version)
+                if registry.get(provider,enabled=enabled,authorize_private_metadata=authorize_private_metadata) is not adapter:
+                    fail('PROVIDER','Provider changed before encoding.')
                 q=_vectors(adapter.encode([query]),1)[0]
                 if (adapter.model_id,adapter.model_version)!=version:fail('PROVIDER','Provider identity changed during query.')
                 query_vector_sha256=object_hash(q)

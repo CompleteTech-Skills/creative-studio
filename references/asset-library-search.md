@@ -161,3 +161,23 @@ open. This search slice does not complete dependency closure/locks/replacement
 acceptance in #143 or the broader #144 search integration requirements.
 
 Native collection-owner admission also verifies both handles still name their original private directories before comparing ownership. Reopening the same root is supported; a reused pathname after directory replacement cannot admit a stale handle, create a derived index, or turn an ownership failure into a successful empty rebuild. The owner identity check is read-only and runs before capture or optional provider encoding.
+
+### Current owner, lexical integrity and adapter declarations
+
+Every configured native library handle must still name its original directory
+before index creation, rebuild or query, including explicit selections without
+collection adapters. A missing native owner is an error, not an incomplete asset.
+Queries check FTS5 postings as well as displayed text against the verified source
+snapshot. An inconsistent derived index raises `LIBRARY_SEARCH_INDEX`; explicit
+rebuild replaces the derived lexical table transactionally from captured native
+records. The SQLite FTS5 integrity-check command is documented at
+<https://www.sqlite.org/fts5.html#the_integrity_check_command>.
+
+Provider declarations are checked again when selected and immediately before
+encoding. Missing or nonboolean runtime, credential and transmission declarations
+refuse dispatch. Local/provider test doubles do not establish real inference.
+The documented `compatible with this animation rig` clause (also `this rig`) is
+query syntax requiring explicit compatibility requirements and an authority;
+other words remain lexical terms. A structured filter that contradicts a parsed
+constraint raises `LIBRARY_SEARCH_REQUEST`, so explanations never claim a
+discarded constraint matched.
