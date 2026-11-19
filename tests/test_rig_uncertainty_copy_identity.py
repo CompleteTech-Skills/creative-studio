@@ -132,5 +132,17 @@ class UncertaintyCopyIdentityTests(unittest.TestCase):
         case.remove_left_jaw()
         self.assertEqual(case.rig.manifest['uncertainties'], [case.grip, case.jaw, dict(reclassified)])
 
+    def test_unbindable_foreign_copy_does_not_unbind_the_copied_owner(self):
+        case = self.case
+        copied = deepcopy(case.rig.manifest['uncertainties'])
+        copied.append(deepcopy(copied[1]))
+        case.rig.manifest['uncertainties'] = copied
+        case.save_and_reload()
+        self.assert_each_occurrence_bound_once()
+        self.assertEqual([b is not None for b in case.rig.manifest['anatomy_uncertainty_bindings']],
+                         [True, True, False, False])
+        case.remove_left_jaw()
+        self.assertEqual(case.rig.manifest['uncertainties'], [case.grip, case.jaw, case.jaw])
+
 if __name__ == '__main__':
     unittest.main()
