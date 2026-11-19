@@ -295,6 +295,8 @@ class JobStore:
             db.close()
 
     def _event(self, db, job, event, detail=None):
+        # Invariant: each revision bump is exactly one events row for the job;
+        # delivery reconciliation reads the events since an intent's revision.
         db.execute('INSERT INTO events(job,at,event,detail) VALUES (?,?,?,?)',
                    (job,self.clock(),event,_dump(detail or {})))
         db.execute('UPDATE jobs SET revision=revision+1 WHERE id=?',(job,))
