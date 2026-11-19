@@ -11,60 +11,80 @@ import math
 import numpy as np
 
 
-def _roots(offset, velocity, radius):
-    speed = math.hypot(*velocity)
-    if speed == 0:
+def _sqrt_fraction(value):
+    """A bounded 128-bit square root; exact signs never depend on this rounding."""
+    numerator, denominator = value.numerator, value.denominator
+    nroot, droot = math.isqrt(numerator), math.isqrt(denominator)
+    if nroot*nroot == numerator and droot*droot == denominator:
+        return Fraction(nroot, droot)
+    # Scale before integer sqrt, so neither huge nor subnormal coefficients
+    # need conversion to float. The result has at least 128 significant bits.
+    shift = 128 - (numerator.bit_length() - denominator.bit_length()) // 2
+    if shift >= 0:
+        return Fraction(math.isqrt((numerator << (2*shift)) // denominator), 1 << shift)
+    return Fraction(math.isqrt(numerator // (denominator << (-2*shift))) << -shift)
+
+
+def _roots(a, b, c, lower, upper):
+    """Roots of exact squared-distance coefficients, bounded before conversion."""
+    if a == 0:
+        return [] if b == 0 else [t for t in (-c / b,) if lower <= t <= upper]
+    discriminant = b*b - 4*a*c
+    if discriminant < 0:
         return []
-    direction = velocity / speed
-    along = float(offset @ direction)
-    # The half chord depends on the distance to the line, even when the
-    # sweep started thousands of radii away from the vertex or edge.
-    perpendicular = math.hypot(*np.cross(offset, direction))
-    roundoff = 8 * np.finfo(float).eps * max(radius, perpendicular, abs(along))
-    if abs(perpendicular - radius) <= roundoff:
-        # A rounded distance can conceal a small positive gap, including on
-        # an axis-aligned path. Resolve the chord sign from the input floats.
-        origin = [Fraction(x) for x in offset]
-        motion = [Fraction(x) for x in velocity]
-        speed_squared = sum(x*x for x in motion)
-        projection = sum(x*v for x, v in zip(origin, motion))
-        perpendicular_squared = sum(x*x for x in origin) - projection**2 / speed_squared
-        chord_ratio = 1 - perpendicular_squared / Fraction(radius)**2
-        if chord_ratio < 0:
-            return []
-        half_chord = radius * math.sqrt(chord_ratio)
+    if discriminant == 0:
+        roots = [-b / (2*a)]
     else:
-        if perpendicular > radius:
-            return []
-        half_chord = math.sqrt(radius - perpendicular) * math.sqrt(radius + perpendicular)
-    if half_chord == 0:
-        return [-along / speed]
-    far_root = -along - math.copysign(half_chord, along)
-    # Recover the other root from the product to avoid cancellation when
-    # the sphere starts just outside the surface.
-    distance = math.hypot(*offset)
-    if abs(distance - radius) <= 8 * math.ulp(max(distance, radius)):
-        # A positive residual can disappear when the distance rounds to the radius.
-        squared_gap = sum(Fraction(float(value))**2 for value in offset) - Fraction(radius)**2
-        near_time = float(squared_gap / Fraction(far_root) / Fraction(speed))
-    else:
-        near_time = ((distance - radius) / far_root) * (distance + radius) / speed
-    return sorted((near_time, far_root / speed))
+        chord = _sqrt_fraction(discriminant)
+        far = (-b - (chord if b >= 0 else -chord)) / 2
+        # Product recovery retains a positive near-contact residual even when
+        # the directly subtracted square root would round it away.
+        roots = [far / a, c / far]
+    return sorted(t for t in roots if lower <= t <= upper)
 
 
-def _local_sweep_origin(start, end, anchor, delta, radius):
-    if math.hypot(*delta) <= math.ldexp(radius, 18):
-        return start - anchor, None
-    # Compute the nearest point on the segment to the triangle anchor before
-    # rounding to floats. Small contact offsets can vanish when subtracting the
-    # anchor from a distant endpoint and then traversing most of that segment.
-    start_values = [Fraction(float(value)) for value in start]
-    motion = [Fraction(float(value)) - initial for value, initial in zip(end, start_values)]
-    origin = [initial - Fraction(float(value)) for initial, value in zip(start_values, anchor)]
-    projection = sum(a * b for a, b in zip(origin, motion))
-    pivot = max(0, min(1, -projection / sum(component**2 for component in motion)))
-    local = np.array([float(a + pivot * b) for a, b in zip(origin, motion)])
-    return local, pivot
+def _feature_candidates(origin, motion, vertices, radius, lower, upper):
+    from scene3d_spatial import _cross3, _dot3, _subtract3
+    radius_squared = Fraction(radius)**2
+    speed_squared = _dot3(motion, motion)
+    a, b, c = vertices
+    normal = _cross3(_subtract3(b, a), _subtract3(c, a))
+    normal_squared = _dot3(normal, normal)
+    if normal_squared:
+        distance = _dot3(_subtract3(origin, a), normal)
+        speed = _dot3(motion, normal)
+        for t in _roots(speed*speed, 2*distance*speed,
+                        distance*distance - radius_squared*normal_squared, lower, upper):
+            yield t, True
+    for vertex in vertices:
+        offset = _subtract3(origin, vertex)
+        for t in _roots(speed_squared, 2*_dot3(offset, motion),
+                        _dot3(offset, offset) - radius_squared, lower, upper):
+            yield t, False
+    for p, q in ((a, b), (b, c), (c, a)):
+        edge = _subtract3(q, p)
+        length = _dot3(edge, edge)
+        if not length:
+            continue
+        offset = _subtract3(origin, p)
+        # Cross products avoid projecting away the very gap being measured.
+        perpendicular = _cross3(offset, edge)
+        velocity = _cross3(motion, edge)
+        for t in _roots(_dot3(velocity, velocity), 2*_dot3(perpendicular, velocity),
+                        _dot3(perpendicular, perpendicular) - radius_squared*length,
+                        lower, upper):
+            along = _dot3(offset, edge) + t*_dot3(motion, edge)
+            if 0 <= along <= length:
+                yield t, False
+
+
+def _sweep_pivot(origin, motion, radius):
+    if math.hypot(*map(float, motion)) <= math.ldexp(radius, 18):
+        return Fraction(0)
+    # Recenter long sweeps before finding roots: tiny contact offsets survive
+    # even when their public fraction rounds to the same float as the pivot.
+    projection = sum(a*b for a, b in zip(origin, motion))
+    return max(Fraction(0), min(Fraction(1), -projection / sum(v*v for v in motion)))
 
 
 def _within_triangle_radius(distance, radius, center, triangle):
@@ -76,46 +96,34 @@ def _within_triangle_radius(distance, radius, center, triangle):
 
 
 def _triangle_hit(start, end, delta, radius, triangle):
-    from scene3d_spatial import _closest_triangle, _nearest_vertex, _triangle_frame
+    from scene3d_spatial import (_closest_triangle, _nearest_vertex, _triangle_frame,
+                                 _fraction_vector, _subtract3)
     # Center near the swept segment so a distant authored vertex cannot
     # erase a small positive gap during contact validation.
     start_world, triangle_world = start, triangle
+    exact_start = _fraction_vector(start)
+    exact_motion = _subtract3(_fraction_vector(end), exact_start)
     anchor = _nearest_vertex(start + .5 * delta, triangle)
     triangle = triangle - anchor
     initial_center = start - anchor
-    start, pivot = _local_sweep_origin(start, end, anchor, delta, radius)
-    lower, upper = (0., 1.) if pivot is None else (-float(pivot), float(1 - pivot))
+    exact_anchor = _fraction_vector(anchor)
+    pivot = _sweep_pivot(_subtract3(exact_start, exact_anchor), exact_motion, radius)
+    lower, upper = -pivot, 1 - pivot
+    exact_origin = tuple(s + pivot*v - a for s, v, a in zip(exact_start, exact_motion, exact_anchor))
+    exact_vertices = [_subtract3(_fraction_vector(vertex), exact_anchor) for vertex in triangle_world]
     frame = _triangle_frame(triangle)
     nearest = _closest_triangle(initial_center, triangle, frame=frame)
     gap = math.hypot(*(initial_center - nearest))
     initially_touching = _within_triangle_radius(gap, radius, start_world, triangle_world)
     candidates = [(lower, False)] if initially_touching else []
-    a,b,c=triangle
     normal = frame[3]
-    if np.any(normal):
-        denominator=float(delta@normal)
-        if denominator != 0:
-            distance=float((start-a)@normal)
-            candidates.extend(((sign*radius-distance)/denominator, True) for sign in (-1,1))
-    for vertex in triangle:
-        candidates.extend((t, False) for t in _roots(start-vertex,delta,radius))
-    for p,q in ((a,b),(b,c),(c,a)):
-        edge=q-p;length=float(edge@edge)
-        if length == 0:
-            continue
-        offset=start-p
-        perpendicular=offset-edge*float(offset@edge)/length
-        velocity=delta-edge*float(delta@edge)/length
-        for t in _roots(perpendicular,velocity,radius):
-            along=float((offset+delta*t)@edge)/length
-            if 0 <= along <= 1:
-                candidates.append((t, False))
+    candidates.extend(_feature_candidates(exact_origin, exact_motion, exact_vertices,
+                                          radius, lower, upper))
     for t, face_only in sorted(candidates):
         if not lower <= t <= upper:
             continue
-        t = float(t)
-        travel = delta*t
-        center = start + travel
+        travel = delta*float(t)
+        center = np.array([float(s + t*v) for s, v in zip(exact_origin, exact_motion)])
         if t == lower:
             if not initially_touching:
                 continue
@@ -123,8 +131,8 @@ def _triangle_hit(start, end, delta, radius, triangle):
         elif t == upper:
             center, time, world_center = end - anchor, 1., end
         else:
-            time = t if pivot is None else max(0, min(1, pivot + Fraction(t)))
-            world_center = center + anchor
+            time = pivot + t
+            world_center = np.array([float(s + time*v) for s, v in zip(exact_start, exact_motion)])
         point = _closest_triangle(center, triangle, frame=frame, face_only=face_only)
         if point is None:
             continue  # A plane crossing outside the triangle is never a face hit.

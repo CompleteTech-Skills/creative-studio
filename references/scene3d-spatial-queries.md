@@ -18,7 +18,11 @@ verify that every required collider has actual geometry before claiming coverage
 `mesh_overlap(node, solid=False)` detects real triangle intersections. Enabling
 `solid=True` additionally requires oriented closed two-manifold edges and detects
 containment for disconnected components. Touching counts as collision. Bounds are
-only broad phase. To bound cumulative work across repeated calls, create one
+only broad phase. Every triangle pair surviving float separating-axis rejection is
+confirmed on the exact integer lattice of the input floats. This ports the source
+and regression from contributor commit `f2dd69f6e58317015bbebb202b08473eedf737c7`
+(Claude coordinator / Claude Opus 5.5), without replacing the prior box and vertex
+repairs or their historical evidence. To bound cumulative work across repeated calls, create one
 `scene3d_spatial._QueryBudget()` and pass it as `_budget` to each call. This existing
 owner-supported integration interface accounts for possible triangle pairs and
 containment work and rejects at two million operations. It never silently switches
@@ -32,7 +36,17 @@ nested, cavity or interior-overlapping closed components.
 thin triangles. Sphere sweeps validate contact in the triangle's coordinate
 frame before returning world-space points. The sweep accepts endpoints and
 geometry coordinates with absolute values up to 10¹² metres and positive radii
-up to 10¹² metres. Grid and scale snapping raise a spatial error if the snapped
+up to 10¹² metres. Face-plane, edge-cylinder and vertex-sphere sweep coefficients
+are formed from the actual endpoint and transformed triangle floats using rational
+arithmetic, before subtracting or projecting away small gaps. Discriminant and
+initial residual signs are exact; irrational roots use a bounded 128-bit square
+root and stable root-product recovery. Candidate times are checked against the
+segment interval before any float conversion, including subnormal motion whose
+unbounded contact time would exceed the float range. Internal rational times retain
+ordering when public float fractions coincide. Returned points, normals and
+fractions remain floating approximations; this does not promise symbolic contacts.
+The same triangle/component query budgets and geometry owners remain authoritative.
+Grid and scale snapping raise a spatial error if the snapped
 result exceeds the finite number range.
 
 Run the actual query regressions with the optional rig test environment:
@@ -46,3 +60,11 @@ compatibility excludes their `test_rig_` names and needs no NumPy installation.
 The final consuming candidate still requires a new independent whole-head review,
 current hosted checks and actual native geometry validation. Historical source
 approval is supporting evidence, not approval of a new integration head.
+
+The additive oblique face/edge regressions compare first entry with a separate
+100-digit decimal root oracle over exact binary-input coefficients. They include
+the review's unit-scale and large-face reproductions, finite-edge tangency with an
+adjacent-radius miss, and subnormal-motion misses. Existing corner, oriented-box,
+long-sweep, geometry-domain and budget assertions remain in the suites. This is
+synthetic geometric regression coverage, not full #62 or #12 acceptance, renderer
+validation, or a production collision-freedom claim.

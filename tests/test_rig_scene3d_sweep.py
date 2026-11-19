@@ -318,5 +318,73 @@ class SphereSweepTests(unittest.TestCase):
         self.assertEqual(hit['center'], [0,3,4])
         self.assertEqual(hit['point'], [0,0,0])
 
+    def test_oblique_face_and_edge_preserve_positive_entry_residual(self):
+        from decimal import Decimal, localcontext
+        from fractions import Fraction
+
+        cases = [
+            ('face', [[3.0934559956558374,-1.856539837238375,4.357039113398898],
+                      [-0.44070639153571584,6.846918612131243,-4.114059235756133],
+                      [-5.746205599775959,-3.133838937654493,-4.600018991041663]],
+             [-0.6935742917304689,0.33770269449647133,0.6363266393766661],
+             [1.3871485834609372,-0.6754053889929426,-1.272653278753332], 1.),
+            ('edge', [[-1.1784965089626311,-3.027194203551437,2.3339325680806353],
+                      [1.1784965089626311,3.027194203551437,-2.3339325680806353],
+                      [3.8196215296053686,-0.8386331884926393,0.840943366543675]],
+             [-0.9549053824013426,0.20965829712315992,-0.21023584163591882],
+             [1.9098107648026836,-0.41931659424631956,0.4204716832718375], 1.),
+            ('face', [[67782580.89539865,-35695720.70180144,-5063378.807393603],
+                      [-99856530.37003899,-19084109.454558585,-38119168.24677775],
+                      [-35708629.30314384,90475551.52552626,48245925.68755242]],
+             [232845.53794648356,569084.725946681,-894866.550512219],
+             [-134681.4978130939,-329169.27749305626,517607.939620718], 1085753.2402817172)]
+        dot = lambda a, b: sum(x*y for x, y in zip(a, b))
+        sub = lambda a, b: [x-y for x, y in zip(a, b)]
+        for feature, triangle, start, end, radius in cases:
+            with self.subTest(feature=feature, radius=radius):
+                vertices = [[Fraction(x) for x in p] for p in triangle]
+                origin = sub(list(map(Fraction, start)), vertices[0])
+                velocity = sub(list(map(Fraction, end)), list(map(Fraction, start)))
+                u, v = sub(vertices[1], vertices[0]), sub(vertices[2], vertices[0])
+                if feature == 'face':
+                    normal = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]]
+                    squared_distance = lambda a, b: dot(a, normal)*dot(b, normal)/dot(normal, normal)
+                else:
+                    squared_distance = lambda a, b: dot(a, b)-dot(a, u)*dot(b, u)/dot(u, u)
+                a = squared_distance(velocity, velocity)
+                b = 2*squared_distance(origin, velocity)
+                c = squared_distance(origin, origin)-Fraction(radius)**2
+                self.assertGreater(c, 0)  # Exact binary inputs start outside.
+                with localcontext() as ctx:
+                    ctx.prec = 100
+                    dec = lambda x: Decimal(x.numerator)/Decimal(x.denominator)
+                    expected = float(2*dec(c)/(-dec(b)+(dec(b*b-4*a*c)).sqrt()))
+                index = self.index(triangle)
+                hit = index.sweep_sphere(start, end, radius)
+                self.assertIsNotNone(hit)
+                self.assertGreater(hit['fraction'], 0)
+                self.assertLess(hit['fraction'], 1e-12)
+                self.assertAlmostEqual(hit['fraction']/expected, 1., places=12)
+                self.assertAlmostEqual(math.dist(hit['point'], hit['center'])/radius, 1., places=12)
+
+    def test_subnormal_motion_rejects_out_of_interval_roots_before_float_conversion(self):
+        radius = 1e6
+        index = self.index([[0,-radius,0],[1,-radius-1,0],[0,-radius-1,1],
+                            [1e9,-1e9,0],[1e9,1e9,0],[1e9,0,1]], [[0,1,2],[3,4,5]])
+        for motion in (5e-324, 1e-320, 1e-312):
+            with self.subTest(motion=motion):
+                self.assertIsNone(index.sweep_sphere([0,0,0], [0,-motion,0], radius-2*math.ulp(radius)))
+
+    def test_oblique_edge_tangency_and_adjacent_radius_control(self):
+        # The edge is parallel to (1, 1, 0), the path to (1, -1, 0).
+        # Their distance at first and only contact is exactly 5.
+        index = self.index([[-10,-10,0],[10,10,0],[10,10,-1]])
+        start, end = [-2,2,5], [2,-2,5]
+        hit = index.sweep_sphere(start, end, 5)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit['fraction'], .5)
+        self.assertEqual(hit['point'], [0,0,0])
+        self.assertIsNone(index.sweep_sphere(start, end, math.nextafter(5., 0.)))
+
 
 if __name__=='__main__':unittest.main()

@@ -15,8 +15,8 @@
         "sha256": "3360e766a48dc880537c61d11a42e0ff108e1eccdf56e7fad24b58a95fd90737"
       },
       "current": {
-        "git_blob": "992103c0cb41b935caa4339689d7b1a83a9c5983",
-        "sha256": "3d7aca56baac7028b99fc96d767e46725fd5d3f9c0c3ed2136d293c8c1210d86"
+        "git_blob": "f4c4031fbfe8414e8d2c32131eff89ce3ca1c346",
+        "sha256": "2ea1ca7e665745ccba60d1790e973a379434d8abc5e5925878dc057df1a61e91"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -26,8 +26,8 @@
         "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47"
       },
       "current": {
-        "git_blob": "d613bf6cc499e24dac7cebd3e14419726908f158",
-        "sha256": "ea4f8a3a8ba689bcba032569292ac38320b5c1c5cf5eb8ad458d366a0496562e"
+        "git_blob": "e53e429e319b5a802b40aa8f0b5a9d2b891640ca",
+        "sha256": "8d808300dcabc7383ced1b4fad860ffbf6540dae1686075186ceee07f73fe586"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -37,8 +37,8 @@
         "sha256": "4b956ae891e021af09cc7fca18981649b697c6af418f43f6bd162a997949e48a"
       },
       "current": {
-        "git_blob": "f2b41eeb3e5629e5de660e698e525e003992acf8",
-        "sha256": "ed5c9aaeb46203db20d7250b6dabf48badba82efcc02d243a8f991cc50bf6341"
+        "git_blob": "3098edba2efabca8f531dd7abb2f0fa7f82987ac",
+        "sha256": "250e1085393ba378e967e40f730ad47499e6e6c01026013653914d70b8443a8a"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -48,8 +48,8 @@
         "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2"
       },
       "current": {
-        "git_blob": "f528821cffc7f488d49ce2dbd60470018a2d1906",
-        "sha256": "a7d2e234d7eb0390662df77094a2755944e3b4fd5471af2c33d43155062ec0a5"
+        "git_blob": "0518d0807b3a51a8d5c7891e94670448cf899be2",
+        "sha256": "1724553abd5fe2bc6986b425fa02053917c765e9d041d2065f75446e6d6995d3"
       },
       "byte_identical_to_archived_transport": false
     }
@@ -64,17 +64,25 @@
   },
   "semantics": {
     "mesh_input": "node-local vertices and integer topology mapped to matching SceneGraph node IDs; world transform applies once",
-    "surface_overlap": "actual triangle separating-axis tests, touching counts; supports open source surfaces; uncertain float projections use exact binary-coordinate separating axes",
+    "surface_overlap": "Actual triangle separating-axis tests with exact binary-coordinate confirmation of every float-positive candidate; touching counts and open source surfaces are supported.",
     "solid_overlap": "oriented closed edge inventory and signed-solid-angle containment of components; rejects open geometry",
     "clearance": "Positive clearance exists only for conservative AABB overlap; no exact positive triangle-distance guarantee",
     "query_budget": "One _QueryBudget can be shared across mesh_overlap calls using _budget; reject when cumulative operation exceeds the limit",
     "bounds_only": "Never treated as actual triangles; consumer must verify actual collider inventory before claiming collision-free state",
-    "sphere_sweep": "Unsupported nested/cavity or interior-overlapping closed components explicitly reject; this limit does not replace separate solid mesh_overlap containment. Long paths are recentered using exact endpoint values; stable internal time ordering precedes conversion to the returned float fraction.",
+    "sphere_sweep": "Unsupported nested/cavity or interior-overlapping closed components explicitly reject; this limit does not replace separate solid mesh_overlap containment. Long paths are recentered using exact endpoint values; stable internal time ordering precedes conversion to the returned float fraction. Face and edge candidate polynomials use exact original endpoint and triangle terms before bounded time conversion. Near-entry output centers are reconstructed from those original endpoints.",
     "oriented_bounds": "Exact binary projections of transformed local boxes retain finite midpoints, inclusive touching, and positive separation. Broad phase uses the transformed box.",
     "ray_and_nearest_order": "Ray hits are ordered by exact source-coordinate ray parameters before distance rounding. Ambiguous nearest distances and range boundaries compare squared distances calculated from the source triangle and query coordinates."
   },
   "geometry_review_base": "5936c830c86ee6f2c5da7a53076bbb14bcde1633",
   "precision_review_base": "b33cc4f82f05e162a73cd88fd6685e4b220c970d",
   "distance_and_bounds_review_base": "0320cf88e413cdb8b17b532b4f4cf86db2ac358a",
-  "moving_corner_review_base": "1401ec0c7643dde690f3166e2264d5c4d2514f9d"
+  "moving_corner_review_base": "1401ec0c7643dde690f3166e2264d5c4d2514f9d",
+  "feature_entry_review_base": "0b11426b0616e8b7908b68f76a4e3d111325d166",
+  "exact_triangle_donor": "f2dd69f6e58317015bbebb202b08473eedf737c7",
+  "independent_contact_regressions": {
+    "path": "tests/test_rig_scene3d_contact_precision.py",
+    "sha256": "1ef3e829ebf10e8b34eda9b082b840ea1490f713a23182d730c264226d02dbe6",
+    "frozen_source": "0b11426b0616e8b7908b68f76a4e3d111325d166",
+    "test_only_commit": "6d1e10c333e426cce18d915848c80da698beaa25"
+  }
 }
