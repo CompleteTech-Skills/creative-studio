@@ -14,7 +14,7 @@ import hashlib
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
 import stat
@@ -291,6 +291,13 @@ def _binary(name, override=None):
 
 def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
     """Export bounded diagnostics with stable aliases for command-owned paths."""
+    def diagnostic_path(value):
+        # Interpret transcript paths lexically, independently of this host.
+        # Windows rooted paths (without a drive) still identify private paths;
+        # is_absolute() rejects them on Windows and rejects drive paths on POSIX.
+        windows = PureWindowsPath(value)
+        return windows if value.startswith('\\') or windows.is_absolute() else PurePosixPath(value)
+
     result = copy.deepcopy(evidence)
     roles = {'probe': 'ffprobe', 'timeline': 'ffprobe', 'decode': 'ffmpeg',
              'pixel_decode': 'ffmpeg', 'encode': 'ffmpeg',
@@ -304,14 +311,16 @@ def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
             # Encoding and verification supply their verifier-owned role.
             # Generic subprocess/capability helpers retain the historical
             # basename contract for other local tools.
-            role = Path(value['command'][0]).name if value['command'] else 'media-tool'
+            role = diagnostic_path(value['command'][0]).name if value['command'] else 'media-tool'
         records.append((value, role))
     substitutions = {}
     for record, role in records:
         for index, argument in enumerate(record['command']):
-            if not isinstance(argument, str) or not Path(argument).is_absolute():
+            if not isinstance(argument, str):
                 continue
-            path = Path(argument)
+            path = diagnostic_path(argument)
+            if not path.root:
+                continue
             if index == 0:
                 substitutions[argument] = role
             else:
@@ -358,7 +367,7 @@ def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
         # replacing that basename in raw probe JSON would falsify observed facts.
         record['command'] = list(original_command)
         if original_command:
-            if Path(original_command[0]).is_absolute():
+            if diagnostic_path(original_command[0]).root:
                 record['command'][0] = role
             record['command'][1:] = [
                 redact(value) if isinstance(value, str) else value
@@ -371,7 +380,7 @@ def _failure_diagnostics(evidence, message, limit, *, tool_role=None):
                 # Native tools may prefix an error line with their program
                 # basename. Only this labelled diagnostic position denotes the
                 # executable; the same text elsewhere remains observed data.
-                basename = Path(original_command[0]).name
+                basename = diagnostic_path(original_command[0]).name
                 if basename and basename != role:
                     transcript = re.sub(r'(?m)^' + re.escape(basename) + r'(?=: )',
                                         lambda match: role, transcript)

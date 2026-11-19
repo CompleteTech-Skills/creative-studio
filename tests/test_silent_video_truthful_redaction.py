@@ -13,6 +13,31 @@ video = core.video
 
 
 class TruthfulRedaction(unittest.TestCase):
+    def test_synthetic_path_flavors_redact_without_host_filesystem_semantics(self):
+        # These are lexical transcript fixtures, not native Windows execution.
+        # Rooted Windows paths lack a drive but still identify private paths.
+        for prefix, separator in (('/', '/'), ('\\', '\\'), ('Z:\\', '\\'),
+                                  ('Z:/', '/'), ('\\\\synthetic-host\\share\\', '\\')):
+            executable = prefix + 'synthetic-private-tools' + separator + 'video'
+            artifact = prefix + 'synthetic-private-work' + separator + 'artifact.mp4'
+            unrelated = prefix + 'synthetic-private-work-archive' + separator + 'artifact.mp4'
+            payload = '{ "streams": [{"codec_type": "video", "codec_name": "h264"}] }\n'
+            for spelling in (artifact, artifact.replace('\\', '/'), json.dumps(artifact)[1:-1]):
+                raw = dict(command=[executable, '--literal=' + artifact, artifact],
+                           exit_status=1, stdout=payload + unrelated,
+                           stderr='video: actual diagnostic\n' + spelling + ': input error\n' + unrelated)
+                with self.subTest(prefix=prefix, spelling=spelling):
+                    result, message = video._failure_diagnostics({'probe': raw}, artifact + ': failed', 4096)
+                    self.assertEqual(result['probe']['command'],
+                                     ['ffprobe', '--literal=<media-workdir>/artifact.mp4',
+                                      '<media-workdir>/artifact.mp4'])
+                    self.assertEqual(result['probe']['stdout'], raw['stdout'])
+                    self.assertEqual(result['probe']['stderr'],
+                                     'ffprobe: actual diagnostic\n<media-workdir>/artifact.mp4: input error\n' + unrelated)
+                    self.assertEqual(message, '<media-workdir>/artifact.mp4: failed')
+                    self.assertEqual(result['probe']['exit_status'], 1)
+                    self.assertEqual(raw['command'][0], executable)
+
     def test_executable_identity_does_not_rewrite_arbitrary_transcript_data(self):
         for basename in ('video', 'h264', 'streams', '6', 'codec_type'):
             executable = str(Path('/synthetic-private-tools') / basename)
