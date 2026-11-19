@@ -471,6 +471,40 @@ an attainable azimuth when different world coordinates have different precision.
 Bounded normalization makes the folded steering independent of finite pole
 distance even when squaring the supplied components would overflow.
 
+FABRIK pole steering skips an interior joint only when the requested rotation
+about its neighbour axis is no larger than a first-order rounding bound,
+`4*eps*(s/|axis|*|cot_point - cot_pole| + s/|point_perp| + p/|pole_perp|)`.
+Here `s` is the largest absolute coordinate of the joint and its two neighbours,
+`p` is the largest absolute coordinate of the previous joint and the pole, the
+axis and perpendicular lengths are Euclidean, and each cotangent is the along-axis
+component of the point or pole offset from the previous joint divided by its
+perpendicular length. A bound of one radian or more means a perpendicular is not
+resolved at all, so the joint is never steered by such an arbitrary angle. This preserves matched seeds at
+nested near-pi folds, where a single matching pole cannot be exactly consistent
+with the rounded seed geometry; at least twice the first-order estimate is needed
+there. A smaller request is left unsteered, and the solve still reports its
+residual and convergence normally; a point or pole exactly on the axis is also
+left unsteered instead of being rotated toward an arbitrary fallback axis.
+
+On an untranslated unit chain the bound is about `5e-15/bend` radians: roughly
+`2e-15` at a bend of 2, `6e-15` at 0.8 and `5e-13` at `1e-2`, so `1e-12` radians
+still steers for bends of at least `1e-2` radians and `1e-6` radians steers with
+a pole a million meters away. Near-straight chains resolve proportionally coarser
+changes. The bound grows with world translation and with a pole offset along the
+neighbour axis; with such an offset it also grows inversely with the gap of a
+near-pi fold. For a one-meter chain at a one-kilometre translation, a pole one
+meter off-axis and `1e3` meters along it, it is about `9e-7`, `9e-5` and `9e-3`
+radians at fold gaps of `1e-3`, `1e-5` and `1e-7`; at a `1e-3` gap it is about
+`9e-10` and `9e-4` radians at translations of 0 and a thousand kilometres (and
+`9e-12`, `9e-9` and `9e-6` radians at 0, one kilometre and a thousand kilometres
+with a ten-meter axial offset). A pole nearly on the axis also raises it, to
+about `1e-8` to `4e-8` radians at `1e-7` meters off-axis, depending on the bend
+and the pole's position along the axis. The elbow motion left unsteered
+is the bound times the joint radius; an unconditional rotation would follow such
+requests. A single matching pole also cannot preserve folds that alternate sides
+of their neighbour axes, such as unequal nested gaps or 6+ joint zigzags; that
+contract is tracked separately in #551.
+
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not

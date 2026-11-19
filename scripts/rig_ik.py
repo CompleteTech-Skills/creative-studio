@@ -329,6 +329,58 @@ def _pole_perpendicular(direction, origin, pole):
     return unit(perpendicular)
 
 
+# Safety factor on first-order rounding of FABRIK steering directions. Point
+# rounding accumulates through FK, and an axis is a difference of two points.
+_STEERING_ROUNDING_FACTOR = 4.
+# First-order steering uncertainty at which a perpendicular carries no direction.
+_STEERING_UNRESOLVED_RADIANS = 1.
+
+
+def _pole_steering_unresolved(previous, point, following, pole):
+    """Whether a FABRIK pole rotation is no larger than its rounding uncertainty.
+
+    The neighbour axis is a difference of nearby points, so its direction is
+    uncertain by about eps*scale/|axis|. That error tilts the perpendiculars of
+    the current point and the pole offset in proportion to their cotangents
+    against the axis, and each perpendicular also carries its own absolute
+    rounding. Near nested folds this first-order uncertainty exceeds the
+    apparent steering angle of an already aligned joint; rotating by it moves
+    the joint and the error cascades into the next neighbour axis. Larger,
+    resolvable pole changes still steer.
+    """
+    raw = following-previous
+    span = float(np.linalg.norm(raw))
+    axis = raw/span
+    current = point-previous
+    offset = pole-previous
+    current_along, offset_along = float(np.dot(current, axis)), float(np.dot(offset, axis))
+    current_perp = current-axis*current_along
+    pole_perp = offset-axis*offset_along
+    current_norm, pole_norm = float(np.linalg.norm(current_perp)), float(np.linalg.norm(pole_perp))
+    if current_norm == 0. or pole_norm == 0.:
+        return True
+    eps = np.finfo(float).eps
+    # Chain-point rounding drives the axis and current perpendicular; only the
+    # pole perpendicular also carries rounding of the pole's own coordinates.
+    point_rounding = eps*max(float(np.abs(previous).max()), float(np.abs(point).max()),
+                             float(np.abs(following).max()))
+    pole_rounding = eps*max(float(np.abs(previous).max()), float(np.abs(pole).max()))
+    # A tilt of the shared axis turns both perpendiculars about it by their
+    # cotangents; for nearly parallel perpendiculars only the difference
+    # changes the steering angle to first order.
+    uncertainty = _STEERING_ROUNDING_FACTOR*(
+        point_rounding/span*abs(current_along/current_norm-offset_along/pole_norm)
+        +point_rounding/current_norm+pole_rounding/pole_norm)
+    # An uncertainty near a radian means a perpendicular is no longer resolved
+    # at all, so the measured angle is arbitrary anywhere in [0, pi].
+    if uncertainty >= _STEERING_UNRESOLVED_RADIANS:
+        return True
+    # atan2 resolves small angles that acos(cos) would round to zero.
+    angle = math.atan2(float(np.linalg.norm(np.cross(current_perp, pole_perp))),
+                       float(np.dot(current_perp, pole_perp)))
+    return angle <= uncertainty
+
+
 def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
     """Split the validated order before any consumer of the endpoint pose."""
     # Follow the same parent/target edges validated by constraint_order().
@@ -469,6 +521,7 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
                 for i in range(1, len(points)-1):
                     axis = points[i+1]-points[i-1]
                     if np.linalg.norm(axis) < 1e-8:continue
+                    if _pole_steering_unresolved(points[i-1], points[i], points[i+1], pole):continue
                     axis = unit(axis);delta = points[i]-points[i-1]
                     projection = axis*np.dot(delta, axis)
                     radius = np.linalg.norm(delta-projection)
