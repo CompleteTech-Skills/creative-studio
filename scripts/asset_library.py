@@ -286,12 +286,15 @@ class AssetLibrary:
             # was synced. Seal that publication before any further write.
             self.storage.ready()
 
-    def register(self, manifest: AssetVersion, sources: dict[str, _SourcePathType]) -> AssetRef:
+    def register(self, manifest: AssetVersion, sources: dict[str, _SourcePathType], *,
+                 expected_identity_refs: list[AssetRef] | None = None) -> AssetRef:
         """Register all inventoried logical files from explicit source paths.
 
         Files are always re-read and hashed; a supplied manifest never certifies
         its own payload. Missing optional inventoried files also fail this initial
         exact-byte store (optional dependency resolution is a later policy).
+        Supply the identity's observed references to require that exact history
+        at publication. An empty list requires a previously unused identity.
         """
         manifest = cast(AssetVersion, load_manifest(canonical_bytes(manifest)))
         if not isinstance(sources, dict):
@@ -310,8 +313,23 @@ class AssetLibrary:
             payloads[f['sha256']] = payload
         identity, version = manifest['identity']['id'], manifest['version']
         reference = AssetRef(id=identity, version=version, sha256=manifest['manifest_sha256'])
+        expected_history: set[tuple[str, str, str]] | None = None
+        if expected_identity_refs is not None:
+            if not isinstance(expected_identity_refs, list) or len(expected_identity_refs) > MAX_VERSIONS:
+                _fail('REQUEST', 'Expected identity references must be a bounded list.')
+            expected_history = set()
+            for expected in expected_identity_refs:
+                validate(expected, 'AssetRef')
+                key = (expected['id'], expected['version'], expected['sha256'])
+                if expected['id'] != identity or key in expected_history:
+                    _fail('REQUEST', 'Expected identity references must be unique and match this identity.')
+                expected_history.add(key)
         with self._connect() as db:
             self._begin_writer(db)
+            if expected_history is not None:
+                current = set(db.execute('SELECT id,version,sha256 FROM versions WHERE id=?', (identity,)))
+                if current != expected_history:
+                    _fail('CONFLICT', 'Identity history changed after lifecycle validation; reload before creating a version.')
             if db.execute('SELECT 1 FROM versions WHERE id=? AND version=?', (identity, version)).fetchone():
                 _fail('IMMUTABLE', 'This asset version already exists; publish a new version.')
             if db.execute('SELECT COUNT(*) FROM versions').fetchone()[0] >= MAX_VERSIONS:

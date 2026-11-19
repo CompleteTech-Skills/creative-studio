@@ -1,5 +1,6 @@
 """Real-byte registration, exact resolution and hostile-input acceptance for #138."""
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 import json
@@ -16,7 +17,7 @@ from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
-from asset_library import AssetLibrary, file_record, legacy_roundtrip, read_source_bytes
+from asset_library import AssetLibrary, MAX_VERSIONS, file_record, legacy_roundtrip, read_source_bytes
 from asset_library_contracts import (canonical_bytes, load_manifest, seal, schemas,
                                      validate, manifest_hash)
 from rig_errors import RigError
@@ -92,6 +93,72 @@ class AssetLibraryTests(unittest.TestCase):
         self.assertEqual(self.library.resolve(newer)['version'], '2.0.0')
         with closing(sqlite3.connect(self.library.database)) as db, db:
             self.assertEqual(db.execute('SELECT count(*) FROM blobs').fetchone()[0], 2)
+
+    def test_empty_identity_snapshot_allows_one_concurrent_first_writer(self):
+        handles = [self.library, AssetLibrary(self.library.root)]
+        barrier = threading.Barrier(2)
+
+        def publish(handle, version):
+            manifest = seal({**self.manifest, 'version': version})
+            barrier.wait(timeout=10)
+            try:
+                return handle.register(manifest, self.sources, expected_identity_refs=[])
+            except RigError as exc:
+                return exc.report['code']
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(publish, handles, ('1.0.0', '2.0.0')))
+        self.assertEqual(outcomes.count('LIBRARY_CONFLICT'), 1)
+        winner, = [result for result in outcomes if isinstance(result, dict)]
+        reopened = AssetLibrary(self.library.root)
+        self.assertEqual(reopened.list_references(), [winner])
+        self.assertEqual(reopened.read_file(winner, self.files[0]['path']), self.mesh.read_bytes())
+
+    def test_direct_writer_invalidates_snapshot_at_registry_writer_lock(self):
+        first = self.register()
+        direct = AssetLibrary(self.library.root)
+        second = seal({**self.manifest, 'version': '2.0.0'})
+        proposed = seal({**self.manifest, 'version': '3.0.0'})
+        begin_writer = self.library._begin_writer
+
+        def publish_before_lock(db):
+            direct.register(second, self.sources)
+            begin_writer(db)
+
+        with patch.object(self.library, '_begin_writer', side_effect=publish_before_lock):
+            with self.assertRaises(RigError) as stale:
+                self.library.register(proposed, self.sources, expected_identity_refs=[first])
+        self.assertEqual(stale.exception.report['code'], 'LIBRARY_CONFLICT')
+        reopened = AssetLibrary(self.library.root)
+        history = reopened.list_references()
+        self.assertEqual([ref['version'] for ref in history], ['1.0.0', '2.0.0'])
+        self.assertEqual(reopened.resolve(first), self.manifest)
+
+        unrelated = deepcopy(self.manifest)
+        unrelated['identity']['id'] = 'other'
+        direct.register(seal(unrelated), self.sources)
+        third = reopened.register(proposed, self.sources, expected_identity_refs=history[::-1])
+        self.assertEqual(reopened.resolve(third), proposed)
+
+    def test_identity_snapshot_rejects_invalid_or_inexact_references(self):
+        first = self.register()
+        proposed = seal({**self.manifest, 'version': '2.0.0'})
+        cases = [
+            ((), 'LIBRARY_REQUEST'),
+            ([first] * (MAX_VERSIONS + 1), 'LIBRARY_REQUEST'),
+            ([first, first], 'LIBRARY_REQUEST'),
+            ([{**first, 'id': 'other'}], 'LIBRARY_REQUEST'),
+            ([{'id': first['id']}], 'LIBRARY_SCHEMA'),
+            ([{**first, 'sha256': '0' * 64}], 'LIBRARY_CONFLICT'),
+            ([], 'LIBRARY_CONFLICT'),
+        ]
+        for index, (snapshot, code) in enumerate(cases):
+            with self.subTest(case=index):
+                with self.assertRaises(RigError) as rejected:
+                    self.library.register(proposed, self.sources, expected_identity_refs=snapshot)
+                self.assertEqual(rejected.exception.report['code'], code)
+        self.assertEqual(self.library.list_references(), [first])
+        self.library.register(proposed, self.sources, expected_identity_refs=None)
 
     def test_wrong_hash_missing_content_and_header_lie_leave_no_version(self):
         cases = []
