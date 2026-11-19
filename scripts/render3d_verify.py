@@ -59,20 +59,28 @@ def _result_boundary(operation):
 
 
 @contextmanager
-def _image_source(path, *, root=None, name=None, root_identity=None):
+def _image_source(path, *, root=None, name=None, root_identity=None, require_single_link=False):
     """Keep ordinary and scoped reads under the existing payload authority."""
     root = path.parent if root is None else root
     name = path.name if name is None else name
+    def admit_opened(info):
+        require(not require_single_link or getattr(info, 'st_nlink', None) == 1,
+                'corrupt-output', 'Result images must be independently materialized files.')
+
     # Windows pins deny ancestor replacement while the ordinary payload reader
     # verifies the opened file handle. POSIX open_payload walks nofollow dirfds.
     if os.name == 'nt':
         from atomic_windows import pinned_directory
         with pinned_directory(root), pinned_directory(path.parent):
-            with open_payload(root, name, root_identity=root_identity) as (source, _):
+            with open_payload(root, name, root_identity=root_identity) as (source, opened):
+                admit_opened(opened)
                 yield source
+                admit_opened(os.fstat(source.fileno()))
     else:
-        with open_payload(root, name, root_identity=root_identity) as (source, _):
+        with open_payload(root, name, root_identity=root_identity) as (source, opened):
+            admit_opened(opened)
             yield source
+            admit_opened(os.fstat(source.fileno()))
 
 
 @contextmanager
@@ -138,6 +146,8 @@ def _image_inventory(root, descriptor, passes, limit):
                         walk(child, parts, opened)
                 else:
                     require(stat.S_ISREG(info.st_mode), 'corrupt-output', 'Nonregular entry in image inventory.')
+                    require(getattr(info, 'st_nlink', None) == 1, 'corrupt-output',
+                            'Result images must be independently materialized files.')
                     actual.add('/'.join(parts))
                     require(len(actual) <= limit, 'incomplete-output', 'Unexpected extra image files.')
 
@@ -176,6 +186,10 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
         import numpy as np
     except ImportError:
         raise Render3DError('unsupported-feature', 'PNG verification requires the optional pypng and numpy packages.') from None
+    # The private capture is seekable; admit each declared payload plus its CRC
+    # against these actual bytes before issuing any payload-sized read.
+    extent = stream.seek(0, 2)
+    stream.seek(0)
     # Strict structure and bounded inflate before the independent PNG decoder.
     require(stream.read(8) == b'\x89PNG\r\n\x1a\n', 'corrupt-output', 'Not a PNG file.')
     header, ended, count, inflated, inflater = None, False, 0, 0, zlib.decompressobj()
@@ -185,6 +199,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
         require(len(prefix) == 8, 'corrupt-output', 'Truncated PNG chunk.')
         length, kind = struct.unpack('>I4s', prefix)
         require(length <= memory_bytes, 'system-memory', 'PNG chunk exceeds verification memory budget.')
+        require(length+4 <= extent-stream.tell(), 'corrupt-output', 'Truncated PNG payload.')
         payload = stream.read(length); checksum = stream.read(4)
         require(len(payload) == length and len(checksum) == 4, 'corrupt-output', 'Truncated PNG payload.')
         require(zlib.crc32(kind+payload) & 0xffffffff == struct.unpack('>I',checksum)[0], 'corrupt-output', 'PNG CRC mismatch.')
@@ -554,7 +569,7 @@ class RenderArtifactVerifier:
                     file=root/name
                     image=verify_image(file,output=settings['output'],resolution=settings['resolution'],pass_name=item['pass_name'],
                         max_bytes=remaining,memory_bytes=settings['resources']['memory_bytes'],
-                        _source_options=dict(root=root,name=name,root_identity=root_identity))
+                        _source_options=dict(root=root,name=name,root_identity=root_identity,require_single_link=True))
                     require(image['sha256']==reference['sha256'] and image['bytes']==reference['bytes'],
                             'corrupt-output','Image bytes differ from committed reference.',path=name)
                     presentation,source=frame_times(request,item['frame'])

@@ -177,3 +177,38 @@ sanitization. A disposable mutation after capture demonstrates that reported
 hashes bind captured bytes and that a caller still needs publication retention
 or revalidation. These controls do not establish real-render or production
 acceptance.
+
+
+## Captured PNG extent and result-file materialization
+
+Before reading a PNG chunk payload, the verifier checks its declared length
+against both the configured memory budget and the actual remaining extent of
+the private capture, including the four-byte CRC. A tiny truncated capture
+therefore cannot cause a payload-sized read merely by declaring a large chunk.
+The read-spy regression limits every permitted request to 64 bytes and checks
+that only the eight-byte prefix or a valid thirteen-byte IHDR is requested in
+these refusals; it does not request or allocate the declared large payload.
+Existing actual 8/16-bit PNG decoding controls remain valid.
+
+`RenderArtifactVerifier` now explicitly requires each canonical frame/pass output
+to be an independently materialized regular file. The original stat record
+returned by `open_payload` must report exactly one hard link before capture;
+the held descriptor is checked again after the read, and final inventory
+metadata retains the same single-link requirement. Missing link-count evidence
+fails closed for result outputs. This rejects aliases between canonical output
+names and aliases outside the candidate, even if their bytes and declared
+hashes match. Separate files containing identical pixels remain valid.
+
+This is a result-output materialization policy. Standalone `verify_image` and
+`decode_image` intentionally continue to inspect an explicitly supplied linked
+source; snapshot source captures also retain their existing ownership semantics.
+The result policy is enforced before decoding using opened metadata, rather
+than inferred from filenames or a later path-only observation. Disposable
+fixtures use actual `os.link`, ordinary independent file writes, and a scheduled
+unlink after opening to establish these admission boundaries. No native Windows
+execution is claimed by the Linux tests.
+
+These checks concern the captured source and observed inventory. They do not
+freeze the live publication candidate, prevent every later alias or byte change,
+or replace the controller's retention/revalidation responsibility described
+above. The existing capture-evidence limitation remains in the returned report.

@@ -826,3 +826,107 @@ class ImageVerification(unittest.TestCase):
                 report=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
             self.assertEqual(report['images'][0]['sha256'],captured)
             self.assertNotEqual(hashlib.sha256((root/'frames/000000.png').read_bytes()).hexdigest(),captured)
+
+    def test_png_declared_chunk_fits_capture_before_payload_read(self):
+        import render3d_verify
+        def chunk(kind,payload):
+            return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        signature=b'\x89PNG\r\n\x1a\n'
+        ihdr=chunk(b'IHDR',struct.pack('>IIBBBBB',3,2,8,6,0,0,0))
+        class BoundedReads(io.BytesIO):
+            def __init__(self,payload):
+                super().__init__(payload);self.requests=[]
+            def read(self,size=-1):
+                self.requests.append(size)
+                if not 0 <= size <= 64:
+                    raise AssertionError('Parser requested data beyond this tiny captured extent.')
+                return super().read(size)
+        cases=[signature+struct.pack('>I4s',2**28,b'IHDR'),
+               signature+ihdr+struct.pack('>I4s',2**28,b'IDAT'),
+               signature+struct.pack('>I4s',13,b'IHDR')+b'\x00'*13+b'\x00'*3,
+               signature+ihdr+struct.pack('>I4s',1,b'IDAT')+b'x'+b'\x00'*3]
+        for payload in cases:
+            stream=BoundedReads(payload)
+            with self.subTest(captured_bytes=len(payload)):
+                with self.assertRaisesRegex(Render3DError,'Truncated PNG payload'):
+                    render3d_verify._png(stream,[3,2],8,2**29)
+                self.assertEqual(max(stream.requests),13 if payload.startswith(signature+ihdr) else 8)
+                self.assertNotIn(2**28,stream.requests)
+        with tempfile.TemporaryDirectory() as temporary:
+            for depth in (8,16):
+                path=Path(temporary)/f'positive-{depth}.png';self.png(path,depth)
+                report=verify_image(path,output=output(depth=depth),resolution=[3,2])
+                self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+                self.assertEqual(report['bit_depth'],depth)
+
+    def test_result_rejects_actual_hardlink_aliases_but_accepts_equal_copies(self):
+        import os
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            first=root/'frames/000000.png';second=root/'frames/000001.png'
+            expected=first.read_bytes()
+            self.assertEqual(second.read_bytes(),expected)
+            self.assertNotEqual(first.stat().st_ino,second.stat().st_ino)
+            control=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(control['decoded_images'],2)
+            second.unlink();os.link(first,second)
+            self.assertEqual(first.stat().st_nlink,2)
+            with self.assertRaises(Render3DError) as caught:
+                verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+            self.assertEqual(caught.exception.report['path'],'frames/000000.png')
+            # Standalone inspection intentionally accepts an explicitly supplied
+            # linked source; unique materialization is a result-output policy.
+            for decode in (verify_image,decode_image):
+                decoded=decode(first,output=output(),resolution=[3,2])
+                report=decoded[0] if decode is decode_image else decoded
+                self.assertEqual(report['sha256'],hashlib.sha256(expected).hexdigest())
+            second.unlink();second.write_bytes(expected)
+            restored=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(restored['images'],control['images'])
+            external=root.parent/'external-alias.png';os.link(first,external)
+            with self.assertRaises(Render3DError) as caught:
+                verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+            external.unlink()
+            self.assertEqual(verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)['decoded_images'],2)
+
+    def test_result_link_policy_uses_original_opened_stat(self):
+        import os
+        import render3d_verify
+        original=render3d_verify.open_payload
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            first=root/'frames/000000.png';alias=root.parent/'external-alias.png'
+            os.link(first,alias)
+            opened_counts=[]
+            @contextmanager
+            def unlink_after_open(parent,name,**options):
+                with original(parent,name,**options) as opened:
+                    if parent == root and name == 'frames/000000.png':
+                        opened_counts.append(opened[1].st_nlink)
+                        alias.unlink()
+                        self.assertEqual(first.stat().st_nlink,1)
+                    yield opened
+            with mock.patch.object(render3d_verify,'open_payload',unlink_after_open):
+                with self.assertRaisesRegex(Render3DError,'independently materialized'):
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(opened_counts,[2])
+            self.assertEqual(verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)['decoded_images'],2)
+
+    def test_final_result_inventory_refuses_a_new_external_hardlink(self):
+        import os
+        import render3d_verify
+        original=render3d_verify._image_inventory
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            first=root/'frames/000000.png';alias=root.parent/'external-alias.png'
+            def link_before_inventory(path,descriptor,passes,limit):
+                os.link(first,alias)
+                return original(path,descriptor,passes,limit)
+            with mock.patch.object(render3d_verify,'_image_inventory',link_before_inventory):
+                with self.assertRaisesRegex(Render3DError,'independently materialized') as caught:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+            alias.unlink()
+            self.assertEqual(verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)['decoded_images'],2)
