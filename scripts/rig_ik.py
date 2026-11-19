@@ -611,10 +611,15 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     else:
         axis = unit(points[-1] - origin)
         bend = _pole_perpendicular(axis, origin, points[1])
+        # A straight chain has no measured bend: _pole_perpendicular picks an
+        # arbitrary side, which solve_ik reproduces from any on-axis pole.
+        with np.errstate(over='ignore', invalid='ignore'):
+            elbow = points[1] - origin
+            measured = not np.linalg.norm(elbow - axis * np.dot(elbow, axis)) < POLE_BEND_CUTOFF
         # Keep the near-closed matching pole above the degeneracy cutoff.
         with np.errstate(over='ignore', invalid='ignore'):
             pole = origin + bend * max(reach, MIN_MATCHING_POLE_DISTANCE)
-        if np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend):
+        if measured and np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend):
             # The shorter pole can round away at a large origin. The measured
             # elbow is already an admitted world point on the requested side.
             pole = points[1]

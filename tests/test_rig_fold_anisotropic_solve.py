@@ -134,5 +134,33 @@ class RepresentedMatchingPoleTests(unittest.TestCase):
                     self.assert_solved_geometry(pose, points, **matched)
 
 
+class StraightChainMatchingPoleTests(unittest.TestCase):
+    def test_straight_chain_far_along_its_arbitrary_bend_still_matches(self):
+        # A straight chain has no measured bend, so _pole_perpendicular picks
+        # -Z. With the root far along that axis the reach-sized pole rounds
+        # back onto the chain; solve_ik reproduces the same arbitrary side.
+        skeleton = chain_skeleton(4)
+        validate_skeleton(skeleton)
+        for z, segment in ((4e10, 2e-8), (1e17, 1.), (1e17, .25)):
+            for solver in ('two-bone', 'fabrik'):
+                with self.subTest(z=z, segment=segment, solver=solver):
+                    chain = dict(schema_version=1, id='arm', bones=['b1', 'b2', 'b3'], solver=solver,
+                                 pole=[0., 0., 1.], tolerance=1e-6, iterations=32)
+                    scale = z / 1e9
+                    pose = neutral_pose(skeleton)
+                    pose['bones']['b0'] = dict(translation=[0.] * 3, scale=[scale] * 3)
+                    pose['bones']['b1'] = dict(translation=[0., 0., 1e9], scale=[segment / scale] * 3)
+                    pose['bones']['b2'] = dict(translation=[0., 1., 0.])
+                    pose['bones']['b3'] = dict(translation=[0., 1., 0.])
+                    validate_contract(pose, 'Pose')
+                    with np.errstate(over='ignore'):
+                        matched = match_fk_to_ik(skeleton, pose, chain)
+                        result = solve_ik(skeleton, pose, chain, **matched)
+                    json.dumps(matched, allow_nan=False)
+                    self.assertTrue(result.converged, result.report())
+                    before, after = evaluate_fk(skeleton, pose), evaluate_fk(skeleton, result.pose)
+                    np.testing.assert_array_equal([after[name][:3, 3] for name in chain['bones']],
+                                                  [before[name][:3, 3] for name in chain['bones']])
+
 if __name__ == '__main__':
     unittest.main()
