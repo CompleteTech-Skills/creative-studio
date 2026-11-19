@@ -124,6 +124,21 @@ class FinalGazeEyelidTests(unittest.TestCase):
                     evaluate_deformation(rig, explicit_default)['lid.left']['positions'])
         self.assertEqual(released, before)
 
+    def test_head_follow_release_survives_an_intervening_constraint_pass(self):
+        rig = final_pose_fixture()
+        authored = rotate_bone(rig.skeleton, neutral_pose(rig.skeleton),
+                               'head', axis_angle([0, 1, 0], -.26))
+        expected = pose_operation(rig, {'pose': authored})
+        initially_active = pose_operation(rig, {'pose': authored, 'gaze': gaze_target(.6), 'head_follow': .35})
+        self.assertNotEqual(initially_active['bones']['head']['rotation'], authored['bones']['head']['rotation'])
+        active = pose_operation(rig, {'pose': initially_active})
+        self.assertNotEqual(active['bones']['eye.left']['rotation'],
+                            initially_active['bones']['eye.left']['rotation'])
+        actual = pose_operation(rig, {'pose': active, 'gaze': None})
+        self.assertEqual(actual, expected)
+        for mesh, geometry in evaluate_deformation(rig, expected).items():
+            np.testing.assert_allclose(evaluate_deformation(rig, actual)[mesh]['positions'], geometry['positions'])
+
     def test_no_gaze_preserves_authored_pose_overrides(self):
         rig = final_pose_fixture()
         initial = neutral_pose(rig.skeleton)
@@ -151,6 +166,9 @@ class FinalGazeEyelidTests(unittest.TestCase):
                 expected, _ = apply_constraints(rig.skeleton,
                     gaze_at(rig, initial, parameters['gaze']),
                     rig.manifest['controllers']['constraints'])
+                for name, change in expected['gaze_overrides']['rotations'].items():
+                    self.assertIsNone(change[0])
+                    change[1] = expected['bones'][name]['rotation']
                 self.assertEqual(pose_operation(rig, dict(pose=initial, gaze=parameters['gaze'])), expected)
                 expected_solve = solve_ik(rig.skeleton, expected,
                     rig.manifest['controllers']['ik'][0], parameters['target'],

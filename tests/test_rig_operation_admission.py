@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import numpy as np
-from rig_animation import clip_from_poses
+from rig_animation import clip_from_poses, evaluate_animation
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError
 from rig_http import RigHandler, RigServer
@@ -120,20 +120,83 @@ class RigOperationAdmissionTests(unittest.TestCase):
                 # NaN is not equal to itself; compare the unchanged serialized payload.
                 self.assertEqual(json.dumps(parameters,sort_keys=True),json.dumps(before,sort_keys=True))
 
-    def test_explicit_null_gaze_releases_eye_and_owned_lid_geometry(self):
-        pose=rotate_bone(self.rig.skeleton,neutral_pose(self.rig.skeleton),'b2',axis_angle([1,0,0],.2))
-        pose['morphs']={'strip':{'blink':.8}}
-        before=deepcopy(pose);actual=pose_operation(self.rig,{'pose':pose,'gaze':None,'head_follow':0})
-        self.assertNotIn('b2',actual['bones']);self.assertEqual(actual['morphs'],{})
-        neutral=evaluate_deformation(self.rig,neutral_pose(self.rig.skeleton))['strip']['positions']
-        np.testing.assert_allclose(evaluate_deformation(self.rig,actual)['strip']['positions'],neutral,atol=1e-12)
-        self.assertGreater(np.max(np.abs(evaluate_deformation(self.rig,pose)['strip']['positions']-neutral)),.1)
-        self.assertEqual(pose,before)
+    def test_null_gaze_preserves_carried_blink_and_eye_motion_without_activation(self):
+        seed = rotate_bone(self.rig.skeleton, neutral_pose(self.rig.skeleton),
+                           'b2', axis_angle([1, 0, 0], .2))
+        authored = pose_operation(self.rig, {'pose': seed, 'expressions': {'blink': .8}})
+        authored = json.loads(json.dumps(authored))
+        before = deepcopy(authored)
+        for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+            with self.subTest(operation=operation.__name__):
+                expected = operation(self.rig, {'pose': authored, **extra})
+                actual = operation(self.rig, {'pose': authored, 'gaze': None, **extra})
+                if operation is solve_operation:
+                    expected, actual = expected['pose'], actual['pose']
+                self.assertEqual(actual, expected)
+                np.testing.assert_allclose(evaluate_fk(self.rig.skeleton, actual)['b2'],
+                                           evaluate_fk(self.rig.skeleton, expected)['b2'])
+                np.testing.assert_allclose(evaluate_deformation(self.rig, actual)['strip']['positions'],
+                                           evaluate_deformation(self.rig, expected)['strip']['positions'])
+        neutral = evaluate_deformation(self.rig, neutral_pose(self.rig.skeleton))['strip']['positions']
+        self.assertGreater(np.max(np.abs(evaluate_deformation(self.rig, authored)['strip']['positions'] - neutral)), .1)
+        self.assertEqual(authored, before)
+
+    def test_gaze_release_restores_displaced_authored_values_after_a_round_trip(self):
+        authored = rotate_bone(self.rig.skeleton, neutral_pose(self.rig.skeleton),
+                               'b2', axis_angle([1, 0, 0], .2))
+        authored['bones']['b2']['translation'] = [.2, 1., 0.]
+        authored['morphs']['strip'] = {'blink': .65}
+        active = pose_operation(self.rig, {'pose': authored, 'gaze': [.2, 3., 2.]})
+        self.assertGreater(abs(active['morphs']['strip']['blink'] - .65), .05)
+        active = pose_operation(self.rig, {'pose': active, 'gaze': [.2, 1., 2.]})
+        active = json.loads(json.dumps(active))
+        prior = deepcopy(active)
+        for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+            with self.subTest(operation=operation.__name__):
+                expected = operation(self.rig, {'pose': authored, **extra})
+                actual = operation(self.rig, {'pose': active, 'gaze': None, **extra})
+                self.assertEqual(actual, expected)
+                expected_pose = expected['pose'] if operation is solve_operation else expected
+                actual_pose = actual['pose'] if operation is solve_operation else actual
+                np.testing.assert_allclose(evaluate_deformation(self.rig, actual_pose)['strip']['positions'],
+                                           evaluate_deformation(self.rig, expected_pose)['strip']['positions'])
+        self.assertEqual(active, prior)
+
+    def test_gaze_release_preserves_later_edits_to_shared_channels(self):
+        active = pose_operation(self.rig, {'gaze': [0., 3., 2.]})
+        weight = active['morphs']['strip']['blink']
+        expression = pose_operation(self.rig, {'pose': active, 'expressions': {'blink': weight}})
+        released = pose_operation(self.rig, {'pose': expression, 'gaze': None})
+        self.assertNotIn('b2', released['bones'])
+        self.assertEqual(released['morphs'], {'strip': {'blink': weight}})
+
+        edited = rotate_bone(self.rig.skeleton, active, 'b2', axis_angle([0, 1, 0], .27))
+        edited['morphs']['strip']['blink'] = .47
+        expected = deepcopy(edited)
+        del expected['gaze_overrides']
+        before = deepcopy(edited)
+        self.assertEqual(pose_operation(self.rig, {'pose': edited, 'gaze': None}), expected)
+        self.assertEqual(edited, before)
+
+    def test_invalid_gaze_ownership_fails_before_native_pose_evaluation(self):
+        active = pose_operation(self.rig, {'gaze': [0., 3., 2.]})
+        for code, change in (
+                ('RIG_GAZE_OVERRIDE', lambda item: item['rotations'].update(b1=[None, [0, 0, 0, 1]])),
+                ('RIG_GAZE_OVERRIDE', lambda item: item['morphs']['strip'].update(other=[None, .3])),
+                ('RIG_SCHEMA', lambda item: item['morphs']['strip'].update(blink=[None, None])),
+                ('RIG_QUATERNION', lambda item: item['rotations'].update(b2=[[0, 0, 0, 2], [0, 0, 0, 1]]))):
+            pose = deepcopy(active)
+            change(pose['gaze_overrides'])
+            with self.subTest(code=code), patch('rig_skeleton.evaluate_fk', wraps=evaluate_fk) as fk:
+                with self.assertRaises(RigError) as refused:
+                    pose_operation(self.rig, {'pose': pose, 'gaze': None})
+                self.assertEqual(refused.exception.report['code'], code)
+                fk.assert_not_called()
 
     def test_gaze_release_preserves_a_fresh_blink_in_pose_and_ik(self):
         seed = rotate_bone(self.rig.skeleton, neutral_pose(self.rig.skeleton),
                            'b2', axis_angle([1, 0, 0], .2))
-        seed['morphs'] = {'strip': {'blink': .8}}
+        seed = pose_operation(self.rig, {'pose': seed, 'gaze': [0., 3., 2.]})
         original = deepcopy(seed)
         for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
             with self.subTest(operation=operation.__name__):
@@ -357,6 +420,19 @@ class RigOperationAdmissionTests(unittest.TestCase):
                     with self.assertRaises(RigError) as refused:
                         operation(asset, {'clip': 'bend', 'time': .5, **extra,
                                           'fingers': {'side': side, 'fingers': [name]}})
+                    self.assertEqual(refused.exception.report['code'], 'RIG_FINGER_UNAVAILABLE')
+                    sample.assert_not_called()
+                    fk.assert_not_called()
+
+    def test_missing_canonical_digits_refuse_before_sampling_or_fk(self):
+        for operation, extra in ((pose_operation, {}), (solve_operation, {'chain': 'arm', 'target': [1, 1, 0]})):
+            for parameters in ({'side': 'left', 'fingers': ['index']},
+                               {'side': 'right', 'fingers': ['thumb']}, {'side': 'left'}):
+                with self.subTest(operation=operation.__name__, digits=parameters), \
+                        patch('rig_animation.evaluate_animation', wraps=evaluate_animation) as sample, \
+                        patch('rig_skeleton.evaluate_fk', wraps=evaluate_fk) as fk:
+                    with self.assertRaises(RigError) as refused:
+                        operation(self.rig, {'clip': 'bend', 'time': .5, **extra, 'fingers': parameters})
                     self.assertEqual(refused.exception.report['code'], 'RIG_FINGER_UNAVAILABLE')
                     sample.assert_not_called()
                     fk.assert_not_called()

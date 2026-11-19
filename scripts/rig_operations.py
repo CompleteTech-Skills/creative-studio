@@ -201,16 +201,22 @@ def _check_pose(rig, pose):
     for mesh, weights in pose['morphs'].items():
         require(set(weights) <= set(meshes[mesh].morphs), 'RIG_MORPH_REFERENCE', 'Pose references a missing morph.')
         for amount in weights.values():_number(amount, -2, 2, 'pose.morphs')
+    from rig_facial import validate_gaze_overrides
+    validate_gaze_overrides(rig, pose)
     evaluate_fk(rig.skeleton, pose)
 
 
 def pose_operation(rig,parameters):
     from rig_skeleton import neutral_pose
     from rig_animation import evaluate_animation
-    from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls,refresh_gaze_eyelids
+    from rig_facial import (apply_expressions, gaze_at, finger_bindings, finger_controls, appendage_controls,
+                            record_constrained_gaze_rotations, refresh_gaze_eyelids)
     from rig_constraints import apply_constraints
     _pose_parameters(parameters)
     if parameters.get('clip') is not None:require(parameters['clip'] in rig.clips, 'RIG_CLIP', 'Requested clip does not exist.')
+    fingers = parameters.get('fingers')
+    if fingers:
+        finger_bindings(rig, side=fingers['side'], fingers=fingers.get('fingers'))
     pose=deepcopy(parameters['pose']) if 'pose' in parameters else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
     _check_pose(rig, pose)
     gaze = parameters.get('gaze')
@@ -219,12 +225,15 @@ def pose_operation(rig,parameters):
         pose = gaze_at(rig, pose, None, head_follow=head_follow)
     if parameters.get('expressions'):pose=apply_expressions(rig,pose,parameters['expressions'])
     if gaze is not None:pose=gaze_at(rig,pose,gaze,head_follow=head_follow)
-    if parameters.get('fingers'):pose=finger_controls(rig,pose,**parameters['fingers'])
+    if fingers:pose = finger_controls(rig, pose, **fingers)
     if parameters.get('appendages'):pose=appendage_controls(rig,pose,**parameters['appendages'])
-    pose,_=apply_constraints(rig.skeleton,pose,rig.manifest['controllers']['constraints'])
-    if gaze is not None:pose=refresh_gaze_eyelids(rig,pose)
-    _check_pose(rig, pose)
-    return pose
+    constrained, _ = apply_constraints(rig.skeleton, pose, rig.manifest['controllers']['constraints'])
+    if 'gaze_overrides' in constrained:
+        record_constrained_gaze_rotations(pose, constrained)
+    if gaze is not None:
+        constrained = refresh_gaze_eyelids(rig, constrained)
+    _check_pose(rig, constrained)
+    return constrained
 
 
 def solve_operation(rig,parameters):

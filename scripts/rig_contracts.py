@@ -69,9 +69,16 @@ def definitions() -> dict:
                   target=vec, orientation=quat),
               ['schema_version', 'id', 'bones', 'solver', 'pole', 'tolerance', 'iterations'])
     pose_transform = obj(dict(translation=vec, rotation=quat, scale=arr(positive, 3, 3)), [])
-    pose = obj(dict(schema_version={'const': 1}, kind={'const': 'hatch-3d-pose'}, id=identifier,
-                    rig_version=version, bones=mapping(pose_transform, 256),
-                    morphs=mapping(mapping(num, 128), 4096)))
+    def gaze_change(value):
+        return dict(type='array', minItems=2, maxItems=2,
+                    prefixItems=[{'anyOf': [value, {'type': 'null'}]}, value])
+
+    gaze_weight = dict(type='number', minimum=-2, maximum=2)
+    gaze_overrides = obj(dict(rotations=mapping(gaze_change(quat), 33),
+                              morphs=mapping(mapping(gaze_change(gaze_weight), 128), 128)))
+    pose_fields = dict(schema_version={'const': 1}, kind={'const': 'hatch-3d-pose'}, id=identifier,
+                       rig_version=version, bones=mapping(pose_transform, 256), morphs=mapping(mapping(num, 128), 4096))
+    pose = obj({**pose_fields, 'gaze_overrides': gaze_overrides}, pose_fields)
     track = obj(dict(schema_version={'const': 1}, target=identifier,
                     path={'enum': ['translation', 'rotation', 'scale', 'weights']},
                     interpolation={'enum': ['STEP', 'LINEAR', 'CUBICSPLINE']},
