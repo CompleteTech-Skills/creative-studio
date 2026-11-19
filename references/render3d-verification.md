@@ -138,3 +138,42 @@ channel headers and actual synthetic 65-channel/over-budget EXRs must reject
 before native construction. Native Windows execution is not established by
 the Linux tests; using its existing pin adapter is an implementation claim.
 Issues #92, #93 and #16 remain open beyond this bounded decoder correction.
+
+
+## Diagnostic, aggregate-budget and inventory boundaries
+
+Public diagnostics use stable categorized text. Standalone image failures use
+`path="image"`, because even a caller's basename can disclose private information.
+A result image failure can use its already checked canonical `frames/...` or
+`passes/...` identity; source-snapshot failures use `snapshot.json`. Absolute
+caller paths, arbitrary input values and native/OS exception text are excluded
+from public error messages and paths. Owner contract/source failures retain their
+error category and code while replacing their details with fixed text. Native
+exception chains are suppressed at these public wrapping boundaries.
+
+The aggregate encoded-byte budget is checked before opening each next image.
+If the previous capture exactly consumed the available bytes, the next image
+fails with `storage-exhaustion`; a valid render budget does not become an
+invalid standalone-image input. An exact budget for the complete sequence remains
+valid. Inventory traversal uses context-managed streaming `os.scandir` against
+the held POSIX directory descriptor or pinned Windows path. It rejects on the
+first excess file without materializing all directory names. Existing no-follow
+opens, directory identity checks and exact inventory comparison still apply.
+
+Image hashes and statistics describe the privately captured byte sequences.
+They do not freeze the live destination after capture. Final inventory traversal
+checks names and directory authority, rather than rereading each image's bytes.
+The controller must retain an immutable candidate while verification and
+publication run, or revalidate the candidate at its publication boundary.
+An additional final hash pass would provide another observation time; it would
+not prevent a later mutation or replace the controller's publication authority.
+This verifier therefore does not add such a pass or claim an immutable live
+output tree. Its returned limitation states this capture-evidence boundary.
+
+Added regressions use actual missing/empty/over-budget synthetic files, exact
+aggregate-budget boundaries and a real streaming directory scan that stops
+at the first excess entry. Injected native/owner errors test only public
+sanitization. A disposable mutation after capture demonstrates that reported
+hashes bind captured bytes and that a caller still needs publication retention
+or revalidation. These controls do not establish real-render or production
+acceptance.

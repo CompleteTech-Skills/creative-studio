@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+from functools import wraps
 import hashlib
 import os
 from pathlib import Path
 import platform
+import re
 import stat
 import struct
 import tempfile
@@ -18,6 +20,42 @@ import zlib
 
 from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational, definitions, _validator
 from rig_errors import RigError, object_hash, open_payload, scoped_directory_descriptor
+
+
+def _image_identity(name=None):
+    """Expose only canonical frame/pass names, never a caller's basename."""
+    if isinstance(name, str) and re.fullmatch(
+            r'(?:frames/[0-9]{6,}|passes/(?:albedo|normal|depth)/[0-9]{6,})\.(?:png|exr)', name):
+        return name
+    return 'image'
+
+
+@contextmanager
+def _private_errors(message, *, path=''):
+    """Keep owner/native details private while retaining categorized failures."""
+    try:
+        yield
+    except Render3DError as exc:
+        raise Render3DError(exc.report['category'], message, path=path) from None
+    except (RigError, OSError, ValueError):
+        raise Render3DError('corrupt-output', message, path=path) from None
+
+
+def _contract(value, kind):
+    with _private_errors('Render document does not satisfy its contract.'):
+        return validate(value, kind)
+
+
+def _result_boundary(operation):
+    @wraps(operation)
+    def checked(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        except Render3DError:
+            raise
+        except Exception:
+            raise Render3DError('corrupt-output', 'Render artifact verification failed.') from None
+    return checked
 
 
 @contextmanager
@@ -38,7 +76,7 @@ def _image_source(path, *, root=None, name=None, root_identity=None):
 
 
 @contextmanager
-def _captured(path, max_bytes, **source_options):
+def _captured(path, max_bytes, *, diagnostic_path='image', **source_options):
     """Hash and decode the same privately captured bytes, not a mutable path."""
     path = Path(path)
     try:
@@ -47,16 +85,17 @@ def _captured(path, max_bytes, **source_options):
             with _image_source(path, **source_options) as source:
                 while chunk := source.read(min(1024*1024, max_bytes-size+1)):
                     size += len(chunk)
-                    require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=path)
+                    require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=diagnostic_path)
                     digest.update(chunk)
                     frozen.write(chunk)
-            require(size > 0, 'corrupt-output', 'Image is empty.', path=path)
+            require(size > 0, 'corrupt-output', 'Image is empty.', path=diagnostic_path)
             frozen.seek(0)
             yield frozen, dict(bytes=size, sha256=digest.hexdigest())
-    except Render3DError:
+    except Render3DError as exc:
+        exc.report['path'] = diagnostic_path
         raise
-    except (RigError, OSError, ValueError) as exc:
-        raise Render3DError('corrupt-output', str(exc), path=path) from exc
+    except (RigError, OSError, ValueError):
+        raise Render3DError('corrupt-output', 'Image could not be captured safely.', path=diagnostic_path) from None
 
 
 @contextmanager
@@ -86,19 +125,21 @@ def _image_inventory(root, descriptor, passes, limit):
     actual = set()
 
     def walk(directory, relative, fd):
-        for name in os.listdir(fd if fd is not None else directory):
-            child = directory/name
-            parts = (*relative, name)
-            info = (os.stat(name, dir_fd=fd, follow_symlinks=False) if fd is not None else child.lstat())
-            if stat.S_ISDIR(info.st_mode):
-                require(len(parts) == 2 and parts[0] == 'passes' and parts[1] in passes,
-                        'corrupt-output', 'Unexpected image directory.')
-                with child_directory(directory, name, fd) as opened:
-                    walk(child, parts, opened)
-            else:
-                require(stat.S_ISREG(info.st_mode), 'corrupt-output', 'Nonregular entry in image inventory.')
-                actual.add('/'.join(parts))
-                require(len(actual) <= limit, 'incomplete-output', 'Unexpected extra image files.')
+        with os.scandir(fd if fd is not None else directory) as entries:
+            for entry in entries:
+                name = entry.name
+                child = directory/name
+                parts = (*relative, name)
+                info = (os.stat(name, dir_fd=fd, follow_symlinks=False) if fd is not None else child.lstat())
+                if stat.S_ISDIR(info.st_mode):
+                    require(len(parts) == 2 and parts[0] == 'passes' and parts[1] in passes,
+                            'corrupt-output', 'Unexpected image directory.')
+                    with child_directory(directory, name, fd) as opened:
+                        walk(child, parts, opened)
+                else:
+                    require(stat.S_ISREG(info.st_mode), 'corrupt-output', 'Nonregular entry in image inventory.')
+                    actual.add('/'.join(parts))
+                    require(len(actual) <= limit, 'incomplete-output', 'Unexpected extra image files.')
 
     @contextmanager
     def child_directory(parent, name, fd):
@@ -133,8 +174,8 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     try:
         import png
         import numpy as np
-    except ImportError as exc:
-        raise Render3DError('unsupported-feature', 'PNG verification requires the optional pypng and numpy packages.') from exc
+    except ImportError:
+        raise Render3DError('unsupported-feature', 'PNG verification requires the optional pypng and numpy packages.') from None
     # Strict structure and bounded inflate before the independent PNG decoder.
     require(stream.read(8) == b'\x89PNG\r\n\x1a\n', 'corrupt-output', 'Not a PNG file.')
     header, ended, count, inflated, inflater = None, False, 0, 0, zlib.decompressobj()
@@ -319,8 +360,8 @@ def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
     try:
         import OpenEXR, Imath
         import numpy as np
-    except ImportError as exc:
-        raise Render3DError('unsupported-feature', 'EXR verification requires optional OpenEXR and numpy packages.') from exc
+    except ImportError:
+        raise Render3DError('unsupported-feature', 'EXR verification requires optional OpenEXR and numpy packages.') from None
     # Envelope admission precedes native decoder construction. The private
     # captured stream keeps admission, hashing and channel decoding bound.
     reader=OpenEXR.InputFile(stream)
@@ -368,14 +409,14 @@ def _image_contract(output, resolution, pass_name, max_bytes, memory_bytes):
                             (max_bytes, resources['storage_bytes']),
                             (memory_bytes, resources['memory_bytes'])):
         error = next(iter(_validator('RenderSettings').evolve(schema=contract).iter_errors(value)), None)
-        require(error is None, 'invalid-input', error.message if error else '')
+        require(error is None, 'invalid-input', 'Image verification options do not satisfy the output contract.')
     require(isinstance(pass_name, str) and pass_name in output['passes'],
             'invalid-input', 'Unsupported output/pass selection.')
 
 
 def _requested_backend(settings, backend):
     """Check observed identity against validated native engine/device intent."""
-    validate(backend, 'BackendIdentity')
+    _contract(backend, 'BackendIdentity')
     require(backend['engine'] == settings['engine'], 'unsupported-backend',
             'Executed engine differs from the requested engine.')
     actual, selected, policy = backend['device'], settings['device'], settings['device_policy']
@@ -398,7 +439,7 @@ def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=10
     """Decode one actual output. Pixel ranges do not establish scene correctness."""
     _image_contract(output, resolution, pass_name, max_bytes, memory_bytes)
     try:
-        with _captured(path,max_bytes,**(_source_options or {})) as (stream,identity):
+        with _captured(path,max_bytes,diagnostic_path=_image_identity((_source_options or {}).get('name')),**(_source_options or {})) as (stream,identity):
             report=(_png if output['format']=='png' else _exr)(stream,resolution,output['bit_depth'],memory_bytes,_pixels)
         channels=report['channels']
         if pass_name in ('combined','albedo'):
@@ -420,9 +461,10 @@ def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=10
                     requested_color_space=output['color_space'],requested_alpha=output['alpha'])
     except Render3DError:
         raise
-    except Exception as exc:
+    except Exception:
         # Decoder-specific errors are not allowed to leak as worker crashes.
-        raise Render3DError('corrupt-output',str(exc),path=path) from exc
+        raise Render3DError('corrupt-output', 'Image decoder could not verify the captured data.',
+                            path=_image_identity((_source_options or {}).get('name'))) from None
 
 
 def decode_image(path, **options):
@@ -442,6 +484,7 @@ class RenderArtifactVerifier:
         self.expected_backend=deepcopy(expected_backend)
         self.max_total_bytes = max_total_bytes
 
+    @_result_boundary
     def verify(self,request,result,root):
         """Verify all expected frames, including a provisional unverified result.
 
@@ -449,40 +492,42 @@ class RenderArtifactVerifier:
         returned report must be committed before setting final status complete.
         """
         import render3d_snapshot as snapshot_owner
-        validate(request,'RenderRequest')
+        _contract(request,'RenderRequest')
         _requested_backend(request['settings'], self.expected_backend)
         require(isinstance(result,dict) and result.get('status') in ('partial','complete'),
                 'incomplete-output','Only a complete candidate sequence can be verified.')
-        validate(result.get('verification'),'Verification')
+        _contract(result.get('verification'),'Verification')
         pending=deepcopy(result);pending['status']='partial'
         pending['verification']=dict(status='not-run',verifier=None,evidence=None)
-        validate(pending,'RenderResult')
+        _contract(pending,'RenderResult')
         root=Path(root)
-        with scoped_directory_descriptor(root) as root_fd:
-            require(root_fd is not None or not root.is_symlink(),'corrupt-output','Output root may not be a symlink.')
-        require(root.is_dir(),'missing-asset','Output root is unavailable.')
+        with _private_errors('Output root could not be inspected safely.'):
+            with scoped_directory_descriptor(root) as root_fd:
+                require(root_fd is not None or not root.is_symlink(),'corrupt-output','Output root may not be a symlink.')
+            require(root.is_dir(),'missing-asset','Output root is unavailable.')
         # The request authenticates the snapshot file before the owner rechecks
         # its closure. Decode and hash one captured snapshot byte buffer.
-        snapshot_path=self.snapshot_root/'snapshot.json'
-        with scoped_directory_descriptor(self.snapshot_root) as snapshot_fd:
-            bounded_snapshot_owner = hasattr(snapshot_owner, 'native_memory_budget')
-            require(bounded_snapshot_owner or (self.max_total_bytes is None and snapshot_fd is None),
-                    'unsupported-feature', 'Scoped or byte-capped source verification requires the bounded snapshot owner.')
-        with _captured(snapshot_path,32*1024**2) as (stream,reference):
-            from rig_errors import decode_json
-            snapshot=validate(decode_json(stream.read()),'RenderSnapshot')
-        require(reference == {key:request['snapshot'][key] for key in ('bytes','sha256')},'stale-asset','Snapshot differs from request-bound bytes.')
-        options = {} if self.max_total_bytes is None else {'max_total_bytes': self.max_total_bytes}
-        if snapshot['scope'] == 'scene3d':
-            adapter = snapshot_owner.Scene3DAdapter()
-        elif bounded_snapshot_owner:
-            adapter = snapshot_owner.NativeRigAdapter(memory_bytes=snapshot_owner.native_memory_budget(request))
-        else:
-            adapter = snapshot_owner.NativeRigAdapter()
-        require(snapshot_owner.verify_snapshot(self.snapshot_root,adapter,**options)==snapshot,
-                'stale-asset','Snapshot changed during independent verification.')
-        if isinstance(adapter,snapshot_owner.Scene3DAdapter):
-            adapter.validate_request(self.snapshot_root,request,snapshot)
+        with _private_errors('Source snapshot verification failed.',path='snapshot.json'):
+            snapshot_path=self.snapshot_root/'snapshot.json'
+            with scoped_directory_descriptor(self.snapshot_root) as snapshot_fd:
+                bounded_snapshot_owner = hasattr(snapshot_owner, 'native_memory_budget')
+                require(bounded_snapshot_owner or (self.max_total_bytes is None and snapshot_fd is None),
+                        'unsupported-feature', 'Scoped or byte-capped source verification requires the bounded snapshot owner.')
+            with _captured(snapshot_path,32*1024**2,diagnostic_path='snapshot.json') as (stream,reference):
+                from rig_errors import decode_json
+                snapshot=_contract(decode_json(stream.read()),'RenderSnapshot')
+            require(reference == {key:request['snapshot'][key] for key in ('bytes','sha256')},'stale-asset','Snapshot differs from request-bound bytes.')
+            options = {} if self.max_total_bytes is None else {'max_total_bytes': self.max_total_bytes}
+            if snapshot['scope'] == 'scene3d':
+                adapter = snapshot_owner.Scene3DAdapter()
+            elif bounded_snapshot_owner:
+                adapter = snapshot_owner.NativeRigAdapter(memory_bytes=snapshot_owner.native_memory_budget(request))
+            else:
+                adapter = snapshot_owner.NativeRigAdapter()
+            require(snapshot_owner.verify_snapshot(self.snapshot_root,adapter,**options)==snapshot,
+                    'stale-asset','Snapshot changed during independent verification.')
+            if isinstance(adapter,snapshot_owner.Scene3DAdapter):
+                adapter.validate_request(self.snapshot_root,request,snapshot)
         require(result['snapshot_sha256']==snapshot['snapshot_sha256'] and result['request_sha256']==object_hash(request),
                 'stale-asset','Result request or snapshot identity differs.')
         require(result['backend']==self.expected_backend,'verification-failed','Result backend differs from executed backend identity.')
@@ -503,9 +548,12 @@ class RenderArtifactVerifier:
                     paths.add(name)
                     require(item['format']==suffix and item['bit_depth']==settings['output']['bit_depth'] and item['resolution']==settings['resolution'],
                             'corrupt-output','Image declaration differs from request settings.')
+                    remaining = settings['resources']['storage_bytes']-total
+                    require(remaining > 0, 'storage-exhaustion',
+                            'Output sequence exceeds its verification byte budget.',path=name)
                     file=root/name
                     image=verify_image(file,output=settings['output'],resolution=settings['resolution'],pass_name=item['pass_name'],
-                        max_bytes=settings['resources']['storage_bytes']-total,memory_bytes=settings['resources']['memory_bytes'],
+                        max_bytes=remaining,memory_bytes=settings['resources']['memory_bytes'],
                         _source_options=dict(root=root,name=name,root_identity=root_identity))
                     require(image['sha256']==reference['sha256'] and image['bytes']==reference['bytes'],
                             'corrupt-output','Image bytes differ from committed reference.',path=name)
@@ -516,15 +564,16 @@ class RenderArtifactVerifier:
                 require(actual==paths,'incomplete-output','Unexpected or missing output images.')
         except Render3DError:
             raise
-        except (RigError, OSError, ValueError) as exc:
-            raise Render3DError('corrupt-output',str(exc)) from exc
+        except (RigError, OSError, ValueError):
+            raise Render3DError('corrupt-output', 'Output inventory could not be verified safely.') from None
         identity=dict(id='render3d-independent-pixels',version=VERSION,code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),platform=platform.platform())
         return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=identity,
                     request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
                     settings_sha256=object_hash(settings),backend=deepcopy(self.expected_backend),images=decoded,
                     decoded_frames=len(frames),decoded_images=len(decoded),output_bytes=total,
-                    limitation='Decoded integrity and input binding do not establish semantic scene correctness or visual approval.')
+                    limitation='Hashes describe captured bytes; the controller must retain or recheck the publication candidate. Decoded integrity and input binding do not establish semantic scene correctness or visual approval.')
 
 
+@_result_boundary
 def verify_result(request,result,root,*,snapshot_root,expected_backend,max_total_bytes=None):
     return RenderArtifactVerifier(snapshot_root,expected_backend,max_total_bytes=max_total_bytes).verify(request,result,root)

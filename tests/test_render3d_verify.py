@@ -693,3 +693,136 @@ class ImageVerification(unittest.TestCase):
                         with self.assertRaisesRegex(Render3DError,'channel count|channels exceed|preview arrays exceed'):
                             decode(path,output=output('exr',32),resolution=resolution,memory_bytes=budget)
                         constructor.assert_not_called()
+
+    def test_public_capture_diagnostics_do_not_expose_caller_names(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'private-caller-namespace';root.mkdir()
+            image=root/'private-arbitrary-basename.png';self.png(image)
+            empty=root/'private-empty-basename.png';empty.write_bytes(b'')
+            for path,budget,category in ((image,1,'storage-exhaustion'),
+                                         (empty,65536,'corrupt-output'),
+                                         (root/'private-missing-basename.png',65536,'corrupt-output')):
+                for decode in (verify_image,decode_image):
+                    with self.subTest(case=category,decode=decode.__name__):
+                        with self.assertRaises(Render3DError) as caught:
+                            decode(path,output=output(),resolution=[3,2],max_bytes=budget)
+                        report=caught.exception.report
+                        self.assertEqual(report['category'],category)
+                        self.assertEqual(report['code'],'RENDER3D_'+category.upper().replace('-','_'))
+                        self.assertEqual(report['path'],'image')
+                        self.assertNotIn(str(root),json.dumps(report))
+                        self.assertNotIn('private-',json.dumps(report))
+
+    def test_native_and_external_owner_failures_have_fixed_public_diagnostics(self):
+        import render3d_verify
+        import render3d_snapshot
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            private=str(root/'private-native-detail.png')
+            for native in (OSError(private),ValueError(private),RuntimeError(private)):
+                with self.subTest(native=type(native).__name__):
+                    with mock.patch.object(render3d_verify,'_png',side_effect=native):
+                        with self.assertRaises(Render3DError) as caught:
+                            verify_image(root/'frames/000000.png',output=output(),resolution=[3,2])
+                    self.assertEqual(caught.exception.report['category'],'corrupt-output')
+                    self.assertEqual(caught.exception.report['path'],'image')
+                    self.assertNotIn(private,json.dumps(caught.exception.report))
+                    self.assertNotIn(private,str(caught.exception))
+                    self.assertIsNone(caught.exception.__cause__)
+                    self.assertTrue(caught.exception.__suppress_context__)
+            failures=[(render3d_verify,'_image_inventory',OSError(private),'corrupt-output',''),
+                      (render3d_snapshot,'verify_snapshot',Render3DError('stale-asset',private,path=private),'stale-asset','snapshot.json')]
+            for owner,operation,error,category,path in failures:
+                with self.subTest(operation=operation):
+                    with mock.patch.object(owner,operation,side_effect=error):
+                        with self.assertRaises(Render3DError) as caught:
+                            verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+                    self.assertEqual(caught.exception.report['category'],category)
+                    self.assertEqual(caught.exception.report['path'],path)
+                    self.assertNotIn(private,json.dumps(caught.exception.report))
+                    self.assertIsNone(caught.exception.__cause__)
+                    self.assertTrue(caught.exception.__suppress_context__)
+            invalid=deepcopy(request);invalid['id']=private
+            with self.assertRaises(Render3DError) as caught:
+                verify_result(invalid,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(caught.exception.report['category'],'invalid-input')
+            self.assertNotIn(private,json.dumps(caught.exception.report))
+            with self.assertRaises(Render3DError) as caught:
+                verify_image('must-not-open',output=dict(output(),color_space=private),resolution=[3,2])
+            self.assertEqual(caught.exception.report['category'],'invalid-input')
+            self.assertNotIn(private,json.dumps(caught.exception.report))
+
+    def test_result_aggregate_budget_exhaustion_stops_before_next_capture(self):
+        import render3d_verify
+        original=render3d_verify._image_source
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            first=result['images'][0]['file']['bytes']
+            total=sum(image['file']['bytes'] for image in result['images'])
+            for budget,expected,captures in ((1,'frames/000000.png',1),
+                                             (first,'frames/000001.png',1),
+                                             (total-1,'frames/000001.png',2)):
+                req,res=deepcopy(request),deepcopy(result)
+                req['settings']['resources']['storage_bytes']=budget
+                res['request_sha256']=object_hash(req)
+                captured=[]
+                @contextmanager
+                def observe(path,**options):
+                    if path.parent == root/'frames':captured.append(path.name)
+                    with original(path,**options) as source:
+                        yield source
+                with self.subTest(budget=budget):
+                    with mock.patch.object(render3d_verify,'_image_source',observe):
+                        with self.assertRaises(Render3DError) as caught:
+                            verify_result(req,res,root,snapshot_root=snapshot,expected_backend=backend)
+                    self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+                    self.assertEqual(caught.exception.report['path'],expected)
+                    self.assertNotIn(str(root),json.dumps(caught.exception.report))
+                    self.assertEqual(len(captured),captures)
+            request['settings']['resources']['storage_bytes']=total
+            result['request_sha256']=object_hash(request)
+            report=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(report['status'],'passed')
+            self.assertEqual(report['output_bytes'],total)
+
+    def test_inventory_stream_stops_at_first_excess_entry_and_closes(self):
+        import render3d_verify
+        original=render3d_verify.os.scandir
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            for index in range(32):
+                (root/'frames'/f'extra-{index:03d}.png').write_bytes(b'extra')
+            visited=[];closed=[]
+            @contextmanager
+            def streaming(path):
+                with original(path) as entries:
+                    def observed():
+                        for entry in entries:
+                            visited.append(entry.name)
+                            if len(visited)>3:
+                                raise AssertionError('Inventory consumed beyond its first excess entry.')
+                            yield entry
+                    try:
+                        yield observed()
+                    finally:
+                        closed.append(True)
+            with mock.patch.object(render3d_verify.os,'scandir',streaming):
+                with self.assertRaises(Render3DError) as caught:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(caught.exception.report['category'],'incomplete-output')
+            self.assertEqual(len(visited),3)
+            self.assertEqual(closed,[True])
+
+    def test_image_hashes_describe_capture_and_do_not_freeze_live_destination(self):
+        import render3d_verify
+        original=render3d_verify._image_inventory
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            captured=result['images'][0]['file']['sha256']
+            def change_after_capture(path,descriptor,passes,limit):
+                (root/'frames/000000.png').write_bytes(b'changed after captured verification')
+                return original(path,descriptor,passes,limit)
+            with mock.patch.object(render3d_verify,'_image_inventory',change_after_capture):
+                report=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(report['images'][0]['sha256'],captured)
+            self.assertNotEqual(hashlib.sha256((root/'frames/000000.png').read_bytes()).hexdigest(),captured)
