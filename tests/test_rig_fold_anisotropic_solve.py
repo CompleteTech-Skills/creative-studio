@@ -194,5 +194,44 @@ class StraightChainMatchingPoleTests(unittest.TestCase):
                     after = evaluate_fk(skeleton, result.pose)
                     np.testing.assert_array_equal([after[name][:3, 3] for name in chain['bones']], points)
 
+    def test_near_closed_bend_at_large_origin_keeps_its_elbow_pole(self):
+        # Reach is a few ulps of the origin, so the rounding-scaled threshold
+        # exceeds this genuine elbow offset; the elbow pole must still be used.
+        def unit_axis(vector):
+            vector = np.array(vector, float)
+            return vector / np.linalg.norm(vector)
+        skeleton = chain_skeleton(5)
+        validate_skeleton(skeleton)
+        cases = (
+            ('fabrik', [629502095.0162318, 171908285.117486, -254015059.12116075], 2053.3762796853375,
+             ([-0.5536609608194913, -1.1397926801093514, 0.6780836173485412], 0.21129582805937508),
+             [-178312464.38862312, 588789181.2472327, -244328292.21096325], 0.0005281084823653652,
+             ([-0.6216212108246881, 0.7200588448720091, -1.889221242077786], 0.5905607149602037),
+             3.1415594435746437),
+            ('two-bone', [916547363.6270716, -413886739.17713237, -558610904.9364548], 185.2746307041082,
+             ([-0.03102266562061253, -1.1030145887121454, 0.524622926814447], 0.943575383028631),
+             [604655516.078901, 471428423.5494137, 534404700.4437182], 0.00466802582579622,
+             ([2.1363002817633916, -0.12060217379751542, -0.7103442791824164], 2.6310501503946573),
+             3.1415922988004445))
+        for solver, t0, s0, r0, t1, s1, r2, fold in cases:
+            with self.subTest(solver=solver):
+                chain = dict(schema_version=1, id='arm', bones=['b2', 'b3', 'b4'], solver=solver,
+                             pole=[0., 0., 1.], tolerance=1e-6, iterations=32)
+                pose = neutral_pose(skeleton)
+                pose['bones']['b0'] = dict(translation=t0, scale=[s0] * 3,
+                                           rotation=axis_angle(unit_axis(r0[0]), r0[1]).tolist())
+                pose['bones']['b1'] = dict(translation=t1, scale=[s1] * 3)
+                pose['bones']['b2'] = dict(rotation=axis_angle(unit_axis(r2[0]), r2[1]).tolist())
+                pose['bones']['b3'] = dict(rotation=axis_angle([1, 0, 0], fold).tolist())
+                validate_contract(pose, 'Pose')
+                before = evaluate_fk(skeleton, pose)
+                points = [before[name][:3, 3] for name in chain['bones']]
+                with np.errstate(over='ignore'):
+                    matched = match_fk_to_ik(skeleton, pose, chain)
+                    result = solve_ik(skeleton, pose, chain, **matched)
+                self.assertTrue(result.converged, result.report())
+                after = evaluate_fk(skeleton, result.pose)
+                np.testing.assert_array_equal([after[name][:3, 3] for name in chain['bones']], points)
+
 if __name__ == '__main__':
     unittest.main()

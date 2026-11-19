@@ -615,7 +615,7 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         # arbitrary side, which solve_ik reproduces from any on-axis pole. The
         # elbow's axis offset carries rounding that grows with the world
         # coordinates and the segment length, so only an offset above both the
-        # absolute cutoff and that rounding counts as a measured bend.
+        # absolute cutoff and that rounding is a bend whose loss must refuse.
         with np.errstate(over='ignore', invalid='ignore'):
             elbow = points[1] - origin
             offset = np.linalg.norm(elbow - axis * np.dot(elbow, axis))
@@ -625,12 +625,16 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         # Keep the near-closed matching pole above the degeneracy cutoff.
         with np.errstate(over='ignore', invalid='ignore'):
             pole = origin + bend * max(reach, MIN_MATCHING_POLE_DISTANCE)
-        if measured and np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend):
-            # The shorter pole can round away at a large origin. The measured
-            # elbow is already an admitted world point on the requested side.
-            pole = points[1]
-            require(_pole_keeps_bend(axis, origin, pole, bend), 'RIG_IK_POLE',
-                    'FK-to-IK pole cannot represent the measured bend in world coordinates.')
+        if np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend):
+            # The shorter pole can round away at a large origin. The elbow is
+            # already an admitted world point on the requested side; use it
+            # whenever it represents the bend. Refuse only a measured bend
+            # that neither pole represents.
+            if _pole_keeps_bend(axis, origin, points[1], bend):
+                pole = points[1]
+            else:
+                require(not measured, 'RIG_IK_POLE',
+                        'FK-to-IK pole cannot represent the measured bend in world coordinates.')
     require(np.isfinite(pole).all(), 'RIG_NONFINITE',
             'FK-to-IK pole exceeds finite world-coordinate representation.')
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
