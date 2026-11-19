@@ -132,14 +132,21 @@ def _native_bounds(scene, scene_to_world):
     return bounds
 
 
+MAX_CONDITIONED_ROUNDOFF = 1e-6
+
+
 def _seed_bound(bound, transform):
     """Scale and rotation error grow with the conditioning of the world scale."""
     floor, relative, product = bound
     smallest = min(abs(float(value)) for value in transform['scale'])
     conditioned = relative * max(1.0, product / smallest)
-    # Only mapped nodes are checked; non-finite bounds fail closed.
+    # Only mapped nodes are checked; non-finite bounds fail closed. Beyond the
+    # orthonormality tolerance decompose already enforces, the conditioned
+    # bound would no longer distinguish rotations or scales, so refuse it.
     if not all(math.isfinite(value) for value in (*floor, product, conditioned)):
         fail('LIMIT', 'native transform magnitudes exceed representable roundoff bounds')
+    if conditioned > MAX_CONDITIONED_ROUNDOFF:
+        fail('LIMIT', 'native world scale is too ill-conditioned to compare decomposed rotation and scale')
     return floor, relative, conditioned
 
 
@@ -250,6 +257,7 @@ class TemporalEngine:
         known_shots = {digest(rooted(r)): r['path'] for r in project_doc['shots']}
         scenes, scene_references, seeds, mapped_ancestors = {}, {}, {}, {}
         floors = {}
+        import numpy
         for entry in self.plan['scenes']:
             reference = entry['scene']
             native_path = known_scenes.get(digest(reference))
@@ -263,7 +271,6 @@ class TemporalEngine:
             # collection and layer flags, through its single visible field.
             graph_state = SceneGraph(scene).evaluate_base()
             matrix = local_matrix(entry['scene_to_world'])
-            import numpy
             node_bounds = _native_bounds(scene, entry['scene_to_world'])
             scene_floors = {}
             entities, nodes = {}, set()
@@ -360,11 +367,16 @@ class TemporalEngine:
             if not incoming:
                 fail('MAPPING', 'scene mapping has no consuming shot')
             initial_tick = min(incoming)
-            state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick,
-                                   floors=self.initial_floors)
+            state, applied = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick,
+                                         floors=self.initial_floors)
+            applied = set(applied)
+            # After an authored relocation the replayed transform is exact data.
+            moved = {operation['entity_id'] for event in self.events if event['event_id'] in applied
+                     for operation in event['operations'] if operation['event_type'] == 'relocate'}
             if any(native['visible'] != state['entities'][entity]['visible'] or
                    not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True,
-                                       **_combined_bound(floors[scene_id][entity], self.initial_floors.get(entity)))
+                                       **_combined_bound(floors[scene_id][entity],
+                                                         None if entity in moved else self.initial_floors.get(entity)))
                    for entity, native in entities.items()):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
         verify_references(self.root, sources)

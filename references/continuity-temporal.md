@@ -60,7 +60,11 @@ that relative bound by the scale conditioning (composed maximum scale over the
 smallest decomposed world scale). Both grow linearly with the number
 of composed levels L, counting scene-to-world (8·(L+1) ulp relative, and
 8√3·(L+1) ulp of the composed magnitude for translation). Bounds that are not
-finite fail closed with `CONTINUITY_LIMIT`. `q` and `-q` are the same rotation.
+finite, or a conditioned bound above 1e-6 (the orthonormality tolerance of
+decomposition), fail closed with `CONTINUITY_LIMIT`. An incoming scene's seed
+is compared with the sum of both scenes' bounds while the replayed value is
+still the first scene's seed, and with its own bound after an authored
+relocation. `q` and `-q` are the same rotation.
 
 `continuity-temporal-event` carries immutable identity, integer story tick,
 priority, prerequisite event IDs, author, revision, hash-pinned source references

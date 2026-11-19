@@ -316,6 +316,19 @@ class TemporalTests(unittest.TestCase):
         self.assertFalse(_same_transform(value, moved, native=True, **bound))
         self.assertFalse(_same_transform(value, stretched, native=True, **bound))
 
+        # The translation floor grows linearly with composed levels at a fixed
+        # magnitude (factor L+1 with L counting scene_to_world).
+        leaf = dict(identity, translation=[1.0, 0.0, 0.0])
+        _, shallow = native([leaf], identity)
+        _, deep = native([dict(identity) for _ in range(63)] + [leaf], identity)
+        self.assertAlmostEqual(deep['floor'][0] / shallow['floor'][0], 66 / 3)
+
+        # Alternating extreme scales make the conditioned bound meaningless;
+        # comparisons are refused rather than accepting any rotation.
+        with self.assertRaisesRegex(ValueError, 'LIMIT'):
+            native([dict(identity, scale=[1e4, 1e-4, 1.0]), dict(identity, scale=[1e-4, 1e4, 1.0])],
+                   dict(identity, scale=[1e4, 1e-4, 1.0]))
+
         # Scale products that overflow while the world stays finite fail closed.
         swap = [0.5, 0.5, 0.5, 0.5]
         chain = [dict(identity, translation=[1.0, 1.0, 1.0], rotation=swap, scale=[1e9, 1e-9, 1.0])
