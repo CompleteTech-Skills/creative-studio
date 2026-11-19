@@ -12,14 +12,13 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 import time
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 import decomposition_package as package
-from asset_contracts import MAX_SOURCE_BYTES
+from asset_contracts import MAX_SOURCE_BYTES, hash_object
 from atomic_publish import pinned_directory, private_stage, private_stage_supported, _rename_no_replace
 from character_decomposition import (
     create_decomposition, load_decomposition, read_json as read_run_json, save_manifest,
@@ -43,6 +42,8 @@ IMAGE_SUFFIXES = {'.png', '.webp', '.jpg', '.jpeg'}
 RECEIPT_NAME = 'foreground-proposals.json'
 RETAINED_DIRECTORY = 'foreground-analysis'
 RETAINED_RECEIPT = f'{RETAINED_DIRECTORY}/{RECEIPT_NAME}'
+OVERLAY_RENDERER = 'mask-box-label-v2'
+SELECTION_IDENTITY = 'source-mask-selected-ids-v1'
 OVERLAP_NOTE = 'Selected pixels shared with another candidate; not owned by this selection.'
 
 CANDIDATE = obj({'id': TEXT, 'category': TEXT, 'confidence': CONFIDENCE,
@@ -64,6 +65,7 @@ RECEIPT = obj({'schema_version': {'const': 1}, 'kind': {'const': 'foreground-pro
 # Optional on historical v1 receipts; current workers retain actual runtime counts.
 RECEIPT['properties']['runtime'] = obj({'torch_threads': {'type': 'integer', 'enum': [1, 2]},
     'torch_interop_threads': {'const': 1}})
+RECEIPT['properties']['overlay_renderer'] = {'const': OVERLAY_RENDERER}
 
 
 def _safe_sha(path, maximum=MAX_SOURCE_BYTES):
@@ -165,6 +167,34 @@ def load(root):
     return _validate_receipt(root, receipt_bytes)
 
 
+def _draw_candidate(overlay, mask, candidate, renderer):
+    """Composite one admitted instance in receipt order over the source pixels."""
+    box = mask.getbbox()
+    category = candidate['category']
+    # The fixed COCO model emits short printable ASCII labels.
+    if len(category) > 64 or not category.isascii() or not category.isprintable():
+        raise ValueError('unsupported foreground preview category label')
+    label = f"{candidate['id']}: {category}"
+    ink = (255, 0, 255, 255)
+    tint = Image.new('RGBA', mask.size, (255, 0, 255, 80))
+    overlay = Image.alpha_composite(overlay, Image.composite(tint, Image.new('RGBA', mask.size), mask))
+    if renderer is None:
+        # The original worker passed exclusive bounds directly to Pillow and
+        # rendered its default font on the full canvas. Replay those exact pixels.
+        draw = ImageDraw.Draw(overlay)
+        draw.rectangle(box, outline=ink, width=2)
+        draw.text(box[:2], label, fill=ink)
+    else:
+        # Keep the inclusive outline and its label inside the half-open source box.
+        region = overlay.crop(box)
+        draw = ImageDraw.Draw(region)
+        draw.rectangle((0, 0, region.width - 1, region.height - 1), outline=ink,
+                       width=min(2, region.width, region.height))
+        draw.text((0, 0), label, fill=ink, font=ImageFont.load_default_imagefont())
+        overlay.paste(region, box[:2])
+    return overlay
+
+
 def _validate_receipt(root, receipt_bytes):
     receipt = _parse_record_json(receipt_bytes)
     _receipt_assets(receipt)
@@ -186,7 +216,8 @@ def _validate_receipt(root, receipt_bytes):
     image = _verified_image(source_path, source['asset']['sha256'])
     if image.size != size:
         raise ValueError('source size mismatch')
-    support = binary(image.convert('RGBA').getchannel('A'))
+    expected_overlay = image.convert('RGBA')
+    support = binary(expected_overlay.getchannel('A'))
     occupied = Image.new('L', size); overlaps = Image.new('L', size)
     for candidate in receipt['candidates']:
         if candidate['confidence'] < receipt['parameters']['score_threshold']:
@@ -197,12 +228,15 @@ def _validate_receipt(root, receipt_bytes):
         if candidate['pixels'] != count(mask) or candidate['bbox'] != list(mask.getbbox() or []):
             raise ValueError('candidate geometry disagrees with mask')
         overlaps = union(overlaps, intersect(occupied, mask)); occupied = union(occupied, mask)
+        expected_overlay = _draw_candidate(expected_overlay, mask, candidate, receipt.get('overlay_renderer'))
     overlap = _mask(root, receipt['overlap'], size)
     if overlap.tobytes() != overlaps.tobytes():
         raise ValueError('overlap mask disagrees with independent candidate masks')
     overlay = _verified_image(safe_path(root, receipt['overlay']['path']), receipt['overlay']['sha256'], png_only=True)
     if overlay.size != size:
         raise ValueError('overlay size mismatch')
+    if overlay.mode != 'RGBA' or overlay.tobytes() != expected_overlay.tobytes():
+        raise ValueError('foreground overlay disagrees with source and candidate masks')
     return receipt
 
 
@@ -254,11 +288,7 @@ def _worker(stage, weights, threshold):
         candidates.append({'id': identifier, 'category': category, 'confidence': score,
                            'mask': _asset(stage, relative), 'bbox': box, 'pixels': count(mask)})
         overlaps = union(overlaps, intersect(occupied, mask)); occupied = union(occupied, mask)
-        tint = Image.new('RGBA', rgba.size, (255, 0, 255, 80))
-        overlay = Image.alpha_composite(overlay, Image.composite(tint, Image.new('RGBA', rgba.size), mask))
-        draw = ImageDraw.Draw(overlay)
-        draw.rectangle(box, outline=(255, 0, 255, 255), width=2)
-        draw.text((box[0], box[1]), identifier + ': ' + category, fill=(255, 0, 255, 255))
+        overlay = _draw_candidate(overlay, mask, candidates[-1], OVERLAY_RENDERER)
     overlaps.save(stage / 'masks/overlap.png'); overlay.save(stage / 'overlay.png')
     atomic_json(stage / 'output.json', {'candidates': candidates, 'overlap': _asset(stage, 'masks/overlap.png'),
                                         'overlay': _asset(stage, 'overlay.png'),
@@ -307,20 +337,24 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
                 raise ValueError('foreground inference failed; no proposal published')
             _weight(weights)
             output = read_json(stage / 'output.json')
+            if not isinstance(output, dict) or output.keys() != {'candidates', 'overlap', 'overlay', 'runtime'}:
+                raise ValueError('unexpected foreground worker output fields')
             receipt = {'schema_version': 1, 'kind': 'foreground-proposals', 'source': source_record,
                 'backend': {'name': 'torchvision-maskrcnn-coco-v1', 'weights_sha256': MODEL_SHA256,
                     'execution': 'local', **backend_capability['versions']},
                 'parameters': {'score_threshold': score_threshold, 'mask_threshold': .5, 'threads': 1, 'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS},
-                'elapsed_seconds': time.monotonic()-started, **output,
+                'elapsed_seconds': time.monotonic()-started, 'overlay_renderer': OVERLAY_RENDERER, **output,
                 'uncertainty': ['Object classes are model proposals, not semantic review or anatomy.',
                     'Candidate masks may omit thin, disconnected, cropped or unfamiliar foreground.',
                     'Overlaps remain ambiguous; no candidate owns overlapping pixels automatically.',
                     'Internal model resizing does not alter original pixels or source-sized output masks.'],
                 'anatomy_recognized': False, 'review_status': 'pending'}
-            atomic_json(stage / 'foreground-proposals.json', receipt)
-            load(stage)
-            _rename_no_replace('payload', destination.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
-            return receipt
+            atomic_json(stage / RECEIPT_NAME, receipt)
+            public = capability.path / 'proposal'
+            public.mkdir()
+            published, _ = _capture_snapshot(stage, public)
+            _rename_no_replace('proposal', destination.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
+            return published
     except subprocess.TimeoutExpired as exc:
         raise ValueError('foreground runtime limit reached; manual selection remains available') from exc
 
@@ -347,12 +381,53 @@ def _ambiguity(overlap, descriptor):
             'note': OVERLAP_NOTE}
 
 
+def _character_id(source_sha256, selected, identifiers):
+    identity = hashlib.sha256(bytes.fromhex(source_sha256))
+    identity.update(selected.tobytes())
+    identity.update(','.join(sorted(identifiers)).encode('ascii'))
+    return 'character-' + identity.hexdigest()[:32]
+
+
+class AmbiguousHistoricalSelection(ValueError):
+    """A source-only historical ID cannot distinguish multiple candidate sets."""
+
+
+def _verify_character_id(root, receipt, record, selected, character_id):
+    source_hash = receipt['source']['asset']['sha256']
+    identifiers = record['selected_ids']
+    if character_id == _character_id(source_hash, selected, identifiers):
+        return
+    if ('identity_method' in record or 'overlay_renderer' in receipt or
+            character_id != 'character-' + source_hash[:12]):
+        raise ValueError('character identity disagrees with retained foreground selection')
+    # An old source-only ID establishes membership only if the retained mask
+    # can be formed by exactly one nonempty subset of these candidate masks.
+    occupied = Image.new('L', selected.size)
+    shared = Image.new('L', selected.size)
+    members = []
+    for candidate in receipt['candidates']:
+        mask = _mask(root, candidate['mask'], selected.size)
+        if candidate['id'] in identifiers:
+            shared = union(shared, intersect(occupied, mask))
+            occupied = union(occupied, mask)
+            members.append(mask)
+        elif count(intersect(mask, selected)) == candidate['pixels']:
+            break  # Adding this unselected instance leaves the union unchanged.
+    else:
+        if all(count(intersect(mask, shared)) < count(mask) for mask in members):
+            return  # Each selected instance contributes an indispensable pixel.
+    raise AmbiguousHistoricalSelection(
+        'historical character identity has ambiguous membership; select the intended IDs '
+        'from the retained foreground proposals into a new directory')
+
+
 SELECTION = obj({'receipt': {'const': RETAINED_RECEIPT}, 'receipt_sha256': HASH,
                  'selected_ids': array(TEXT, MAX_CANDIDATES, 1), 'selected_mask': ASSET,
                  'ambiguous_overlap': obj({'status': {'const': 'unresolved'},
                      'pixels': {'type': 'integer', 'minimum': 0, 'maximum': MAX_PIXELS},
                      'runs': array(array({'type': 'integer', 'minimum': 0}, 3, 3), MAX_TOTAL_RUNS),
                      'overlap_mask': ASSET, 'note': {'const': OVERLAP_NOTE}})})
+SELECTION['properties']['identity_method'] = {'const': SELECTION_IDENTITY}
 
 
 def verify_selection(root, manifest, annotation):
@@ -379,10 +454,13 @@ def verify_selection(root, manifest, annotation):
     selected, ambiguous = _selected_geometry(retained, receipt, record['selected_ids'])
     selected_mask = record['selected_mask']
     path = selected_mask['path']
-    if not re.fullmatch(r'masks/foreground-[0-9a-f]{24}\.png', path):
-        raise ValueError('foreground selection mask must be a canonical foreground artifact')
+    content_hash = hash_object({'mode': selected.mode, 'size': list(selected.size),
+                                'pixels': hashlib.sha256(selected.tobytes()).hexdigest()})
+    if path != f'masks/foreground-{content_hash[:24]}.png':
+        raise ValueError('foreground selection geometry disagrees with canonical foreground artifact path')
     if _mask(root, selected_mask, selected.size).tobytes() != selected.tobytes():
         raise ValueError('foreground selection geometry disagrees with retained candidates')
+    _verify_character_id(retained, receipt, record, selected, manifest['character']['id'])
     if (manifest['revision'] == 1 or manifest['foreground']['method'] != 'manually-corrected-mask') and (
             manifest['foreground']['mask'] != selected_mask):
         raise ValueError('canonical foreground mask disagrees with retained selection')
@@ -427,12 +505,7 @@ def select(root, identifiers, destination, *, name=None):
         receipt, receipt_hash = _capture_snapshot(root, snapshot)
         selected, ambiguous = _selected_geometry(snapshot, receipt, identifiers)
         source = receipt['source']
-        # Seed identity with the original bytes' digest, the binary source-space
-        # membership, and the set of selected candidate IDs (even if masks coincide).
-        identity = hashlib.sha256(bytes.fromhex(source['asset']['sha256']))
-        identity.update(selected.tobytes())
-        identity.update(','.join(sorted(identifiers)).encode('ascii'))
-        character_id = 'character-' + identity.hexdigest()[:32]
+        character_id = _character_id(source['asset']['sha256'], selected, identifiers)
         ambiguous_pixels = count(ambiguous)
         annotation = {'schema_version': 1, 'source_sha256': source['asset']['sha256'],
             'author': 'Explicit foreground candidate selection',
@@ -448,6 +521,7 @@ def select(root, identifiers, destination, *, name=None):
         # the complete run is still inside the pinned private staging directory.
         snapshot.rename(run / RETAINED_DIRECTORY)
         record = {'receipt': RETAINED_RECEIPT, 'receipt_sha256': receipt_hash,
+                  'identity_method': SELECTION_IDENTITY,
                   'selected_ids': identifiers, 'selected_mask': result['foreground']['mask'],
                   'ambiguous_overlap': _ambiguity(ambiguous, receipt['overlap'])}
         annotation_path = safe_path(run, result['annotation']['path'])

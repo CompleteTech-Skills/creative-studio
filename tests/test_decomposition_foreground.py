@@ -11,7 +11,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
-from PIL import Image, PngImagePlugin
+from PIL import Image, ImageDraw, PngImagePlugin
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import decomposition_foreground as fg
 from asset_contracts import sha
@@ -49,7 +49,7 @@ class ForegroundContracts(unittest.TestCase):
         first = Image.new('L', image.size); first.paste(255, (0, 0, 5, 6))
         second = Image.new('L', image.size); second.paste(255, (3, 0, 8, 6))
         first.save(self.root/'masks/candidate-1.png'); second.save(self.root/'masks/candidate-2.png')
-        fg.intersect(first, second).save(self.root/'masks/overlap.png'); image.save(self.root/'overlay.png')
+        fg.intersect(first, second).save(self.root/'masks/overlap.png')
         candidates = [{'id': 'candidate-'+str(index), 'category': 'person', 'confidence': .9,
             'mask': fg._asset(self.root, 'masks/candidate-'+str(index)+'.png'),
             'bbox': list(mask.getbbox()), 'pixels': fg.count(mask)} for index,mask in enumerate([first,second],1)]
@@ -60,10 +60,28 @@ class ForegroundContracts(unittest.TestCase):
                         'torch': '2.10.0+cpu', 'torchvision': '0.25.0+cpu', 'execution': 'local'},
             'parameters': {'score_threshold': .7, 'mask_threshold': .5, 'threads': 2, 'max_seconds': 120, 'max_pixels': fg.MAX_PIXELS},
             'elapsed_seconds': 1, 'candidates': candidates,
-            'overlap': fg._asset(self.root, 'masks/overlap.png'), 'overlay': fg._asset(self.root, 'overlay.png'),
+            'overlap': fg._asset(self.root, 'masks/overlap.png'), 'overlay_renderer': fg.OVERLAY_RENDERER,
             'uncertainty': ['Test fixture only; this receipt exercises validation, not inference.'],
             'anatomy_recognized': False, 'review_status': 'pending'}
+        self.refresh_overlay()
         self.save()
+
+    def refresh_overlay(self):
+        with Image.open(self.root / self.receipt['source']['asset']['path']) as image:
+            overlay = image.convert('RGBA')
+        for candidate in self.receipt['candidates']:
+            with Image.open(self.root / candidate['mask']['path']) as mask:
+                if 'overlay_renderer' in self.receipt:
+                    overlay = fg._draw_candidate(overlay, mask, candidate, fg.OVERLAY_RENDERER)
+                else:
+                    # Independent replay of the original worker.
+                    tint = Image.new('RGBA', mask.size, (255, 0, 255, 80))
+                    overlay = Image.alpha_composite(overlay, Image.composite(tint, Image.new('RGBA', mask.size), mask))
+                    draw = ImageDraw.Draw(overlay)
+                    draw.rectangle(candidate['bbox'], outline=(255, 0, 255, 255), width=2)
+                    draw.text(candidate['bbox'][:2], candidate['id'] + ': ' + candidate['category'], fill=(255, 0, 255, 255))
+        overlay.save(self.root / 'overlay.png')
+        self.receipt['overlay'] = fg._asset(self.root, 'overlay.png')
 
     def save(self):
         (self.root/'foreground-proposals.json').write_text(json.dumps(self.receipt))
@@ -139,6 +157,102 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(len(fg.load(self.root)['candidates']), 2)
         self.assertEqual(fg.count(fg._mask(self.root,self.receipt['overlap'],(8,6))),12)
 
+    def test_preview_box_and_label_stay_inside_the_half_open_source_bounds(self):
+        source = Image.new('RGBA', (9, 9), (24, 60, 90, 77))
+        for box in ((2, 3, 7, 6), (3, 5, 4, 6), (8, 0, 9, 9)):
+            with self.subTest(box=box):
+                mask = Image.new('L', source.size)
+                mask.paste(255, box)
+                overlay = fg._draw_candidate(source, mask, self.receipt['candidates'][0], fg.OVERLAY_RENDERER)
+                for y in range(source.height):
+                    for x in range(source.width):
+                        if not mask.getpixel((x, y)):
+                            self.assertEqual(overlay.getpixel((x, y)), source.getpixel((x, y)))
+                self.assertEqual(overlay.getpixel((box[2] - 1, box[3] - 1)), (255, 0, 255, 255))
+
+        source = Image.new('RGBA', (60, 40), (24, 60, 90, 77))
+        mask = Image.new('L', source.size)
+        mask.paste(255, (1, 1, 59, 39))
+        mask.putpixel((40, 25), 0)
+        overlay = fg._draw_candidate(source, mask, self.receipt['candidates'][0], fg.OVERLAY_RENDERER)
+        tinted = Image.alpha_composite(source, Image.new('RGBA', source.size, (255, 0, 255, 80)))
+        self.assertEqual(overlay.getpixel((30, 25)), tinted.getpixel((30, 25)))
+        self.assertEqual(overlay.getpixel((40, 25)), source.getpixel((40, 25)))
+
+    def test_current_and_historical_previews_require_their_recorded_pixels(self):
+        del self.receipt['overlay_renderer']
+        self.refresh_overlay()
+        self.save()
+        self.assertEqual(fg.load(self.root), self.receipt)
+        self.receipt['overlay_renderer'] = fg.OVERLAY_RENDERER
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'overlay disagrees'):
+            fg.load(self.root)
+        path = self.root / 'overlay.png'
+        path.write_bytes((self.root / 'source/original.png').read_bytes())
+        self.receipt['overlay']['sha256'] = sha(path)
+        for renderer in (fg.OVERLAY_RENDERER, None):
+            if renderer is None:
+                del self.receipt['overlay_renderer']
+            self.save()
+            with self.subTest(renderer=renderer), self.assertRaisesRegex(ValueError, 'overlay disagrees'):
+                fg.load(self.root)
+
+    @requires_foreground_publication
+    def test_source_only_historical_identity_requires_unique_selection(self):
+        del self.receipt['overlay_renderer']
+        original_candidates = self.receipt['candidates']
+        self.receipt['candidates'] = original_candidates[:1]
+        overlap = self.root / self.receipt['overlap']['path']
+        Image.new('L', (8, 6)).save(overlap)
+        self.receipt['overlap']['sha256'] = sha(overlap)
+        self.refresh_overlay()
+        self.save()
+        home = Path(self.temp.name)
+        legacy_id = 'character-' + self.receipt['source']['asset']['sha256'][:12]
+        def use_historical_record(run, manifest):
+            annotation_path = run / manifest['annotation']['path']
+            canonical = json.loads(annotation_path.read_text())
+            for item in (manifest, canonical):
+                del item['extensions']['foreground_analysis']['identity_method']
+            fg.atomic_json(annotation_path, canonical)
+            manifest['annotation']['sha256'] = sha(annotation_path)
+            manifest['character']['id'] = legacy_id
+            save_manifest(run, manifest, transactional=False)
+
+        destination = home / 'single'
+        manifest = fg.select(self.root, ['candidate-1'], destination)
+        manifest['character']['id'] = legacy_id
+        save_manifest(destination, manifest, transactional=False)
+        with self.assertRaisesRegex(ValueError, 'character identity'):
+            load_decomposition(destination)
+        use_historical_record(destination, manifest)
+        self.assertEqual(load_decomposition(destination)['character']['id'], legacy_id)
+        export_decomposition(destination, home / 'single.zip')
+        import_decomposition(home / 'single.zip', home / 'restored')
+        self.assertEqual(load_decomposition(home / 'restored')['character']['id'], legacy_id)
+
+        self.receipt['candidates'] = original_candidates
+        left, right = original_candidates
+        mask = (self.root / left['mask']['path']).read_bytes()
+        (self.root / right['mask']['path']).write_bytes(mask)
+        right['mask']['sha256'] = left['mask']['sha256']
+        right.update(bbox=left['bbox'], pixels=left['pixels'])
+        overlap.write_bytes(mask)
+        self.receipt['overlap']['sha256'] = sha(overlap)
+        self.refresh_overlay()
+        self.save()
+        for n, ids in enumerate((['candidate-1'], ['candidate-1', 'candidate-2'])):
+            with self.subTest(ids=ids):
+                run = home / f'coincident-{n}'
+                manifest = fg.select(self.root, ids, run)
+                use_historical_record(run, manifest)
+                with self.assertRaisesRegex(fg.AmbiguousHistoricalSelection, 'select the intended IDs'):
+                    load_decomposition(run)
+                recovered = fg.select(run / fg.RETAINED_DIRECTORY, ids, home / f'recovered-{n}')
+                self.assertEqual(recovered['extensions']['foreground_analysis']['selected_ids'], ids)
+                self.assertNotEqual(recovered['character']['id'], legacy_id)
+
     @requires_foreground_publication
     def test_selection_preserves_rgba_and_portable_receipt(self):
         before = sha(self.root/'source/original.png')
@@ -181,11 +295,32 @@ class ForegroundContracts(unittest.TestCase):
             (self.root / descriptor['path']).write_bytes(mask_data)
             descriptor['sha256'] = right['mask']['sha256']
         left.update(bbox=right['bbox'], pixels=right['pixels'])
+        self.refresh_overlay()
         self.save()
         moved_id = select_id(first, 'moved')
         self.assertNotEqual(moved_id, first_id)
         self.assertNotEqual(moved_id, second_id)
         self.assertEqual(select_id(second, 'same-membership'), second_id)
+
+        # Separately valid IDs for identical pixels still name distinct selections.
+        moved = Path(self.temp.name) / 'moved'
+        previous = load_decomposition(moved)
+        annotation = json.loads((moved / previous['annotation']['path']).read_text())
+        other = copy.deepcopy(previous)
+        for item in (other, annotation):
+            item['extensions']['foreground_analysis']['selected_ids'] = second
+        with self.assertRaisesRegex(ValueError, 'character identity'):
+            fg.verify_selection(moved, other, annotation)
+        for other_id in (second_id, 'character-' + previous['source']['sha256'][:12]):
+            with self.subTest(character=other_id):
+                manifest = copy.deepcopy(previous)
+                manifest['character']['id'] = other_id
+                save_manifest(moved, manifest, transactional=False)
+                with self.assertRaisesRegex(ValueError, 'character identity'):
+                    load_decomposition(moved)
+                with self.assertRaisesRegex(ValueError, 'character identity'):
+                    export_decomposition(moved, Path(self.temp.name) / 'other.zip')
+                self.assertFalse((Path(self.temp.name) / 'other.zip').exists())
 
         source_path = self.root / self.receipt['source']['asset']['path']
         with Image.open(source_path) as image:
@@ -390,6 +525,9 @@ class ForegroundContracts(unittest.TestCase):
         def worker(command, **kwargs):
             stage = Path(command[3])
             self.assertIn(int(command[6]), kwargs['pass_fds'])
+            self.assertEqual(float(command[5]), .81)
+            kwargs['stdout'].write(b'synthetic worker diagnostic\n')
+            (stage / 'progress.txt').write_text('synthetic scratch note')
             for relative in ('masks/candidate-1.png', 'masks/candidate-2.png',
                              'masks/overlap.png', 'overlay.png'):
                 (stage / relative).write_bytes((self.root / relative).read_bytes())
@@ -402,7 +540,7 @@ class ForegroundContracts(unittest.TestCase):
              patch.object(fg, '_weight', return_value=Path('unused')), \
              patch.object(fg.subprocess, 'run', side_effect=worker):
             receipt = fg.propose(source, destination, weights='unused', enabled=True,
-                                 origin='Synthetic source', fixture=True)
+                                 origin='Synthetic source', fixture=True, score_threshold=.81)
 
         self.assertEqual(fg.load(destination), receipt)
         self.assertEqual({name: receipt['backend'][name] for name in versions}, versions)
@@ -412,6 +550,12 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(receipt['source']['asset']['sha256'], sha(source))
         self.assertEqual((destination / receipt['source']['asset']['path']).read_bytes(), source.read_bytes())
         self.assertEqual(receipt['runtime'], {'torch_threads': 1, 'torch_interop_threads': 1})
+        self.assertEqual(receipt['overlay_renderer'], fg.OVERLAY_RENDERER)
+        self.assertEqual(receipt['parameters']['score_threshold'], .81)
+        self.assertEqual({p.relative_to(destination).as_posix() for p in destination.rglob('*') if p.is_file()},
+                         {fg.RECEIPT_NAME, 'source/original.png', 'masks/candidate-1.png',
+                          'masks/candidate-2.png', 'masks/overlap.png', 'overlay.png'})
+        self.assertTrue(all(not list(wrapper.iterdir()) for wrapper in destination.parent.glob('.foreground-*')))
         self.assertEqual(len(receipt['candidates']), 2)
         self.assertEqual(receipt['review_status'], 'pending')
 
@@ -530,6 +674,7 @@ class ForegroundContracts(unittest.TestCase):
                 candidate.update(mask=fg._asset(self.root, 'masks/candidate-1.png'),
                                  bbox=list(changed.getbbox()), pixels=fg.count(changed))
                 self.receipt['overlap'] = fg._asset(self.root, 'masks/overlap.png')
+                self.refresh_overlay()
                 self.save()
                 fg.load(self.root)
             return mask

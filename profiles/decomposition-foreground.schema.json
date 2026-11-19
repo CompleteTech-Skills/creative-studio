@@ -269,6 +269,9 @@
         "torch_threads",
         "torch_interop_threads"
       ]
+    },
+    "overlay_renderer": {
+      "const": "mask-box-label-v2"
     }
   },
   "required": [

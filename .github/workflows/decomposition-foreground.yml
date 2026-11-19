@@ -56,8 +56,10 @@ jobs:
         with:
           name: foreground-instance-${{ github.sha }}
           path: |
-            foreground-tests.log
-            foreground-native-tests.log
-            foreground-evidence
+            foreground-evidence/astronaut-test/proposals/
+            foreground-evidence/astronaut-test/selected/
+            foreground-evidence/two-people-test/proposals/
+            foreground-evidence/two-people-test/person-0/
+            foreground-evidence/two-people-test/person-1/
           if-no-files-found: error
           retention-days: 30

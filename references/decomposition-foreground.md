@@ -79,6 +79,11 @@ A missing backend, a failed worker or no useful candidates leaves manual
 selection available and does not create a falsely successful character.
 
 Inspect `overlay.png`, each `masks/candidate-N.png` and `masks/overlap.png`.
+Loading recomputes every preview pixel from the admitted source and candidate
+masks in receipt order. Current receipts declare `mask-box-label-v2`. It tints
+each instance and clips its outline and bitmap label to the mask's half-open
+bounding box. A receipt without the marker must match the historical worker's
+full-canvas default-font labels and inclusive Pillow outlines.
 Candidate masks can overlap: no detection silently steals pixels from another.
 Explicitly selecting several IDs unions their masks into one imported character;
 select each separately into separate new runs for multiple characters. The union
@@ -96,6 +101,13 @@ and overlap. Manual corrections preserve the original selection as provenance
 while allowing the current foreground mask to change. Proposal masks and the
 overlay use canonical PNG filenames, and selection admits only matching
 artifact digests within the package's cumulative size limit.
+Reload derives the character ID from the original source hash, the original
+selected mask pixels and the sorted set of explicitly selected IDs. Coincident
+instance masks can therefore name distinct characters. Older source-only IDs
+can be verified for historical previews when exactly one set of candidates
+produces the retained selection. If several sets give the same pixels, inspect
+the preserved proposal and explicitly run `select` on `foreground-analysis/`
+into a new directory. The original run stays available for inspection.
 The run has source-bound unassigned foreground,
 zero-error recomposition of selected pixels, and pending semantic review.
 The run's `analysis.semantic_model_called` remains false because this stage does
@@ -129,3 +141,6 @@ must already exist and contain no symbolic-link path components. Cleanup removes
 contents of the pinned staging directory; its empty outer wrapper is retained
 for owned maintenance, including after failure. Selection does not approve the
 proposals or turn foreground masks into semantic anatomy.
+Publication copies only the receipt and its declared source, masks and preview
+into the new proposal directory. Worker inputs, raw output and diagnostics
+stay in private staging until cleanup. CI archives the published example runs.
