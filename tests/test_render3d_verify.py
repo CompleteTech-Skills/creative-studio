@@ -178,6 +178,86 @@ class ImageVerification(unittest.TestCase):
                                 decode('must-not-open',output=output(),resolution=[3,2],**{option:value})
                             capture.assert_not_called()
 
+    def test_public_capture_uses_one_bounded_read_at_a_time(self):
+        from contextlib import contextmanager
+        import render3d_verify
+
+        reads = []
+        live_chunks = 0
+        image_source = render3d_verify._image_source
+        assert_released = self.assertEqual
+
+        class ObservedChunk(bytes):
+            def __new__(cls, contents):
+                nonlocal live_chunks
+                live_chunks += 1
+                return super().__new__(cls, contents)
+
+            def __del__(self):
+                nonlocal live_chunks
+                live_chunks -= 1
+
+        @contextmanager
+        def observed_source(*args, **kwargs):
+            with image_source(*args, **kwargs) as stream:
+                class ObservedReads:
+                    def read(self, size):
+                        reads.append(size)
+                        assert_released(live_chunks, 0)
+                        block = stream.read(size)
+                        return ObservedChunk(block) if block else block
+
+                yield ObservedReads()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'one-pixel.png'
+            with path.open('wb') as stream:
+                png.Writer(1, 1, greyscale=False, alpha=True).write(stream, [[31, 63, 95, 255]])
+            source = path.read_bytes()
+            budget = 32
+            self.assertGreater(len(source), budget)
+            with mock.patch.object(render3d_verify, '_image_source', observed_source):
+                report = verify_image(path, output=output(), resolution=[1, 1], memory_bytes=budget)
+            self.assertEqual(report['sha256'], hashlib.sha256(source).hexdigest())
+            self.assertGreater(len(reads), 2)
+            self.assertLessEqual(max(reads), budget)
+
+    def test_capture_preserves_scratch_storage_exhaustion(self):
+        import errno
+        import io
+        import render3d_verify
+
+        marker = 'private-scratch-location'
+        errors = (errno.ENOSPC, getattr(errno, 'EDQUOT', errno.ENOSPC))
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'intact.png'
+            self.png(path)
+            before = verify_image(path, output=output(), resolution=[3, 2])
+            for number in set(errors):
+                failure = OSError(number, marker)
+                for stage in ('create', 'write', 'seek'):
+                    with self.subTest(number=number, stage=stage):
+                        if stage == 'create':
+                            scratch = mock.patch.object(render3d_verify.tempfile, 'TemporaryFile',
+                                                        side_effect=failure)
+                        else:
+                            stream = io.BytesIO()
+                            setattr(stream, stage, mock.Mock(side_effect=failure))
+                            scratch = mock.patch.object(render3d_verify.tempfile, 'TemporaryFile',
+                                                        return_value=stream)
+                        with scratch, self.assertRaises(Render3DError) as raised:
+                            verify_image(path, output=output(), resolution=[3, 2])
+                        self.assertEqual(raised.exception.report['category'], 'storage-exhaustion')
+                        self.assertEqual(raised.exception.report['path'], 'image')
+                        self.assertNotIn(marker, str(raised.exception.report))
+            class PartialWrites(io.BytesIO):
+                def write(self, data):
+                    return super().write(data[:7])
+
+            with mock.patch.object(render3d_verify.tempfile, 'TemporaryFile', return_value=PartialWrites()):
+                self.assertEqual(verify_image(path, output=output(), resolution=[3, 2]), before)
+            self.assertEqual(verify_image(path, output=output(), resolution=[3, 2]), before)
+
     def test_float_exr_cannot_claim_unsupported_precision(self):
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'float.exr';self.exr(path)

@@ -8,6 +8,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
 from functools import wraps
+import errno
 import hashlib
 import math
 import os
@@ -81,37 +82,57 @@ def _image_source(path, *, root=None, name=None, root_identity=None, require_sin
     if os.name == 'nt':
         from atomic_windows import pinned_directory
         with pinned_directory(root), pinned_directory(path.parent):
-            with open_payload(root, name, root_identity=root_identity) as (source, opened):
+            with open_payload(root, name, root_identity=root_identity, buffering=0) as (source, opened):
                 admit_opened(opened)
                 yield source
                 admit_opened(os.fstat(source.fileno()))
     else:
-        with open_payload(root, name, root_identity=root_identity) as (source, opened):
+        with open_payload(root, name, root_identity=root_identity, buffering=0) as (source, opened):
             admit_opened(opened)
             yield source
             admit_opened(os.fstat(source.fileno()))
 
 
+def _capture_io_error(error, diagnostic_path):
+    if error.errno in (errno.ENOSPC, getattr(errno, 'EDQUOT', errno.ENOSPC)):
+        return Render3DError('storage-exhaustion', 'Verification scratch storage is exhausted.', path=diagnostic_path)
+    return Render3DError('corrupt-output', 'Image could not be captured safely.', path=diagnostic_path)
+
+
 @contextmanager
-def _captured(path, max_bytes, *, diagnostic_path='image', **source_options):
-    """Hash and decode the same privately captured bytes, not a mutable path."""
+def _captured(path, max_bytes, *, memory_bytes=1024**2, diagnostic_path='image', **source_options):
+    """Hash a single bounded stream into the private file used for decoding."""
     path = Path(path)
+    read_limit = min(1024**2, memory_bytes)
     try:
-        with tempfile.TemporaryFile() as frozen:
+        with tempfile.TemporaryFile(buffering=0) as frozen:
             digest, size = hashlib.sha256(), 0
             with _image_source(path, **source_options) as source:
-                while chunk := source.read(min(1024*1024, max_bytes-size+1)):
+                while chunk := source.read(min(read_limit, max_bytes - size + 1)):
                     size += len(chunk)
                     require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=diagnostic_path)
                     digest.update(chunk)
-                    frozen.write(chunk)
+                    # An unbuffered write can make partial progress. Keep a view
+                    # onto the one current block and release it before reading again.
+                    view = memoryview(chunk)
+                    try:
+                        while view:
+                            written = frozen.write(view)
+                            require(written, 'storage-exhaustion', 'Verification scratch write made no progress.')
+                            view = view[written:]
+                    except OSError as exc:
+                        # The source context maps uncategorized I/O errors to source failures.
+                        raise _capture_io_error(exc, diagnostic_path) from None
+                    del view, chunk
             require(size > 0, 'corrupt-output', 'Image is empty.', path=diagnostic_path)
             frozen.seek(0)
             yield frozen, dict(bytes=size, sha256=digest.hexdigest())
     except Render3DError as exc:
         exc.report['path'] = diagnostic_path
         raise
-    except (RigError, OSError, ValueError):
+    except OSError as exc:
+        raise _capture_io_error(exc, diagnostic_path) from None
+    except (RigError, ValueError):
         raise Render3DError('corrupt-output', 'Image could not be captured safely.', path=diagnostic_path) from None
 
 
@@ -504,7 +525,9 @@ def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=10
     """Decode one actual output. Pixel ranges do not establish scene correctness."""
     _image_contract(output, resolution, pass_name, max_bytes, memory_bytes)
     try:
-        with _captured(path,max_bytes,diagnostic_path=_image_identity((_source_options or {}).get('name')),**(_source_options or {})) as (stream,identity):
+        with _captured(path, max_bytes, memory_bytes=memory_bytes,
+                       diagnostic_path=_image_identity((_source_options or {}).get('name')),
+                       **(_source_options or {})) as (stream, identity):
             report=(_png if output['format']=='png' else _exr)(stream,resolution,output['bit_depth'],memory_bytes,_pixels)
         channels=report['channels']
         if pass_name in ('combined','albedo'):
