@@ -387,7 +387,8 @@ class SpatialIndex:
         """Exact SAT overlap of transformed local boxes, including shear.
 
         Geometry boxes remain conservative with respect to non-box meshes.
-        Degenerate (flat/line) bounds are separated by the face and edge axes.
+        Degenerate (flat/line) bounds, notably coplanar flat boxes, may be
+        reported as possible overlap because their edge axes coincide.
         Touching counts as overlap, and separation smaller than the rounding
         scale of the translations and local centres involved is reported as a
         possible overlap rather than dropped.
