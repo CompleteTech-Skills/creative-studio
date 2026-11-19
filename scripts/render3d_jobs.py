@@ -34,12 +34,16 @@ def _dump(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
 
 
-def _metadata(path):
+def _metadata(path, expected_digest=None):
     """Decode bounded metadata from the same admitted regular descriptor."""
     limit=32*1024**2
     try:
         with open_regular(path,limit) as stream:
-            return decode_json(stream.read(limit+1),max_bytes=limit)
+            data=stream.read(limit+1)
+            if expected_digest is not None:
+                require(hashlib.sha256(data).hexdigest()==expected_digest,
+                        'stale-cache','Published metadata differs from the prepared frame.')
+            return decode_json(data,max_bytes=limit)
     except (OSError,RigError) as exc:
         raise Render3DError('invalid-input',str(exc),path=path) from exc
 
@@ -99,6 +103,19 @@ def _identity(info):
 
 def _delivery_files(result):
     return [image['file'] for image in result['images']]+result['logs']+[result['manifest'],result['verification']['evidence']]
+
+
+def _check_artifact(stream,info,ref,category):
+    require(info.st_size==ref['bytes'],category,'Published artifact size differs.')
+    digest=hashlib.sha256()
+    remaining=ref['bytes']
+    while remaining:
+        chunk=stream.read(min(1024**2,remaining))
+        if not chunk:break
+        remaining-=len(chunk)
+        digest.update(chunk)
+    require(not remaining and not stream.read(1) and digest.hexdigest()==ref['sha256'],
+            category,'Published artifact differs from its receipt.')
 
 
 def _check_delivery_inventory(directory,refs):
@@ -245,6 +262,11 @@ class JobStore:
             db.execute('CREATE INDEX IF NOT EXISTS jobs_priority ON jobs(priority DESC,created,id) '
                        "WHERE cancel=0 AND state IN ('queued','running')")
             db.execute('CREATE INDEX IF NOT EXISTS frames_by_state ON frames(state,job,frame)')
+            if 'publication_token' not in {row['name'] for row in db.execute('PRAGMA table_info(frames)')}:
+                db.execute('ALTER TABLE frames ADD COLUMN publication_token TEXT')
+            db.execute('CREATE TABLE IF NOT EXISTS frame_publications('
+                       'token TEXT PRIMARY KEY, job TEXT NOT NULL, frame INTEGER NOT NULL, '
+                       'payload TEXT NOT NULL, digest TEXT NOT NULL, receipt_key TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS delivery_intents('
                        'destination TEXT PRIMARY KEY, job TEXT NOT NULL, revision INTEGER NOT NULL, '
                        'parent TEXT NOT NULL, payload TEXT NOT NULL, result_sha256 TEXT NOT NULL, '
@@ -352,7 +374,13 @@ class JobStore:
                 request_sha256=result['request_sha256'],resolver='JobStore.resolve_request')
             result['project']=deepcopy(request['project']);result['scene']=deepcopy(request['scene'])
             result['shot']=deepcopy(request['shot'])
-            result['frames']=[dict(x) for x in db.execute('SELECT frame,state,attempts,pid,token,heartbeat,error,cache_key FROM frames WHERE job=? ORDER BY frame',(job,))]
+            result['frames']=[dict(x) for x in db.execute(
+                'SELECT f.frame,f.state,f.attempts,f.pid,f.token,f.heartbeat,f.error,f.cache_key,'
+                'f.publication_token,p.receipt_key,p.digest AS receipt_sha256 FROM frames f LEFT JOIN frame_publications p '
+                'ON p.token=f.publication_token AND p.job=f.job AND p.frame=f.frame WHERE f.job=? ORDER BY f.frame',(job,))]
+            for frame in result['frames']:
+                require(frame.pop('publication_token') is None or frame['receipt_key'] is not None,
+                        'ownership','Published frame has lost its bound receipt.')
             counts={name:sum(frame['state']==state for frame in result['frames']) for name,state in
                     (('queued','queued'),('active','running'),('completed','complete'),('failed','failed'),('cancelled','cancelled'))}
             counts['requested']=len(result['frames'])
@@ -443,9 +471,13 @@ class JobStore:
         return reserved+self._stored_output_bytes(active_tokens=[row['token'] for row in live],
             reserved_stages=[row['stage'] for row in reservations])
 
+    def _pinned_keys(self,db):
+        return {row[0] for row in db.execute('SELECT cache_key FROM frames UNION SELECT receipt_key '
+                                             'FROM frame_publications WHERE receipt_key IS NOT NULL')}
+
     def cache_inventory(self):
         with self._transaction() as db:
-            pinned={row[0] for row in db.execute('SELECT DISTINCT cache_key FROM frames')}
+            pinned=self._pinned_keys(db)
             return [dict(entry,pinned=entry['key'] in pinned) for entry in self._cache_entries()]
 
     def clean_cache(self, keys, *, apply=False):
@@ -458,7 +490,7 @@ class JobStore:
         require(isinstance(keys,list) and len(keys)<=1000 and all(isinstance(k,str) for k in keys),
                 'invalid-input','Supply at most 1000 cache keys.')
         with self._transaction() as db:
-            pinned={row[0] for row in db.execute('SELECT DISTINCT cache_key FROM frames')}
+            pinned=self._pinned_keys(db)
             entries={entry['key']:entry for entry in self._cache_entries()}
             require(all(key in entries and key not in pinned for key in keys),
                     'ownership','Cleanup includes an unknown or pinned cache key.')
@@ -481,6 +513,14 @@ class JobStore:
 
     def claim(self, job=None):
         """Claim one priority-ordered frame only when global reservations permit."""
+        while True:
+            outcome=self._claim_one(job)
+            if not isinstance(outcome,Render3DError):
+                return outcome
+            if job is not None:
+                raise outcome
+
+    def _claim_one(self,job):
         with self._transaction() as db:
             live=self._active_reservations(db)
             used={name:sum(row['resources'][name] for row in live) for name in ('workers','memory_bytes')}
@@ -530,7 +570,17 @@ class JobStore:
                     and type(row['attempts']) is int
                     and 0<=row['attempts']<request['max_attempts'],
                     'ownership','Persisted frame partition or attempt differs from the request.')
-            spec=make_frame_spec(request,row['frame'],Path(candidate['snapshot'])/'snapshot.json')
+            try:
+                spec=make_frame_spec(request,row['frame'],Path(candidate['snapshot'])/'snapshot.json')
+            except Render3DError as exc:
+                if exc.report['category'] not in ('missing-asset','stale-asset'):
+                    raise
+                message=str(exc)[:2048]
+                db.execute('UPDATE frames SET state="failed",error=? WHERE job=? AND state="queued"',
+                           (message,candidate['id']))
+                self._event(db,candidate['id'],'source-unavailable',dict(category=exc.report['category'],error=message))
+                self._refresh(db,candidate['id'])
+                return exc
             require(row['spec']==_dump(spec) and row['cache_key']==object_hash(dict(frame=spec['cache_key'],backend=backend)),
                     'ownership','Persisted frame plan or cache key differs from the request.')
             token=uuid.uuid4().hex
@@ -570,26 +620,61 @@ class JobStore:
             state='cancelled' if job['cancel'] else 'queued' if retryable and row['attempts']<json.loads(job['request'])['max_attempts'] else 'failed'
             db.execute('UPDATE frames SET state=?,error=?,token=NULL,pid=NULL,heartbeat=NULL WHERE job=? AND frame=?',
                        (state,str(error)[:2048],lease['job'],lease['frame']))
+            db.execute('DELETE FROM frame_publications WHERE token=?',(lease['token'],))
             self._event(db,lease['job'],'attempt-failed',{'frame':lease['frame'],'state':state,'error':str(error)[:2048]})
             self._refresh(db,lease['job'])
 
-    def recover(self, job=None):
-        """Requeue dead-process claims; retain live claims despite old heartbeats."""
+    def recover(self, job=None, *, verifier=None):
+        """Settle dead claims, rechecking any interrupted publication before completion."""
         with self._transaction() as db:
-            return self._recover(db,job)
+            return self._recover(db,job,verifier)
 
-    def _recover(self, db, job):
+    def _published_receipt(self, db, row, verifier):
+        intent=db.execute('SELECT * FROM frame_publications WHERE token=? AND job=? AND frame=?',
+                          (row['token'],row['job'],row['frame'])).fetchone()
+        if intent is None or row['cancel']:
+            return None
+        for key in (row['cache_key'],intent['receipt_key']):
+            path=safe_path(self.root,'cache/'+key)
+            if not path.is_dir() or _identity(path.stat(follow_symlinks=False))!=intent['payload']:
+                continue
+            require(verifier is not None,'verification-failed',
+                    'Recovering a published frame requires an independent verifier.')
+            job_row=db.execute('SELECT * FROM jobs WHERE id=?',(row['job'],)).fetchone()
+            request,backend=self._checked_request(job_row)
+            try:
+                spec=make_frame_spec(request,row['frame'],Path(job_row['snapshot'])/'snapshot.json')
+                require(row['spec']==_dump(spec) and row['cache_key']==object_hash(dict(
+                    frame=spec['cache_key'],backend=backend)),'ownership','Interrupted frame plan differs.')
+                lease=dict(job=row['job'],frame=row['frame'],token=row['token'],request=request,
+                           backend=backend,spec=spec,cache_key=row['cache_key'])
+                record=self._verify_cache(lease,verifier,key=key,digest=intent['digest'])
+                require(record['request']==self.frame_request(lease) and record['spec']==spec
+                        and _identity(path.stat(follow_symlinks=False))==intent['payload'],
+                        'ownership','Interrupted frame publication changed.')
+            except (ValueError,OSError,KeyError):
+                return None
+            return key
+        return None
+
+    def _recover(self, db, job, verifier):
         recovered=[]
         query='SELECT f.*,j.request,j.cancel FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'
         args=[]
         if job is not None:query+=' AND f.job=?';args.append(job)
         for row in db.execute(query,args).fetchall():
             if _alive(row['pid']):continue
+            key=self._published_receipt(db,row,verifier)
+            if key is not None:
+                self._finish_frame(db,row,key,recovered=True)
+                recovered.append((row['job'],row['frame']))
+                continue
             state='cancelled' if row['cancel'] else 'queued' if row['attempts']<json.loads(row['request'])['max_attempts'] else 'failed'
             db.execute('UPDATE frames SET state=?,token=NULL,pid=NULL,heartbeat=NULL,error="Owner process exited" WHERE job=? AND frame=?',
                        (state,row['job'],row['frame']))
             recovered.append((row['job'],row['frame']))
             self._event(db,row['job'],'owner-exited',{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
+            db.execute('DELETE FROM frame_publications WHERE token=?',(row['token'],))
         return recovered
 
     def resume(self, job, *, retry_failed=False, expected_revision=None, verifier=None):
@@ -603,14 +688,14 @@ class JobStore:
             spec=make_frame_spec(snapshot['request'],frame['frame'],Path(snapshot['snapshot'])/'snapshot.json')
             lease=dict(request=snapshot['request'],frame=frame['frame'],spec=spec,
                        cache_key=frame['cache_key'],backend=snapshot['backend'])
-            try:self._verify_cache(lease,verifier)
+            try:self._verify_cache(lease,verifier,key=frame['receipt_key'],digest=frame['receipt_sha256'])
             except (Render3DError,ValueError,OSError,KeyError):invalid.append(frame['frame'])
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
             require(row is not None,'invalid-input','Unknown render job.')
             require(expected_revision is None or row['revision']==expected_revision,'ownership','Stale job revision.')
             require(row['revision']==snapshot['revision'],'ownership','Job changed during resume verification.')
-            self._recover(db,job)
+            self._recover(db,job,verifier)
             require(not db.execute('SELECT 1 FROM frames WHERE job=? AND state="running"',(job,)).fetchone(),
                     'ownership','Cannot resume while a live worker owns a frame.')
             db.execute('UPDATE jobs SET cancel=0 WHERE id=?',(job,))
@@ -633,10 +718,10 @@ class JobStore:
         value['frame_range']=dict(start=lease['frame'],end=lease['frame']+1)
         return value
 
-    def _verify_cache(self, lease, verifier):
-        path=safe_path(self.root,'cache/'+lease['cache_key'])
+    def _verify_cache(self, lease, verifier, *, key=None, digest=None):
+        path=safe_path(self.root,'cache/'+(key or lease['cache_key']))
         require(path.is_dir() and not path.is_symlink(),'missing-asset','Cache entry unavailable.')
-        record=_metadata(safe_path(path,'cache.json',exists=True))
+        record=_metadata(safe_path(path,'cache.json',exists=True),digest)
         require(isinstance(record,dict) and set(record)=={
                     'version','cache_key','spec','backend','request','result','report'},
                 'stale-cache','Cache metadata has an invalid record shape.')
@@ -655,7 +740,20 @@ class JobStore:
         require(all(old[k]==current[k] for k in ('project','scene','shot','snapshot','fps','source_start','playback_rate','camera','settings','frame_range')),
                 'stale-cache','Cache worker request differs from the current frame input.')
         result=record['result'];validate(result,'RenderResult')
-        verifier(record['request'],result,path)
+        require(result['status']=='complete' and result['backend']==lease['backend']
+                and result['request_sha256']==object_hash(old),
+                'stale-cache','Cache result differs from its publishing worker request.')
+        refs={}
+        for ref in _delivery_files(result):
+            require(refs.setdefault(ref['path'],ref)==ref,'stale-cache','Conflicting cached references.')
+        require(sum(ref['bytes'] for ref in refs.values())<=old['settings']['resources']['storage_bytes'],
+                'stale-cache','Cached references exceed the original worker budget.')
+        for ref in refs.values():
+            with open_payload(path,ref['path']) as (stream,info):
+                _check_artifact(stream,info,ref,'stale-cache')
+        report=verifier(record['request'],result,path)
+        require(isinstance(report,dict) and _dump(report)==_dump(record['report']),
+                'verification-failed','Stored frame report differs from independent verification.')
         return record
 
     def reuse(self, lease, verifier):
@@ -670,7 +768,7 @@ class JobStore:
             self._owned(db,lease)
             require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                     'cancelled','Cancellation requested before cache completion.')
-            db.execute('UPDATE frames SET state="complete",token=NULL,pid=NULL,heartbeat=NULL,error=NULL WHERE job=? AND frame=?',
+            db.execute('UPDATE frames SET state="complete",publication_token=NULL,token=NULL,pid=NULL,heartbeat=NULL,error=NULL WHERE job=? AND frame=?',
                        (lease['job'],lease['frame']))
             self._event(db,lease['job'],'cache-reused',{'frame':lease['frame']});self._refresh(db,lease['job'])
         return True
@@ -722,13 +820,20 @@ class JobStore:
                 _copy_artifact(source,target,ref)
                 copied+=ref['bytes']
             fresh=verifier(request,result,stage)
-            require(fresh==report,'verification-failed','Copied artifact verification differs from admitted source evidence.')
+            require(_dump(fresh)==_dump(report),'verification-failed','Copied artifact verification differs from admitted source evidence.')
             atomic_bytes(stage/'cache.json',payload)
+            alternate=object_hash(dict(cache_key=lease['cache_key'],attempt=lease['token']))
+            intent=(lease['token'],lease['job'],lease['frame'],_identity(stage.stat()),
+                    hashlib.sha256(payload).hexdigest(),alternate)
+            with self._transaction() as db:
+                self._owned(db,lease)
+                db.execute('INSERT OR REPLACE INTO frame_publications VALUES(?,?,?,?,?,?)',intent)
             with self._transaction() as db:
                 self._owned(db,lease)
                 require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                         'cancelled','Cancellation requested before publication.')
-                destination=safe_path(self.root,'cache/'+lease['cache_key'])
+                key=lease['cache_key']
+                destination=safe_path(self.root,'cache/'+key)
                 used=self._stored_output_bytes()
                 require(destination.exists() or used<=self.capacity['storage_bytes'],
                         'storage-exhaustion','Verified cache publication exceeds store capacity.')
@@ -753,9 +858,11 @@ class JobStore:
                         expected=[(i['frame'],i['pass_name'],i['file']['sha256']) for i in existing['result']['images']]
                         actual=[(i['frame'],i['pass_name'],i['file']['sha256']) for i in result['images']]
                         require(expected==actual,'stale-cache','Same render inputs produced different refreshed pixels.')
-                db.execute('UPDATE frames SET state="complete",token=NULL,pid=NULL,heartbeat=NULL,error=NULL WHERE job=? AND frame=?',
-                           (lease['job'],lease['frame']))
-                self._event(db,lease['job'],'frame-published',{'frame':lease['frame'],'cache_key':lease['cache_key']});self._refresh(db,lease['job'])
+                        key=alternate
+                        require(used<=self.capacity['storage_bytes'],'storage-exhaustion',
+                                'Retaining the fresh receipt would exceed store capacity.')
+                        _rename_no_replace(stage,safe_path(self.root,'cache/'+key))
+                self._finish_frame(db,lease,key)
         finally:
             try:
                 if created and stage.exists():shutil.rmtree(stage)
@@ -764,6 +871,14 @@ class JobStore:
                     db.execute('DELETE FROM storage_reservations WHERE stage=? AND pid=?',
                                (stage.name,os.getpid()))
         return record
+
+    def _finish_frame(self,db,lease,key,*,recovered=False):
+        db.execute('UPDATE frame_publications SET receipt_key=? WHERE token=?',(key,lease['token']))
+        db.execute('UPDATE frames SET state="complete",publication_token=?,token=NULL,pid=NULL,heartbeat=NULL,'
+                   'error=NULL WHERE job=? AND frame=?',(lease['token'],lease['job'],lease['frame']))
+        self._event(db,lease['job'],'frame-published',dict(frame=lease['frame'],cache_key=lease['cache_key'],
+                                                          receipt_key=key,recovered=recovered))
+        self._refresh(db,lease['job'])
 
     def run_one(self, backend, verifier, *, job=None):
         lease=self.claim(job)
@@ -847,7 +962,7 @@ class JobStore:
                     and not destination.is_symlink() and destination.is_dir(),
                     'ownership','Delivery destination already exists.')
             current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
-            require(current['revision']==state['revision'] and current['state']=='complete',
+            require(current['revision']==state['revision']==pending['revision'] and current['state']=='complete',
                     'ownership','Job changed while reconciling delivery.')
             if os.name=='nt':
                 payload=stack.enter_context(parent.pin_child(destination.name))
@@ -872,16 +987,7 @@ class JobStore:
             _check_delivery_inventory(payload,refs)
             for ref in refs:
                 with reader(ref['path']) as (stream,info):
-                    require(info.st_size==ref['bytes'],'ownership','Published artifact size differs.')
-                    digest=hashlib.sha256()
-                    remaining=ref['bytes']
-                    while remaining:
-                        chunk=stream.read(min(1024**2,remaining))
-                        if not chunk:break
-                        remaining-=len(chunk)
-                        digest.update(chunk)
-                    require(not remaining and not stream.read(1) and digest.hexdigest()==ref['sha256'],
-                            'ownership','Published artifact differs from prepared delivery.')
+                    _check_artifact(stream,info,ref,'ownership')
             require(_identity(destination.parent.stat())==parent_id and
                     _identity(destination.stat(follow_symlinks=False))==identity,
                     'ownership','Delivery location changed while reconciling.')
@@ -911,8 +1017,12 @@ class JobStore:
             spec=make_frame_spec(request,frame['frame'],Path(state['snapshot'])/'snapshot.json')
             lease=dict(request=request,frame=frame['frame'],cache_key=frame['cache_key'],
                        spec=spec,backend=backend)
-            record=self._verify_cache(lease,verifier)
-            source=safe_path(self.root,'cache/'+frame['cache_key'])
+            key=frame['receipt_key'] or frame['cache_key']
+            record=self._verify_cache(lease,verifier,key=key,digest=frame['receipt_sha256'])
+            # Older stores can cite a previous worker even for an executed refresh.
+            if record['request']!=self.frame_request(lease):
+                reused.add(frame['frame'])
+            source=safe_path(self.root,'cache/'+key)
             for image in record['result']['images']:
                 image=deepcopy(image);old=image['file']
                 suffix=request['settings']['output']['format']

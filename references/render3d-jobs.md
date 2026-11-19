@@ -28,8 +28,15 @@ heartbeats, revision and append-only events are persisted. Retained cache and
 staging bytes, including failed or orphaned worker outputs, reduce capacity
 available for the next claim. Live worker outputs are covered by their existing
 reservation and are not counted twice. Heartbeat expiry alone
-never authorizes takeover of a live process. `recover()` requeues only dead
-process claims, honoring maximum attempts and cancellation. This store requires
+never authorizes takeover of a live process. When a selected job's pinned source
+is missing or stale, the scheduler records the failure for its queued frames
+without consuming attempts and continues global scheduling.
+`recover(job, verifier=...)` consults the dead worker's durable publication
+intent. It checks the published directory identity, exact receipt digest, source
+plan, every referenced artifact and the independent frame report before settling
+that same attempt as complete. Supply the verifier when an interrupted
+publication is present. Unpublished or invalid attempts follow the existing
+retry and cancellation limits. This store requires
 local same-host storage; it does not claim distributed leases or cross-host
 failover.
 
@@ -66,10 +73,14 @@ count against cache capacity; repair fails without moving either entry when that
 capacity is insufficient. Failed backend output is preserved for
 inspection.
 
-`verify-reuse` rehashes and decodes artifacts before reuse. `refresh` bypasses
-reuse and executes the backend again. The cache's original per-frame request and
-backend provenance remain immutable and are retained when a different job or
-output location reuses identical pixels. Source, camera, shot, settings, timing
+`verify-reuse` rehashes and decodes artifacts and compares the stored report
+with the independent verifier's report. `refresh` bypasses reuse and executes
+the backend again. Identical refreshed pixels keep a separately pinned receipt
+directory for the new worker's files. Status exposes its `receipt_key` and exact
+`receipt_sha256`. The shared pixel cache retains the original per-frame request
+and backend provenance when a different job or output location reuses identical
+pixels. Deliveries from older stores classify a frame backed by another request's
+receipt as reused. Source, camera, shot, settings, timing
 or backend differences cannot qualify as the same cache entry.
 
 `materialize()` revalidates the source and every frame cache, creates relative
@@ -84,10 +95,10 @@ Delivery records the latest native completion of each frame. Frames fulfilled
 from the verified cache appear in `reused`; newly rendered frames appear in
 `successful`. This uses the full per-job event history, including older stores.
 Before an exclusive directory rename, SQLite commits a delivery intent binding
-the destination parent, verified payload directory, result size and digest.
+the original job revision, destination parent, verified payload directory, result size and digest.
 If the process exits after rename and before the event commits, retry
 `materialize()` with the same job and destination. Recovery checks the physical
-directory identities, result, and every image and metadata reference before
+job revision, directory identities, result, and every image and metadata reference before
 recording one publication event. A completed receipt or an unrelated existing
 destination still rejects a second publication. Private staging can leave an
 empty wrapper on the destination filesystem.

@@ -2,11 +2,14 @@
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -406,6 +409,133 @@ finally:case.tearDown()
         changed=deepcopy(self.request);changed['id']='refresh';changed['destination']['path']='fresh';changed['cache_policy']='refresh'
         other=self.submit(changed);second=self.store.claim(other)
         self.assertFalse(self.store.reuse(second,self.verify))
+
+    def test_delivery_rejects_well_shaped_changed_frame_report(self):
+        self.request['frame_range']['end']=6
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        entry=self.store.root/'cache'/lease['cache_key']/'cache.json'
+        record=json.loads(entry.read_bytes());record['report']['decoded']=False
+        atomic_json(entry,record)
+        with self.assertRaisesRegex(Render3DError,'report differs'):
+            self.store._verify_cache(lease,self.verify)
+        with self.assertRaises(Render3DError):
+            self.store.materialize(job,self.root/'delivery',self.verify)
+        self.assertFalse((self.root/'delivery').exists())
+
+    def test_refresh_delivers_its_own_receipt_and_retains_both_workers_evidence(self):
+        self.request['frame_range']['end']=6
+        original=self.submit();first=self.store.claim(original)
+        out,result=self.output(first);self.store.publish(first,out,result,self.verify)
+        fresh=deepcopy(self.request);fresh.update(id='refresh',cache_policy='refresh')
+        fresh['destination']['path']='fresh'
+        job=self.submit(fresh);lease=self.store.claim(job);out,result=self.output(lease)
+        atomic_json(out/'verification.json',{'fresh_execution':True})
+        result['verification']['evidence']=file('verification.json',(out/'verification.json').read_bytes())
+        self.store.publish(lease,out,result,self.verify)
+        for expected,job_id in ((fresh,job),(self.request,original)):
+            destination=self.root/expected['id']
+            delivered=self.store.materialize(job_id,destination,self.verify)
+            self.assertEqual(delivered['successful'],[5])
+            record=json.loads((destination/delivered['logs'][0]['path']).read_bytes())
+            self.assertEqual(record['request']['id'],expected['id'])
+            frame=self.store.status(job_id)['frames'][0]
+            entry=self.store.root/'cache'/(frame.get('receipt_key') or frame['cache_key'])
+            ref=record['result']['verification']['evidence']
+            self.assertEqual(file(ref['path'],(entry/ref['path']).read_bytes()),ref)
+            self.assertTrue(next(x['pinned'] for x in self.store.cache_inventory() if x['key']==entry.name))
+        # A pre-upgrade refresh kept a frame-published event and only the shared receipt.
+        with self.store._transaction() as db:
+            db.execute('UPDATE frames SET publication_token=NULL WHERE job=?',(job,))
+        destination=self.root/'legacy-delivery'
+        delivered=JobStore(self.store.root).materialize(job,destination,self.verify)
+        self.assertEqual((delivered['successful'],delivered['reused']),([],[5]))
+        historical=json.loads((destination/delivered['logs'][0]['path']).read_bytes())
+        self.assertEqual(historical['request']['id'],self.request['id'])
+
+    def test_dead_final_worker_recovers_only_its_exact_published_receipt(self):
+        self.request['frame_range']['end']=6;self.request['max_attempts']=1
+        code="""import os,sys
+from pathlib import Path
+import render3d_jobs as jobs
+from test_render3d_jobs import JobTests
+case=JobTests();case.root=Path(sys.argv[1]);case.store=jobs.JobStore(case.root/'jobs')
+lease=case.store.claim(sys.argv[2]);case.backend=lease['backend'];output,result=case.output(lease)
+rename=jobs._rename_no_replace
+def stop_after_rename(source,target,*args,**kwargs):
+    rename(source,target,*args,**kwargs)
+    os._exit(77)
+jobs._rename_no_replace=stop_after_rename
+case.store.publish(lease,output,result,case.verify)
+"""
+        for index,name in enumerate(('genuine','copied','changed','changed-evidence','refresh')):
+            with self.subTest(name=name):
+                req=deepcopy(self.request);req['id']=name;req['destination']['path']=name
+                if name=='refresh':req['cache_policy']='refresh'
+                else:req['settings']['samples']+=index
+                job=self.submit(req)
+                child=subprocess.run([sys.executable,'-c',code,str(self.root),job],
+                    env=dict(os.environ,PYTHONPATH=os.pathsep.join(map(str,(ROOT/'scripts',ROOT/'tests')))),
+                    capture_output=True,text=True,timeout=30)
+                self.assertEqual(child.returncode,77,child.stderr)
+                frame=self.store.status(job)['frames'][0]
+                entry=self.store.root/'cache'/frame['cache_key']
+                if name=='copied':
+                    saved=self.root/'original-cache-directory'
+                    entry.rename(saved);shutil.copytree(saved,entry)
+                elif name=='changed':
+                    path=entry/'cache.json';record=json.loads(path.read_bytes())
+                    record['result']['usage']['elapsed_seconds']=19;atomic_json(path,record)
+                elif name=='changed-evidence':
+                    evidence=entry/'verification.json';data=evidence.read_bytes()
+                    evidence.write_bytes(b'X'+data[1:])
+                else:
+                    with self.assertRaises(Render3DError):self.store.recover(job)
+                    self.assertEqual(self.store.status(job)['frames'][0],frame)
+                self.store.resume(job,verifier=self.verify)
+                state=self.store.status(job)
+                self.assertEqual(state['state'],'complete' if name in ('genuine','refresh') else 'failed')
+                self.assertEqual(state['frames'][0]['attempts'],1)
+                self.assertEqual(sum(e['event']=='claimed' for e in state['events']),1)
+                if name in ('genuine','refresh'):
+                    destination=self.root/('delivery-'+name)
+                    result=self.store.materialize(job,destination,self.verify)
+                    self.assertEqual(result['successful'],[5])
+                    record=json.loads((destination/result['logs'][0]['path']).read_bytes())
+                    self.assertEqual(record['request']['id'],name)
+
+    def test_global_run_settles_missing_priority_source_then_processes_healthy_job(self):
+        self.request['frame_range']['end']=6
+        healthy=self.submit()
+        good=self.store.claim(healthy);out,result=self.output(good);self.store.publish(good,out,result,self.verify)
+        other=deepcopy(self.request);other['id']='other';other['destination']['path']='other'
+        runnable=self.submit(other)
+        for index,mutation in enumerate(('missing','stale')):
+            req=deepcopy(self.request);req['priority']=80+index
+            req['destination']['path']=mutation
+            source=self.root/mutation;shutil.copytree(self.root/'snapshot',source)
+            job=self.store.submit(req,source,self.backend)
+            if mutation=='missing':(source/'snapshot.json').rename(source/'moved.json')
+            else:(source/'triangle.obj').write_bytes(b'stale')
+        self.assertEqual(self.store.run_one(None,self.verify)['lease']['job'],runnable)
+        for row in self.store.list_jobs():
+            if row['id'] not in (healthy,runnable):
+                state=self.store.status(row['id'])
+                self.assertEqual((state['state'],state['frames'][0]['attempts']),('failed',0))
+                self.assertTrue(state['frames'][0]['error'])
+
+    def test_interrupted_delivery_refuses_later_revision(self):
+        self.request['frame_range']['end']=6
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        destination=self.root/'delivery'
+        with patch.object(self.store,'_finish_delivery',side_effect=OSError('interruption')):
+            with self.assertRaises(OSError):self.store.materialize(job,destination,self.verify)
+        before=(destination/'result.json').read_bytes()
+        self.store.resume(job,verifier=self.verify)
+        with self.assertRaises(Render3DError):self.store.materialize(job,destination,self.verify)
+        self.assertEqual((destination/'result.json').read_bytes(),before)
+        self.assertFalse(any(e['event']=='delivery-published' for e in self.store.status(job)['events']))
 
 
 @unittest.skipUnless(__import__('os').environ.get('HATCH_RENDER3D_REAL_TESTS') == '1',
