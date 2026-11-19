@@ -347,33 +347,58 @@ def _triangulate_profile(points, holes):
         if (_signed_area2(ring) > 0) != (i == 0):
             indices.reverse()
         boundaries.append(indices)
-    indices = _bridge_holes(vertices, boundaries)
-    faces = []
-    # Preserve simple-outline OBJ face order. A bridge introduces new local
-    # turns unrelated to the validated ring's minimum corner area.
+    boundary = _bridge_holes(vertices, boundaries)
     area2 = _oriented_area2 if holes else _turn
     min_ear_area2 = 1e-12 if holes else _POLYGON_EPS
     edge_tolerance = 0 if holes else _POLYGON_EPS
+    # Preserve the first triangulation whenever it meets the mesh area floor.
+    # If clipping leaves a sliver, retry once, avoiding diagonals close enough
+    # to another vertex to leave an unusable triangle on the remaining side.
+    if holes:
+        # Either product in a cap's cross product is bounded by span squared,
+        # regardless of which vertex becomes its origin in a later triangle.
+        span = max(max(axis)-min(axis) for axis in zip(*vertices))
+        tolerances = (0, min_ear_area2 + 8*math.ulp(span*span))
+    else:
+        tolerances = (edge_tolerance,)
+    for diagonal_tolerance in tolerances:
+        faces, remaining = _clip_ears(vertices, boundary, area2, min_ear_area2,
+                                      edge_tolerance, diagonal_tolerance)
+        if len(remaining) == 3:
+            a, b, c = (vertices[i] for i in remaining)
+            if _usable_cap_triangle(a,b,c,area2,1e-12):
+                faces.append(remaining)
+                return vertices, faces, boundaries
+    require(len(remaining) == 3, 'Polygon cannot be triangulated without degeneracy.')
+    require(False, 'Polygon cap has a degenerate final triangle.')
+
+
+def _usable_cap_triangle(a, b, c, area2, minimum):
+    # The emitted XZ normal uses ordinary float arithmetic, even when exact
+    # orientation distinguishes a turn lost to cancellation in that normal.
+    return _turn(a,b,c) > minimum and area2(a,b,c) > minimum
+
+
+def _clip_ears(vertices, boundary, area2, min_ear_area2, edge_tolerance, diagonal_tolerance):
+    indices = boundary.copy()
+    faces = []
     while len(indices) > 3:
         for k,b in enumerate(indices):
             a, c = indices[k-1], indices[(k+1)%len(indices)]
             pa, pb, pc = vertices[a], vertices[b], vertices[c]
-            if area2(pa,pb,pc) <= min_ear_area2:
+            if not _usable_cap_triangle(pa,pb,pc,area2,min_ear_area2):
                 continue
             if any(area2(pa,pb,vertices[q]) >= -edge_tolerance
                    and area2(pb,pc,vertices[q]) >= -edge_tolerance
-                   and area2(pc,pa,vertices[q]) >= -edge_tolerance
+                   and area2(pc,pa,vertices[q]) >= -diagonal_tolerance
                    for q in indices if q not in (a,b,c)):
                 continue
             faces.append([a,b,c])
             indices.pop(k)
             break
         else:
-            require(False, 'Polygon cannot be triangulated without degeneracy.')
-    require(area2(*(vertices[i] for i in indices)) > 1e-12,
-            'Polygon cap has a degenerate final triangle.')
-    faces.append(indices)
-    return vertices, faces, boundaries
+            break
+    return faces, indices
 
 
 def polygon_triangles(points, holes=()):

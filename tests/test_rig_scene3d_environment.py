@@ -102,6 +102,29 @@ class GeometryTests(unittest.TestCase):
                     volume = np.einsum('ij,ij->i', triangles[:,0], normals).sum()/6
                     self.assertTrue(math.isclose(volume, area*height, rel_tol=1e-12))
 
+    def test_float_scaled_holes_keep_nondegenerate_caps(self):
+        rings = ([[0,0],[5,0],[5,4],[0,4]], [[2,3],[4,3],[4,2]], [[3,2],[2,1],[3,1]])
+        # At 0.1 an exact sliver falls below the mesh area floor. At 35.6
+        # and at translated scale 133.3, float cross products cancel to zero
+        # for ears whose exact areas can exceed the floor.
+        for scale, offset in ((0.1,0), (0.37,0), (0.01,0), (35.6,0), (133.3,0.1)):
+            points, *holes = [(np.asarray(ring)*scale + [offset,-offset]).tolist() for ring in rings]
+            for kind in ('polygon', 'extrude'):
+                with self.subTest(kind=kind, scale=scale, offset=offset):
+                    mesh = primitive(kind, points=points, holes=holes)
+                    triangles = np.asarray(mesh.vertices)[mesh.triangles]
+                    normals = np.cross(triangles[:,1]-triangles[:,0], triangles[:,2]-triangles[:,0])
+                    caps = [(0,1)] if kind == 'polygon' else [(0,-1), (1,1)]
+                    for y, sign in caps:
+                        oriented = sign*normals[(triangles[:,:,1] == y).all(axis=1),1]
+                        self.assertEqual(len(oriented), 12)
+                        self.assertTrue((oriented > 1e-12).all())
+                        self.assertTrue(math.isclose(sum(oriented)/2, 18.5*scale**2, rel_tol=1e-12))
+                    self.assertEqual(mesh.obj().count(b'\nf '), len(mesh.triangles))
+                    if kind == 'extrude':
+                        edges = Counter((a,b) for face in mesh.triangles for a,b in zip(face, face[1:]+face[:1]))
+                        self.assertTrue(all(n == edges[b,a] == 1 for (a,b),n in edges.items()))
+
     def test_triangulation_distinguishes_turns_lost_to_roundoff(self):
         from scene3d_geometry import _oriented_area2
         # The two cross-product terms round to the same float, although their
