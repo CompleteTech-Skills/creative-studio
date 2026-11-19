@@ -344,4 +344,106 @@ class SpatialQueryTests(unittest.TestCase):
         graph.set_transform(candidates[0], moved)
         self.assertEqual(index.oriented_overlap('mesh', visibility='render'), candidates[1:])
 
+    def test_remaining_precision_nearest_resolves_large_thin_triangle_edge(self):
+        graph = self.graph()
+        graph.set_transform('mesh', dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1]))
+        # This triangle lies in x <= y. The perpendicular foot is on its
+        # diagonal edge and is exactly representable, despite the long edge.
+        delta = 2**-20
+        point = [.25 + delta, .25 - delta, 0]
+        index = SpatialIndex(graph, {'mesh': dict(
+            vertices=[[0,0,0], [0,1,0], [2**39,2**39,0]], triangles=[[0,1,2]])})
+        hit = index.nearest(point)
+        self.assertEqual(hit['point'], [.25,.25,0])
+        self.assertEqual(hit['distance'], math.hypot(delta, delta))
+
+    def precision_parallel_planes(self):
+        graph = self.graph()
+        graph.set_transform('mesh', dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1]))
+        near = deepcopy(graph.document()['nodes'][1])
+        near.update(id='z-near', name='Near plane')
+        far = deepcopy(near)
+        far.update(id='a-far', name='Far plane')
+        graph.create(near)
+        graph.create(far)
+        return SpatialIndex(graph, {
+            name: dict(vertices=[[x,0,0], [x,1,0], [x,0,1]], triangles=[[0,1,2]])
+            for name, x in (('z-near', 0), ('a-far', 2**-20))})
+
+    def test_remaining_precision_raycast_orders_planes_when_distances_round_equal(self):
+        from fractions import Fraction
+
+        length = 2**39
+        self.assertLess(Fraction(length), Fraction(length) + Fraction(1, 2**20))
+        self.assertEqual(float(Fraction(length)), float(Fraction(length) + Fraction(1, 2**20)))
+        index = self.precision_parallel_planes()
+        hits = index.raycast([-length,.25,.25], [1,0,0], max_distance=2*length, first=False)
+        self.assertEqual([hit['node'] for hit in hits], ['z-near', 'a-far'])
+        self.assertEqual(index.raycast([-length,.25,.25], [1,0,0], max_distance=2*length)['node'], 'z-near')
+
+    def test_remaining_precision_raycast_far_plane_point_stays_on_its_triangle(self):
+        index = self.precision_parallel_planes()
+        hits = index.raycast([-2**39,.25,.25], [1,0,0], max_distance=2**40, first=False)
+        far = next(hit for hit in hits if hit['node'] == 'a-far')
+        self.assertEqual(far['point'], [2**-20,.25,.25])
+
+    def test_remaining_precision_nearest_orders_planes_when_distances_round_equal(self):
+        index = self.precision_parallel_planes()
+        hit = index.nearest([-2**39,.25,.25], max_distance=2**40)
+        self.assertEqual(hit['node'], 'z-near')
+        self.assertEqual(hit['point'], [0,.25,.25])
+
+    def precision_axis_aligned_boxes(self, other_minimum):
+        scene = self.graph().document()
+        node = scene['nodes'][1]
+        node['transform'] = dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1])
+        node['bounds'] = dict(minimum=[0,0,0], maximum=[1,1,1])
+        other = deepcopy(node)
+        other.update(id='other', name='Other box',
+                     bounds=dict(minimum=[other_minimum,0,0], maximum=[2,1,1]))
+        scene['nodes'].append(other)
+        return SpatialIndex(SceneGraph(scene, external_references={}))
+
+    def test_remaining_precision_oriented_boxes_reject_one_ulp_gap(self):
+        # Full-dimensional boxes overlap on y/z but have a positive x gap.
+        index = self.precision_axis_aligned_boxes(math.nextafter(1., math.inf))
+        self.assertEqual(index.oriented_overlap('mesh'), [])
+        self.assertEqual(index.oriented_overlap('other'), [])
+
+    def test_remaining_precision_oriented_boxes_keep_exact_touch(self):
+        index = self.precision_axis_aligned_boxes(1.)
+        self.assertEqual(index.oriented_overlap('mesh'), ['other'])
+        self.assertEqual(index.oriented_overlap('other'), ['mesh'])
+
+    def test_remaining_precision_obb_center_avoids_finite_endpoint_sum_overflow(self):
+        scene = self.graph().document()
+        node = scene['nodes'][1]
+        node['transform'] = dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1])
+        # Native mesh coordinates accept all finite floats; document-authored
+        # bounds have a smaller schema range, so derive the box from a mesh.
+        vertices = [[x,y,z] for x in (1e308,1.1e308) for y in (0,1) for z in (0,1)]
+        faces = [[0,1,3],[0,3,2],[4,6,7],[4,7,5],[0,4,5],[0,5,1],
+                 [2,3,7],[2,7,6],[0,2,6],[0,6,4],[1,5,7],[1,7,3]]
+        obb = SpatialIndex(SceneGraph(scene, external_references={}),
+                           {'mesh': dict(vertices=vertices, triangles=faces)}).obb('mesh')
+        self.assertTrue(all(math.isfinite(value) for value in obb['center']))
+        self.assertTrue(math.isclose(obb['center'][0], 1.05e308, rel_tol=2e-16))
+        self.assertEqual(obb['center'][1:], [.5,.5])
+
+    def test_remaining_precision_mesh_overlap_keeps_noncollinear_underflowing_squared_area(self):
+        graph = self.graph()
+        graph.set_transform('mesh', dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1]))
+        other = deepcopy(graph.document()['nodes'][1])
+        other.update(id='other', name='Other thin triangle')
+        graph.create(other)
+        # The determinant is 1e-170, strictly positive; squaring it underflows.
+        triangle = dict(vertices=[[0,0,0], [1,0,0], [1,1e-170,0]], triangles=[[0,1,2]])
+        index = SpatialIndex(graph, {'mesh': triangle, 'other': triangle})
+        for identifier, expected in (('mesh', 'other'), ('other', 'mesh')):
+            with self.subTest(identifier=identifier):
+                hits = index.mesh_overlap(identifier)
+                self.assertEqual(len(hits), 1)
+                self.assertEqual(hits[0]['node'], expected)
+                self.assertEqual(hits[0]['relation'], 'surface')
+
 if __name__ == '__main__': unittest.main()

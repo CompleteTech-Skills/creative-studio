@@ -62,10 +62,20 @@ def _local_sweep_origin(start, end, anchor, delta, radius):
     return local, pivot
 
 
+def _within_triangle_radius(distance, radius, center, triangle):
+    if abs(distance - radius) > 8 * math.ulp(max(distance, radius)):
+        return distance < radius
+    from scene3d_spatial import _exact_closest_triangle
+    _, squared = _exact_closest_triangle(center, triangle, False)
+    return squared <= Fraction(radius)**2
+
+
 def _triangle_hit(start, end, delta, radius, triangle):
-    from scene3d_spatial import _closest_triangle, _triangle_frame
-    # Keep contact validation and normals in the triangle's own frame.
-    anchor = triangle[0]
+    from scene3d_spatial import _closest_triangle, _nearest_vertex, _triangle_frame
+    # Center near the swept segment so a distant authored vertex cannot
+    # erase a small positive gap during contact validation.
+    start_world, triangle_world = start, triangle
+    anchor = _nearest_vertex(start + .5 * delta, triangle)
     triangle = triangle - anchor
     initial_center = start - anchor
     start, pivot = _local_sweep_origin(start, end, anchor, delta, radius)
@@ -73,7 +83,8 @@ def _triangle_hit(start, end, delta, radius, triangle):
     frame = _triangle_frame(triangle)
     nearest = _closest_triangle(initial_center, triangle, frame=frame)
     gap = math.hypot(*(initial_center - nearest))
-    candidates = [(lower, False)] if gap <= radius else []
+    initially_touching = _within_triangle_radius(gap, radius, start_world, triangle_world)
+    candidates = [(lower, False)] if initially_touching else []
     a,b,c=triangle
     normal = frame[3]
     if np.any(normal):
@@ -101,15 +112,19 @@ def _triangle_hit(start, end, delta, radius, triangle):
         travel = delta*t
         center = start + travel
         if t == lower:
-            center, time = initial_center, 0.
+            if not initially_touching:
+                continue
+            center, time, world_center = initial_center, 0., start_world
         elif t == upper:
-            center, time = end - anchor, 1.
+            center, time, world_center = end - anchor, 1., end
         else:
             time = t if pivot is None else max(0, min(1, pivot + Fraction(t)))
+            world_center = center + anchor
         point = _closest_triangle(center, triangle, frame=frame, face_only=face_only)
         if point is None:
             continue  # A plane crossing outside the triangle is never a face hit.
-        separation=center-point;distance=float(np.linalg.norm(separation))
+        separation = center - point
+        distance = math.hypot(*separation)
         tolerance = max(radius*1e-9, 8*np.finfo(float).eps*float(np.max(np.abs(travel))))
         if distance > radius+tolerance:
             continue
@@ -122,7 +137,7 @@ def _triangle_hit(start, end, delta, radius, triangle):
         else:
             outward=np.array([1.,0.,0.])
         return time, dict(fraction=float(time), normal=outward.tolist(),
-                          point=(point+anchor).tolist(), center=(center+anchor).tolist())
+                          point=(point+anchor).tolist(), center=world_center.tolist())
     return None
 
 
@@ -176,8 +191,8 @@ def _boundary_outward(point, triangles, triangle_id, inside, require):
 
 
 def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
-    from scene3d_spatial import (_vec,_positive,_closest_triangle,_closed,_inside,
-                                _box,MAX_QUERY_TESTS)
+    from scene3d_spatial import (_vec, _positive, _closest_triangle, _closed, _inside,
+                                 _box, _nearest_vertex, MAX_QUERY_TESTS)
     from scene3d_graph import require
     start,end=_vec(start,'sweep start'),_vec(end,'sweep end')
     radius=_positive(radius,'sphere radius')
@@ -211,14 +226,17 @@ def sweep_sphere(index, start, end, radius, *, exclude=(), visibility='all'):
             # world space, including the nearest-boundary ordering.
             candidates = []
             for i, triangle in enumerate(triangles):
-                anchor = triangle[0]
+                anchor = _nearest_vertex(start, triangle)
                 local_start = start - anchor
                 point = _closest_triangle(local_start, triangle - anchor)
-                candidates.append((math.hypot(*(point - local_start)), i, point))
+                candidates.append((math.hypot(*(point - local_start)), i, point, anchor))
             candidates.sort(key=lambda item: (item[0], item[1]))
-            for length,triangle_id,point in candidates:
-                if not contained and length>radius:break
-                anchor = triangles[triangle_id,0]
+            for length, triangle_id, point, anchor in candidates:
+                if not contained:
+                    if length - radius > 8 * math.ulp(max(length, radius)):
+                        break
+                    if not _within_triangle_radius(length, radius, start, triangles[triangle_id]):
+                        continue
                 local_triangles = triangles - anchor
                 outward=_boundary_outward(point,local_triangles,triangle_id,solid_inside,require)
                 if outward is None:continue

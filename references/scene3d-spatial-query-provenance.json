@@ -15,8 +15,8 @@
         "sha256": "3360e766a48dc880537c61d11a42e0ff108e1eccdf56e7fad24b58a95fd90737"
       },
       "current": {
-        "git_blob": "2cfcd8e6a881e8b41a53a40376fd5d8e05a5d131",
-        "sha256": "4a832a5b67ae02e5fee2ddfd07a64d6be6594ddf7d28c0ff9d70fb397c649300"
+        "git_blob": "992103c0cb41b935caa4339689d7b1a83a9c5983",
+        "sha256": "3d7aca56baac7028b99fc96d767e46725fd5d3f9c0c3ed2136d293c8c1210d86"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -26,8 +26,8 @@
         "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47"
       },
       "current": {
-        "git_blob": "c008727e6f2913ba1f57cf17a1fe4e0cdb21b60d",
-        "sha256": "046c182d2bb8381391f9e2a114da0aad47f07590a962c882ce152b47a8efb7f2"
+        "git_blob": "f4a1d866e9bd23664352d7e29f493fe12c38d8e2",
+        "sha256": "be0eb483fbaa92db49f0eb471f01e88def3ed8991e969ca2fc39364053bec102"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -37,8 +37,8 @@
         "sha256": "4b956ae891e021af09cc7fca18981649b697c6af418f43f6bd162a997949e48a"
       },
       "current": {
-        "git_blob": "1d09ddbc86148d0bcbb98d2f5b3ac8617bd6fedd",
-        "sha256": "d5fe70cad475ad51dc385766a13e81facb5a6cdac30635d9a4cbee2d98f329d1"
+        "git_blob": "f2b41eeb3e5629e5de660e698e525e003992acf8",
+        "sha256": "ed5c9aaeb46203db20d7250b6dabf48badba82efcc02d243a8f991cc50bf6341"
       },
       "byte_identical_to_archived_transport": false
     },
@@ -48,15 +48,15 @@
         "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2"
       },
       "current": {
-        "git_blob": "8e4556d9cbe5117a9130674e3ee320290238621f",
-        "sha256": "d152cc838776b857015f3a22deeb9d2edd701b2d7e216c5a838e9b25e9d844e4"
+        "git_blob": "26b77ae550a012f4e7f1c8ea7616993ee11c54e4",
+        "sha256": "a42e1245ccf915e3ab1f8afd6e8e8044d1f9f2bb3e5625a8bdbebee6bef26981"
       },
       "byte_identical_to_archived_transport": false
     }
   },
   "review_history": "Retained original independent source review: coordination scene-program/review-scene62-initial.md; whole integration candidate requires new independent review.",
   "scope": "Canonical query transport first prepared for Director38. Current recovery covers the query and sweep modules.",
-  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow. Geometry review regressions exercise rotated mesh boxes in both directions, exact ray edge and vertex decisions, and closed prism clearance after translation. Precision regressions cover a positive sub-tolerance coplanar gap, exact axis-aligned tangency, the preserved order of first contacts sharing one public fraction, long-path hit and miss with small geometric offsets, bounded shell traversal, and exact half-step grid choices.",
+  "tests": "Current spatial and sweep suites retain the archived cases and add regressions for first-contact roots, oriented-overlap scene evaluations, thin triangles, translated sphere clearance and snapping overflow. Geometry review regressions exercise rotated mesh boxes in both directions, exact ray edge and vertex decisions, and closed prism clearance after translation. Precision regressions cover a positive sub-tolerance coplanar gap, exact axis-aligned tangency, the preserved order of first contacts sharing one public fraction, long-path hit and miss with small geometric offsets, bounded shell traversal, and exact half-step grid choices. Independent follow-up adds a bounded long-thin triangle edge case, exact ray and nearest winners when displayed distances tie, a positive one-ULP box gap with exact-contact control, a finite extreme box midpoint, a noncollinear triangle whose squared area underflows binary64, and stationary sphere gap and contact controls.",
   "resource_limits": {
     "vertices": 1000000,
     "triangles": 1000000,
@@ -69,8 +69,11 @@
     "clearance": "Positive clearance exists only for conservative AABB overlap; no exact positive triangle-distance guarantee",
     "query_budget": "One _QueryBudget can be shared across mesh_overlap calls using _budget; reject when cumulative operation exceeds the limit",
     "bounds_only": "Never treated as actual triangles; consumer must verify actual collider inventory before claiming collision-free state",
-    "sphere_sweep": "Unsupported nested/cavity or interior-overlapping closed components explicitly reject; this limit does not replace separate solid mesh_overlap containment. Long paths are recentered using exact endpoint values; stable internal time ordering precedes conversion to the returned float fraction."
+    "sphere_sweep": "Unsupported nested/cavity or interior-overlapping closed components explicitly reject; this limit does not replace separate solid mesh_overlap containment. Long paths are recentered using exact endpoint values; stable internal time ordering precedes conversion to the returned float fraction.",
+    "oriented_bounds": "Exact binary projections of transformed local boxes retain finite midpoints, inclusive touching, and positive separation. Broad phase uses the transformed box.",
+    "ray_and_nearest_order": "Ray hits are ordered by exact source-coordinate ray parameters before distance rounding. Ambiguous nearest distances and range boundaries compare squared distances calculated from the source triangle and query coordinates."
   },
   "geometry_review_base": "5936c830c86ee6f2c5da7a53076bbb14bcde1633",
-  "precision_review_base": "b33cc4f82f05e162a73cd88fd6685e4b220c970d"
+  "precision_review_base": "b33cc4f82f05e162a73cd88fd6685e4b220c970d",
+  "distance_and_bounds_review_base": "0320cf88e413cdb8b17b532b4f4cf86db2ac358a"
 }

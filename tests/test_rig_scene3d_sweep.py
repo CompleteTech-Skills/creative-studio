@@ -276,4 +276,37 @@ class SphereSweepTests(unittest.TestCase):
         with self.assertRaises(RigError):index.sweep_sphere([float('nan'),0,0],[0,1,0],.1)
         with self.assertRaises(RigError):index.sweep_sphere([1e13,0,0],[0,1,0],.1)
 
+    def test_remaining_precision_stationary_sphere_misses_large_thin_triangle(self):
+        delta = 2**-20
+        point = [.25 + delta, .25 - delta, 0]
+        index = self.index(vertices=[[0,0,0], [0,1,0], [2**39,2**39,0]])
+        # Every point on the triangle satisfies x <= y, so this center is
+        # exactly sqrt(2)*delta away, much farther than the sphere radius.
+        self.assertGreater(math.hypot(delta, delta), 1e-8)
+        self.assertIsNone(index.sweep_sphere(point, point, 1e-8))
+
+    def test_remaining_precision_vertical_sphere_misses_large_thin_triangle(self):
+        delta = 2**-20
+        index = self.index(vertices=[[0,0,0], [0,1,0], [2**39,2**39,0]])
+        self.assertIsNone(index.sweep_sphere([.25+delta,.25-delta,1],
+                                           [.25+delta,.25-delta,-1], 1e-8))
+
+    def test_remaining_precision_stationary_sphere_rejects_smallest_corner_gap(self):
+        from fractions import Fraction
+
+        index = self.index(vertices=[[0,0,0], [0,-1,0], [0,0,-1]])
+        center = [0, math.nextafter(3., math.inf), 4]
+        # Fraction verifies the actual binary-float center lies outside the
+        # radius-5 corner sphere even when hypot rounds its distance to 5.
+        self.assertGreater(Fraction(center[1])**2 + 16, 25)
+        self.assertIsNone(index.sweep_sphere(center, center, 5))
+
+    def test_remaining_precision_stationary_sphere_keeps_exact_corner_contact(self):
+        index = self.index(vertices=[[0,0,0], [0,-1,0], [0,0,-1]])
+        hit = index.sweep_sphere([0,3,4], [0,3,4], 5)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit['fraction'], 0)
+        self.assertEqual(hit['point'], [0,0,0])
+        self.assertEqual(hit['center'], [0,3,4])
+
 if __name__=='__main__':unittest.main()
