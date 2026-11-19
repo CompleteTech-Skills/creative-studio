@@ -551,3 +551,10 @@ the exact allowed count; it does not truncate or discard independent records.
 `test_rig_refit_uncertainty_limits.py` exercises both public workflows with actual
 temporary manifests, revision files and immutable source bytes. These are local
 synthetic contract controls, not artistic approval or full rig acceptance.
+
+A pending anatomy record whose bone identity was already unresolved when a
+correction began stays intact through unrelated edits. Only a known original
+bone actually removed in that transaction loses its owned anatomy record.
+Historical names are not assigned to a newly added bone merely because its
+spelling matches. The original old-writer reproduction and separately labeled
+simulated historical-byte regressions cover this upgrade boundary.

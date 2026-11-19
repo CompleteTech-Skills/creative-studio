@@ -115,6 +115,11 @@ class _BoneEdits:
         for issue in manifest['uncertainties']:
             if issue['code'] == 'RIG_ANATOMY_UNCERTAIN':
                 identity = issue['element']
+                if identity not in self.original:
+                    # An unresolved historical spelling is not evidence that
+                    # this transaction removed its original bone.
+                    kept.append(issue)
+                    continue
                 if identity not in final_name:
                     continue
                 issue['element'] = final_name[identity]
