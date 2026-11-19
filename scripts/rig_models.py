@@ -145,18 +145,21 @@ def normalize_anatomy_bindings(manifest, *, occurrences=()):
     admitted = {id(issue): (issue, binding) for issue, binding in occurrences}
     origins = {issue._origin: (issue, binding) for issue, binding in occurrences
                if isinstance(issue, _AnatomyOccurrence)}
-    if bindings != [binding for _, binding in occurrences]:
-        admitted = {}  # Editing metadata itself cannot create native ownership.
-        origins = {}
+    # An untouched array may still be in the old order after a records-only
+    # edit. When the caller also edits the array, each surviving occurrence
+    # must agree with its current entry as well as its admitted digest.
+    bindings_edited = bindings != [binding for _, binding in occurrences]
     counts = Counter(id(issue) for issue in records)
     copies = Counter(issue._origin for issue in records if isinstance(issue, _AnatomyOccurrence))
     normalized = []
-    for issue in records:
+    for index, issue in enumerate(records):
         owner, binding = admitted.get(id(issue), (None, None))
         if owner is None and isinstance(issue, _AnatomyOccurrence) and copies[issue._origin] == 1:
             # An unchanged one-to-one deepcopy retains its original occurrence.
             # This never matches another observation by value or array position.
             owner, binding = origins.get(issue._origin, (None, None))
+        if bindings_edited and (index >= len(bindings) or bindings[index] != binding):
+            binding = None
         normalized.append(binding if owner is not None and counts[id(issue)] == 1 and
                           binding is not None and binding == object_hash(issue) and
                           issue.get('element') in names else None)
