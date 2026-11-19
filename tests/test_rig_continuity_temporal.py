@@ -264,7 +264,7 @@ class TemporalTests(unittest.TestCase):
                             registry.append_events('main', [move], expected_sha256=head)
 
     def test_native_bounds_use_norms_for_rotations_and_stay_linear_in_depth(self):
-        from continuity_temporal import _native_bounds, _same_transform
+        from continuity_temporal import _native_bounds, _same_transform, _seed_bound
         from rig_math import decompose
         from scene3d_math import local_matrix
         half = math.sqrt(0.5)
@@ -276,8 +276,9 @@ class TemporalTests(unittest.TestCase):
                 nodes.append(dict(id='n%d' % index, parent=parent, transform=transform))
                 parent = 'n%d' % index
                 world = local_matrix(transform) if world is None else world @ local_matrix(transform)
-            floor, relative = _native_bounds(dict(nodes=nodes), outer)[parent]
-            return decompose(local_matrix(outer) @ world), dict(floor=floor, relative=relative)
+            value = decompose(local_matrix(outer) @ world)
+            floor, relative = _seed_bound(_native_bounds(dict(nodes=nodes), outer)[parent], value)
+            return value, dict(floor=floor, relative=relative)
 
         # A 90 degree scene_to_world rotation leaves ulp-sized error in entries
         # that are exactly zero; an authored zero component must still match.
@@ -295,8 +296,24 @@ class TemporalTests(unittest.TestCase):
         self.assertLess(max(bound['floor']), 1e-9)
         exact = dict(value, scale=[1.0, 1.0, 1.0])
         self.assertTrue(_same_transform(value, exact, native=True, **bound))
-        offset = dict(value, translation=[value['translation'][0] + 1e-3] + value['translation'][1:])
+        offset = dict(value, translation=[value['translation'][0] + 1e-9] + value['translation'][1:])
         self.assertFalse(_same_transform(value, offset, native=True, **bound))
+
+        # Non-uniform parent scale conditions the decomposed rotation; the exact
+        # authored rotation [.5,-.5,-.5,-.5] and scale must still match.
+        value, bound = native([dict(identity, rotation=[0.0, 0.0, half, half], scale=[100.0, 1.0, 1.0]),
+                               dict(identity, rotation=[0.0, half, 0.0, half])], identity)
+        self.assertNotEqual(value['rotation'], [0.5, -0.5, -0.5, -0.5])
+        authored = dict(identity, rotation=[0.5, -0.5, -0.5, -0.5], scale=[1.0, 1.0, 100.0])
+        self.assertTrue(_same_transform(value, authored, native=True, **bound))
+        self.assertFalse(_same_transform(value, dict(authored, scale=[1.0, 1.0, 100.0 + 1e-9]), native=True, **bound))
+
+        # Scale products that overflow while the world stays finite fail closed.
+        swap = [0.5, 0.5, 0.5, 0.5]
+        chain = [dict(identity, translation=[1.0, 1.0, 1.0], rotation=swap, scale=[1e9, 1e-9, 1.0])
+                 for _ in range(36)]
+        with self.assertRaisesRegex(ValueError, 'LIMIT'):
+            native(chain, identity)
 
     def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
         coordinate = 999999999999.0

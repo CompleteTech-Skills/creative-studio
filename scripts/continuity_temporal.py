@@ -94,7 +94,9 @@ def _native_bounds(scene, scene_to_world):
     products of rotations grow exponentially with depth. For each level the
     linear part has spectral norm at most max|scale|; the effective local
     translation t + p - R S p is bounded by |t| + |p| + max|scale| |p|.
-    Returns {node: (translation floor per axis, relative tolerance)}.
+    Returns {node: (translation floor per axis, base relative tolerance,
+    composed max-scale product)}; ``_seed_bound`` applies the conditioning of
+    the decomposed world scale. Non-finite bounds fail closed.
     """
     nodes = {node['id']: node for node in scene['nodes']}
     def local(transform):
@@ -117,15 +119,24 @@ def _native_bounds(scene, scene_to_world):
     outer_scale, outer_magnitude = local(scene_to_world)
     bounds = {}
     for identifier in nodes:
-        _, total, depth = visit(identifier)
+        scale, total, depth = visit(identifier)
         levels = depth + 1
         floor = 8 * math.sqrt(3) * (levels + 1) * math.ulp(1.0) * (outer_magnitude + outer_scale * total)
-        bounds[identifier] = ([floor] * 3, 8 * (levels + 1) * math.ulp(1.0))
+        product = outer_scale * scale
+        if not (math.isfinite(floor) and math.isfinite(product)):
+            fail('LIMIT', 'native transform magnitudes exceed representable roundoff bounds')
+        bounds[identifier] = ([floor] * 3, 8 * (levels + 1) * math.ulp(1.0), product)
     return bounds
 
 
-def _translation_floors(scene, scene_to_world):
-    return {node: bound[0] for node, bound in _native_bounds(scene, scene_to_world).items()}
+def _seed_bound(bound, transform):
+    """Scale and rotation error grow with the conditioning of the world scale."""
+    floor, relative, product = bound
+    smallest = min(abs(float(value)) for value in transform['scale'])
+    relative *= max(1.0, product / smallest)
+    if not math.isfinite(relative):
+        fail('LIMIT', 'native transform scale conditioning exceeds representable roundoff bounds')
+    return floor, relative
 
 
 def _bound_arguments(bound):
@@ -261,7 +272,7 @@ class TemporalEngine:
                 result = evaluated[node]
                 world = numpy.array(result['world_matrix'])
                 transform = decompose(matrix @ world)
-                scene_floors[entity] = node_bounds[node]
+                scene_floors[entity] = _seed_bound(node_bounds[node], transform)
                 state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=graph_state[node]['render_visible'])
