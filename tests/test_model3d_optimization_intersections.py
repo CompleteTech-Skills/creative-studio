@@ -42,13 +42,24 @@ class TriangleContacts(unittest.TestCase):
     def test_noncoplanar_vertex_touching_a_face_is_contact(self):
         mesh=self.pair([[-1,-1,0],[1,-1,0],[0,1,0]],[[0,0,0],[0,0,1],[1,0,1]])
         self.assertEqual(triangle_contacts(mesh)['contacts'],[dict(triangles=[0,1],kind='noncoplanar')])
-    def test_coplanar_edge_only_and_boundary_vertex_touches_are_contacts(self):
-        # Edge crossing with no vertex of either triangle inside the other.
-        crossing=self.pair([[0,0,0],[4,0,0],[2,-2,0]],[[1,-1,0],[3,-1,0],[2,1,0]])
-        self.assertEqual(triangle_contacts(crossing)['contacts'][0]['kind'],'coplanar')
-        # A vertex exactly on the other triangle's edge.
+    def test_coplanar_boundary_and_proper_crossings_and_edge_edge_touch_are_contacts(self):
+        # B's lower vertices lie exactly on A's edges (closed vertex-in-triangle).
+        boundary=self.pair([[0,0,0],[4,0,0],[2,-2,0]],[[1,-1,0],[3,-1,0],[2,1,0]])
+        self.assertEqual(triangle_contacts(boundary)['contacts'][0]['kind'],'coplanar')
+        # Hexagram: only proper edge crossings, no vertex inside the other.
+        hexagram=self.pair([[0,0,0],[6,0,0],[3,6,0]],[[0,4,0],[6,4,0],[3,-2,0]])
+        self.assertEqual(triangle_contacts(hexagram)['contacts'][0]['kind'],'coplanar')
+        # Noncoplanar: B's edge meets A's edge exactly at (.5,0,0).
         touching=self.pair([[0,0,0],[1,0,0],[.5,-1,0]],[[.25,0,-1],[.75,0,1],[.5,1,-1]])
         self.assertEqual(triangle_contacts(touching)['contact_count'],1)
+    def test_exact_edge_crossing_parameter_keeps_boundary_contacts(self):
+        # A rounded crossing parameter moves each of these exact boundary
+        # contacts just outside the other triangle.
+        for a,b in (([[2,2,2],[2,-1,1],[1,-1,1]],[[2,0,3],[0,-2,1],[1,-3,-3]]),
+                    ([[-3,-2,1],[-2,2,-3],[0,-1,3]],[[2,3,-1],[-3,0,-1],[2,1,-2]]),
+                    ([[1,-1,2],[1,0,1],[3,1,-2]],[[3,-2,-1],[-1,2,0],[0,0,3]])):
+            with self.subTest(a=a):
+                self.assertEqual(triangle_contacts(self.pair(a,b))['contact_count'],1)
     def test_tiny_scale_coplanar_touch_is_exact(self):
         for scale in (2.0**-1000,5e-324*2**40):
             with self.subTest(scale=scale):
