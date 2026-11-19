@@ -121,10 +121,18 @@ class StaleOwnerRefusalTests(unittest.TestCase):
         self.assert_refusal_and_recovery(stale, lambda budget, job: budget.reconcile(),
                                         calls=2, amount='0.25')
 
-    def check_limits_with_pending_usage(self, *, stale):
+    def check_limits_with_pending_usage(self, *, stale, write=None, before_claim=None,
+                                        snapshot_before_claim=False):
+        if before_claim is not None:
+            with hatch.ownership(self.root):
+                before_claim(hatch.manifest(self.root))
+        if snapshot_before_claim:
+            with hatch.ownership(self.root):
+                earlier = hatch.manifest(self.root)
         token = self.claim()['token']
-        with hatch.ownership(self.root):
-            earlier = hatch.manifest(self.root)
+        if not snapshot_before_claim:
+            with hatch.ownership(self.root):
+                earlier = hatch.manifest(self.root)
         usage = self.observe('interrupt-meter', 'uncertain', amount=None)
         with hatch.ownership(self.root), job_lock(self.ledger.root):
             with self.assertRaises(RigError) as interrupted:
@@ -145,19 +153,27 @@ class StaleOwnerRefusalTests(unittest.TestCase):
             original = digests()
             if stale:
                 with self.assertRaises((RigError, ValueError)):
-                    hatch.configure_limits(self.root, earlier, Namespace(max_calls=1))
+                    if write is None:
+                        hatch.configure_limits(self.root, earlier, Namespace(max_calls=1))
+                    else:
+                        write(earlier)
                 self.assertEqual(digests(), original)
-            else:
+            elif write is None:
                 result = hatch.configure_limits(self.root, current, Namespace(max_calls=1))
                 self.assertEqual(result['limits']['generation_calls'], 1)
                 self.assertEqual(hatch.manifest(self.root)['limits']['generation_calls'], 1)
+            else:
+                write(current)
+                # A current repair legitimately appends its note to prompts.
+                original = digests()
 
             hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
             recovered = digests()
             self.assertEqual({path: recovered.get(path) for path in original if path != journal},
                              {path: digest for path, digest in original.items() if path != journal})
             job = hatch.job_for(hatch.manifest(self.root, recovery=True), 'base')
-            self.assertEqual(job['history'], hatch.job_for(earlier, 'base')['history'])
+            if not snapshot_before_claim:
+                self.assertEqual(job['history'], hatch.job_for(earlier, 'base')['history'])
             self.assertEqual(job['token'], token)
             event, = job['budget_operation']['events']
             self.assertEqual(event['payload'], pending['payload'])
@@ -175,6 +191,44 @@ class StaleOwnerRefusalTests(unittest.TestCase):
     def test_current_limits_update_preserves_pending_native_usage(self):
         self.check_limits_with_pending_usage(stale=False)
 
+    def repair_unrelated_state(self, data):
+        other = next(job['id'] for job in data['jobs'] if job['id'] != 'base'
+                     and 'base' not in hatch.descendants(data, job['id']))
+        result = hatch.repair(self.root, data, other, 'stale snapshot probe')
+        self.assertNotIn('base', result['pending'])
+
+    def test_stale_repair_preserves_pending_native_usage(self):
+        # Repairing a different state is allowed while base runs, but a stale
+        # snapshot must not replace the newer pending usage on disk.
+        self.check_limits_with_pending_usage(stale=True, write=self.repair_unrelated_state)
+
+    def test_current_repair_preserves_pending_native_usage(self):
+        self.check_limits_with_pending_usage(stale=False, write=self.repair_unrelated_state)
+
+
+    def crashed_operation(self, data):
+        data['operation'] = {'id': 'crashed-fixture', 'kind': 'validate', 'status': 'running'}
+        hatch.save(self.root, data)
+
+    def test_stale_resume_preserves_pending_native_usage(self):
+        # resume saves its recovered operation before any reconciliation.
+        self.check_limits_with_pending_usage(
+            stale=True, before_claim=self.crashed_operation,
+            write=lambda data: hatch.resume(self.root, data))
+
+    def test_current_resume_preserves_pending_native_usage(self):
+        self.check_limits_with_pending_usage(
+            stale=False, before_claim=self.crashed_operation,
+            write=lambda data: hatch.resume(self.root, data))
+
+    def test_profile_revision_from_a_pre_claim_snapshot_preserves_the_claim(self):
+        # The snapshot has no running row, so its own running-claim check passes.
+        profile = self.root / 'profile.json'
+        revision = profile.with_name('profile-revision.json')
+        revision.write_bytes(profile.read_bytes())
+        self.check_limits_with_pending_usage(
+            stale=True, snapshot_before_claim=True,
+            write=lambda data: hatch.revise_profile(self.root, data, revision))
 
 if __name__ == '__main__':
     unittest.main()
