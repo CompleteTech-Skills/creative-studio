@@ -369,27 +369,55 @@ def _validate_revision_record(value, revision, limits):
     _check_id(value['transaction_id'])
     return value
 
-def _remove_entry_no_follow(path):
-    """Remove one link, file or directory tree without traversing links."""
-    info = os.lstat(path)
-    linked = stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400
-    if stat.S_ISDIR(info.st_mode) and not linked:
-        with os.scandir(path) as entries:
-            children = [entry.path for entry in entries]
-        for child in children:
-            _remove_entry_no_follow(child)
-        os.rmdir(path)
-        return
-    try:
-        os.unlink(path)
-    except (IsADirectoryError, PermissionError):
-        if stat.S_ISDIR(info.st_mode):
-            # A Windows directory junction or directory symlink is removed
-            # with rmdir; its target is never entered.
-            os.rmdir(path)
-        else:
-            os.chmod(path, stat.S_IWRITE)
+def _remove_entry_no_follow(root):
+    """Remove a tree without traversing links; iterative to bound stack depth.
+
+    Symlinks and reparse points (junctions, mount points) are removed as
+    entries and never entered. Only on Windows, and only for real regular files
+    or real directories, a read-only attribute is cleared before one retry;
+    links are never passed to chmod, which would follow them.
+    """
+    def classify(path):
+        info = os.lstat(path)
+        linked = stat.S_ISLNK(info.st_mode) or bool(getattr(info, 'st_file_attributes', 0) & 0x400)
+        return info, linked
+
+    def remove_leaf(path, info, linked):
+        try:
             os.unlink(path)
+        except (IsADirectoryError, PermissionError):
+            if stat.S_ISDIR(info.st_mode):
+                # Directory junction or directory symlink: rmdir removes the
+                # link only; its target is never entered.
+                os.rmdir(path)
+            elif os.name == 'nt' and not linked and stat.S_ISREG(info.st_mode):
+                os.chmod(path, stat.S_IWRITE)
+                os.unlink(path)
+            else:
+                raise
+
+    def remove_directory(path):
+        try:
+            os.rmdir(path)
+        except PermissionError:
+            if os.name != 'nt':
+                raise
+            os.chmod(path, stat.S_IWRITE)
+            os.rmdir(path)
+
+    stack = [(root, False)]
+    while stack:
+        path, expanded = stack.pop()
+        if expanded:
+            remove_directory(path)
+            continue
+        info, linked = classify(path)
+        if stat.S_ISDIR(info.st_mode) and not linked:
+            stack.append((path, True))
+            with os.scandir(path) as entries:
+                stack.extend((entry.path, False) for entry in entries)
+        else:
+            remove_leaf(path, info, linked)
 
 
 def _discard_private_stage(stage, revisions):
@@ -409,10 +437,14 @@ def _discard_private_stage(stage, revisions):
              'PATH', 'Private stage is not a real directory.')
     try:
         if shutil.rmtree.avoids_symlink_attacks:
-            shutil.rmtree(stage)
+            try:
+                shutil.rmtree(stage)
+            except RecursionError:
+                # The fd-safe rmtree recurses per level; finish iteratively.
+                _remove_entry_no_follow(stage)
         else:
             _remove_entry_no_follow(stage)
-    except OSError as exc:
+    except (OSError, RecursionError) as exc:
         raise RigError('EDITOR3D_FILE', 'Private stage could not be removed: ' + str(exc),
                        stage='editor3d-repository') from exc
     _sync_directory(revisions)

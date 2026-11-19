@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -718,6 +719,50 @@ repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
             editor3d_repository._discard_private_stage(stage, stage.parent)
         self.assertFalse(os.path.lexists(stage))
         self.assertEqual((outside / 'keep.txt').read_bytes(), b'keep')
+
+    def test_discard_fallback_never_chmods_through_links_and_handles_depth(self):
+        import editor3d_repository
+        outside = self.root / 'mode-target.txt'
+        outside.write_bytes(b'keep')
+        os.chmod(outside, 0o644)
+        stage = self.root / 'mode-revisions' / '.editor-revision-mode'
+        (stage / 'ro').mkdir(parents=True)
+        try:
+            (stage / 'ro' / 'link').symlink_to(outside)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f'symlinks unavailable: {exc}')
+        os.chmod(stage / 'ro', 0o555)
+        self.addCleanup(lambda: os.path.isdir(stage / 'ro') and os.chmod(stage / 'ro', 0o755))
+        with patch.object(shutil.rmtree, 'avoids_symlink_attacks', False):
+            try:
+                editor3d_repository._discard_private_stage(stage, stage.parent)
+            except RigError as exc:
+                # POSIX cannot unlink inside a read-only directory; the error
+                # is typed and the outside target is untouched.
+                self.assertEqual(exc.report['code'], 'EDITOR3D_FILE')
+        self.assertEqual(stat.S_IMODE(os.stat(outside).st_mode), 0o644)
+        self.assertEqual(outside.read_bytes(), b'keep')
+
+        deep = self.root / 'deep-revisions' / '.editor-revision-deep'
+        # Deeper than the default recursion limit; built iteratively.
+        level = deep
+        try:
+            deep.mkdir(parents=True)
+            for _ in range(1100):
+                level = level / 'd'
+                level.mkdir()
+        except OSError as exc:
+            self.skipTest(f'cannot create deep tree: {exc}')
+        for flag in (True, False):
+            if not os.path.lexists(deep):
+                deep.mkdir(parents=True)
+                level = deep
+                for _ in range(1100):
+                    level = level / 'd'
+                    level.mkdir()
+            with self.subTest(fd_safe_rmtree=flag), patch.object(shutil.rmtree, 'avoids_symlink_attacks', flag):
+                editor3d_repository._discard_private_stage(deep, deep.parent)
+                self.assertFalse(os.path.lexists(deep))
 
     def test_discard_refuses_a_stage_replaced_by_a_link(self):
         outside = self.root / 'link-target'
