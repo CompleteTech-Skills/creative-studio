@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "scope": "Independent TEST-ONLY offline public production-limit admission regression for PR #531 / issues #526 and #34.",
+  "frozen_source": {
+    "commit": "dfd3a0b47997f5b6d3028823a1ed2631cfab365b",
+    "tree": "a839cecaef21390cf42ad66f39494553c4e17979"
+  },
+  "base_source": {
+    "commit": "a2f5191db920cc132921747b1dda80dfa0f5269e",
+    "tree": "d84d08cdbc16b7a96b77c8e832d98a67ca987489"
+  },
+  "test": {
+    "path": "tests/test_director_budget_production_limits.py",
+    "sha256": "4fecb1e8099ced33920fd4bffacd26fa86eaff754d7716c2a04294d8b3366412",
+    "count": 6
+  },
+  "independence": {
+    "implementation_modified": false,
+    "future_fix_inspected": false,
+    "mocks_or_private_scheduling_injection": false,
+    "same_test_bytes_on_both_sources": true
+  },
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Linux",
+    "executable": "<local-work-dir>/env-rig/bin/python",
+    "blender_required": false
+  },
+  "command": "PYTHONPATH=scripts:tests <local-work-dir>/env-rig/bin/python -m unittest -v test_director_budget_production_limits",
+  "runs": [
+    {
+      "source": "frozen_source",
+      "exit_code": 1,
+      "tests": 6,
+      "passed": 4,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "evidence": {
+        "path": "<local-work-dir>/campaign-evidence/oracle531-production-limits-frozen-v1.log",
+        "sha256": "287b8579576c00094567724e11733eb4a90917f1add93a905c069a08ef74158a",
+        "sanitized_transcript": "test_budgeted_default_limits_allow_claim_and_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_default_limits_allow_claim_and_retry) ... ok\ntest_budgeted_stricter_attempt_cap_persists_and_blocks_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_stricter_attempt_cap_persists_and_blocks_retry) ... FAIL\ntest_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run) ... FAIL\ntest_unbudgeted_default_limits_allow_claim_and_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_unbudgeted_default_limits_allow_claim_and_retry) ... ok\ntest_unbudgeted_stricter_attempt_cap_persists_and_blocks_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_unbudgeted_stricter_attempt_cap_persists_and_blocks_retry) ... ok\ntest_unbudgeted_stricter_concurrency_cap_persists_and_blocks_second_run (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_unbudgeted_stricter_concurrency_cap_persists_and_blocks_second_run) ... ok\n\n======================================================================\nFAIL: test_budgeted_stricter_attempt_cap_persists_and_blocks_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_stricter_attempt_cap_persists_and_blocks_retry)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<local-work-dir>/oracle531-production-limits/tests/test_director_budget_production_limits.py\", line 81, in scenario\n    first = workflow.claim_generation(project, 'first', 'base')\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/production_workflow.py\", line 689, in claim_generation\n    handoff = hatch.claim(run, data, job, _handoff_rechecks=handoff_checks)\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/native_journal.py\", line 149, in invoke\n    return function(canonical, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/hatch.py\", line 729, in claim\n    reconcile(root, data)\n  File \"<local-work-dir>/oracle531-production-limits/scripts/native_journal.py\", line 149, in invoke\n    return function(canonical, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/hatch.py\", line 578, in reconcile\n    budget.reconcile()\n  File \"<local-work-dir>/oracle531-production-limits/scripts/director_budget.py\", line 1591, in reconcile\n    self._require_current_journal()\n  File \"<local-work-dir>/oracle531-production-limits/scripts/director_budget.py\", line 1505, in _require_current_journal\n    _need(object_hash(current) == object_hash(self.data), 'BINDING',\n  File \"<local-work-dir>/oracle531-production-limits/scripts/director_budget.py\", line 45, in _need\n    raise RigError('DIRECTOR_BUDGET_' + code, message, stage='budget')\nrig_errors.RigError: Native accounting requires the current on-disk owner journal.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<local-work-dir>/oracle531-production-limits/tests/test_director_budget_production_limits.py\", line 165, in test_budgeted_stricter_attempt_cap_persists_and_blocks_retry\n    self.scenario(budgeted=True, tightened='attempts')\n  File \"<local-work-dir>/oracle531-production-limits/tests/test_director_budget_production_limits.py\", line 84, in scenario\n    self.fail(f'Legitimate first claim refused (budgeted={budgeted}, '\nAssertionError: Legitimate first claim refused (budgeted=True, tightened=attempts): DIRECTOR_BUDGET_BINDING: Native accounting requires the current on-disk owner journal.\n\n======================================================================\nFAIL: test_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"<local-work-dir>/oracle531-production-limits/tests/test_director_budget_production_limits.py\", line 81, in scenario\n    first = workflow.claim_generation(project, 'first', 'base')\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/production_workflow.py\", line 689, in claim_generation\n    handoff = hatch.claim(run, data, job, _handoff_rechecks=handoff_checks)\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/native_journal.py\", line 149, in invoke\n    return function(canonical, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/hatch.py\", line 729, in claim\n    reconcile(root, data)\n  File \"<local-work-dir>/oracle531-production-limits/scripts/native_journal.py\", line 149, in invoke\n    return function(canonical, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<local-work-dir>/oracle531-production-limits/scripts/hatch.py\", line 578, in reconcile\n    budget.reconcile()\n  File \"<local-work-dir>/oracle531-production-limits/scripts/director_budget.py\", line 1591, in reconcile\n    self._require_current_journal()\n  File \"<local-work-dir>/oracle531-production-limits/scripts/director_budget.py\", line 1505, in _require_current_journal\n    _need(object_hash(current) == object_hash(self.data), 'BINDING',\n  File \"<local-work-dir>/oracle531-production-limits/scripts/director_budget.py\", line 45, in _need\n    raise RigError('DIRECTOR_BUDGET_' + code, message, stage='budget')\nrig_errors.RigError: Native accounting requires the current on-disk owner journal.\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<local-work-dir>/oracle531-production-limits/tests/test_director_budget_production_limits.py\", line 171, in test_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run\n    self.scenario(budgeted=True, tightened='concurrency')\n  File \"<local-work-dir>/oracle531-production-limits/tests/test_director_budget_production_limits.py\", line 84, in scenario\n    self.fail(f'Legitimate first claim refused (budgeted={budgeted}, '\nAssertionError: Legitimate first claim refused (budgeted=True, tightened=concurrency): DIRECTOR_BUDGET_BINDING: Native accounting requires the current on-disk owner journal.\n\n----------------------------------------------------------------------\nRan 6 tests in 3.030s\n\nFAILED (failures=2)\n"
+      }
+    },
+    {
+      "source": "base_source",
+      "exit_code": 0,
+      "tests": 6,
+      "passed": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "evidence": {
+        "path": "<local-work-dir>/campaign-evidence/oracle531-production-limits-base-v1.log",
+        "sha256": "d7a9ca8a18a58b87972cac8a7705411c7f63e0612a6ff248061706b9fa521989",
+        "sanitized_transcript": "test_budgeted_default_limits_allow_claim_and_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_default_limits_allow_claim_and_retry) ... ok\ntest_budgeted_stricter_attempt_cap_persists_and_blocks_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_stricter_attempt_cap_persists_and_blocks_retry) ... ok\ntest_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run) ... ok\ntest_unbudgeted_default_limits_allow_claim_and_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_unbudgeted_default_limits_allow_claim_and_retry) ... ok\ntest_unbudgeted_stricter_attempt_cap_persists_and_blocks_retry (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_unbudgeted_stricter_attempt_cap_persists_and_blocks_retry) ... ok\ntest_unbudgeted_stricter_concurrency_cap_persists_and_blocks_second_run (test_director_budget_production_limits.ProductionLimitAdmissionTests.test_unbudgeted_stricter_concurrency_cap_persists_and_blocks_second_run) ... ok\n\n----------------------------------------------------------------------\nRan 6 tests in 3.154s\n\nOK\n"
+      }
+    }
+  ],
+  "independent_probe_rerun": {
+    "source": "frozen_source",
+    "exit_code": 1,
+    "scenarios": 6,
+    "successful_claims": 4,
+    "refused_claims": 2,
+    "evidence": {
+      "path": "<local-work-dir>/campaign-evidence/oracle531-production-limits-probe-frozen.log",
+      "sha256": "6c71d4be3959c3ecb7158e99536f497452725668e076f01431daefe41b9ec227",
+      "sanitized_transcript": "[\n  {\n    \"mode\": \"default\",\n    \"budgeted\": false,\n    \"provider_called\": false,\n    \"native_limits_before\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    },\n    \"claim_succeeded\": true,\n    \"error\": null,\n    \"ledger_unchanged\": null,\n    \"native_limits_after\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    }\n  },\n  {\n    \"mode\": \"attempts\",\n    \"budgeted\": false,\n    \"provider_called\": false,\n    \"native_limits_before\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    },\n    \"claim_succeeded\": true,\n    \"error\": null,\n    \"ledger_unchanged\": null,\n    \"native_limits_after\": {\n      \"attempts_per_job\": 1,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    }\n  },\n  {\n    \"mode\": \"concurrency\",\n    \"budgeted\": false,\n    \"provider_called\": false,\n    \"native_limits_before\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 2,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    },\n    \"claim_succeeded\": true,\n    \"error\": null,\n    \"ledger_unchanged\": null,\n    \"native_limits_after\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    }\n  },\n  {\n    \"mode\": \"default\",\n    \"budgeted\": true,\n    \"provider_called\": false,\n    \"native_limits_before\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    },\n    \"claim_succeeded\": true,\n    \"error\": null,\n    \"ledger_unchanged\": false,\n    \"native_limits_after\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    }\n  },\n  {\n    \"mode\": \"attempts\",\n    \"budgeted\": true,\n    \"provider_called\": false,\n    \"native_limits_before\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    },\n    \"claim_succeeded\": false,\n    \"error_type\": \"RigError\",\n    \"error\": \"Native accounting requires the current on-disk owner journal.\",\n    \"ledger_unchanged\": true,\n    \"native_limits_after\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 1,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    }\n  },\n  {\n    \"mode\": \"concurrency\",\n    \"budgeted\": true,\n    \"provider_called\": false,\n    \"native_limits_before\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 2,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    },\n    \"claim_succeeded\": false,\n    \"error_type\": \"RigError\",\n    \"error\": \"Native accounting requires the current on-disk owner journal.\",\n    \"ledger_unchanged\": true,\n    \"native_limits_after\": {\n      \"attempts_per_job\": 3,\n      \"concurrency\": 2,\n      \"generation_calls\": null,\n      \"estimated_units_per_call\": null,\n      \"unit_budget\": null\n    }\n  }\n]\n"
+    }
+  },
+  "earlier_setup_attempt": {
+    "kind": "Probe invocation before sparse styles/catalog.json was hydrated",
+    "exit_code": 1,
+    "cause": "Missing fixture dependency styles/catalog.json; prepare_pet_run.py failed before scenarios executed.",
+    "evidence": "Original tool transcript retained in conversation. Sparse checkout corrected; subsequent full probe and tests recorded above.",
+    "acceptance_evidence": false
+  },
+  "expected_frozen_failures": [
+    "test_budgeted_stricter_attempt_cap_persists_and_blocks_retry: legitimate first claim refused with DIRECTOR_BUDGET_BINDING before token allocation.",
+    "test_budgeted_stricter_concurrency_cap_persists_and_blocks_second_run: legitimate first claim refused with DIRECTOR_BUDGET_BINDING before token allocation."
+  ],
+  "coverage": [
+    "Real disposable production project, prepared native acquisition and ledger enrollment through public APIs; native manifest read fresh from disk.",
+    "Unbudgeted defaults, attempts 3 to 1 and concurrency 2 to 1 positive controls; budgeted defaults positive control.",
+    "Valid first token matches persisted running job; tightened limits persist and production call count is one.",
+    "One worst-case reservation retains policy retry allowance, binds handoff and journal operation IDs, and starts with exact held quantities and zero spent.",
+    "Second separately enrolled ready run is refused by project concurrency cap with current journals and ledger unchanged.",
+    "Synthetic retry observation persists measured expenditure; one-attempt cap blocks further claim with journal and ledger unchanged.",
+    "Default policy permits distinct retry token using the same reservation and retaining measured expenditure."
+  ],
+  "limitations": [
+    "Synthetic local filesystem/runtime evidence only; no production artwork, provider execution, paid or live third-party API calls.",
+    "No full suite, CI, Windows, Blender, external integration or production approval claimed.",
+    "Frozen failures stop before later assertions; all complete scenario assertions independently passed on exact base.",
+    "No future corrective implementation was inspected or executed by this independent lane.",
+    "Original failed logs retained; no test weakened or deleted to obtain passing results."
+  ],
+  "owned_paths": [
+    "tests/test_director_budget_production_limits.py",
+    "tests/results/director-budget-production-limits-531/handoff.json"
+  ]
+}

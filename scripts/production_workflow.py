@@ -537,7 +537,7 @@ def bind_generation_run(root, binding_id, run_dir, requirements):
                 from director_budget import require_production_budget
                 require_production_budget(root, state, run, data)
             binding = {'run_path': relative, 'run_id': data['run_id'],
-                       'request_sha256': file_hash(run / 'pet_request.json'),
+                       'request_sha256': hatch.input_digest(run / 'pet_request.json'),
                        'requirements': copy.deepcopy(requirements),
                        'requirements_hash': hash_object(requirements)}
             state['generation_bindings'][binding_id] = binding
@@ -546,7 +546,7 @@ def bind_generation_run(root, binding_id, run_dir, requirements):
     return {'bound': binding_id, **binding, 'provider_called': False}
 
 
-def _bound_runs(root, state):
+def _bound_runs(root, state, *, admissions=None):
     result = []
     for binding_id, binding in sorted(state['generation_bindings'].items()):
         strict_keys(binding, {'run_path', 'run_id', 'request_sha256', 'requirements',
@@ -558,10 +558,15 @@ def _bound_runs(root, state):
         run = safe_path(root, binding['run_path'])
         if run == Path(root).resolve():
             raise ValueError('bound acquisition cannot share the production root')
+        if admissions is not None:
+            # Capture authority before the first journal read, and retain both
+            # the witness and native pins until the outer handoff has finished.
+            run = admissions.enter_context(hatch._journal_admission(run))
+            admissions.enter_context(hatch._pinned_journal_admission(run))
         data = hatch.manifest(run)
         if data['run_id'] != binding['run_id'] or data['fixture_mode'] is not state['fixture']:
             raise ValueError('bound acquisition identity or fixture label changed')
-        if file_hash(run / 'pet_request.json') != binding['request_sha256']:
+        if hatch.input_digest(run / 'pet_request.json') != binding['request_sha256']:
             raise ValueError('bound original request changed; create a separately identified acquisition')
         if 'director_budget' in state or 'director_budget' in data:
             from director_budget import require_production_budget
@@ -638,10 +643,10 @@ def configure_generation_limits(root, *, max_calls=None, attempts_per_job=None, 
 
 def claim_generation(root, binding_id, job):
     root = Path(root).resolve()
-    with hatch.ownership(root):
+    with hatch.ownership(root), ExitStack() as admissions:
         bundle = _bundle(root)
         state = _state(root, bundle)
-        runs = _bound_runs(root, state)
+        runs = _bound_runs(root, state, admissions=admissions)
         if binding_id not in state['generation_bindings']:
             raise ValueError('unknown production acquisition binding: ' + str(binding_id))
         with ExitStack() as locks:
@@ -659,6 +664,7 @@ def claim_generation(root, binding_id, job):
                 raise ValueError('production generation concurrency bound reached; reconcile an existing token')
             _, binding, run, data = next(item for item in current if item[0] == binding_id)
             selected = hatch.job_for(data, job)
+            hatch.validate_prompt_paths(selected)
             if selected['status'] in ('running', 'generated'):
                 raise ValueError('generation is already running or generated; reconcile or explicitly repair first')
             if selected.get('attempts', 0) >= report['limits']['attempts_per_job']:
@@ -670,22 +676,34 @@ def claim_generation(root, binding_id, job):
                 'Generate only the requested reusable asset; keep unrelated performance dimensions independent.\n')
             for field in ('prompt_file', 'retry_prompt_file'):
                 if field in selected:
-                    prompt = hatch.inside(run, selected[field])
-                    current_text = prompt.read_text(encoding='utf-8')
-                    if marker not in current_text:
-                        prompt.write_text(current_text + instruction, encoding='utf-8')
-            data.setdefault('limits', {})['attempts_per_job'] = min(
+                    hatch.inside(run, selected[field])  # Keep containment without resolving the read's leaf.
+                    prompt = run / selected[field]
+                    hatch.append_input_text(prompt, marker, instruction)
+            limits = dict(data.get('limits', {}))
+            limits['attempts_per_job'] = min(
                 data.get('limits', {}).get('attempts_per_job', report['limits']['attempts_per_job']),
                 report['limits']['attempts_per_job'])
-            data['limits']['concurrency'] = min(
-                data['limits'].get('concurrency', report['limits']['concurrency']),
+            limits['concurrency'] = min(
+                limits.get('concurrency', report['limits']['concurrency']),
                 report['limits']['concurrency'])
-            handoff = hatch.claim(run, data, job)
+            if limits != data.get('limits', {}):
+                # This caller already holds the native owner lock and original
+                # directory admission. Publish only a tightening of its current
+                # journal before claim reconciliation authenticates that journal.
+                hatch._require_current_handoff(run, data)
+                data['limits'] = limits
+                hatch._save_admitted(run, data)
+            handoff_checks = []
+            handoff = hatch.claim(run, data, job, _handoff_rechecks=handoff_checks)
             handoff['production_context'] = context
             handoff['receipt_template']['production_context'] = context
             _event(state, 'generation-claimed', binding_id=binding_id, job=job, token=handoff['token'],
                    requirements_hash=binding['requirements_hash'])
             _save(root, state)
+            if len(handoff_checks) != 1:
+                raise ValueError('production handoff is missing its original native input admission')
+            handoff_checks[0]()
+            hatch._require_current_handoff(run, data)
             return handoff
 
 
@@ -708,8 +726,7 @@ def _generation_action(root, binding_id, job, action, **arguments):
                 if value.get('production_context') != _binding_context(binding_id, binding):
                     raise ValueError('ingest receipt must attest the exact bound production coverage context')
                 with tempfile.TemporaryDirectory(prefix='hatch-production-receipt-') as temporary:
-                    # This directory is owned by this operation. Normalize OS
-                    # temporary-root aliases before the native no-follow reader.
+                    # Resolve only the temporary directory owned by this operation.
                     receipt_path = Path(temporary).resolve() / 'receipt.json'
                     hatch.atomic(receipt_path, value)
                     result = hatch.ingest(run, data, job, used_inputs=receipt_path,

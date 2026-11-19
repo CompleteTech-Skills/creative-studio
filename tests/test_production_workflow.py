@@ -1,5 +1,6 @@
 """Workflow regressions use explicit synthetic fixtures; no art approvals or provider calls."""
 from __future__ import annotations
+from contextlib import contextmanager
 import argparse
 import copy
 import hashlib
@@ -366,6 +367,38 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertEqual(snapshot['job']['generation_receipt']['production_context'], handoff['production_context'])
         self.assertTrue(result['review_required'])
         self.assertFalse(result['provider_called'])
+
+    def test_ingest_canonicalizes_only_its_owned_temporary_receipt_directory(self):
+        run, _ = self.acquisition()
+        handoff = workflow.claim_generation(self.root, 'a', 'base')
+        source = self.home / 'synthetic-alias-source.png'
+        shutil.copyfile(self.root / 'art/a-body.png', source)
+        original_temporary = tempfile.TemporaryDirectory
+        observed = []
+
+        @contextmanager
+        def aliased_receipt_directory(*args, **kwargs):
+            with original_temporary(*args, **kwargs) as directory:
+                if kwargs.get('prefix') != 'hatch-production-receipt-':
+                    yield directory
+                    return
+                alias = self.home / 'owned-receipt-alias'
+                alias.symlink_to(Path(directory).resolve(), target_is_directory=True)
+                observed.append(alias)
+                try:
+                    yield str(alias)
+                finally:
+                    alias.unlink()
+
+        with patch.object(workflow.tempfile, 'TemporaryDirectory', side_effect=aliased_receipt_directory):
+            result = workflow.ingest_generation(self.root, 'a', 'base', source, handoff['token'],
+                                                'Synthetic alias regression.', handoff['receipt_template'])
+        self.assertEqual(len(observed), 1)
+        self.assertFalse(observed[0].exists())
+        self.assertFalse(result['provider_called'])
+        item = hatch.job_for(hatch.manifest(run), 'base')
+        self.assertEqual(item['status'], 'generated')
+        self.assertEqual(item['generation_receipt']['production_context'], handoff['production_context'])
 
     def test_missing_used_source_reports_recovery_work_and_stale_review(self):
         workflow.record_review(self.root, self.receipt())

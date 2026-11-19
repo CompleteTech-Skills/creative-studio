@@ -1,9 +1,11 @@
 """Explicit imported-art interface. This module never calls an image model."""
 from pathlib import Path
+from native_journal import operation as _journal_operation
 from PIL import Image
 from asset_contracts import check_image, sha, strict_keys, text, MAX_SOURCE_PIXELS
 
 
+@_journal_operation
 def import_source(root, data, name, descriptor_path, note):
     import hatch
     hatch.reconcile(root, data)
@@ -56,7 +58,7 @@ def import_source(root, data, name, descriptor_path, note):
                'fixture': data['fixture_mode'], 'descriptor_sha256': sha(descriptor_path), 'note': note,
                'files': [{'origin_path': str(p), 'sha256': sha(p)} for p in paths]}
     hatch.invalidate(data, 'explicit artwork import ' + name)
-    hatch.save(root, data)
+    hatch._save_admitted(root, data)
     target = root / job['output_path']
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix('.import.tmp')
@@ -72,6 +74,6 @@ def import_source(root, data, name, descriptor_path, note):
     job.update(status='generated', input_hashes=hatch.inputs(root, job), output_hash=sha(target))
     job['history'].append({'event': 'imported', 'time': hatch.time.time(), 'receipt': receipt,
                            'output_hash': job['output_hash']})
-    hatch.save(root, data)
+    hatch._save_admitted(root, data)
     return {'imported': name, 'origin': receipt['origin'], 'fixture': data['fixture_mode'],
             'imagegen_output': False, 'visual_review_required': True}

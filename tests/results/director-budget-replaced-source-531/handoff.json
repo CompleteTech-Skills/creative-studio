@@ -1,0 +1,52 @@
+{
+  "scope": "First generation after a real file-backed explicit import and repair on a synthetic fixture. Native Hatch and production owner APIs, each with and without native budget enrollment.",
+  "evidence_level": "Offline integration through public APIs, filesystem journals, actual retained ledger and real kernel ownership locks. Artwork, policy and run are fixtures. No provider implementation, network, credentials, real charges or deployment.",
+  "test_path": "tests/test_director_budget_replaced_source_admission.py",
+  "test_sha256": "3cb0284e56995d495d8fec7f09f339cd55389e7e36b7a7996a766783cd2c470f",
+  "runtime": {
+    "python": "3.12.14",
+    "platform": "Linux",
+    "OPENBLAS_NUM_THREADS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "frozen_pr_head": {
+    "commit": "618e21b07c64a4e67c5dc48accde074d10b4395d",
+    "tree": "f498cdf06f7a8e58a71145e58dfa6b8393453d78",
+    "command": "PYTHONPATH=scripts:tests python -m unittest -v test_director_budget_replaced_source_admission",
+    "exit_code": 1,
+    "total": 4,
+    "passed": 2,
+    "failed_assertions": 2,
+    "errors": 0,
+    "skipped": 0,
+    "passed_cases": [
+      "test_native_unbudgeted",
+      "test_production_unbudgeted"
+    ],
+    "failed_cases": [
+      "test_native_budgeted",
+      "test_production_budgeted"
+    ],
+    "diagnostic": "First claim after explicit import and repair refused. Native accounting requires the current on-disk owner journal.",
+    "log_sha256": "dfdf5e4eceb9f7f90d8aee95946209a4b57f678c8029353f0a426d25e8391577"
+  },
+  "comparison_base": {
+    "commit": "a2f5191db920cc132921747b1dda80dfa0f5269e",
+    "command": "PYTHONPATH=scripts:tests:<review-worktree>/tests python -m unittest -v test_director_budget_replaced_source_admission",
+    "method": "Same added test module; all implementation and fixture helpers loaded from the comparison base worktree.",
+    "exit_code": 0,
+    "total": 4,
+    "passed": 4,
+    "failed_assertions": 0,
+    "errors": 0,
+    "skipped": 0,
+    "log_sha256": "5a70d557cf2d9827397663edac5a2ed56542960539e83ac1257f33d1952b4f75"
+  },
+  "positive_contract": [
+    "After import and explicit repair: pending base, 0 attempts, intact attributed source and repair history, no previous operation or reservation.",
+    "First native or production claim has one live attempt with the matching token, current prompt hash and fixture receipt, and retains the complete prior history and original source file.",
+    "A budgeted claim has exactly one shared operation/reservation identity, its one token, complete worst-case hold and zero measured expenditure.",
+    "Unbudgeted handoffs have no budget operation or reservation. A production owner reports exactly one generation claim."
+  ],
+  "review_boundary": "Evidence covers these four fixture scenarios and the listed revisions. A corrected implementation requires a fresh run and independent review."
+}

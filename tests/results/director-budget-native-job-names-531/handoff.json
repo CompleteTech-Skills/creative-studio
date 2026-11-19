@@ -1,0 +1,43 @@
+{
+  "scope": "Test-only correction oracle for native and production handoffs that use valid Hatch profile state names.",
+  "tested_source": "b32f58852d1ed94582a1a57856d82337c2097f0c",
+  "tested_tree": "c4ca6af0e2f18da5bfd1bb59b6bad4121eb1fc9e",
+  "independence": "The exact-head reviewer subsequently authored this regression on the frozen source, and is a test author for any candidate containing it. The amended candidate requires separate nonauthor review.",
+  "test_file": "tests/test_director_budget_native_job_names.py",
+  "test_file_sha256": "4c5082649ddf1f75cda4b3bd84566b56a9e3c12f6e0e1ad3980df90d1280f0af",
+  "command": "PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 PYTHONPATH=scripts:tests python -m unittest -v test_director_budget_native_job_names",
+  "runtime": "Linux, CPython 3.12.14, repository rig environment",
+  "frozen_source_results": {
+    "elapsed_seconds": 3.25,
+    "methods": 4,
+    "scenarios": 8,
+    "passed_scenarios": 6,
+    "failed_subtests": 2,
+    "errors": 0,
+    "skips": 0,
+    "exit": 1,
+    "controls": "128-character native/production with or without budget, and 129-character native/production without budget.",
+    "failures": [
+      "129-character budgeted native row",
+      "129-character budgeted production row"
+    ],
+    "observed_after_refusal_in_both": {
+      "error": "Invalid operation/provider identity.",
+      "returned_handoff": false,
+      "durable_status": "running",
+      "active_token_present": true,
+      "row_claim_history_entries": 1,
+      "ledger_actions": [
+        "reserve"
+      ],
+      "held_provider_calls": [
+        "2"
+      ],
+      "prior_base_job_retained": true,
+      "outside_source_bytes_retained": true
+    },
+    "original_log_sha256": "7a3306f05c26e3f19e378f3850091c5de2c14f1491e355522638d7212caaf4c3"
+  },
+  "success_contract": "Return the full job name, same retained running token and unchanged source/earlier history. For opted-in runs, retain exactly one reserve and matching native-claim event, one reservation, unchanged synthetic held quantities and zero measured spend.",
+  "limits": "Actual local Hatch and production workflows with a synthetic original and proof. No provider request, paid spend, hosted run or production evidence. No candidate implementation or successful amended result was inspected."
+}

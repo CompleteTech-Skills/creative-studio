@@ -229,61 +229,66 @@ def prepare_from_decomposition(root, destination, args=None, component_ids=(), o
                             style_notes=getattr(args, 'style_notes', None) or 'Preserve the source artwork style and original visual identity without redesign.')
             forward_args = argparse.Namespace(**supplied)
             hatch.prepare(prepared, forward_args)
-            snapshot = prepared / 'references' / 'decomposition'
-            snapshot.mkdir()
-            _copy_inventory(root, snapshot, inventory)
-            snapshot_manifest, _, _ = _validated(snapshot)
-            if snapshot_manifest != manifest:
-                raise ValueError('source decomposition changed during forward preparation')
-            reference_receipts = [{'component_id': component['id'], 'asset_path': component['asset']['path'],
-                                   'asset_sha256': component['asset']['sha256'], 'mask_sha256': component['mask']['sha256'],
-                                   'source_sha256': component['provenance']['source_sha256'],
-                                   'provenance': component['provenance'], 'review': component['review'],
-                                   'bbox': component['bbox'], 'transform': component['transform'],
-                                   'role': roles[index + 1]['role'], 'run_reference_index': index + 1}
-                                  for index, component in enumerate(selected)]
-            origin = {'schema_version': 1, 'kind': 'character-decomposition-reuse',
-                      'character_id': manifest['character']['id'], 'source_sha256': manifest['source']['sha256'],
-                      'decomposition_sha256': inventory['decomposition.json'], 'identity_sha256': inventory['identity.json'],
-                      'snapshot_path': 'references/decomposition', 'snapshot_inventory_sha256': hash_object(inventory),
-                      'snapshot_files': inventory, 'source_revision': manifest['revision'],
-                      'semantic_status': manifest['review']['status'], 'accepted': accepted,
-                      'fixture': fixture, 'source_origin': manifest['source']['origin'],
-                      'selected_components': reference_receipts, 'operation': intent,
-                      'canonical_foreground_sha256': manifest['foreground']['sha256'],
-                      'validation': {'faithful_fidelity_passed': validation['faithful_fidelity_passed']},
-                      'animation_ready': False, 'imagegen_output': False}
-            request = hatch.read(prepared / 'pet_request.json')
-            request['decomposition'] = origin
-            for index, component in enumerate(selected, start=1):
-                request['references'][index]['decomposition_component'] = reference_receipts[index - 1]
-            hatch.atomic(prepared / 'pet_request.json', request)
-            regenerate_prompts(prepared, request, profile, request['extraction'], include_base=True)
-            data = hatch.manifest(prepared)
-            import_source(prepared, data, 'base', inputs / 'base-source.json',
-                          'Imported hash-verified observed foreground without a model call. Source decomposition semantic status: ' + manifest['review']['status'] + '. Canonical visual inspection is still required.')
-            base = hatch.job_for(data, 'base')
-            base['import_receipt']['decomposition'] = origin
-            base['input_hashes'] = hatch.inputs(prepared, base)
-            hatch.event(data, 'decomposition-reused', decomposition_sha256=origin['decomposition_sha256'],
-                        source_sha256=origin['source_sha256'], selected_components=selected_ids,
-                        operation=intent['operation'], semantic_status=origin['semantic_status'])
-            hatch.save(prepared, data)
-            if any(getattr(args, flag, None) is not None for flag in ('max_attempts', 'concurrency', 'max_calls', 'estimate_units', 'unit_budget')):
-                hatch.configure_limits(prepared, data, args)
-            # Normal generator metadata contains run_dir; move the fully prepared
-            # transaction only after its normal schema and origin checks pass.
-            for name in ('pet_request.json', 'imagegen-jobs.json'):
-                hatch.atomic(prepared / name, hatch._relocate(hatch.read(prepared / name), prepared, destination))
-            data = hatch.manifest(prepared)
-            # Relocating the run root changes metadata only when a historical path
-            # points at staging; compute its current base dependency hashes again.
-            base = hatch.job_for(data, 'base')
-            base['input_hashes'] = hatch.inputs(prepared, base)
-            hatch.save(prepared, data)
-            if _inventory(root) != inventory:
-                raise ValueError('source decomposition changed during forward preparation')
-            os.replace(prepared, destination)
+            with hatch._journal_admission(prepared):
+                snapshot = prepared / 'references' / 'decomposition'
+                snapshot.mkdir()
+                _copy_inventory(root, snapshot, inventory)
+                snapshot_manifest, _, _ = _validated(snapshot)
+                if snapshot_manifest != manifest:
+                    raise ValueError('source decomposition changed during forward preparation')
+                reference_receipts = [{'component_id': component['id'], 'asset_path': component['asset']['path'],
+                                       'asset_sha256': component['asset']['sha256'], 'mask_sha256': component['mask']['sha256'],
+                                       'source_sha256': component['provenance']['source_sha256'],
+                                       'provenance': component['provenance'], 'review': component['review'],
+                                       'bbox': component['bbox'], 'transform': component['transform'],
+                                       'role': roles[index + 1]['role'], 'run_reference_index': index + 1}
+                                      for index, component in enumerate(selected)]
+                origin = {'schema_version': 1, 'kind': 'character-decomposition-reuse',
+                          'character_id': manifest['character']['id'], 'source_sha256': manifest['source']['sha256'],
+                          'decomposition_sha256': inventory['decomposition.json'], 'identity_sha256': inventory['identity.json'],
+                          'snapshot_path': 'references/decomposition', 'snapshot_inventory_sha256': hash_object(inventory),
+                          'snapshot_files': inventory, 'source_revision': manifest['revision'],
+                          'semantic_status': manifest['review']['status'], 'accepted': accepted,
+                          'fixture': fixture, 'source_origin': manifest['source']['origin'],
+                          'selected_components': reference_receipts, 'operation': intent,
+                          'canonical_foreground_sha256': manifest['foreground']['sha256'],
+                          'validation': {'faithful_fidelity_passed': validation['faithful_fidelity_passed']},
+                          'animation_ready': False, 'imagegen_output': False}
+                request = hatch.read(prepared / 'pet_request.json')
+                request['decomposition'] = origin
+                for index, component in enumerate(selected, start=1):
+                    request['references'][index]['decomposition_component'] = reference_receipts[index - 1]
+                hatch.atomic(prepared / 'pet_request.json', request)
+                regenerate_prompts(prepared, request, profile, request['extraction'], include_base=True)
+                data = hatch.manifest(prepared)
+                import_source(prepared, data, 'base', inputs / 'base-source.json',
+                              'Imported hash-verified observed foreground without a model call. Source decomposition semantic status: ' + manifest['review']['status'] + '. Canonical visual inspection is still required.')
+                base = hatch.job_for(data, 'base')
+                base['import_receipt']['decomposition'] = origin
+                base['input_hashes'] = hatch.inputs(prepared, base)
+                hatch.event(data, 'decomposition-reused', decomposition_sha256=origin['decomposition_sha256'],
+                            source_sha256=origin['source_sha256'], selected_components=selected_ids,
+                            operation=intent['operation'], semantic_status=origin['semantic_status'])
+                hatch._save_admitted(prepared, data)
+                if any(getattr(args, flag, None) is not None for flag in ('max_attempts', 'concurrency', 'max_calls', 'estimate_units', 'unit_budget')):
+                    hatch.configure_limits(prepared, data, args)
+                # Normal generator metadata contains run_dir; move the fully prepared
+                # transaction only after its normal schema and origin checks pass.
+                for name in ('pet_request.json', 'imagegen-jobs.json'):
+                    relocated = hatch._relocate(hatch.read(prepared / name), prepared, destination)
+                    if name == 'imagegen-jobs.json':
+                        hatch._save_admitted(prepared, relocated)
+                    else:
+                        hatch.atomic(prepared / name, relocated)
+                data = hatch.manifest(prepared)
+                # Relocating the run root changes metadata only when a historical path
+                # points at staging; compute its current base dependency hashes again.
+                base = hatch.job_for(data, 'base')
+                base['input_hashes'] = hatch.inputs(prepared, base)
+                hatch._save_admitted(prepared, data)
+                if _inventory(root) != inventory:
+                    raise ValueError('source decomposition changed during forward preparation')
+                os.replace(prepared, destination)
         finally:
             shutil.rmtree(workspace)
     return {'prepared': str(destination), 'run_id': data['run_id'], 'base_source_origin': 'import',

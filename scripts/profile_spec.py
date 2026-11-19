@@ -19,6 +19,11 @@ GENERATION_KEYS = {'skill', 'requires_identity_reference', 'instructions', 'requ
 RESERVED_STATES = {'base', 'con', 'prn', 'aux', 'nul'} | {f'{prefix}{i}' for prefix in ('com', 'lpt') for i in range(1, 10)}
 
 
+def is_safe_slug(value):
+    """Profile and state names share this portable, untruncated spelling."""
+    return isinstance(value, str) and re.fullmatch(r'[a-z0-9][a-z0-9-]*', value) is not None
+
+
 def _require(test, message):
     if not test:
         raise ValueError('invalid profile: ' + message)
@@ -51,7 +56,7 @@ def validate_profile(profile: dict) -> dict:
     p = copy.deepcopy(profile)
     _object(p, {'schema_version', 'id', 'layout', 'states', 'generation', 'validation', 'events', 'export', 'playback'}, 'profile')
     _require(type(p.get('schema_version')) is int and p['schema_version'] in (1, 2), 'schema_version must be 1 or 2')
-    _require(isinstance(p.get('id'), str) and re.fullmatch(r'[a-z0-9][a-z0-9-]*', p['id']), 'id must be a stable lowercase slug')
+    _require(is_safe_slug(p.get('id')), 'id must be a stable lowercase slug')
     layout = p.get('layout')
     _object(layout, {'columns', 'cell_width', 'cell_height', 'rows', 'width', 'height'}, 'layout')
     for key in ('columns', 'cell_width', 'cell_height'):
@@ -64,7 +69,7 @@ def validate_profile(profile: dict) -> dict:
     for state in states:
         _object(state, {'id', 'frames', 'durations', 'purpose', 'alignment', 'motion', 'generation', 'allowed_derivations', 'validation', 'playback'}, 'state')
         name = state.get('id')
-        _require(isinstance(name, str) and re.fullmatch(r'[a-z0-9][a-z0-9-]*', name) and name not in seen, 'state ids must be unique safe slugs')
+        _require(is_safe_slug(name) and name not in seen, 'state ids must be unique safe slugs')
         _require(name not in RESERVED_STATES, name + ': reserved state id is not portable or conflicts with the base job')
         seen[name] = state
         _require(type(state.get('frames')) is int and 0 < state['frames'] <= layout['columns'], name + ': frame count must fit layout columns')

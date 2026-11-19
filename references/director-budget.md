@@ -55,6 +55,9 @@ requires evidence. An uncertain reservation cannot be released. Cancellation
 never deletes previous actual usage. Replaying the same idempotency key and
 same normalized payload returns its original receipt; reusing it for different
 work fails. New mutations require the exact current SHA, preventing stale writes.
+An `unstarted` release is rejected after a retained native claim publication,
+even when no usage observation has arrived. An older native reservation without
+the publication protocol described below cannot prove that it was unstarted.
 
 Persistence uses immutable, canonical-JSON revision files with a SHA-linked
 parent chain. Existing native OS locks serialize cooperating writers; the
@@ -107,15 +110,113 @@ and location, not another acquisition controller or reservation store.
 Production acquisitions must declare their containing project as owner.
 Enrollment also pins the association in the existing production workflow state.
 Production binding and claim paths verify that association against each native
-run. Configure fresh acquisitions before binding them; this slice does not
-retroactively account for historical unbudgeted work or migrate groups of
-previously bound unbudgeted runs. Standalone legacy runs remain outside this
-opt-in project accounting scope.
+run. Fresh acquisitions can enroll before binding, or already-bound never-claimed
+acquisitions can enroll one at a time in either order. The existing production
+owner validates every binding identity; enrollment holds the existing run locks
+through publication and admits at most 512 bindings. Every bound acquisition must
+join the same ledger before either a production claim or a raw native claim can
+proceed. Partial enrollment cannot authorize generation. Historical claims,
+restored journals, changed identities and a different ledger remain rejected;
+this is not retroactive accounting for earlier unbudgeted work. Standalone legacy
+runs outside a budgeted production owner retain their existing behavior.
 
 One cumulative reservation covers each native job and its bounded attempts.
 Native claim history still owns tokens and call counts; these counts are not
 measurements of actual provider billing. A bare reservation ID is never an
 accounting authorization.
+
+Before returning a native claim handoff, the existing journal durably saves the
+claim and the existing immutable ledger retains a `native-claim` publication
+event. It binds the original operation, reservation, run, canonical location,
+job, token, attempt ordinal and input hashes without recording usage or changing
+held capacity. It does not become a second acquisition controller. All retained
+reserve intents must still have their original native operations, and every
+published token must remain in the matching native claim history. Rolling back
+only the native journal therefore cannot erase admitted or published authority.
+
+A new native reserve intent records publication protocol version 1. It binds
+the presence or absence and exact hash of optional extraction settings and the
+complete captured profile digest into the operation identity, in addition to the
+original request, generation projection and prompt hashes. Current admission
+also includes `@generation-job`, a digest of the ordered attachment descriptors
+and the primary/retry prompt roles. Equal file hashes do not authorize changing
+attachment order or notes. A pending intent must retain this exact descriptor
+identity; restoring it recovers the original unpublished token. Older protocol-1
+intents without this digest remain available for accounting recovery but cannot
+issue another handoff under the stronger descriptor boundary. An older intent
+without that marker cannot prove that a missing
+publication event means no handoff was issued. Its authentic historical usage
+remains recoverable. Further work, every `unstarted` release and a direct
+generic `canceled-known` release are refused.
+
+For a historical reservation, the original native owner may explicitly attest
+that **all outstanding attempts** have stopped by submitting `canceled-known`
+with retained nonexecution evidence. Use this path only when the evidence covers
+every outstanding attempt, including work absent from the recovered journal.
+The current on-disk journal must show ordered, failed claims and measured retry
+usage for each, with all native and direct uncertainty reconciled. The ledger
+retains the attestation, its original evidence, the claim-history digest, latest
+token and latest observation identity. It rechecks these bindings under its
+writer lock. A genuine historical snapshot may omit a later unmeasured handoff.
+The native owner's all-attempt nonexecution attestation covers that gap. Neither
+a per-token usage measurement nor the journal's current contents can establish
+historical completeness.
+
+A protocol-1 pending token created before publication remains reusable after an ordinary
+interruption, including an input-change refusal before claim publication. Once
+publication is retained, an older preclaim snapshot fails closed even if it
+retains that token. If publication itself fails after saving the native claim,
+the call returns no handoff and leaves the original claim running for explicit
+reconciliation. Reporting actual usage for a historical retained claim remains
+available; issuing further work requires complete publication evidence. Never
+infer zero usage merely from a missing caller response. The added event is
+accepted by the current v1 ledger reader; older readers fail closed on it.
+
+Publication rechecks the current reservation, remaining per-attempt capacity,
+retry ordinal and aggregate project/provider limits inside the ledger's existing
+writer lock, using the explicit exact-decimal context. A separate preflight
+keeps an already-known capacity refusal pending before the native claim is saved.
+An overrun that races after that preflight still prevents a returned handoff;
+the saved claim remains running for explicit reconciliation. Neither an absent
+usage report nor a failed caller response proves that published work never ran.
+Transient ledger lock or revision contention retries the same local accounting
+mutation at most eight times, with bounded backoff. It never allocates another
+native token or provider attempt. Current capacity is rechecked on each actual
+publication mutation; public ledger mutations still require their exact revision.
+
+Generic ledger operations may use any valid operation identifier, including one
+that resembles a native hash. Native admissions are recognized by authenticated
+retained native intent evidence and their reserve identity. A different
+operation's native intent is ordinary provenance; neither its proof kind nor a
+native-shaped operation name can give it authority over this reservation.
+Direct generic
+settlements and cancellations remain authoritative in the ledger without needing
+an invented native journal event. Actual native observation events must still
+retain their matching native journal entries. A directly released reservation
+remains readable but cannot issue more work or block an unrelated enrolled run
+merely because its release was recorded through the generic accounting API.
+
+Direct ledger uncertainty remains authoritative even when it has no native
+observation ID. A known native observation cannot silently clear it with an
+empty `resolves` list, or by resolving only a later native unknown observation.
+First reconcile the direct ledger observation through the existing generic
+settlement API with explicitly measured deltas and retained evidence; then
+resolve any native observations by their IDs. This is checked before retaining
+a known native intent and again under the ledger mutation lock. A concurrent
+unknown observation therefore preserves the hold even after a native intent
+has been saved. Status and unrelated sibling operations remain readable.
+Conversely, generic terminal settlement cannot clear token-bound native
+uncertainty. Every native unknown must be resolved by its observation identity
+before either `complete` or `failed` may release the remaining hold. Known
+generic deltas and ordinary generic-only reconciliation remain available.
+
+`canceled-known` does not imply that an earlier published attempt cost nothing.
+Cancellation of a native reservation requires reconciled usage for its latest
+published token. An older attempt's measurement cannot authorize release of a
+newer publication. Generic known deltas can be retained first, followed by an
+explicit token-bound native reconciliation using only additional measured
+deltas. Never-published generic work and known native remainders remain
+cancellable without discarding already recorded spend.
 
 Ingest receipts add a `budget_usage` object. Native `fail` and production
 `fail_generation` take the same object as an optional keyword argument, required
@@ -170,7 +271,7 @@ binding are separate integration work. PR #315's non-null reservation field alon
 does not verify this ledger. No live provider, production rendering or artistic
 acceptance is established by these hooks or their synthetic tests.
 
-Proposed validation (not executed while preparing this patch):
+Focused validation commands (execution results must identify their revision):
 ```sh
 PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_director_budget*.py' -v
 PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_workflow.py' -v
@@ -186,8 +287,24 @@ written under the existing owner and run locks before the run policy is saved.
 It does not own tokens, reserve capacity or create another acquisition controller.
 Native claims cannot enter the legacy path when that retained owner inventory
 already identifies the run or location, including an archive captured before
-enrollment. Interrupted enrollment fails closed and can replay the same binding.
-Unrelated, never-enrolled legacy runs retain their existing restore/claim behavior.
+enrollment. New entries also retain the hash of the complete normalized budget
+policy. Interrupted enrollment fails closed and can replay the same binding
+only before the ledger has admitted any native operation for that run identity
+or canonical location. Replay authenticates the retained intent and its exact
+operation hash from every native reserve event, including released reservations
+and admissions interrupted before token publication. Changing the current
+prompt cannot hide a previous admission. An admitted run with an older manifest
+must recover its original claim journal; reenrollment cannot manufacture a new
+token against already used capacity.
+
+Completed legacy owner entries without a policy hash remain readable and are
+preserved unchanged. An incomplete old entry cannot prove the interrupted policy
+and therefore cannot use enrollment replay. A bare enrollment flag never grants
+claim authority. These checks reuse the existing owner association, immutable
+ledger evidence and native journal instead of adding a second accounting store.
+Unrelated, never-enrolled legacy runs outside a budgeted production owner retain
+their existing restore/claim behavior. A run inside a budgeted production project
+cannot evade that project's admission policy by using the raw native entry point.
 
 This check depends on the current authoritative owner association and ledger being
 preserved. It is not an off-host or global rollback detector for replacement of an
@@ -235,6 +352,36 @@ validation. Native input failures remain structured native errors; FIFO and
 oversized input paths cannot become an unbounded read while ownership is held.
 These changes do not globally redefine hashing of unrelated legacy outputs.
 
+Claim publication captures bounded prompt, request, profile and applicable
+extraction settings before admission. The same bytes supply input hashes,
+prompt history, identity/style fields and handoff warnings. After admission, the
+owner rechecks the current hashes and captured handoff inputs with bounded
+readers, then publishes from the captured values without ordinary file rereads.
+A changed file or substituted symlink, FIFO or directory refuses publication.
+The durable reservation and unpublished token intent survive that refusal;
+restoring the admitted inputs lets an explicit retry reuse the same pending
+token without allocating a second attempt. This protects native handoff identity;
+it does not claim that a downstream provider has executed or retained those bytes.
+Settings that were absent at admission must remain absent. A row claim also
+checks that captured settings match its approved prompt calibration. Production
+binding rechecks, prompt reads and base-review input checks use the same bounded
+readers. Production prompt augmentation retains its existing parent through
+the bounded read, staging, replacement and cleanup. POSIX uses the canonical
+no-follow directory descriptor and descriptor-relative payload reader; Windows
+pins every ancestor with the existing native directory owner. A changed POSIX
+pathname cannot redirect publication or cleanup and refuses subsequent claim
+authority. A substituted leaf is never followed.
+The accounting adapter receives the captured settings/profile identity, rather
+than independently rebinding a later read. Input checks run again after capacity
+preflight and after durable publication. A change before saving the claim leaves
+the original intent pending; a change after publication returns no handoff and
+leaves the original running claim for reconciliation. Returned attachment paths
+retain the admitted lexical run-relative spelling after containment checks;
+transient aliases cannot substitute a cached resolved target from another
+attachment. Returned file paths are not a promise that a downstream consumer
+cannot edit them after a successful
+handoff; the retained hashes and captured native history identify admitted bytes.
+
 Reservation normalization retains its explicit 128-digit decimal context during
 both admission and recovery. A caller's ambient decimal precision cannot round
 an already admitted reservation into a different identity.
@@ -253,9 +400,177 @@ invalid identities, recovery authority restrictions, existing-receipt replay,
 bounded special-file input checks, precision above 28 significant digits under
 changed ambient contexts, and forged job/claim hashes with authentic pending
 usage. Their author did not inspect the fix.
-Original native tests remain unchanged. No provider, paid service, production
-host or live API is invoked. Runtime evidence is bound to its tested revision;
-the presence of these tests is not platform or production acceptance.
+Original native tests remain, with three enrollment regressions added for both
+orders, partial-admission refusal and invalid sibling identities/policies. Two
+additional claim regressions exercise post-admission input replacement and
+bounded special-file refusal while retaining the real synthetic reservation.
+The original preparation was unexecuted; later local and hosted results must
+identify the exact integrated revision instead of inheriting that status.
+No provider, paid service, production host or live API is invoked.
+
+Independent journal-authority tests cover older enrollment, pending, retry and
+uncertainty snapshots, positive interrupted-publication recovery, and refusal of
+ambiguous historical publication. Independent dispatch tests cover generic
+unstarted release, a concurrent overrun, settings byte/presence changes, and
+restoration of the originally admitted settings. These test authors worked from
+the preceding default branch without reading the corrective implementation.
+Four additional independent input-path tests substitute real POSIX FIFOs or
+Windows directories at production request/prompt and native base-review reads,
+with regular-file controls and retained authority checks. POSIX prompt coverage
+also preserves an external symlink target. A child-process timeout makes an
+unbounded read an explicit failure rather than hanging the test runner.
+Twelve independent publication-edge regressions additionally cover generic
+accounting compatibility, in-run prompt aliases, captured settings/profile
+identity, and input changes during actual preflight, with five positive controls.
+Local contention tests distinguish injected scheduling failures from actual
+multi-process claims; neither is provider execution evidence.
+Nine additional accounting/prompt regressions fail behaviorally on the preceding
+published tree and pass with the boundary correction. They cover the independent
+generic-uncertainty oracle, interleaved generic/native observations, a ledger
+change between durable intent and settlement, cancellation before usage or after
+a newer token, and real parent-directory replacement during prompt staging.
+Windows exercises the native pinned-parent refusal when directory renaming is
+denied; POSIX verifies the foreign replacement is untouched and no claim issues.
+Eleven independent interoperability cases additionally cover generic terminal
+settlement over native uncertainty, ambiguous historical cancellation, foreign
+intent provenance, and transient in-run attachment aliases, with positive
+generic/native accounting, regular attachment and bounded FIFO controls.
+The historical fixture was checked against actual public claim/fail-retry/claim
+behavior on the preceding default branch; committed tests are self-contained.
+
+### Complete retained identity and readable recovery journals
+
+Every native usage or release observation is checked against its complete
+immutable retained proof before replay: operation, observation ID, token, usage,
+outcome, original evidence, measurement source and uncertainty resolutions.
+The journal's event key must derive from that same operation and observation.
+Changing a mutable journal cannot rename an unknown observation or manufacture
+a resolution. Direct generic evidence stays generic unless the reserve key and
+proof both identify that reservation's own native operation; another operation's
+authentic proof cannot block an unrelated native run.
+
+Native cancellation runs the ledger's own eligibility check before retaining a
+new cancellation intent, and the ledger repeats it inside its mutation lock.
+A deterministically refused historical `unstarted` cancellation therefore does
+not poison subsequent explicit measured recovery. This does not infer zero
+usage or discard an existing durable accounting intent after a transient error.
+
+Generation prompt paths must match the job's prepared primary and retry paths
+before claiming or augmenting either prompt. Row claims compare the captured
+canonical-base digest with its approved review, in addition to the captured
+calibration digest. Descriptor and byte checks are repeated at publication;
+validating an earlier version of a path does not approve its replacement.
+
+Native journal publication bounds the exact encoded UTF-8 JSON, including
+escaping, metadata and all accumulated history, by the same `MAX_SOURCE_BYTES`
+limit used for reopening it. A refusal retains the preceding readable journal.
+If reservation admission already committed, its original pending intent remains
+for explicit recovery or cancellation; no handoff is returned and no history is
+deleted to make the payload fit.
+
+Two independently authored modules add 28 regression/control methods. On the
+preceding published `1e9aa0fa`, the identity/recovery module ran 13 methods with
+10 assertion failures, and the retained-payload module ran 15 methods with 31
+failure/subtest assertions, with no errors or skips. With the correction all
+28 passed in 31.260 seconds, exit 0, zero skips. Fixtures use actual local native
+journals, immutable ledger revisions and synthetic image bytes. The journal-size
+cases use a consistently lowered 128 KiB policy with real JSON encode/save/read;
+these are scaled-policy executions, not full 64 MiB payload or provider evidence.
+Exact-head full gates, independent correctness/security review and hosted
+platform checks remain required.
+
+### Complete retained identity and readable recovery journals
+
+Every native usage or release observation is checked against its complete
+immutable retained proof before replay: operation, observation ID, token, usage,
+outcome, original evidence, measurement source and uncertainty resolutions.
+The journal's event key must derive from that same operation and observation.
+Changing a mutable journal cannot rename an unknown observation or manufacture
+a resolution. Direct generic evidence stays generic unless the reserve key and
+proof both identify that reservation's own native operation; another operation's
+authentic proof cannot block an unrelated native run.
+
+Native cancellation runs the ledger's own eligibility check before retaining a
+new cancellation intent, and the ledger repeats it inside its mutation lock.
+A deterministically refused historical `unstarted` cancellation therefore does
+not poison subsequent explicit measured recovery. This does not infer zero
+usage or discard an existing durable accounting intent after a transient error.
+
+Generation prompt paths must match the job's prepared primary and retry paths
+before claiming or augmenting either prompt. Row claims compare the captured
+canonical-base digest with its approved review, in addition to the captured
+calibration digest. Descriptor and byte checks are repeated at publication;
+validating an earlier version of a path does not approve its replacement.
+
+Native journal publication bounds the exact encoded UTF-8 JSON, including
+escaping, metadata and all accumulated history, by the same `MAX_SOURCE_BYTES`
+limit used for reopening it. A refusal retains the preceding readable journal.
+If reservation admission already committed, its original pending intent remains
+for explicit recovery or cancellation; no handoff is returned and no history is
+deleted to make the payload fit.
+
+Two independently authored modules add 28 regression/control methods. On the
+preceding published `1e9aa0fa`, the identity/recovery module ran 13 methods with
+10 assertion failures, and the retained-payload module ran 15 methods with 31
+failure/subtest assertions, with no errors or skips. With the correction all
+28 passed in 31.260 seconds, exit 0, zero skips. Fixtures use actual local native
+journals, immutable ledger revisions and synthetic image bytes. The journal-size
+cases use a consistently lowered 128 KiB policy with real JSON encode/save/read;
+these are scaled-policy executions, not full 64 MiB payload or provider evidence.
+Exact-head full gates, independent correctness/security review and hosted
+platform checks remain required.
+
+### Preserved enrollment, accounting and terminal journal capacity
+
+Enrollment uses one captured request digest for both the pending journal and
+immutable owner, then checks that original identity again before publication.
+Returned attachment paths keep their captured lexical run name; publication
+pins that name without resolving a replacement alias. Captured malformed
+settings reject before a legacy convenience reader can reopen them.
+
+Generic terminal accounting cannot discard unresolved token-bound native
+observations. A durable native cancellation may acknowledge an independently
+committed generic release only when reservation, outcome and the ordered
+original evidence agree exactly. Recovery retains that release's actual receipt,
+key and revision; it does not invent a native ledger event or erase its intent.
+Conflicting outcomes, evidence or reservations still reject.
+
+New handoff identities bind `@journal-headroom` to
+`native-terminal-recovery-v1`. Before returning a token, and on subsequent
+journal saves, a pure in-memory size calculation reserves a terminal path for
+every active token sharing that journal. It includes 127 canonical retained
+evidence references, a 128-character observation ID, all pending uncertainty
+IDs, a 1024-codepoint measurement source at its worst JSON-escaped width,
+bounded seven-metric quantities, the actual-shaped receipt, and concise native
+finalization. Placeholder sizing values are never persisted as evidence.
+The raw measurement source, before stripping, is limited to 1024 codepoints.
+
+Each save uses the same exact UTF-8 encoder for its current data and its future
+terminal envelope. If ordinary indentation exceeds the existing reader cap,
+compact JSON preserves every decoded field and history entry. If even compact
+encoding cannot fit the required envelope, the write refuses before publication.
+Larger optional annotations and further observations may be refused while the
+reserved concise terminal path remains available. Historical tokens retain
+their recovery writes and can benefit from compact encoding; this policy does
+not retroactively promise capacity for earlier admissions. The separate ledger
+revision, snapshot-byte and attempt bounds continue to apply.
+
+Ledger evidence limits apply to each individual accounting operation. Snapshot
+reopening verifies every distinct retained path/hash pair across the bounded
+history in batches of at most 128, so valid operations cannot cumulatively make
+their own ledger unreadable. Conflicting pairs remain visible to verification.
+
+Two additional independent modules retain 26 regression/control methods. Their
+authors did not inspect the corrective implementation. On published `7a15059e`,
+the 12 claim-boundary methods produced five assertion failures and three errors;
+the 14 recovery/capacity methods produced nine assertion failures, zero errors.
+All had zero skips. The latter includes five additive maximal-envelope methods
+which independently found the aggregate-evidence reopening defect. Tests use
+actual local journals, canonical retained proofs, native claims, exact JSON
+reopening and synthetic images under a consistently scaled 128 KiB policy.
+They are not full 64 MiB payload or provider execution evidence. The historical
+compact-save case is explicitly a decoded-value-preserving JSON recovery fixture.
+Exact-head full gates and independent reviews must establish the final result.
 
 ### Owned receipt paths and platform checks
 
@@ -277,3 +592,224 @@ On Linux with Python 3.12.14, correction commit `bba9f339` passed 68 budget test
 skips. These results are local synthetic/native execution. Corrected Windows and
 macOS hosted runs must independently establish those platform outcomes on the
 integrated PR head; the earlier failing artifacts remain historical evidence.
+
+A committed historical cancellation also binds the ordered claim/failure history and attempt-token list during recovery. Exact receipt replay cannot acknowledge a changed history. A subsequent explicit native repair may reset current job status and attempt count; its separate repair record leaves the attested original claim/failure history unchanged. Independent synthetic lost-acknowledgement and repair controls distinguish that permitted replay from changed failure details or reordered/extra attempt identities.
+
+## Native observation origin at settlement
+
+Retaining a JSON document proves its byte identity, not native owner authorization. A new native-shaped settlement must match the enrolled run’s current on-disk observation and committed admission while the ledger writer lock is held. The run locator is revalidated; naming a sibling run cannot authorize the event. Current-protocol attempt rows record a ledger-generated native_owner_verified marker. A generic caller cannot set that marker. Unmarked historical observations may retain uncertainty but cannot independently resolve it or establish a latest-attempt cancellation. The enrolled owner can recover its authentic journal and reconcile those records without rewriting finalized history. Earlier writer versions retain their earlier behavior; all writers must use the corrected boundary.
+
+Historical fixture setup now persists its genuine observation journal before the current writer replays it. All prior behavioral assertions remain, and the original four-field historical attempt wire format is asserted explicitly. A separate prior-version process produced authentic unmarked ledger bytes; corrected generic finalization/cancellation refused without changing them, while owner cancellation preserved the measured call and amount. No provider was invoked.
+
+Captured extraction settings must be an object before claim warnings or admission. JSON null must not select an ordinary pathname-reader fallback. Seven additional synthetic origin/settings tests exercise public complete/failed/retry attempts, latest-token cancellation evidence, valid owner replay, null refusal and a valid captured-object control. Four origin cases and the null boundary failed on the preceding source; the current correction passes them without changing the retained uncertainty or source authority on refusal.
+
+### Durable owner finalization and interruption capacity
+
+A generic terminal observation can still record real measured expenditure,
+including an overrun, while an independent native owner is unfinished. Its
+receipt remains reserved; it does not release the native remainder or discard
+a native observation that has been saved but not yet charged. Unresolved native
+unknowns still require their token-bound reconciliation. Cancellation requires
+immutable evidence that the published native token has finalized.
+Historical admissions lack publication records, so their absence cannot prove
+that a native owner has stopped. A direct terminal measurement still records
+its exact delta but retains the remainder; the original owner must provide
+terminal evidence or the existing explicit historical cancellation attestation.
+
+Historical admissions predate native claim publications. Missing publication
+events cannot establish that their original owner has finished. A generic
+terminal meter therefore records its expenditure while retaining the historical
+owner's hold. The original owner can still report its measured usage and use
+the existing measured recovery or explicit cancellation attestation boundary.
+
+For a measured retry, Hatch first saves the original failed owner and only then
+retains a `native-finalize` ledger event. That event binds the token, exact
+observation, retained evidence and ordered original claim/failure history. A
+crash before the owner save leaves the running token able to report later
+uncertainty. A crash after that save replays closure without charging another
+delta. An already terminal native settlement supplies its own closure and does
+not acquire an extra ledger revision. Later repair records may coexist with the
+unchanged original history; rollback or edits to retained finalization reject.
+A repair that returns an inactive job to `pending` can recover that same
+original failed transition if closure was interrupted. A running job or one
+still holding a token cannot use this recovery path.
+
+Capacity calculation also covers a pending reservation acknowledgement, every
+missing observation receipt, and a concise cancellation path before a handoff
+is published. A journal that cannot retain those facts refuses before the
+corresponding irreversible accounting mutation. The future envelope preserves
+all existing fields and history; it never persists placeholder measurements.
+The envelope for a measured retry also reserves the cancellation receipt that
+the resulting failed owner will require. If the combined records cannot fit,
+the retry refuses before its accounting delta or native observation is saved,
+leaving the admitted token's concise measured terminal path available.
+
+Public Hatch mutators normalize their run argument once on entry, before
+reading or validating its inputs. This preserves ordinary system temporary
+directory aliases across platforms. The later journal write still uses the
+admitted canonical name and no-follow parent capability; it does not resolve
+a replacement alias at publication time.
+A direct `save` is a fresh destination admission and pins that resolved directory
+before serializing. Internal lifecycle writers instead carry their already
+admitted canonical root out of band through the same save hook; neither a
+replacement leaf nor a replacement ancestor is resolved again. Journal fields
+such as `run_dir` never choose the write destination. Imported-art admission
+normalizes its root before checking that the originals are outside the run.
+
+Lifecycle admission now records the original directory identity before native
+reads and accounting changes. Nested operations share that out-of-band witness,
+and a NativeBudget instance retains it after construction. Journal publication
+opens the canonical directory without following aliases, verifies its native
+identity against the earlier admission, and writes through that same held pin.
+POSIX uses the device/inode pair; Windows uses the pinned native volume/file ID.
+An ordinary replacement directory is therefore refused as well as a substituted
+symlink or junction. The initial pin is closed after recording identity, so
+legitimate staging promotions and the existing namespace-race tests still run.
+After durable journal save, the original directory is pinned again across
+ledger mutation and the final handoff checks. A surviving replacement prevents
+the handoff from returning; an already committed native publication remains
+paired with its original running journal for explicit reconciliation. Native
+settlement, release and retry mutations likewise retain the admitted directory
+through the ledger write. This does not invent a provider execution or spend.
+Fresh caller paths retain their filesystem meaning through alias-plus-parent
+components; nested operations inherit the canonical admission without resolving
+it again.
+The shared native_journal module keeps admission identical when Hatch runs as
+__main__ and its collaborators import hatch separately. These guarantees concern
+journal writes and ledger publication, not every staging extraction or cleanup
+operation elsewhere in the repository.
+
+The original independent Linux observation test is preserved byte-for-byte in
+`tests/independent/test_native_journal_admission.py` (SHA-256
+`a917868963b5f0bb47fa169fbc3048b8a5ae6ae7c6d04f8a1c06db0495e3b0a0`).
+Run it explicitly with `PYTHONPATH=scripts:tests python
+ tests/independent/test_native_journal_admission.py`; it inspects Linux `/proc`
+and is outside automatic cross-platform discovery. The automatic
+`test_hatch_directory_identity.py` suite uses real ordinary-directory renames
+inside temporary synthetic fixtures, keeps the project owner and ledger intact,
+and checks the replacement journal, original journal and ledger independently.
+Its scheduling hooks do not replace file writes or accounting. Local Linux
+results are not Windows or macOS execution evidence.
+
+The two later independent Linux controls are also preserved unchanged in
+`tests/independent/test_native_journal_alias_parent.py` and
+`tests/independent/test_native_journal_commit_window.py`. They check actual
+filesystem parent resolution and observe the directory pin at the real native
+ledger writer, respectively. The automatic directory-identity module includes
+corresponding real temporary-filesystem regressions and an explicit direct-save
+positive control. On Windows a live native pin can refuse the scheduled rename;
+on POSIX the namespace replacement runs and the post-publication identity check
+refuses to return a handoff. Neither branch is represented as provider execution.
+
+Earlier descriptor formats without `@journal-headroom` remain recovery-only.
+For an original unstarted reservation, retain nonexecution evidence and call
+`hatch.release_budget` under `hatch.ownership`, using the original recovery
+manifest, original job and `outcome='unstarted'`. Start fresh work in a separate
+newly prepared and enrolled run. Do not rewrite the original admission hashes,
+append a capacity marker retroactively, or delete its ledger/history. Published
+or uncertain historical work must follow its measured recovery and explicit
+owner attestation instead.
+
+The generation-profile projection owns the exact `@generation-profile` input
+key. A file with that exact relative name is refused before claim admission;
+a descendant path remains an ordinary attachment. Cancellation also checks
+native token-bound uncertainty after an interrupted first publication, before
+any native-claim event exists. Generic retry accounting cannot clear that
+unknown; a matching native observation must reconcile it. The independent
+admission-identity regressions run in the operations/archive gate.
+
+A returned native claim now rechecks its complete durable journal after ledger
+publication and after its final input checks. A production claim retains every
+bound run's original native admission and directory pin from the first binding
+read until the wrapper returns; it rechecks the selected running journal again
+after saving the production receipt. A refusal never cancels already retained
+ledger publication or invents provider usage. Restore the original journal and
+use its existing explicit reconciliation path when the current journal is lost.
+
+`tests/test_native_handoff_continuity.py` preserves the independent passive
+ordering controls byte for byte. The independent Linux descriptor observer is
+preserved in `tests/independent/test_production_journal_continuity.py`; run it
+explicitly with `PYTHONPATH=scripts:tests python
+ tests/independent/test_production_journal_continuity.py`. The automatic
+directory-identity suite also exercises real disposable journal rollback after
+ledger publication and after the production receipt, plus ordinary-directory
+replacement before the production admission report. Its wrappers retain the
+original readers, journal writers and accounting; no provider is called.
+
+A current native reservation without its first publication remains owned by
+its original journal. A generic complete or failed measurement records the
+actual delta but retains that owner's remaining capacity; a generic cancellation
+cannot prove that the unpublished owner is stopped. The original owner may
+still replay a saved, not-yet-charged observation and reconcile uncertainty.
+Ordinary non-native reservations retain their existing terminal/release behavior.
+
+Production handoff retains an in-process recheck of the exact captured native
+inputs. After saving the outer production receipt, it invokes that same check
+under the original directory admission before the final journal check and return.
+This witness is not serialized into a receipt or accepted as caller authority.
+The unchanged passive observer in `tests/test_native_outer_handoff.py` checks
+actual input reads around the outer save. The unpublished-owner regression suite
+uses real temporary journals and ledgers with explicitly scheduled interruptions;
+it does not claim provider execution or arbitrary concurrent-process isolation.
+
+Current native intents also retain the run locator relative to the already
+retained owner. It must resolve to the existing canonical location hash and
+owner depth; it is not independent authority or a new owner registry. A direct
+known cancellation takes the original Hatch kernel ownership before the ledger
+writer lock, retains that directory admission through publication, and verifies
+the current nonrunning journal and all saved usage. This preserves ordinary
+known cancellation while refusing a later unpublished running retry. Nested
+owner operations reuse only a live in-process lock witness, scoped to its
+original process and thread. No lock witness is serialized into a receipt.
+
+Generic complete/failed meters retain native capacity even after an earlier
+publication finalized. The original native owner can report terminal usage, or
+a separately admitted known cancellation can release the remainder. Earlier
+intents without a locator remain recovery-only and require the original owner
+for cancellation; their bytes and measured accounting are unchanged. Existing
+final release receipts remain idempotently replayable without reopening work.
+
+
+## Final production handoff and retained historical claims
+
+The final journal check compares the bounded, pinned on-disk journal with the
+already admitted claim state. It does not apply the stricter budget-recovery
+contract to unbudgeted histories that legitimately predate generation-profile
+projection hashes. Actual accounting recovery keeps its existing validation.
+The original schema-2 CLI comparison is preserved in
+`tests/independent/test_native_historical_retry.py`; run it from a checkout with
+the two pinned historical commits available using the supported Python. It
+executes the old CLI, migration and retries, without a provider. The automatic
+old-history regression is explicitly a synthetic retained-format fixture.
+
+For production acquisition, Hatch's canonical claim owner retains its exact
+captured-input validator through the outer production receipt. The production
+owner invokes that same validator before returning the handoff, while the
+original run admission is still held. This ephemeral internal callback adds no
+journal field or second identity store. It rechecks captured prompt/request/
+profile/settings bytes, attachment hashes, job descriptors and the durable
+journal; an absent optional settings file is also part of the identity.
+A refusal preserves the published running token and any ledger reservation for
+explicit reconciliation; it does not invent provider usage or refund a hold.
+The unchanged passive observer and actual disposable post-receipt mutations
+exercise both budgeted and unbudgeted paths.
+
+### Current owner snapshot before accounting replay
+
+Every native accounting replay verifies the complete current on-disk owner journal
+before changing the ledger or acknowledging an observation in that journal. Usage
+recording and cancellation share this admission boundary. A previously saved
+snapshot cannot replace a newer durable observation, including one whose ledger
+acknowledgment was interrupted. Reopen the current journal under the existing
+Hatch ownership lock for recovery; repeated replay retains uncertainty and charges
+each measured delta once. This check does not infer nonexecution or authorize
+new provider work.
+
+Production acquisition may tighten native attempt and concurrency limits to the
+project's stricter policy. While holding the existing run lock and original
+directory admission, it verifies that the journal is still current and publishes
+only those tighter limits before entering native claim reconciliation. A tighter
+policy does not create a reservation or authorize a token by itself. If later
+claim admission refuses, the tighter limits remain durable; all claim, accounting
+and source history stays with its original owner. The current-journal accounting
+guard applies unchanged to the subsequent claim and every recovery operation.

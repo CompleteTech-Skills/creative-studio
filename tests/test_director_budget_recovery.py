@@ -247,6 +247,87 @@ class BudgetRecoveryTests(unittest.TestCase):
         self.assertEqual(self.job()['budget_operation']['attempts'], [])
         self.assertNotIn('token', self.job())
 
+    def test_claim_rechecks_captured_inputs_after_durable_admission(self):
+        for index, name in enumerate(('prompts/base-pet.md', 'pet_request.json',
+                                      'profile.json', 'extraction-settings.json')):
+            with self.subTest(input=name):
+                self.root = self.prepare('claim-input-race-' + str(index))
+                self.bind(self.root, retry_allowance=0)
+                path = self.root / name
+                if name == 'extraction-settings.json':
+                    hatch.atomic(path, hatch.read(self.root / 'pet_request.json')['extraction'])
+                original_bytes = path.read_bytes()
+                before_claim = NativeBudget.before_claim
+
+                def replace_after_admission(budget, job, hashes):
+                    token = before_claim(budget, job, hashes)
+                    path.write_bytes(original_bytes + b'\n ')
+                    return token
+
+                with patch.object(NativeBudget, 'before_claim', replace_after_admission):
+                    with self.assertRaisesRegex(ValueError, 'changed.*claim'):
+                        self.claim()
+                job = self.job()
+                self.assertEqual(job['status'], 'pending')
+                self.assertEqual(job['attempts'], 0)
+                self.assertNotIn('token', job)
+                self.assertFalse(any(item['event'] == 'claim' for item in job['history']))
+                pending_token = job['budget_operation']['attempts'][0]
+                self.assertEqual(len(job['budget_operation']['attempts']), 1)
+                self.assertEqual(self.row()['held']['amount'], '2')
+                path.write_bytes(original_bytes)
+                handoff = self.claim()
+                self.assertEqual(handoff['token'], pending_token)
+                claimed = self.job()
+                self.assertEqual(claimed['attempts'], 1)
+                self.assertEqual(claimed['history'][-1]['prompt_snapshot']['sha256'],
+                                 claimed['input_hashes']['prompts/base-pet.md'])
+                self.assertEqual(handoff['identity'], hatch.read(self.root / 'pet_request.json').get('identity', {}))
+
+    def test_claim_special_file_replacement_is_bounded_after_admission(self):
+        kinds = ['symlink', 'fifo' if os.name == 'posix' and hasattr(os, 'mkfifo') else 'directory']
+        script = r'''
+import os, sys
+from unittest.mock import patch
+import hatch
+from director_budget import NativeBudget
+from test_director_budget_native import NativeBudgetTests
+fixture = NativeBudgetTests()
+fixture.setUp()
+try:
+    before_claim = NativeBudget.before_claim
+    def replace_after_admission(budget, job, hashes):
+        token = before_claim(budget, job, hashes)
+        path = fixture.root / job['prompt_file']
+        path.unlink()
+        if sys.argv[1] == 'fifo': os.mkfifo(path)
+        elif sys.argv[1] == 'directory': path.mkdir()
+        else:
+            target = fixture.owner / 'replacement-prompt.txt'
+            target.write_text('Synthetic substituted prompt', encoding='utf-8')
+            path.symlink_to(target)
+        return token
+    with patch.object(NativeBudget, 'before_claim', replace_after_admission):
+        try: fixture.claim()
+        except (ValueError, OSError): pass
+        else: raise AssertionError('claim accepted a substituted special input')
+    job = hatch.job_for(hatch.manifest(fixture.root, recovery=True), 'base')
+    assert job['status'] == 'pending' and job['attempts'] == 0 and 'token' not in job
+    assert len(job['budget_operation']['attempts']) == 1
+    row = fixture.ledger.snapshot()['state']['reservations'][job['budget_operation']['reservation_id']]
+    assert row['held']['amount'] == '6'
+finally:
+    fixture.doCleanups()
+'''
+        env = dict(os.environ)
+        env['PYTHONPATH'] = os.pathsep.join((str(hatch.SCRIPTS),
+                                           str(Path(__file__).resolve().parent)))
+        for kind in kinds:
+            with self.subTest(kind=kind):
+                result = subprocess.run([sys.executable, '-c', script, kind], env=env,
+                                        capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_bounded_input_helpers_reject_fifo_and_symlink_without_hanging(self):
         """Exercise a real POSIX FIFO or Windows named pipe, plus a real symlink."""
         if os.name == 'posix':
