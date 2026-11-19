@@ -1,0 +1,24 @@
+{
+  "reviewed_commit": "5f2895beb58f1e9c819358b3c211f0c861c4b00a",
+  "reviewed_tree": "d690ac0ddd880d33e14ad0191424785657e49e58",
+  "test_file": "tests/test_model3d_original_filename_bounds.py",
+  "test_sha256": "45fa7d24e4ddbf10087bf89b63a867504ced10216a90a1a01b432e3db7c89e0e",
+  "command": "PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 PYTHONPATH=scripts:tests HATCH_GLTF_VALIDATOR_ROOT=<offline-validator-directory> python -m unittest -v test_model3d_original_filename_bounds",
+  "runtime": {
+    "python": "3.12.14",
+    "node": "24.22.1",
+    "khronos_gltf_validator": "2.0.0-dev.3.10"
+  },
+  "pre_fix_result": {
+    "tests": 2,
+    "passed": 1,
+    "errors": 1,
+    "skipped": 0,
+    "exit_code": 1,
+    "sanitized_output_sha256": "5cde9fcb8628dee3ba907a8b0847a95636099199fb6dbbc47d0bfe170c212373"
+  },
+  "setup": "Two genuine native GLBs from an explicitly synthetic box, each packed, independently validated offline, published to a temporary local registry, read back and checked against the original bytes and acquisition name.",
+  "ordinary_control": "blue-box.glb reached build_asset and validated geometry and payloads through validate_file.",
+  "regression": "A 129-character ASCII filename survived native registration and import_canonical but build_asset raised MODEL3D_SCHEMA on the retained original_filename.",
+  "limits": "The module checks native GLB registration and the document bridge. It does not exercise Blender, browser rendering, third-party services or production artwork."
+}

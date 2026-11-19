@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "scope": "Independent additive regression oracle for PR 519; no source implementation or existing assertions changed.",
+  "source_sha": "30aded3efba46dcbe8b7edded38eea110bb31208",
+  "worktree": "<local-work-dir>/oracle519-fixed",
+  "test_file": "tests/test_model3d_fixed_appearance.py",
+  "test_file_sha256": "1171ac5aea49d7f875c54cb4330a00cc63097374d3a072e9410603e0fbd9fc66",
+  "command": "flock <local-work-dir>/native-validation.lock env PYTHONPATH=scripts:tests HATCH_BLENDER=<local-work-dir>/dependencies/blender-4.5.3-linux-x64/blender HATCH_GLTF_VALIDATOR_ROOT=<local-work-dir>/creative-studio/tools/rig/node_modules/gltf-validator <local-work-dir>/env-rig/bin/python -m unittest -v test_model3d_fixed_appearance",
+  "result": {
+    "exit": 1,
+    "tests": 8,
+    "passed": 3,
+    "failures": 5,
+    "errors": 0,
+    "skips": 0,
+    "failure": "Every negative reaches import_canonical and fails because RigError was not raised."
+  },
+  "negative_cases": [
+    "reversed NORMAL",
+    "one finite unit-length corrupted NORMAL",
+    "red COLOR_0",
+    "TEXCOORD_0",
+    "TANGENT"
+  ],
+  "positive_cases": [
+    "fixed synthetic claim with geometric normals",
+    "native authored red colors and reversed normals retained",
+    "actual pinned Blender create/reopen/export and canonical import"
+  ],
+  "classification": {
+    "adversarial": "Synthetic execution/provenance claim envelopes; genuine GLB packing, actual Khronos validation, registry hashing/publication and native decoding. No producer authentication claimed.",
+    "positive": "Blender 4.5.3 build 67807e1800cc actually executed twice under fixed worker/prlimit, followed by real pipeline validation and canonical import."
+  },
+  "versions": {
+    "python": "3.12.14",
+    "khronos_validator": "2.0.0-dev.3.10",
+    "blender": {
+      "build": "67807e1800cc",
+      "external_dependencies": 0,
+      "triangles": 1,
+      "unit_scale": 1.0,
+      "version": "4.5.3",
+      "vertices": 3
+    }
+  },
+  "native_files": {
+    "normalized.glb": {
+      "bytes": 868,
+      "sha256": "64ff94ad4e593532ff2b47d2ecab974152cada2bfca72df98dd070511b1f4cb5"
+    },
+    "source/fixture.blend": {
+      "bytes": 176937,
+      "sha256": "0265fa06aa2c95f41c03d38ae3773449fc74b5c3d02719a24546af9c6dd8817a"
+    },
+    "source/model.glb": {
+      "bytes": 828,
+      "sha256": "c16057f6ce288145a6e1bf3af59dfa337e8d3affa5f13cbec40eacf4a16e22eb"
+    }
+  },
+  "worker_sha256": "e95371141f9535120cb9961d5c7d6866d8ba34f7aa4a34f33c267b403ed82f29",
+  "native_limits": {
+    "shared_wall_timeout_seconds": 300,
+    "resident_budget_bytes": 2147483648,
+    "virtual_limit_bytes": 17179869184,
+    "file_bytes": 32537631,
+    "log_limit_bytes": 131072,
+    "nofile": 128,
+    "threads": 2
+  },
+  "native_stages": {
+    "create": {
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 1.2110648779926123,
+      "peak_rss_bytes": 245886976,
+      "peak_rss_source": "linux-wait4",
+      "log_sha256": "a978ec62eba9be203a7195c7bb99448226070ffb993714be0cb6df3209c0f8cc"
+    },
+    "reopen": {
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 1.2035683319991222,
+      "peak_rss_bytes": 258662400,
+      "peak_rss_source": "linux-wait4",
+      "log_sha256": "49d7cbca39bcb32f189ffee708a5dec851e30c2b32c69d4f0c48099d7bc5526a"
+    }
+  },
+  "evidence_logs": {
+    "<local-work-dir>/campaign-evidence/oracle519-fixed-appearance-predecessor.log": {
+      "bytes": 7641,
+      "sha256": "ca2bf1b97177d675b1e43bdb83a9f100dd4b778596269ee8f7bee3ed4f2431a7"
+    },
+    "<local-work-dir>/campaign-evidence/oracle519-fixed-appearance-authoring-errors.log": {
+      "bytes": 17855,
+      "sha256": "0ca728ef4e92775a5e9ffefbd70576202b5da010f3044b5fda0623670cf050ee"
+    }
+  },
+  "authoring_setup_repair": "First run had an incorrect expected scalar accessor shape and invalid standalone COLOR_1 fixture; retained authoring-errors log is not defect evidence. Corrected to ravel scalar indices and use independently valid COLOR_0/TEXCOORD_0/TANGENT cases before final run.",
+  "required_gate_enrollment": [
+    "scripts/test_rig_gate.py interoperability GROUPS: add test_model3d_fixed_appearance.py",
+    " .github/workflows/rig-3d.yml pinned Blender asset-library invocation: add test_model3d_fixed_appearance"
+  ],
+  "gate_note": "Model3D contract workflow already glob-discovers this filename, but offline validator/Blender prerequisites are absent there. Native gate enrollment must provide prerequisites and retain zero-skip runtime evidence.",
+  "limitations": [
+    "No future implementation diff inspected.",
+    "No remote CI or full mission readiness asserted.",
+    "No new assertion requiring NORMAL to be present; existing unchanged fixtures remain authoritative.",
+    "Logs outside repository are retained for root integration; paths intentionally use local-work-dir placeholder."
+  ]
+}

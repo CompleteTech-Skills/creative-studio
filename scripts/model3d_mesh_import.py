@@ -10,6 +10,8 @@ from pathlib import Path
 import copy
 import hashlib
 import math
+import re
+import struct
 import tempfile
 from typing import Any
 
@@ -21,6 +23,10 @@ from rig_load_limits import LoadBudget
 _NORMALIZED = 'normalized.glb'
 _IMPORT_REPORT = 'import-report.json'
 _NATIVE_IMPORT_TOOL = 'hatch-native-gltf-import'
+_BLENDER_ORIGINAL = 'source/fixture.blend'
+_BLENDER_INTERMEDIATE = 'source/model.glb'
+_BLENDER_ORIGIN = 'App-authored packed Blender triangle fixture'
+_BLENDER_OPERATION = 'Reopen packed triangle and export GLB'
 
 
 def _limits(values):
@@ -72,34 +78,211 @@ def import_mesh(path, *, scale=1., limits=None, blender=None):
     return import_snapshot(path, scale=scale, limits=limits, blender=blender)
 
 
-def _verify_normalized(root, manifest, inventory, limits):
-    """Reproduce the registered native conversion and verify the exact GLB."""
-    from asset_library_import import (BLENDER_VALIDATOR, TOOL, VERSION,
-                                      _inspect, _normalization_plan, _write_glb)
-    from rig_interop import validate_gltf
+def _blender_receipts(blender, original, intermediate):
+    """Check retained execution-claim consistency, not authorship authenticity."""
+    from asset_import_blender import MAX_LOG_BYTES, WORKER
+    from asset_library import read_source_bytes
+    from asset_library_contracts import MAX_FILE_BYTES
 
-    report_record = inventory.get(_IMPORT_REPORT, {})
-    require(report_record.get('role') == 'evidence' and report_record.get('format') == 'json',
-            'MODEL3D_NORMALIZATION', 'Native conversion requires its inventoried import report.')
-    normalized = inventory[_NORMALIZED]
-    provenance = manifest['provenance']
+    timeout = blender.get('shared_wall_timeout_seconds')
+    require(type(timeout) in (int, float) and (type(timeout) is int or math.isfinite(timeout))
+            and timeout == int(timeout) and 0 < timeout <= DEFAULT_LIMITS['timeout_seconds']
+            and blender.get('worker_sha256') == hashlib.sha256(read_source_bytes(WORKER, 65536)).hexdigest()
+            and blender.get('command_policy') ==
+            'private-cwd/fixed-package-worker/no-shell/factory/autoexec-disabled',
+            'MODEL3D_NORMALIZATION', 'Blender evidence requires the pinned worker and bounded command policy.')
+    elapsed = 0
+    budgets = []
+    for mode in ('create', 'reopen'):
+        stage = blender.get(mode)
+        require(isinstance(stage, dict), 'MODEL3D_NORMALIZATION',
+                'Blender evidence requires both retained worker stages.')
+        memory, peak = stage.get('resident_budget_bytes'), stage.get('peak_rss_bytes')
+        seconds, argv = stage.get('seconds'), stage.get('argv')
+        require(stage.get('status') == 'completed' and type(stage.get('exit_code')) is int
+                and stage['exit_code'] == 0 and stage.get('cwd') == '<workspace>'
+                and type(memory) is int and 384 * 1024**2 <= memory <= DEFAULT_LIMITS['memory_bytes']
+                and type(peak) is int and 0 < peak <= memory
+                and stage.get('peak_rss_source') == 'linux-wait4'
+                and stage.get('virtual_limit_bytes') == memory * 8
+                and stage.get('log_limit_bytes') == MAX_LOG_BYTES
+                and isinstance(stage.get('log_sha256'), str)
+                and re.fullmatch(r'[0-9a-f]{64}', stage['log_sha256']) is not None
+                and type(seconds) in (int, float) and (type(seconds) is int or math.isfinite(seconds))
+                and 0 <= seconds < timeout
+                and isinstance(argv, list) and len(argv) > 3 and isinstance(argv[3], str)
+                and re.fullmatch(r'--fsize=[1-9][0-9]{0,19}', argv[3]) is not None,
+                'MODEL3D_NORMALIZATION', 'Blender worker stage must record successful bounded execution.')
+        byte_limit = int(argv[3].split('=', 1)[1])
+        expected = ['/usr/bin/prlimit', f'--as={memory * 8}', f'--cpu={timeout}',
+                    f'--fsize={byte_limit}', '--nofile=128:128', '--', '<blender>',
+                    '--background', '--factory-startup', '--disable-autoexec', '--threads', '2',
+                    '--python-exit-code', '1', '--python', '<worker>', '--', mode]
+        maximum_file = min(MAX_FILE_BYTES, DEFAULT_LIMITS['source_bytes'],
+                           DEFAULT_LIMITS['dependency_bytes'], memory // 66)
+        require(argv == expected and max(original['bytes'], intermediate['bytes']) <= byte_limit <= maximum_file,
+                'MODEL3D_NORMALIZATION', 'Blender worker stage has a contradictory command or file budget.')
+        budgets.append((memory, byte_limit))
+        elapsed += seconds
+    require(budgets[0] == budgets[1] and elapsed < timeout,
+            'MODEL3D_NORMALIZATION', 'Blender stages must share the retained resource and wall-time budgets.')
+
+
+def _blender_source(root, inventory, provenance, report, conversion):
+    from asset_import_blender import BLENDER_BUILD, BLENDER_VERSION
+
+    original = inventory.get(_BLENDER_ORIGINAL, {})
+    intermediate = inventory.get(_BLENDER_INTERMEDIATE, {})
+    source_records = provenance.get('source_records', [])
+    blender = report.get('blender')
+    blender_tool = dict(name='Blender', version=BLENDER_VERSION)
+    require(provenance['fixture'] and provenance['method'] == 'fixture'
+            and provenance['origin'] == _BLENDER_ORIGIN
+            and original.get('role') == 'source' and original.get('format') == 'binary'
+            and intermediate.get('role') == 'evidence' and intermediate.get('format') == 'glb'
+            and provenance['sources'] == [original]
+            and {path for path in inventory if path.startswith('source/')} ==
+            {_BLENDER_ORIGINAL, _BLENDER_INTERMEDIATE}
+            and len(source_records) == 1 and source_records[0]['file'] == original
+            and source_records[0]['original_filename'] == 'fixture.blend'
+            and blender_tool in provenance['tools']
+            and conversion['tool'] == blender_tool['name']
+            and conversion['version'] == blender_tool['version']
+            and conversion['operation'] == _BLENDER_OPERATION
+            and conversion['inputs'] == [original] and conversion['outputs'] == [intermediate],
+            'MODEL3D_NORMALIZATION', 'Registry provenance must bind the pinned Blender fixture export.')
+    require(isinstance(blender, dict) and blender.get('inspection') == dict(
+                version=BLENDER_VERSION, build=BLENDER_BUILD, vertices=3, triangles=1,
+                unit_scale=1, external_dependencies=0)
+            and blender.get('original_filename') == 'fixture.blend'
+            and blender.get('original_path') == _BLENDER_ORIGINAL
+            and blender.get('source_bytes') == original['bytes']
+            and blender.get('source_sha256') == original['sha256']
+            and blender.get('derivative_path') == _BLENDER_INTERMEDIATE
+            and blender.get('derivative_sha256') == intermediate['sha256']
+            and report.get('original_filename') == 'roundtrip.glb'
+            and report.get('source_sha256') == intermediate['sha256'],
+            'MODEL3D_NORMALIZATION', 'Import report must bind the exact Blender source and intermediate GLB.')
+    _blender_receipts(blender, original, intermediate)
+    _check_blender_file(root/_BLENDER_ORIGINAL, original['bytes'])
+    return {_BLENDER_INTERMEDIATE: intermediate}
+
+
+def _check_blender_file(path, size):
+    """Read the fixed Linux producer's uncompressed Blender 4.5 block framing."""
+    error = 'MODEL3D_NORMALIZATION'
+    header = struct.Struct('<4sIQii')
+    required = {b'GLOB', b'SC\0\0', b'OB\0\0', b'ME\0\0', b'DATA', b'DNA1'}
+    seen = set()
+    with path.open('rb') as stream:
+        require(stream.read(12) == b'BLENDER-v405', error,
+                'Retained original requires the fixed Blender 4.5 little-endian 64-bit header.')
+        # The fixed triangle uses fewer than 300 blocks. Never allocate a block
+        # from its declared size or read beyond the hash-bound original.
+        for _ in range(4096):
+            raw = stream.read(header.size)
+            require(len(raw) == header.size, error, 'Truncated Blender block header.')
+            code, length, address, sdna, count = header.unpack(raw)
+            if code == b'ENDB':
+                require(not any((length, address, sdna, count)) and stream.tell() == size
+                        and required <= seen, error, 'Incomplete or malformed Blender block sequence.')
+                return
+            require(0 < length <= size - stream.tell() and sdna >= 0 and count > 0
+                    and b'DNA1' not in seen, error, 'Invalid Blender block framing.')
+            seen.add(code)
+            if code == b'DNA1':
+                # SDNA is generated from the pinned executable's types and is
+                # independent of a project's contents and allocation addresses.
+                require(length == 132244 and hashlib.sha256(stream.read(length)).hexdigest() ==
+                        '02ce981347ad58d054a1c55e991c0a8b5df996efabd7ea93e88d385d08c86b3e',
+                        error, 'Retained original differs from the pinned Blender type schema.')
+            else:
+                stream.seek(length, 1)
+    raise RigError(error, 'Retained Blender original exceeds the fixed fixture block limit.')
+
+
+def _gltf_sources(inventory, provenance, report):
+    require(isinstance(report, dict), 'MODEL3D_NORMALIZATION',
+            'Native acquisition requires its retained import report.')
     sources = {record['path']: record for record in provenance['sources']}
     require(sources and set(sources) == {path for path in inventory if path.startswith('source/')}
             and all(record['role'] == 'source' for record in sources.values()),
             'MODEL3D_NORMALIZATION', 'Native conversion requires the exact original source inventory.')
-    conversions = provenance.get('conversions', [])
-    require(len(conversions) == 1 and conversions[0]['tool'] == TOOL
-            and conversions[0]['version'] == VERSION
-            and conversions[0]['operation'] == 'Pack and normalize GLB'
-            and len(conversions[0]['inputs']) == len(sources)
-            and {record['path'] for record in conversions[0]['inputs']} == set(sources)
-            and conversions[0]['outputs'] == [normalized, report_record],
-            'MODEL3D_NORMALIZATION', 'Registry provenance must bind the supported native conversion.')
+    original_name = report.get('original_filename')
+    require(isinstance(original_name, str) and Path(original_name).suffix.lower() in ('.glb', '.gltf'),
+            'MODEL3D_NORMALIZATION', 'Import report requires a native glTF source.')
+    primary = 'model' + Path(original_name).suffix.lower()
+    primary_record = sources.get('source/'+primary)
+    acquired = provenance.get('source_records', [])
+    require(len(acquired) == len(sources) and
+            {item['file']['path'] for item in acquired} == set(sources) and
+            all(item['file'] == sources[item['file']['path']] for item in acquired),
+            'MODEL3D_NORMALIZATION', 'Native acquisition must retain every exact original source record once.')
+    require(all(item['file'] == primary_record or
+                item['original_filename'] == item['file']['path'].removeprefix('source/')
+                for item in acquired),
+            'MODEL3D_NORMALIZATION', 'Native resource acquisition names differ from their inventoried paths.')
+    primary_evidence = [item for item in acquired
+                        if item['file'] == primary_record]
+    require(primary_record is not None and report.get('source_sha256') == primary_record['sha256']
+            and len(primary_evidence) == 1 and primary_evidence[0]['original_filename'] == original_name,
+            'MODEL3D_NORMALIZATION', 'Import report does not bind the original model entry.')
+    reported = report.get('source_files')
+    expected = {name.removeprefix('source/'): (item['bytes'], item['sha256'])
+                for name, item in sources.items()}
+    require(isinstance(reported, list) and len(reported) == len(expected)
+            and all(isinstance(item, dict) and isinstance(item.get('path'), str)
+                    and type(item.get('bytes')) is int for item in reported)
+            and {item['path']: (item['bytes'], item.get('sha256')) for item in reported} == expected,
+            'MODEL3D_NORMALIZATION', 'Report source inventory differs from the registered acquisition.')
+    return primary, sources
 
-    report = LoadBudget(limits).json(root/_IMPORT_REPORT, expected_hash=report_record['sha256'],
-                                     hash_code='MODEL3D_HASH')
+
+def _check_blender_triangle(model):
+    """Compare decoded world-space geometry with the fixed producer fixture."""
+    meshes = model.geometry.meshes
+    require(not model.clips and not any(mesh.morphs for mesh in meshes)
+            and len(meshes) == 1 and meshes[0].triangles.shape == (1, 3)
+            and len(meshes[0].positions) == 3,
+            'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has a different triangle topology.')
+    vertices = [tuple(meshes[0].positions[index]) for index in meshes[0].triangles[0]]
+    expected = [(0, 0, 0), (1, 0, 0), (0, 1, -2)]
+    require(any(vertices == expected[index:] + expected[:index] for index in range(3)),
+            'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has different coordinates or winding.')
+    normals = meshes[0].attributes.get('NORMAL')
+    # Missing normals use the same flat triangle normal. Authored normals, when
+    # retained, must agree with that surface rather than changing its shading.
+    normal = (0., 2 / math.sqrt(5), 1 / math.sqrt(5))
+    require(normals is None or (normals.shape == (3, 3) and all(
+                math.isclose(float(value), component, rel_tol=1e-6, abs_tol=1e-6)
+                for row in normals for value, component in zip(row, normal))),
+            'MODEL3D_NORMALIZATION', 'The decoded Blender fixture has different surface normals.')
+
+
+def _check_blender_scene(value):
+    """Check the full intermediate scene inventory, including unused objects."""
+    scenes, nodes, meshes = (value.get(key, []) for key in ('scenes', 'nodes', 'meshes'))
+    require(value.get('scene') == 0 and len(scenes) == 1 and scenes[0].get('nodes') == [0]
+            and len(nodes) == 1 and nodes[0].get('mesh') == 0 and not nodes[0].get('children')
+            and len(meshes) == 1 and len(meshes[0]['primitives']) == 1
+            and 'camera' not in nodes[0] and not value.get('cameras')
+            and not any(value.get(key) for key in ('extensions', 'extensionsUsed', 'extensionsRequired'))
+            and not nodes[0].get('extensions'),
+            'MODEL3D_NORMALIZATION', 'The fixed Blender fixture requires one scene with one mesh '
+            'object and primitive, without cameras, lights or scene extensions.')
+    mesh = meshes[0]
+    primitive = mesh['primitives'][0]
+    require(not any(value.get(key) for key in ('skins', 'animations', 'materials', 'images',
+                                               'textures', 'samplers'))
+            and not mesh.get('weights') and not primitive.get('targets') and 'material' not in primitive
+            and set(primitive.get('attributes', {})) <= {'POSITION', 'NORMAL'},
+            'MODEL3D_NORMALIZATION', 'The fixed Blender fixture cannot contain additional appearance '
+            'attributes, materials, textures, skin, animation or morph channels.')
+
+
+def _native_report_scale(report, normalized, provenance, expected_scale, *, blender):
     require(isinstance(report, dict) and type(report.get('schema_version')) is int
-            and report['schema_version'] == 1 and 'blender' not in report
+            and report['schema_version'] == 1 and ('blender' in report) == blender
             and report.get('operation') == 'pack glTF buffers and textures into GLB and apply explicit scene-root units'
             and report.get('coordinate_system') == 'glTF right-handed Y-up'
             and report.get('unit_scale_scope') == 'scene-root transforms and native world-space bone tails'
@@ -108,20 +291,49 @@ def _verify_normalized(root, manifest, inventory, limits):
             'MODEL3D_NORMALIZATION', 'Import report does not describe the exact supported normalized payload.')
     scale = report.get('source_unit_scale')
     require(type(scale) in (int, float) and 1e-3 <= scale <= 1e6
-            and scale == manifest['compatibility']['unit_scale'],
+            and scale == expected_scale,
             'MODEL3D_COORDINATES', 'Import report and registry disagree on the original unit scale.')
-    original_name = report.get('original_filename')
-    require(isinstance(original_name, str) and Path(original_name).suffix.lower() in ('.glb', '.gltf'),
-            'MODEL3D_NORMALIZATION', 'Import report requires a native glTF source.')
-    primary = 'model' + Path(original_name).suffix.lower()
-    primary_record = sources.get('source/'+primary)
-    primary_evidence = [item for item in provenance.get('source_records', [])
-                        if item['file'] == primary_record]
-    require(primary_record is not None and report.get('source_sha256') == primary_record['sha256']
-            and len(primary_evidence) == 1 and primary_evidence[0]['original_filename'] == original_name,
-            'MODEL3D_NORMALIZATION', 'Import report does not bind the original model entry.')
+    return scale
+
+
+def _normalized_binding(root, manifest, inventory, limits, *, blender):
+    """Verify the registered version's conversion evidence for either geometry entry."""
+    from asset_library_import import TOOL, VERSION
+
+    report_record = inventory.get(_IMPORT_REPORT, {})
+    require(report_record.get('role') == 'evidence' and report_record.get('format') == 'json',
+            'MODEL3D_NORMALIZATION', 'Native conversion requires its inventoried import report.')
+    normalized = inventory[_NORMALIZED]
+    provenance = manifest['provenance']
+    conversions = provenance.get('conversions', [])
+    require(len(conversions) == (2 if blender else 1), 'MODEL3D_NORMALIZATION',
+            'Registry provenance must bind the supported native conversion chain.')
+    normalization = conversions[-1]
+    report = LoadBudget(limits).json(root/_IMPORT_REPORT, expected_hash=report_record['sha256'],
+                                     hash_code='MODEL3D_HASH')
+    scale = _native_report_scale(report, normalized, provenance, manifest['compatibility']['unit_scale'],
+                                 blender=blender)
+    if blender:
+        primary = Path(_BLENDER_INTERMEDIATE).name
+        sources = _blender_source(root, inventory, provenance, report, conversions[0])
+        require(scale == 1, 'MODEL3D_COORDINATES', 'Blender fixture requires meter geometry.')
+    else:
+        primary, sources = _gltf_sources(inventory, provenance, report)
+    require(normalization['tool'] == TOOL and normalization['version'] == VERSION
+            and normalization['operation'] == 'Pack and normalize GLB'
+            and len(normalization['inputs']) == len(sources)
+            and {record['path'] for record in normalization['inputs']} == set(sources)
+            and normalization['outputs'] == [normalized, report_record],
+            'MODEL3D_NORMALIZATION', 'Registry provenance must bind the supported native conversion.')
     resource_evidence = object_hash([report.get('source_files'), report.get('embedded')])
     del report
+    inspected = _inspect_registered_primary(root, primary, sources, resource_evidence, limits)
+    return scale, sources, inspected
+
+
+def _inspect_registered_primary(root, primary, sources, resource_evidence, limits):
+    """Compare native decoder reads and reported resources with the retained original inventory."""
+    from asset_library_import import _inspect
 
     source_inventory = {name.removeprefix('source/'): dict(bytes=record['bytes'], sha256=record['sha256'])
                         for name, record in sources.items()}
@@ -130,13 +342,27 @@ def _verify_normalized(root, manifest, inventory, limits):
     try:
         document, images, files, embedded, preflight = _inspect(source, limits)
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError, OSError) as exc:
-        raise RigError('MODEL3D_NORMALIZATION', 'Cannot verify the retained original glTF resource closure.') from exc
-    require(object_hash([files, embedded]) == resource_evidence,
-            'MODEL3D_NORMALIZATION', 'Report inventory differs from the original glTF resource closure.')
+        raise RigError('MODEL3D_NORMALIZATION', 'Cannot verify the retained glTF resource closure.') from exc
+    actual = {path.relative_to(source['path'].parent).as_posix() for path in document.dependencies}
+    require(actual == set(source_inventory) and object_hash([files, embedded]) == resource_evidence,
+            'MODEL3D_NORMALIZATION', 'Report inventory differs from the retained glTF resource closure.')
+    return document, images, preflight
+
+
+def _verify_normalized(root, manifest, inventory, limits, *, blender):
+    """Reproduce GLB packing from the retained glTF input and verify the exact output."""
+    from asset_library_import import BLENDER_VALIDATOR, _normalization_plan, _write_glb
+    from rig_interop import validate_gltf
+
+    scale, sources, (document, images, preflight) = _normalized_binding(
+        root, manifest, inventory, limits, blender=blender)
+    normalized = inventory[_NORMALIZED]
+    if blender:
+        _check_blender_scene(document.json)
     # The exact registered length is enough for the producer's packing plan.
     # It also avoids reserving its full configured output limit for a small GLB.
     document.limits = {**document.limits, 'source_bytes': int(normalized['bytes'])}
-    plan = _normalization_plan(document, images, scale, provenance['fixture'], preflight)
+    plan = _normalization_plan(document, images, scale, manifest['provenance']['fixture'], preflight)
     with tempfile.TemporaryDirectory(prefix='model3d-normalize-') as verification:
         regenerated = Path(verification)/_NORMALIZED
         _write_glb(regenerated, plan)
@@ -145,6 +371,11 @@ def _verify_normalized(root, manifest, inventory, limits):
     del plan, document, images
     path = root/_NORMALIZED
     decode_limits = _normalized_decode_limits(path, int(normalized['bytes']), limits)
+    if blender:
+        checked = validate_gltf(root/_BLENDER_INTERMEDIATE, timeout=min(120, limits['timeout_seconds']))
+        require(checked['ok'] and checked['validator'] == BLENDER_VALIDATOR
+                and checked['asset_sha256'] == sources[_BLENDER_INTERMEDIATE]['sha256'],
+                'MODEL3D_NORMALIZATION', 'Pinned Khronos validation did not verify the retained intermediate GLB.')
     checked = validate_gltf(path, timeout=min(120, limits['timeout_seconds']))
     require(checked['ok'] and checked['validator'] == BLENDER_VALIDATOR
             and checked['asset_sha256'] == normalized['sha256'],
@@ -186,14 +417,21 @@ def import_canonical(library, ref, *, entry=None, limits=None):
     inventory = {item['path']: item for item in manifest['files']}
     normalized = inventory.get(_NORMALIZED, {})
     native_payload = normalized.get('role') == 'payload' and normalized.get('format') == 'glb'
-    producer_claim = False
-    if normalized:
-        provenance = manifest['provenance']
-        producer_claim = (
-            any(tool['name'] == _NATIVE_IMPORT_TOOL for tool in provenance['tools'])
-            or any(conversion['tool'] == _NATIVE_IMPORT_TOOL
-                   for conversion in provenance.get('conversions', []))
-        )
+    provenance = manifest['provenance']
+    conversions = provenance.get('conversions', [])
+    producer_claim = (
+        any(tool['name'] == _NATIVE_IMPORT_TOOL for tool in provenance['tools'])
+        or any(conversion['tool'] == _NATIVE_IMPORT_TOOL for conversion in conversions)
+    )
+    blender = provenance['origin'] == _BLENDER_ORIGIN or (
+        producer_claim and any(conversion['tool'] == 'Blender'
+                               and conversion['operation'] == _BLENDER_OPERATION
+                               for conversion in conversions)
+    )
+    if blender:
+        require(entry is None or entry == _NORMALIZED, 'MODEL3D_ENTRY',
+                'Blender fixture geometry requires the normalized GLB entry.')
+        entry = _NORMALIZED
     if entry is None:
         candidates = [item['path'] for item in manifest['files']
                       if item['role'] in ('geometry', 'runtime') and item['format'] in ('glb','gltf','obj')]
@@ -205,8 +443,9 @@ def import_canonical(library, ref, *, entry=None, limits=None):
     require(entry in inventory and inventory[entry]['format'] in ('glb','gltf','obj'),
             'MODEL3D_ENTRY', 'Entry must name an inventoried supported geometry file.')
     unit_scale = manifest['compatibility']['unit_scale']
-    verify_native = entry == _NORMALIZED and (producer_claim or (native_payload and unit_scale != 1))
-    require(not verify_native or native_payload, 'MODEL3D_NORMALIZATION',
+    verify_native = entry == _NORMALIZED and (blender or producer_claim or (native_payload and unit_scale != 1))
+    bind_native = producer_claim or verify_native
+    require(not bind_native or native_payload, 'MODEL3D_NORMALIZATION',
             'Native conversion requires an inventoried normalized GLB payload.')
     require(manifest['compatibility']['coordinate_system'] == 'right-handed-y-up-z-forward'
             and (verify_native or unit_scale == 1),
@@ -214,9 +453,9 @@ def import_canonical(library, ref, *, entry=None, limits=None):
     require(len(inventory) <= limits['archive_files'] and
             sum(int(item['bytes']) for item in inventory.values()) <= min(limits['dependency_bytes'], limits['memory_bytes']//3) and
             all(item['bytes'] <= limits['source_bytes'] for item in inventory.values()) and
-            (not verify_native or inventory.get(_IMPORT_REPORT, {}).get('bytes', 0) <= MAX_JSON_BYTES),
+            (not bind_native or inventory.get(_IMPORT_REPORT, {}).get('bytes', 0) <= MAX_JSON_BYTES),
             'MODEL3D_BUDGET', 'Canonical inventory exceeds encoded-byte limits before reading.')
-    if verify_native and _IMPORT_REPORT in inventory:
+    if bind_native and _IMPORT_REPORT in inventory:
         LoadBudget(limits).charge_json(Path(_IMPORT_REPORT), captured_size=int(inventory[_IMPORT_REPORT]['bytes']))
     temporary = _temporary(); root = Path(temporary.name).resolve()
     try:
@@ -234,16 +473,20 @@ def import_canonical(library, ref, *, entry=None, limits=None):
         evidence = {}
         decode_limits = limits
         if verify_native:
-            scale, decode_limits = _verify_normalized(root, manifest, inventory, limits)
+            scale, decode_limits = _verify_normalized(root, manifest, inventory, limits, blender=blender)
             normalization = 'verified native GLB with source unit scale baked into geometry'
             evidence = dict(source_unit_scale=scale, normalized_sha256=normalized['sha256'],
                             import_report_sha256=inventory[_IMPORT_REPORT]['sha256'])
+        elif bind_native:
+            _normalized_binding(root, manifest, inventory, limits, blender=blender)
         model = _load(root/entry, scale=1., limits=decode_limits)
         actual = {p.relative_to(root).as_posix() for p in model.source_files}
         require(actual <= set(inventory), 'MODEL3D_INVENTORY', 'Model references a non-inventoried dependency.')
         if verify_native:
             require(actual == {_NORMALIZED} and model.report['source_sha256'] == normalized['sha256'],
                     'MODEL3D_INVENTORY', 'Native import must decode the verified standalone GLB.')
+        if blender:
+            _check_blender_triangle(model)
         return MeshImport(model, records, dict(authority='AssetLibrary.resolve/read_file',
                           canonical_ref=copy.deepcopy(ref), manifest=copy.deepcopy(manifest),
                           source_entry=entry, normalization=normalization, **evidence),

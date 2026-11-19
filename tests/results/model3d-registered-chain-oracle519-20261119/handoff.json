@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "role": "Independent tests-only oracle for PR519 material, producer-budget and legacy-alias regressions",
+  "frozen_source_revision": "320beb742f222e3b8bc1a6b6884c269d54c93347",
+  "isolation": {
+    "branch": "test519-material-limits-alias",
+    "corrective_implementation_or_diff_inspected": false,
+    "source_edits": false,
+    "github_mutations": false
+  },
+  "issue_sources": [
+    "https://github.com/CompleteTech-Skills/creative-studio/issues/139",
+    "https://github.com/CompleteTech-Skills/creative-studio/issues/130",
+    "https://github.com/CompleteTech-Skills/creative-studio/issues/130#issuecomment-6957155365"
+  ],
+  "contracts_read": [
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "scripts/asset_import_worker.py",
+    "scripts/asset_import_blender.py",
+    "scripts/asset_library_import.py",
+    "scripts/rig_load_limits.py",
+    "scripts/rig_contracts.py",
+    "references/asset-library/import.md",
+    "tests/test_model3d_registered_chain.py",
+    "tests/test_model3d_registered_provenance.py"
+  ],
+  "observations_preserved": [
+    {
+      "path": "<temporary-observation-dir>/review519-chain-security-domain.py",
+      "sha256": "b96c3cc623601eb89fe287c98bb2bc585547afac1524e7e6c5a45da3bac87475",
+      "modified": false
+    },
+    {
+      "path": "<temporary-observation-dir>/review519-chain-security-legacy.py",
+      "sha256": "84f8e0324951b14934edeffa194adfa7c2e63321790623cf1a20780f541d5f8d",
+      "modified": false
+    }
+  ],
+  "changes": {
+    "existing_chain_test_bodies_preserved": 20,
+    "existing_provenance_test_bodies_preserved": 6,
+    "new_chain_tests": 24,
+    "new_test_module": false,
+    "gate_enrollment_required": false,
+    "fixture_correction": "The generic exporter requires a material slot and emitted materials=[{}]. Add an opt-in material-free raw GLB variant before native packing, used for synthetic fixed Blender claims only. Keep generic native defaults and every existing test method body unchanged."
+  },
+  "environment": {
+    "python": "../env-rig/bin/python",
+    "pythonpath": "scripts:tests",
+    "validator": "<local-work-dir>/creative-studio/tools/rig/node_modules/gltf-validator",
+    "validator_version": "2.0.0-dev.3.10",
+    "blender": "<local-work-dir>/dependencies/blender-4.5.3-linux-x64/blender",
+    "blender_version": "4.5.3",
+    "blender_build": "67807e1800cc",
+    "native_lock": "../native-validation.lock"
+  },
+  "completed_baseline": {
+    "log": "<local-work-dir>/test519-material-limits-alias-frozen-baseline.log",
+    "log_sha256": "81d65b1c3272bbe0ca64c4a2d6b59e967d65010e9490befcb392d80358c8438b",
+    "command": [
+      "flock",
+      "../native-validation.lock",
+      "../env-rig/bin/python",
+      "-m",
+      "unittest",
+      "-v",
+      "test_model3d_registered_chain",
+      "test_model3d_registered_provenance"
+    ],
+    "elapsed_seconds": 78.58040134300245,
+    "environment_prefix": [
+      "PYTHONPATH=scripts:tests",
+      "HATCH_GLTF_VALIDATOR_ROOT=<local-work-dir>/creative-studio/tools/rig/node_modules/gltf-validator",
+      "HATCH_BLENDER=<local-work-dir>/dependencies/blender-4.5.3-linux-x64/blender"
+    ],
+    "tests": 50,
+    "passed": 40,
+    "failures": 9,
+    "errors": 1,
+    "skips": 0,
+    "unittest_seconds": 73.146,
+    "failing_test_names": [
+      "test_claimed_file_cap_one_above_memory_quotient_refuses",
+      "test_claimed_memory_above_producer_maximum_refuses",
+      "test_claimed_timeout_above_producer_maximum_refuses",
+      "test_fixed_blender_claim_refuses_authored_red_pbr_material",
+      "test_fixed_blender_claim_refuses_empty_authored_material_slot",
+      "test_fixed_blender_claim_refuses_textured_material",
+      "test_fixed_blender_claim_refuses_unused_embedded_image",
+      "test_fixed_blender_claim_refuses_unused_sampler",
+      "test_fixed_blender_claim_refuses_unused_texture"
+    ],
+    "error_test_names": [
+      "test_legacy_runtime_geometry_with_identical_evidence_alias_remains_valid"
+    ],
+    "exit_code": 1
+  },
+  "baseline_rationale": [
+    "Six synthetic fixed-worker envelopes retain standards-valid authored appearance: red PBR, empty authored material, unused image, unused texture, unused sampler, and textured material. The baseline incorrectly accepts all six.",
+    "Three independent synthetic receipts claim 301 seconds, 2147483649 resident bytes, or memory//66+1 file bytes. Producer construction rejects the first two and bounds dependency bytes by memory//66; the baseline consumer incorrectly accepts these receipts.",
+    "A genuine legacy registry manifest selects runtime/asset.glb with identical normalized.glb role evidence and no native tools or conversions. The baseline builder raises MODEL3D_REFERENCE before the expected successful asset build and payload/geometry validation.",
+    "All 26 existing test method bodies are unchanged and pass. Fourteen new positive or already-enforced controls pass. Existing genuine-native alias source-name and fixture-provenance controls remain effective. New controls preserve authored native PBR/textures, admit 1 and 300 second receipts, 384 MiB and 2 GiB resident budgets, file caps at the memory quotient and exact retained-input size, and restrictive caps; lower-bound refusals pass.",
+    "The actual fixed Blender create/reopen control ran under flock, and both resulting GLBs omit authored material/image/texture/sampler arrays and primitive material bindings. The registered consumer then imported the fixed triangle successfully."
+  ],
+  "evidence_boundary": {
+    "synthetic": "Process timings, RSS, original Blender bytes and stage envelopes are deliberately synthetic consistency fixtures. They do not authenticate historical producer execution.",
+    "real_offline": "Registry publication, immutable hashes, native GLB generation/packing, pinned Khronos validation, reader decoding and successful existing native builder/validator controls execute for real. The legacy compatibility test fails before builder validation on baseline and does not claim that validation completed.",
+    "actual_blender": "Only test_actual_fixed_blender_output_has_no_authored_appearance launches real Blender in the completed focused run; it passed.",
+    "contract_mock": "The below-minimum Blender budget control mocks executable discovery and the process entry point only to prove rejection before launch. It is contract evidence, not Blender runtime evidence."
+  },
+  "supplemental_runs": [
+    {
+      "log": "<local-work-dir>/test519-material-limits-alias-baseline.log",
+      "log_sha256": "0d10fb1f4ca2cedcf11c7e8566dfea1a31c112245cf2e79c175c0da76aef31ea",
+      "status": "Completed configuration failure: relative dependency paths did not resolve in subprocess working directories.",
+      "command": [
+        "flock",
+        "../native-validation.lock",
+        "../env-rig/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_model3d_registered_chain",
+        "test_model3d_registered_provenance"
+      ],
+      "exit_code": 1,
+      "tests": 49,
+      "failures": 4,
+      "errors": 45,
+      "skips": 0
+    },
+    {
+      "log": "<local-work-dir>/test519-material-limits-alias-baseline-configured.log",
+      "log_sha256": "54b7dfd10e829fb3f2f4679a972c7b533949390d9be434c1a99ab4d27abfacc2",
+      "status": "Completed earlier configured test variant before exact-input equality refinement; process exit was not retained across interruption.",
+      "exit_code": null,
+      "tests": 49,
+      "passed": 39,
+      "failures": 9,
+      "errors": 1,
+      "skips": 0,
+      "unittest_seconds": 69.467
+    },
+    {
+      "log": "<local-work-dir>/test519-material-limits-alias-final-baseline.log",
+      "log_sha256": "aeccf65e9f5f02607e9413e7cb37100c2bcd2184d70a32d8e2eb7b37d290d644",
+      "status": "Interrupted broad five-module invocation after its first test started; no completed test count or exit is claimed.",
+      "command": [
+        "flock",
+        "../native-validation.lock",
+        "../env-rig/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_rig_asset_library_import",
+        "test_model3d_mesh_asset",
+        "test_model3d_mesh_import",
+        "test_model3d_registered_chain",
+        "test_model3d_registered_provenance"
+      ],
+      "exit_code": null,
+      "tests": null
+    },
+    {
+      "log": "<local-work-dir>/test519-material-limits-alias-exact-input.log",
+      "log_sha256": "41a5fb226f2559be11cb7938904c05f39080baba13dad133ed6529cd4f930957",
+      "command": [
+        "../env-rig/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_model3d_registered_chain.RegisteredChainTests.test_claimed_file_cap_equal_to_largest_retained_input_is_valid",
+        "test_model3d_registered_chain.RegisteredChainTests.test_claimed_file_cap_below_retained_input_refuses"
+      ],
+      "elapsed_seconds": 3.7848850970040075,
+      "tests": 2,
+      "passed": 2,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "exit_code": 0
+    }
+  ],
+  "additional_checks": {
+    "existing_test_method_ast_bodies": "All 20 chain and 6 provenance baseline test method AST bodies match exactly.",
+    "diff_check_exit_code": 0
+  }
+}
