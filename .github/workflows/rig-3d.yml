@@ -165,6 +165,12 @@ jobs:
           HATCH_CAMERA3D_BLENDER_TEST: '1'
           HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
           HATCH_CAMERA_EVIDENCE: /tmp/camera-optics-gate
+      - name: Verify actual Camera3D shared white balance
+        run: python -m unittest discover -s tests -p test_rig_camera3d_color.py -v
+        env:
+          HATCH_CAMERA3D_COLOR_TEST: '1'
+          HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
+          HATCH_CAMERA_COLOR_EVIDENCE: /tmp/camera-color-gate
       - name: Verify native Blender PNG admission for silent export
         run: python -m unittest discover -s tests/optional -p test_silent_video_blender_adapter.py -v 2>&1 | tee rig-blender-silent-png.log
         env:
@@ -177,6 +183,7 @@ jobs:
             /tmp/rig-blender-gate/**/validation/*.json
             rig-blender-silent-png.log
             /tmp/camera-optics-gate/*
+            /tmp/camera-color-gate/*
             rig-blender-asset-library.log
   browser:
     name: Three.js browser playback and vertex comparison
