@@ -46,9 +46,11 @@ All material slots must be used. They support opaque, untextured base color,
 metallic and roughness factors. The shared-material copy uses the available
 name `edited.<part ID>`. Source-authored normals, UVs, textures, morphs, skins,
 animation, scene hierarchies, optimization and review have other owners.
-The geometry check uses the float32 interchange positions. It permits
-exporter vertex renumbering and normal splits while checking every oriented
-triangle and its owning part. The color and scalar material tolerance is 1e-6.
+The geometry check uses the float32 interchange positions. Admission rejects
+faces that collapse or reverse during conversion or the translated edit.
+Verification permits exporter vertex renumbering and normal splits while
+checking every oriented triangle and its owning part. The color and scalar
+material tolerance is 1e-6.
 
 Run the two-part synthetic fixture and its boundary controls from repository
 root, with the rig Python requirements available:

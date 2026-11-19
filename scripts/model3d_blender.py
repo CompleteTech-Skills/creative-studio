@@ -1,6 +1,7 @@
 """Save, edit and independently verify named static Model3D parts with Blender."""
 from __future__ import annotations
 
+from fractions import Fraction
 from pathlib import Path
 import tempfile
 
@@ -28,6 +29,21 @@ def _names(values):
             'Blender datablock names must be unique printable names of at most 63 UTF-8 bytes.')
 
 
+def _oriented_areas(points, triangles):
+    """Return exact area vectors for the profile's bounded interchange faces."""
+    vertices = [tuple(Fraction(float(value)) for value in point) for point in points]
+    for i, j, k in triangles:
+        a, b, c = vertices[i], vertices[j], vertices[k]
+        left = [y - x for x, y in zip(a, b)]
+        right = [y - x for x, y in zip(a, c)]
+        yield tuple(left[u] * right[v] - left[v] * right[u] for u, v in ((1, 2), (2, 0), (0, 1)))
+
+
+def _preserves_winding(before, after, triangles):
+    return all(sum(x * y for x, y in zip(a, b)) > 0
+               for a, b in zip(_oriented_areas(before, triangles), _oriented_areas(after, triangles)))
+
+
 def _profile(geometry, part, delta, color):
     require(isinstance(geometry, Geometry) and 1 <= len(geometry.meshes) <= 64
             and 1 <= len(geometry.materials) <= len(geometry.meshes)
@@ -49,6 +65,8 @@ def _profile(geometry, part, delta, color):
         points = np.asarray(mesh.positions, dtype=np.float32)
         require(len(np.unique(points, axis=0)) == len(points), 'MODEL3D_BLENDER_PROFILE',
                 'This geometry-only profile requires distinct vertex positions within each part.')
+        require(_preserves_winding(mesh.positions, points, mesh.triangles), 'MODEL3D_BLENDER_PROFILE',
+                'Float32 conversion must preserve face winding and nonzero area.', asset=mesh.id)
     for mat in geometry.materials:
         pbr = mat.get('pbrMetallicRoughness', {})
         require(not set(mat) - {'name', 'pbrMetallicRoughness'}
@@ -64,6 +82,8 @@ def _profile(geometry, part, delta, color):
             and color[3] == 1 and not np.allclose(color, old.get('pbrMetallicRoughness', {}).get('baseColorFactor', [1]*4),
                                                    rtol=0, atol=1e-6),
             'MODEL3D_BLENDER_EDIT', 'Edit must move the mesh, preserve distinct positions and change its opaque color.')
+    require(_preserves_winding(positions, moved, target.triangles), 'MODEL3D_BLENDER_EDIT',
+            'The float32 edit must preserve face winding and nonzero area.', asset=part)
     shared = sum(m.material == target.material for m in geometry.meshes) > 1
     material_name = old['name']
     if shared:

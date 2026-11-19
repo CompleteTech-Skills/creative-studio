@@ -1,9 +1,12 @@
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 
 from model3d_blender import roundtrip_named_part, _verify
 from rig_errors import RigError, read_json, sha256
@@ -56,6 +59,19 @@ class NamedBlenderPartTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'Install Blender'):
             roundtrip_named_part(self.geometry, self.dest, executable=self.dest.parent/'absent', **self.args)
         self.assertEqual(list(self.dest.parent.iterdir()), [])
+
+    def test_float32_rounding_rejects_reversed_source_and_edited_faces(self):
+        for part, origin, offset in [('body', 8192., .125), ('fin', 0., 8192.)]:
+            with self.subTest(part=part):
+                geometry = fixture_geometry()
+                mesh = geometry.by_id()[part]
+                mesh.positions = np.array([[origin, 0, 0], [origin + 2**-11, 1, 0],
+                                           [origin + 2**-10, 3, 0]])
+                mesh.triangles = np.array([[0, 1, 2]])
+                with self.assertRaisesRegex(RigError, 'face winding'):
+                    roundtrip_named_part(geometry, self.dest, executable=self.dest.parent/'absent',
+                                         **{**self.args, 'offset_m': [offset, 0, 0]})
+                self.assertFalse(self.dest.exists())
 
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST') == '1', 'Enable pinned Blender integration.')
     def test_native_shared_material_and_mesh_coordinates_survive_both_reopens(self):
