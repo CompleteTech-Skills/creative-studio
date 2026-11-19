@@ -248,9 +248,9 @@ length field and ignored padding retain their existing compatibility. DWA
 classification uses serialized rules and the last matching channel rule.
 Declared lengths do not authorize allocation before geometry and working-budget
 checks. Each EXR zlib check reserves space for the retained compressed input,
-a possible copied input suffix, and two decoded-component buffers of one extra
-byte each (CPython fills a bounded buffer and then copies it into the returned
-bytes), plus 64 KiB for zlib's own decoder window and state. DWA component
+a possible copied input suffix, and two buffers of the decoded component size
+plus one byte (CPython fills a bounded buffer and then copies it into the
+returned bytes), plus 64 KiB for zlib's own decoder window and state. DWA component
 views also retain the rest of their parent chunk.
 Channel verification checks the minimum and maximum for NaN and infinity
 without allocating a full-image boolean array. A single FLOAT depth channel
