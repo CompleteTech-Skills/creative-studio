@@ -526,3 +526,34 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+### Authored eyelid response to gaze
+
+The optional `facial.eyelids` array binds an exact eye, mesh and morph. Each
+binding names `eye`, `mesh`, `morph`, `up_weight`, `down_weight`, `up_radians`
+and `down_radians`. Weights stay in [-2, 2]; directional angles must be positive
+and at most pi/2. At most 128 closed bindings are accepted. Existing facial
+controllers without this optional array retain their original contract.
+
+The facial owner computes eyelid weights from the final constrained local eye
+pitch. Parent motion does not become an eyelid command. Each exact mesh/morph
+channel has one gaze owner; missing, inert or multiply owned targets reject.
+Releasing gaze removes only its owned morph overrides so authored defaults can
+resume. Existing expressions and unrelated morph channels keep their ownership.
+Public pose and IK operations resample only gaze-owned channels after their
+last constraint or IK pass, including the pose embedded in the IK report.
+Operations without active gaze preserve existing morph overrides and released
+channels instead of inferring gaze ownership from the bone pose.
+
+Native correction remaps an eyelid eye when its bone is renamed and removes
+only dependencies on an eye or exact mesh/morph that was removed. The completed
+correction is admitted before the active rig is saved. Automatic skeleton
+replacement regenerates the eye list, drops bindings only for eyes absent from
+that new list, and validates every surviving binding before saving. This also
+restores the dispatcher behavior originally merged in PR #361.
+
+The optional contract and its runtime owner integrate together. Accepting an
+eyelid field without its owning validation/runtime would admit inert state.
+The preserved synthetic gaze, correction and automatic-replacement regressions
+exercise native morph geometry and saved/reloaded rigs; they do not establish
+artistic expression quality or complete the broader facial-animation program.
