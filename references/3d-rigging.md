@@ -555,14 +555,21 @@ makes the aggregate contact check fail and leaves its unavailable distances
 `null`; it cannot report a successful check with invented zero distances.
 
 Finite folded-parent steering measures basis columns without squaring overflow
-and applies one common finite scale to both sides of its relative linear
-systems before elimination. This leaves the requested relative transform
-unchanged and avoids false singular/nonfinite candidates caused only by
-intermediate arithmetic. Existing shear, reflection and pole-ray checks remain
+and equilibrates each equation of its relative linear systems separately.
+A single global divisor can erase an independent small axis. Bounded root
+columns are rotated before their row-relative magnitudes are restored using
+binary exponents, without first forming an overflowing scale ratio. This
+preserves both finite near-maximum rotated bases and attainable turns around
+extremely unequal independent axes. Nonfinite candidates remain inadmissible.
+Existing shear, reflection and pole-ray checks remain
 authoritative. The independent source comparator is retained unchanged in
 `tests/independent/test_rig_fold_relative_solve.py`; run it explicitly with
 `PYTHONPATH=scripts:tests python tests/independent/test_rig_fold_relative_solve.py`.
 The automatic finite-basis and finite-solve modules check actual native FK,
 skin deformation, direct IK, animation and state playback at smaller and
 near-maximum finite scales with explicit attainable local pose witnesses.
+The separate anisotropic module covers smaller and extreme diagonal parents;
+its unchanged independent source control is retained in
+`tests/independent/test_rig_fold_anisotropic_solve.py` for explicit execution
+with `PYTHONPATH=scripts:tests`.
 They establish synthetic numerical behavior, not artistic acceptance.
