@@ -15,7 +15,8 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from camera3d_color import apply_camera_with_color, validate_color_binding
-from lookdev_color import configuration
+from camera3d_blender import apply_camera
+from lookdev_color import apply_configuration, configuration
 from rig_errors import RigError
 
 
@@ -104,6 +105,18 @@ class CameraObject(dict):
             self.fail_hash = False
             raise RuntimeError('camera metadata rejected')
 
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        if key == 'hatch_color_sha256' and self.fail_hash:
+            self.fail_hash = False
+            raise RuntimeError('camera metadata rejected')
+
+    def __eq__(self, other):
+        return self is other
+
+    def __ne__(self, other):
+        return self is not other
+
 
 @contextmanager
 def synthetic_backend():
@@ -114,7 +127,8 @@ def synthetic_backend():
                      'use_dof', 'focus_distance', 'aperture_fstop', 'aperture_blades',
                      'aperture_rotation', 'aperture_ratio')
     })
-    new_camera = SimpleNamespace(bl_rna=optics_rna, dof=SimpleNamespace(bl_rna=optics_rna))
+    new_camera = SimpleNamespace(bl_rna=optics_rna, dof=SimpleNamespace(bl_rna=optics_rna),
+                                 animation_data=None, users=0, get={}.get)
     cameras = Mock()
     cameras.new.return_value = new_camera
     bpy = SimpleNamespace(data=SimpleNamespace(cameras=cameras, objects=Mock()),
@@ -213,6 +227,153 @@ class CameraColorTests(unittest.TestCase):
         self.assertIs(scene.camera, active_camera)
         self.assertEqual(scene.state(), original)
 
+    def test_effective_color_fields_reject_silent_backend_substitutions(self):
+        for group, field, fallback in (
+                ('display_settings', 'display_device', 'PreviousDevice'),
+                ('view_settings', 'view_transform', 'Standard'),
+                ('view_settings', 'look', 'PreviousLook'),
+                ('view_settings', 'gamma', 1.2),
+                ('view_settings', 'exposure', -1),
+                ('view_settings', 'use_curve_mapping', True),
+                ('view_settings', 'use_hdr_view', True),
+                ('view_settings', 'use_white_balance', False),
+                ('view_settings', 'white_balance_temperature', 5000),
+                ('view_settings', 'white_balance_tint', 2),
+                ('image_settings', 'file_format', 'JPEG'),
+                ('image_settings', 'color_depth', '8'),
+                ('image_settings', 'color_management', 'OVERRIDE'),
+                ('image_settings', 'color_mode', 'RGB'),
+                ('image_settings', 'exr_codec', 'PIZ')):
+            with self.subTest(field=field):
+                scene = ColorScene()
+                owner = scene.render if group == 'image_settings' else scene
+                current = getattr(owner, group)
+
+                class Substituted(type(current)):
+                    def __setattr__(self, name, value):
+                        super().__setattr__(name, fallback if name == field else value)
+
+                setattr(owner, group, Substituted(**vars(current)))
+                original = scene.state()
+                profile = configuration(output='scene-linear-exr')
+                with self.assertRaisesRegex(RigError, 'cannot represent ' + field):
+                    apply_configuration(scene, profile)
+                self.assertEqual(scene.state(), original)
+
+    def test_final_readback_detects_late_field_change_and_accepts_float32(self):
+        from struct import pack, unpack
+        scene = ColorScene()
+        class FloatView(type(scene.view_settings)):
+            def __setattr__(self, name, value):
+                if name == 'exposure':
+                    value, = unpack('f', pack('f', value))
+                super().__setattr__(name, value)
+
+        scene.view_settings = FloatView(**vars(scene.view_settings))
+        color = configuration(exposure=0.123456789)
+        camera = CameraObject()
+        scene.objects = {camera.name: camera}
+        with synthetic_backend():
+            _, receipt = apply_camera_with_color(scene, self.optics, self.render, world_matrix=self.world,
+                                                 color_configuration=color, camera_object=camera)
+        self.assertNotEqual(scene.view_settings.exposure, color['exposure_stops'])
+        self.assertEqual(receipt['configuration_sha256'], color['sha256'])
+
+        class ResetsExposure(SimpleNamespace):
+            def __setattr__(self, name, value):
+                super().__setattr__(name, value)
+                if name == 'exr_codec' and value == 'ZIP':
+                    scene.view_settings.exposure = 0
+
+        scene.render.image_settings = ResetsExposure(**vars(scene.render.image_settings))
+        saved_exposure = scene.view_settings.exposure
+        with self.assertRaisesRegex(RigError, 'cannot represent exposure'):
+            apply_configuration(scene, configuration(exposure=1, output='scene-linear-exr'))
+        self.assertEqual(scene.view_settings.exposure, saved_exposure)
+        self.assertEqual(scene['hatch_color_sha256'], receipt['configuration_sha256'])
+        self.assertEqual(camera['hatch_color_sha256'], receipt['configuration_sha256'])
+
+    def test_standalone_exposure_and_camera_switch_binding_lifecycle(self):
+        key = 'hatch_color_sha256'
+        for switch in (False, True):
+            for exposure in (0, 1):
+                with self.subTest(switch=switch, exposure=exposure):
+                    scene = ColorScene()
+                    bound = CameraObject()
+                    target = CameraObject() if switch else bound
+                    if switch:
+                        target.name = 'Other camera'
+                    target[key] = 'former-binding'
+                    scene.objects = {cam.name: cam for cam in (bound, target)}
+                    color = configuration()
+                    with synthetic_backend():
+                        apply_camera_with_color(scene, self.optics, self.render, world_matrix=self.world,
+                                                color_configuration=color, camera_object=bound)
+                        apply_camera(scene, self.optics, self.render, world_matrix=self.world,
+                                     exposure=exposure, camera_object=target)
+                    self.assertIs(scene.camera, target)
+                    self.assertEqual(scene.get(key), color['sha256'] if exposure == 0 else None)
+                    preserved = color['sha256'] if exposure == 0 and not switch else None
+                    self.assertEqual(bound.get(key), preserved)
+                    self.assertEqual(target.get(key), preserved)
+
+    def test_standalone_invalidation_failure_restores_all_bindings(self):
+        scene = ColorScene()
+        key = 'hatch_color_sha256'
+        bound, target = CameraObject(), CameraObject()
+        target.name = 'Other camera'
+        scene.objects = {cam.name: cam for cam in (bound, target)}
+        target[key] = 'former-binding'
+        original = target.data
+        color = configuration(exposure=1)
+        with synthetic_backend():
+            apply_camera_with_color(scene, self.optics, self.render, world_matrix=self.world,
+                                    color_configuration=color, camera_object=bound)
+            target.fail_hash = True
+            with self.assertRaisesRegex(RuntimeError, 'camera metadata rejected'):
+                apply_camera(scene, self.optics, self.render, world_matrix=self.world,
+                             exposure=0, camera_object=target)
+        self.assertIs(scene.camera, bound)
+        self.assertIs(target.data, original)
+        self.assertEqual(scene.view_settings.exposure, 1)
+        self.assertEqual(scene[key], color['sha256'])
+        self.assertEqual(bound[key], color['sha256'])
+        self.assertEqual(target[key], 'former-binding')
+
+    def test_scene_only_configuration_releases_stale_active_camera_binding(self):
+        scene = ColorScene()
+        camera = CameraObject()
+        scene.objects = {camera.name: camera}
+        color = configuration()
+        with synthetic_backend():
+            apply_camera_with_color(scene, self.optics, self.render, world_matrix=self.world,
+                                    color_configuration=color, camera_object=camera)
+        apply_configuration(scene, color)
+        self.assertEqual(camera['hatch_color_sha256'], color['sha256'])
+        changed = configuration(tint=15)
+        apply_configuration(scene, changed)
+        self.assertNotIn('hatch_color_sha256', camera)
+        self.assertEqual(scene['hatch_color_sha256'], changed['sha256'])
+
+    def test_foreground_probe_rejects_wrong_radiance_or_second_transform(self):
+        import numpy as np
+        from verify_camera3d_color import foreground_error
+        expected = (.3, .3, .3, 1.)
+        pixels = np.full((64, 96, 4), expected)
+        self.assertEqual(foreground_error(pixels, expected, 1e-5), 0)
+        once = pixels.copy()
+        once[..., :3] *= 2
+        reference = once[28:36, 44:52, :]
+        self.assertEqual(foreground_error(once, reference, 2e-4), 0)
+        twice = once.copy()
+        twice[..., :3] *= 2
+        for wrong in (pixels, twice):
+            with self.assertRaisesRegex(AssertionError, 'Foreground maximum error'):
+                foreground_error(wrong, reference, 2e-4)
+        for wrong in (np.zeros_like(pixels), once, np.full_like(pixels, np.nan)):
+            with self.assertRaisesRegex(AssertionError, 'Foreground maximum error'):
+                foreground_error(wrong, expected, 1e-5)
+
     def test_late_camera_hash_failure_restores_existing_camera(self):
         for original_metadata in ({}, {'hatch_color_sha256': 'previous-camera-hash'}):
             with self.subTest(original_metadata=original_metadata):
@@ -294,7 +455,15 @@ class CameraColorTests(unittest.TestCase):
             self.assertTrue(report['ok'])
             self.assertGreater(report['png_white_balance_mean_difference'], .01)
             self.assertGreater(report['png_tint_mean_difference'], .01)
+            self.assertGreater(report['png_one_stop_mean_increase'], .01)
+            self.assertEqual(set(report['png_direct_foreground_errors']),
+                             {'neutral', 'temperature-3200', 'tint-100', 'one-stop'})
+            self.assertLessEqual(max(report['png_direct_foreground_errors'].values()), 2e-4)
+            self.assertEqual(report['exr_expected_foreground_rgba'], [.3, .3, .3, 1.])
+            self.assertEqual(len(report['exr_foreground_errors']), 2)
+            self.assertLessEqual(max(report['exr_foreground_errors']), 1e-5)
             self.assertTrue(report['saved_and_reopened'])
+            self.assertTrue(report['standalone_exposure_checked'])
             self.assertTrue(report['source_material_and_lighting_unchanged'])
             self.assertEqual(report['linear_exr_maximum_difference'], 0)
 

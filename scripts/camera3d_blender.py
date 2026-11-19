@@ -146,9 +146,18 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
     previous_data = None if camera_object is None else camera_object.data
     previous_pose = None if camera_object is None else camera_object.matrix_basis.copy()
     hash_property = 'hatch_color_sha256'
-    missing_hash = object()
-    previous_hash = (camera_object.get(hash_property, missing_hash)
-                     if camera_object is not None and color_sha256 is not None else missing_hash)
+    previous_scene_hash = scene.get(hash_property)
+    if color_sha256 is not None:
+        if color_sha256 != previous_scene_hash or not math.isclose(
+                previous_exposure, plan['exposure'], rel_tol=2e-6,
+                abs_tol=min(1e-7, abs(plan['exposure']) * 2e-6)):
+            raise ValueError('camera3d shared color binding requires configured scene exposure and hash')
+    binding_owners = [scene]
+    if previous_active is not None:
+        binding_owners.append(previous_active)
+    if camera_object is not None and camera_object != previous_active:
+        binding_owners.append(camera_object)
+    previous_bindings = [(owner, owner.get(hash_property)) for owner in binding_owners]
     new_object = None
     camera = bpy.data.cameras.new(name)
     try:
@@ -162,7 +171,8 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
         # Finish the range-sensitive writes before swapping the active camera.
         for key, value in render_values.items():
             _set_exact(scene.render, key, value)
-        _set_exact(scene.view_settings, 'exposure', plan['exposure'])
+        if color_sha256 is None:
+            _set_exact(scene.view_settings, 'exposure', plan['exposure'])
         if camera_object is None:
             new_object = bpy.data.objects.new(name, camera)
             scene.collection.objects.link(new_object)
@@ -172,8 +182,16 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
         camera_object.matrix_world = pose
         scene.camera = camera_object
         bpy.context.view_layer.update()
+        if previous_active is not None and previous_active != camera_object and hash_property in previous_active:
+            del previous_active[hash_property]
         if color_sha256 is not None:
             camera_object[hash_property] = color_sha256
+        else:
+            if scene.view_settings.exposure != previous_exposure and hash_property in scene:
+                del scene[hash_property]
+            if (camera_object != previous_active or camera_object.get(hash_property) != scene.get(hash_property)):
+                if hash_property in camera_object:
+                    del camera_object[hash_property]
     except Exception:
         if scene.camera != previous_active:
             scene.camera = previous_active
@@ -189,12 +207,12 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
                 setattr(scene.render, key, value)
         if scene.view_settings.exposure != previous_exposure:
             scene.view_settings.exposure = previous_exposure
-        if previous_data is not None and color_sha256 is not None:
-            if camera_object.get(hash_property, missing_hash) != previous_hash:
-                if previous_hash is missing_hash:
-                    del camera_object[hash_property]
+        for owner, original in previous_bindings:
+            if owner.get(hash_property) != original:
+                if original is None:
+                    del owner[hash_property]
                 else:
-                    camera_object[hash_property] = previous_hash
+                    owner[hash_property] = original
         bpy.data.cameras.remove(camera)
         raise
     # Reclaiming an unused datablock is best-effort after camera activation.

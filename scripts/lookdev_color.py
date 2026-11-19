@@ -63,41 +63,53 @@ def configured_color(scene, value):
         require(prop.hard_min<=requested<=prop.hard_max,'LOOKDEV_COLOR_BACKEND','Color setting exceeds actual backend bounds.')
     display = scene.display_settings
     image = scene.render.image_settings
-    # Device and format determine which dependent enum values can be restored.
-    properties = [
-        (display, ('display_device',)),
-        (settings, ('view_transform', 'look', 'exposure', 'gamma', 'use_curve_mapping',
-                    'use_white_balance', 'white_balance_temperature', 'white_balance_tint')),
-        (image, ('color_management', 'file_format', 'color_depth', 'color_mode', 'exr_codec')),
+    linear = value['output'] == 'scene-linear-exr'
+    # Parent enums must precede their dependent fields during apply and rollback.
+    assignments = [
+        (display, 'display_device', 'sRGB'),
+        (settings, 'view_transform', value['view']),
+        (settings, 'look', 'None'),
+        (settings, 'exposure', value['exposure_stops']),
+        (settings, 'gamma', 1.0),
+        (settings, 'use_curve_mapping', False),
+        (settings, 'use_white_balance', True),
+        (settings, 'white_balance_temperature', value['temperature_kelvin']),
+        (settings, 'white_balance_tint', value['tint']),
+        (image, 'color_management', 'FOLLOW_SCENE'),
+        (image, 'file_format', 'OPEN_EXR' if linear else 'PNG'),
+        (image, 'color_depth', '32' if linear else '16'),
+        (image, 'color_mode', 'RGBA'),
     ]
     if hasattr(settings, 'use_hdr_view'):
-        properties.append((settings, ('use_hdr_view',)))
+        assignments.append((settings, 'use_hdr_view', False))
     previous = [(owner, name, getattr(owner, name))
-                for owner, names in properties for name in names]
+                for owner, name, _ in assignments]
+    previous.append((image, 'exr_codec', image.exr_codec))
+    if linear:
+        assignments.append((image, 'exr_codec', 'ZIP'))
     hash_property = 'hatch_color_sha256'
     previous_hash = scene.get(hash_property)
+    active_camera = scene.camera
+    previous_camera_hash = active_camera.get(hash_property) if active_camera is not None else None
     try:
-        try:
-            display.display_device = 'sRGB'
-            settings.view_transform = value['view']
-            settings.look = 'None'
-        except (TypeError, ValueError) as exc:
-            raise RigError('LOOKDEV_COLOR_BACKEND', 'Requested OCIO view/look unavailable.') from exc
-        settings.exposure = value['exposure_stops']
-        settings.gamma = 1.
-        settings.use_curve_mapping = False
-        if hasattr(settings, 'use_hdr_view'):
-            settings.use_hdr_view = False
-        settings.use_white_balance = True
-        settings.white_balance_temperature = value['temperature_kelvin']
-        settings.white_balance_tint = value['tint']
-        image.color_management = 'FOLLOW_SCENE'
-        linear = value['output'] == 'scene-linear-exr'
-        image.file_format = 'OPEN_EXR' if linear else 'PNG'
-        image.color_depth = '32' if linear else '16'
-        if linear:
-            image.exr_codec = 'ZIP'
-        image.color_mode = 'RGBA'
+        for owner, name, expected in assignments:
+            try:
+                setattr(owner, name, expected)
+            except (TypeError, ValueError) as exc:
+                if name in ('display_device', 'view_transform', 'look'):
+                    raise RigError('LOOKDEV_COLOR_BACKEND', 'Requested OCIO view/look unavailable.') from exc
+                raise
+        # A later RNA assignment can silently change an earlier field.
+        for owner, name, expected in assignments:
+            observed = getattr(owner, name)
+            if type(expected) in (int, float):
+                matches = math.isclose(observed, expected, rel_tol=2e-6,
+                                       abs_tol=min(1e-7, abs(expected) * 2e-6))
+            else:
+                matches = observed == expected
+            require(matches, 'LOOKDEV_COLOR_BACKEND', f'Backend cannot represent {name}={expected}.')
+        if previous_camera_hash is not None and previous_camera_hash != value['sha256']:
+            del active_camera[hash_property]
         scene[hash_property] = value['sha256']
         yield {'configuration_sha256': value['sha256'], 'view': settings.view_transform,
                'output_encoding': value['output'], 'display_transform_baked': not linear}
@@ -105,6 +117,8 @@ def configured_color(scene, value):
         for owner, name, original in previous:
             if getattr(owner, name) != original:
                 setattr(owner, name, original)
+        if previous_camera_hash is not None and active_camera.get(hash_property) != previous_camera_hash:
+            active_camera[hash_property] = previous_camera_hash
         if scene.get(hash_property) != previous_hash:
             if previous_hash is None:
                 del scene[hash_property]

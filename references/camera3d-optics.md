@@ -103,7 +103,11 @@ API changes neither source materials nor light energy. Backend RNA bounds and
 view availability can further constrain the validated portable profile. A native
 color rejection preserves the current camera and scene settings. If camera
 setup rejects the optical or render state after color setup, the adapter
-restores the prior scene color settings and hash. Other renderers must provide
+restores the prior scene color settings and affected camera bindings. A standalone
+`apply_camera` exposure change clears the scene and camera color hashes. An
+optics-only update to the same bound camera retains its binding when effective
+exposure stays the same. Switching cameras releases the former camera's binding.
+Use `apply_camera_with_color` to bind the replacement. Other renderers must provide
 an explicit color-management adapter. Browser white balance remains
 unsupported by this binding.
 
@@ -111,9 +115,13 @@ Actual acceptance: `HATCH_CAMERA3D_COLOR_TEST=1 python -m unittest discover -s
 tests -p test_rig_camera3d_color.py -v`. Set `HATCH_BLENDER`, and optionally
 `HATCH_CAMERA_TEST_SITE` to a schema-validator installation usable by Blender.
 `HATCH_CAMERA_COLOR_EVIDENCE` must name a new directory. The engineering fixture
-renders independent temperature/tint PNG controls, identical linear EXR
-controls, saves and reopens the native project, and records input/source/output
-hashes. Fixture success supplies no production-art visual approval.
+renders neutral, temperature, tint and one-stop PNGs. Each central 8x8 RGBA
+patch must match a second scene rendered with directly configured Blender
+settings within 0.0002 per decoded channel. Two 32-bit EXRs must agree across
+the frame despite changed view white balance and exposure. Both foreground
+patches must equal the opaque emitter's linear RGBA (0.3, 0.3, 0.3, 1) within
+0.00001. The gate also saves and reopens the native project and records the
+observed errors and input/source/output hashes.
 
 ## Traceability
 

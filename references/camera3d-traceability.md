@@ -56,6 +56,9 @@ Implementation: `camera3d_blender.optical_plan` and `apply_camera`;
 | PNG/sRGB and EXR/linear-sRGB output agreement | `tests/test_rig_camera3d_color.py`: `test_matches_native_output_contracts_and_rejects_disagreements` |
 | Tampered color or nonrigid pose rejected before native mutation | `tests/test_rig_camera3d_color.py`: `test_rejects_tampered_color_before_touching_the_native_scene`, `test_rejects_nonrigid_pose_before_native_mutation` |
 | Synthetic backend failures preserve the previous state or the completed activation | `tests/test_rig_camera3d_color.py`: `test_native_color_rejections_preserve_existing_camera_and_scene`, `test_late_render_clamp_rolls_back_shared_color_and_render`, `test_late_camera_hash_failure_restores_existing_camera`, `test_old_camera_cleanup_failure_keeps_committed_camera_and_color` |
+| Silent color/output substitutions, late RNA changes and permitted float rounding | `tests/test_rig_camera3d_color.py`: `test_effective_color_fields_reject_silent_backend_substitutions`, `test_final_readback_detects_late_field_change_and_accepts_float32` |
+| Standalone camera exposure or activation clears stale tags and rolls back all affected tags on failure | `tests/test_rig_camera3d_color.py`: `test_standalone_exposure_and_camera_switch_binding_lifecycle`, `test_standalone_invalidation_failure_restores_all_bindings` |
+| Foreground comparison rejects repeated transforms and identical incorrect linear radiance | `tests/test_rig_camera3d_color.py`: `test_foreground_probe_rejects_wrong_radiance_or_second_transform` |
 
 **ISO is unsupported.** No ISO or ISO-equivalent sensitivity simulation is
 implemented or claimed. Exposure is expressed only in stops through the shared
@@ -66,7 +69,7 @@ color profile. Browser-side white balance is also unsupported by this binding.
 | Requirement | Native gate | Enabling flags |
 | --- | --- | --- |
 | Projection matrices match Camera3D across sensor fits, gate policies, shift, overscan and non-square pixels; DOF, exposure and motion blur change actual renders; state survives save/reopen | `tests/test_rig_camera3d_optics.py`: `test_actual_blender_optical_acceptance` (runs `scripts/verify_camera3d_optics.py`) | `HATCH_CAMERA3D_BLENDER_TEST=1`, `HATCH_CAMERA_EVIDENCE` |
-| Temperature and tint change PNG output once; scene-linear EXR is unchanged; source material and lighting are unchanged; JPEG scenes transition to PNG/EXR; state and hash survive save/reopen | `tests/test_rig_camera3d_color.py`: `test_actual_camera_shared_white_balance` (runs `scripts/verify_camera3d_color.py`) | `HATCH_CAMERA3D_COLOR_TEST=1`, `HATCH_CAMERA_COLOR_EVIDENCE` |
+| Neutral, temperature, tint and one-stop PNG foregrounds match independent direct Blender renders. EXRs preserve known foreground radiance and match each other across the frame. Source material and world color, JPEG transitions and reopened bindings are checked | `tests/test_rig_camera3d_color.py`: `test_actual_camera_shared_white_balance` (runs `scripts/verify_camera3d_color.py`) | `HATCH_CAMERA3D_COLOR_TEST=1`, `HATCH_CAMERA_COLOR_EVIDENCE` |
 
 Both native gates also need `HATCH_BLENDER` (pinned Blender 4.5.3) and
 `HATCH_CAMERA_TEST_SITE` (a jsonschema installation for Blender's Python 3.11).

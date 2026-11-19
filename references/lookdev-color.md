@@ -23,7 +23,11 @@ rejects. Filmic remains subject to actual backend availability. See the
 `white_balance_temperature` and `white_balance_tint` RNA properties. White balance
 is a view transform: it does not recolor physical lights, source textures or
 materials. The function resets unmanaged grading curves/export overrides and
-sets exactly one scene exposure. PNG is display-transformed 16-bit sRGB; 32-bit
+sets one scene exposure. Before recording the profile hash, it reads back every
+requested display, grading and output field, including codec for EXR. Numeric
+fields allow Blender float rounding. Applying a different profile clears a stale
+active-camera binding. If setup fails, the previous settings and hashes are
+restored. PNG is display-transformed 16-bit sRGB; 32-bit
 EXR remains scene-linear and does not bake view WB/exposure/tone mapping.
 
 Use `camera3d_color.apply_camera_with_color` to apply camera optics and shared
