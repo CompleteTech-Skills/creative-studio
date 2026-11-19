@@ -10,6 +10,7 @@ from copy import deepcopy
 from fractions import Fraction
 from pathlib import Path
 import hashlib
+import math
 
 from continuity_contracts import (MAX_BYTES, MAX_ITEMS, canonical_bytes, decode_json, definitions, digest,
     validate_document, verify_references)
@@ -59,6 +60,19 @@ def _equal(a, b):
     return a == b
 
 
+def _same_transform(a, b):
+    """Compare validated TRS across native matrix composition/decomposition."""
+    roundoff = 8 * math.ulp(1.0)
+    for field in ('translation', 'scale'):
+        if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=0.0)
+                   for x, y in zip(a[field], b[field])):
+            return False
+    # Unit quaternion components share a unit scale. Only reversing every
+    # component together represents the same rotation.
+    return any(all(abs(x - sign * y) <= roundoff for x, y in zip(a['rotation'], b['rotation']))
+               for sign in (1, -1))
+
+
 def _operations(events, initial, until=None):
     """Replay from source; no mutable evaluator state survives a query."""
     state = deepcopy(initial)
@@ -93,7 +107,8 @@ def _operations(events, initial, until=None):
                 container = state['entities'][entity]
                 field = 'transform' if kind == 'relocate' else 'visible'
                 current = container[field]
-            if not _equal(current, operation['before']):
+            equal = _same_transform if kind == 'relocate' else _equal
+            if not equal(current, operation['before']):
                 fail('PRECONDITION', event['event_id'] + ' before-state mismatch for ' + target)
             container[field] = deepcopy(operation['after'])
         applied.append(event['event_id'])
@@ -114,9 +129,10 @@ class TemporalEngine:
             fail('LIMIT', 'too many temporal events')
         if len({e['event_id'] for e in self.events}) != len(self.events):
             fail('DUPLICATE', 'event ID reused')
-        verify_references(self.root, self.plan)
-        verify_references(self.root, dict(events=self.events))
+        sources = dict(plan=self.plan, events=self.events)
+        verify_references(self.root, sources)
         from scene3d_contracts import load_project, frame_time
+        from scene3d_graph import SceneGraph
         from scene3d_math import evaluate_transforms, local_matrix
         from rig_math import decompose
         from jsonschema import Draft202012Validator
@@ -154,6 +170,9 @@ class TemporalEngine:
             if scene['id'] in scenes:
                 fail('DUPLICATE', 'scene mapping repeated')
             evaluated = evaluate_transforms(scene)
+            # Shot evaluation exposes render visibility, including inherited
+            # collection and layer flags, through its single visible field.
+            graph_state = SceneGraph(scene).evaluate_base()
             matrix = local_matrix(entry['scene_to_world'])
             entities, nodes = {}, set()
             for binding in entry['entities']:
@@ -167,7 +186,7 @@ class TemporalEngine:
                 transform = decompose(matrix @ __import__('numpy').array(result['world_matrix']))
                 state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
-                    visible=result['visible'])
+                    visible=graph_state[node]['render_visible'])
                 if not entity_validator.is_valid(state):
                     fail('SOURCE_STATE', 'composed native entity state exceeds the snapshot contract')
                 entities[entity] = state
@@ -246,11 +265,12 @@ class TemporalEngine:
                 fail('MAPPING', 'scene mapping has no consuming shot')
             initial_tick = min(incoming)
             state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick)
-            if not _equal(entities, state['entities']):
+            if any(native['visible'] != state['entities'][entity]['visible'] or
+                   not _same_transform(native['transform'], state['entities'][entity]['transform'])
+                   for entity, native in entities.items()):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
-        verify_references(self.root, self.plan)
-        verify_references(self.root, dict(events=self.events))
-        dependencies = dict(plan=self.plan, events=self.events, native_inventory=self.native['inventory'])
+        verify_references(self.root, sources)
+        dependencies = dict(sources, native_inventory=self.native['inventory'])
         if manifest.get('bindings_sha256') is not None:
             dependencies['bindings_sha256'] = manifest['bindings_sha256']
         self.dependencies_sha256 = digest(dependencies)
@@ -260,7 +280,7 @@ class TemporalEngine:
         self.evaluator_sha256 = digest(dict(
             sources={name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                      for name in ('continuity_temporal.py', 'continuity_contracts.py',
-                                  'scene3d_contracts.py', 'scene3d_math.py', 'rig_math.py')},
+                                  'scene3d_contracts.py', 'scene3d_graph.py', 'scene3d_math.py', 'rig_math.py')},
             python=platform.python_version(), numpy=importlib.metadata.version('numpy'),
             jsonschema=importlib.metadata.version('jsonschema')))
 

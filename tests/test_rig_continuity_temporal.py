@@ -2,6 +2,7 @@
 from copy import deepcopy
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -19,7 +20,7 @@ from scene3d_example import build_example, TRANSFORM
 
 
 def fixture(root, *, dynamic=False, incoming_translation=None, node_scale=None,
-            camera_override=None, camera_parent=False):
+            camera_override=None, camera_parent=False, configure_scene=None):
     build_example(root)
     old_scene = json.loads((root / 'example-scene.json').read_bytes())
     old_shot = json.loads((root / 'example-shot.json').read_bytes())
@@ -45,6 +46,8 @@ def fixture(root, *, dynamic=False, incoming_translation=None, node_scale=None,
             scene['nodes'][1]['parent'] = 'camera'
         if i == 1 and incoming_translation is not None:
             scene['nodes'][1]['transform']['translation'] = list(incoming_translation)
+        if configure_scene is not None:
+            configure_scene(scene, i)
         scenes.append(write(scene))
     for i in range(3):
         shot = deepcopy(old_shot)
@@ -97,6 +100,94 @@ class TemporalTests(unittest.TestCase):
 
     def snap(self, shot='shot-0', frame=0, **kw):
         return self.registry.temporal_snapshot('main', shot, frame, **kw)
+
+    def test_timeline_visibility_matches_native_render_membership(self):
+        from scene3d_graph import SceneGraph
+
+        def memberships(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            scene['collections'].append(dict(id='hidden', name='Hidden', visible=False))
+            nodes['mesh']['collections'] = ['hidden']
+            nodes['second-character']['parent'] = 'mesh'
+            scene['layers'].append(dict(id='render-only', name='Render only', visible=True,
+                                        editor_visible=False, render_visible=True))
+            nodes['prop']['layers'] = ['render-only']
+
+        root = Path(self.temp.name) / 'visibility'
+        plan = fixture(root, configure_scene=memberships)
+        scene = json.loads((root / 'location-0.json').read_bytes())
+        native = SceneGraph(scene).evaluate_base()
+        self.assertFalse(native['prop']['editor_visible'])
+        self.assertTrue(native['prop']['render_visible'])
+        with IdentityRegistry(Path(self.temp.name) / 'visibility.sqlite', asset_root=root) as registry:
+            registry.create_timeline(plan)
+            snapshot = registry.temporal_snapshot('main', 'shot-0', 0)['snapshot']
+            visible = {entity['entity_id']: entity['visible'] for entity in snapshot['entities']}
+            self.assertEqual(visible, {'aster': False, 'moss': False, 'key': True})
+            for binding in plan['scenes'][0]['entities']:
+                self.assertEqual(visible[binding['entity_id']], native[binding['node_id']]['render_visible'])
+
+    def test_authored_relocation_matches_native_rotation_and_preserves_bytes(self):
+        yaw = [0.0, math.sin(0.25), 0.0, math.cos(0.25)]
+
+        def orientation(scene, index):
+            if index == 1:
+                scene['nodes'][1]['transform']['rotation'] = yaw.copy()
+
+        root = Path(self.temp.name) / 'yaw'
+        plan = fixture(root, configure_scene=orientation)
+        source_file = root / 'location-1.json'
+        source_bytes = source_file.read_bytes()
+        authored = json.loads(source_bytes)['nodes'][1]['transform']
+        before = dict(TRANSFORM, translation=[2, 0, 0])
+        arrival = event('turn', 1001, kind='relocate', target='aster', before=before, after=authored)
+        opposite = dict(authored, rotation=[-value for value in yaw])
+        reset = event('reset', 2002, kind='relocate', target='aster', before=opposite, after=before)
+        events = [arrival, reset, event('decimal', 3003, after=0.5)]
+        event_bytes = continuity_bytes(events)
+        with IdentityRegistry(Path(self.temp.name) / 'yaw.sqlite', asset_root=root) as registry:
+            for field, value in (
+                    ('rotation', [0.0, -yaw[1], 0.0, yaw[3]]),
+                    ('rotation', [0.0, math.sin(0.25 + 1e-10), 0.0, math.cos(0.25 + 1e-10)]),
+                    ('scale', [1.0 + 1e-10, 1.0, 1.0]),
+                    ('translation', [2.0 + 1e-10, 0.0, 0.0])):
+                wrong = deepcopy(arrival)
+                wrong['operations'][0]['after'][field] = value
+                with self.subTest(field=field, value=value), self.assertRaisesRegex(ValueError, 'SOURCE_STATE'):
+                    registry.create_timeline(plan, events=[wrong])
+            head = registry.create_timeline(plan, events=[arrival])
+            head = registry.append_events('main', events[1:], expected_sha256=head)
+            incoming = registry.temporal_snapshot('main', 'shot-2', 0)['snapshot']
+            self.assertEqual(continuity_bytes(incoming['entities'][0]['transform']), continuity_bytes(authored))
+            self.assertEqual(continuity_bytes(registry.temporal_history('main')['events']), event_bytes)
+            self.assertEqual(continuity_bytes(events), event_bytes)
+            self.assertEqual(source_file.read_bytes(), source_bytes)
+            wrong_fact = event('wrong-fact', 4004, before=math.nextafter(0.5, 1))
+            with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
+                registry.append_events('main', [wrong_fact], expected_sha256=head)
+            self.assertEqual(registry.temporal_history('main')['sha256'], head)
+
+    def test_plan_and_events_share_one_immutable_path_closure(self):
+        source = self.plan['shots'][0]['shot']
+        conflicting = dict(event('conflict', 2002, target='new'), sources=[dict(source, version='2.0.0')])
+        valid = dict(event('same', 1001), sources=[deepcopy(source)])
+
+        def counts():
+            return tuple(self.registry.db.execute('SELECT count(*) FROM ' + table).fetchone()[0]
+                         for table in ('temporal_heads', 'temporal_contents', 'history'))
+
+        prefix = event('first', 1001)
+        before = counts()
+        with self.assertRaisesRegex(ValueError, 'REFERENCE: conflicting immutable path'):
+            self.registry.create_timeline(dict(self.plan, timeline_id='conflict'), events=[prefix, conflicting])
+        self.assertEqual(counts(), before)
+        with self.assertRaisesRegex(ValueError, 'REFERENCE: conflicting immutable path'):
+            self.append([prefix, conflicting])
+        self.assertEqual(counts(), before)
+        self.assertEqual(self.registry.temporal_history('main')['sha256'], self.initial)
+        self.assertEqual(self.registry.temporal_history('main')['events'], [])
+        self.append([valid])
+        self.assertEqual(self.registry.temporal_history('main')['events'], [valid])
 
     def test_snapshot_fact_limit_is_checked_at_append_and_allows_overwrite(self):
         with patch('continuity_temporal.MAX_ITEMS', 2):
