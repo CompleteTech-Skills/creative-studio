@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from model3d_primitives import primitive
-from model3d_semantic import create_asset,define_pose,evaluated_geometry,part_signatures
+from model3d_semantic import create_asset,define_pose,evaluated_geometry,part_signatures,transform_part
 from model3d_semantic_evidence import map_states
 from model3d_semantic_io import export_asset
 from model3d_semantic_style import apply_style_materials,apply_catalog_state
@@ -95,5 +95,27 @@ class StyleExecutionTests(unittest.TestCase):
                 asset=map_states(define_pose(self.asset,'odd',{'head':matrix}),{'waving':'odd'})
                 with self.assertRaises(RigError) as caught:apply_catalog_state(asset,'waving')
                 self.assertEqual(caught.exception.report['code'],'MODEL3D_STATE_NOT_RIGID')
+
+    def test_catalog_state_rigidity_is_relative_to_the_current_part_transform(self):
+        rotation=np.eye(4);rotation[:3,:3]=[[np.cos(.5),-np.sin(.5),0],[np.sin(.5),np.cos(.5),0],[0,0,1]]
+        scaled=transform_part(self.asset,'head',np.asarray(self.asset.parts['head']['matrix'])@np.diag([2.,2.,2.,1.]))
+        rest=np.asarray(scaled.parts['head']['matrix'])
+        for label,pose,rigid in (('neutral',rest,True),('rest-then-rotate',rest@rotation,True),
+                                 ('drops-scale',rotation,False)):
+            with self.subTest(label=label):
+                asset=map_states(define_pose(scaled,'p',{'head':pose}),{'waving':'p'})
+                if rigid:
+                    posed=apply_catalog_state(asset,'waving')
+                    def spans(geometry):
+                        points=geometry.by_id()['head'].positions;return np.linalg.norm(points-points[0],axis=1)
+                    np.testing.assert_allclose(spans(evaluated_geometry(posed)),spans(evaluated_geometry(scaled)),atol=1e-9)
+                else:
+                    with self.assertRaises(RigError) as caught:apply_catalog_state(asset,'waving')
+                    self.assertEqual(caught.exception.report['code'],'MODEL3D_STATE_NOT_RIGID')
+
+    def test_catalog_state_admits_rotations_authored_to_six_decimals(self):
+        rotation=np.eye(4);rotation[:3,:3]=np.round([[np.cos(.7),-np.sin(.7),0],[np.sin(.7),np.cos(.7),0],[0,0,1]],6)
+        asset=map_states(define_pose(self.asset,'turn',{'head':rotation}),{'waving':'turn'})
+        self.assertEqual(apply_catalog_state(asset,'waving').history[-1]['operation'],'apply-existing-catalog-state:waving')
 
 if __name__=='__main__':unittest.main()

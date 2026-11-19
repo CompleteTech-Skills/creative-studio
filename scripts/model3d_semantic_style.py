@@ -89,11 +89,19 @@ def apply_catalog_state(asset,state_id):
             'MODEL3D_STATE_UNAVAILABLE','This asset has no represented rigid pose for the selected state.')
     pose=asset.poses[binding['pose']]
     for key,value in pose.items():
-        m=np.asarray(value,dtype=float);rotation=m[:3,:3]
-        require(m.shape==(4,4) and np.array_equal(m[3],[0.,0.,0.,1.])
-                and np.allclose(rotation.T@rotation,np.eye(3),rtol=0,atol=1e-9)
-                and np.linalg.det(rotation)>0,
-                'MODEL3D_STATE_NOT_RIGID','Catalog state poses must be rigid rotations and translations: '+key)
+        # A pose replaces the part's local matrix, so it is rigid when it equals
+        # the current matrix followed by a rotation and translation: same Gram
+        # matrix (lengths/angles) and same handedness. Tolerance admits rotations
+        # authored or imported with ~6 significant decimals.
+        pose_matrix=np.asarray(value,dtype=float);rest=np.asarray(asset.parts[key]['matrix'],dtype=float)
+        require(pose_matrix.shape==(4,4) and np.array_equal(pose_matrix[3],[0.,0.,0.,1.]),
+                'MODEL3D_STATE_NOT_RIGID','Catalog state poses must be affine part transforms: '+key)
+        linear,reference=pose_matrix[:3,:3],rest[:3,:3]
+        gram,expected=linear.T@linear,reference.T@reference
+        scale=max(1.,float(np.max(np.abs(expected))))
+        require(np.allclose(gram,expected,rtol=0,atol=1e-6*scale)
+                and np.sign(np.linalg.det(linear))==np.sign(np.linalg.det(reference)),
+                'MODEL3D_STATE_NOT_RIGID','Catalog state poses must move the part rigidly from its current transform: '+key)
     result=apply_pose(asset,binding['pose'])
     result.history[-1]['operation']='apply-existing-catalog-state:'+state_id
     return result

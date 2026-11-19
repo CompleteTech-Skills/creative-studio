@@ -38,3 +38,5 @@ to prove selected PBR changes and unchanged source geometry/colors, actual
 catalog-to-pose displacement, unavailable/stale rejection, unsupported shaders
 and preservation of opaque material extras. No rendered or artistic approval is
 inferred from those measurements.
+
+Materials with a `metallicRoughnessTexture` are refused (`MODEL3D_STYLE_UNSUPPORTED`): glTF multiplies the factors by that texture, so replacing only the factors would not execute the recorded adaptation. A catalog state executes only when each pose moves its part rigidly from the part's current transform (equal Gram matrix within 1e-6 relative tolerance and the same handedness); otherwise it refuses with `MODEL3D_STATE_NOT_RIGID`.
