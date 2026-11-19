@@ -382,6 +382,11 @@ def _orient_chain(skeleton: dict, pose: dict, names: list[str], targets: np.ndar
     return result
 
 
+# Minimum FK-to-IK matching pole distance, far above the 1e-8 m pole-degeneracy
+# cutoff in _pole_perpendicular. Ordinary matches keep their reach distance.
+MIN_MATCHING_POLE_DISTANCE = 1e-6
+
+
 def _pole_perpendicular(direction, origin, pole):
     delta = pole-origin
     perpendicular = delta-direction*np.dot(delta, direction)
@@ -557,8 +562,9 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
         pole = points[1]
     else:
         bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
+        # Keep the near-closed matching pole above the degeneracy cutoff.
         with np.errstate(over='ignore', invalid='ignore'):
-            pole = points[0]+bend*reach
+            pole = points[0]+bend*max(reach, MIN_MATCHING_POLE_DISTANCE)
     require(np.isfinite(pole).all(), 'RIG_NONFINITE',
             'FK-to-IK pole exceeds finite world-coordinate representation.')
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
