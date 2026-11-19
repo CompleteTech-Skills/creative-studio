@@ -377,25 +377,7 @@ joint transforms and bound geometry. Ordinary matches retain their original
 reach-based pole distance. When that reach is at most `1e-6` meters, the matching pole is placed `1e-6`
 meters along the same bend direction; a reach-distance pole below the solver's
 `1e-8` meter pole-degeneracy cutoff would otherwise be replaced by an arbitrary
-axis and move the elbow of a valid near-closed seed. FABRIK skips steering an interior joint only when the requested pole rotation
-is no larger than its first-order rounding uncertainty: chain-point rounding
-tilts the neighbour axis by about `eps*scale/|axis|`, which changes the
-steering angle by the difference of the current point's and pole offset's
-cotangents against that axis, plus each perpendicular's own rounding. It grows
-as the axis shortens or aligns with the pole offset at nested near-pi folds.
-Pole coordinate magnitude enters only the pole perpendicular's rounding. The
-bound sums worst-case terms with a factor of four, because the nested-fold
-cascade needs at least twice the first-order estimate; on ordinary poses it is
-therefore about thirty times the measured rounding noise. A pole change counts
-as measurable when it exceeds that bound: smaller requests, which the previous
-solver followed with roughly 3-16% relative error (sub-picometre joint motion on
-metre-scale bones at kilometre translations), are left unsteered. For bends of
-at least `1e-2` radians, changes such as `1e-12` radians at exact coordinates
-and `1e-6` radians with a pole a million meters away still steer; near-straight
-chains resolve proportionally coarser changes. A single
-matching pole cannot preserve folds that alternate sides of their neighbour
-axes, such as unequal nested gaps or 6+ joint zigzags; that contract is
-tracked separately in #551. Closure is tested within `1e-9` meters, the matched
+axis and move the elbow of a valid near-closed seed. Closure is tested within `1e-9` meters, the matched
 endpoint must also meet the chain's residual tolerance, and normalized pole/first
 segment directions must differ by at most eight machine epsilons in unit-vector
 distance. Comparing the vector difference avoids a dot product rounding a
@@ -406,6 +388,29 @@ neighbor axes. At the equal-length two-segment fold, either solver can also
 construct the elbow along that pole from an open seed.
 Runtime segment-length checks, joint limits, endpoint orientation, actual
 residuals and bounded convergence reporting remain authoritative.
+
+FABRIK pole steering skips an interior joint only when the requested rotation
+about its neighbour axis is no larger than a first-order rounding bound,
+`4*eps*(s/|axis|*|cot_point - cot_pole| + s/|point_perp| + max(|previous|, |pole|)/|pole_perp|)`,
+where `s` is the largest chain-point coordinate magnitude and each cotangent is
+taken against the neighbour axis. This preserves matched seeds at nested near-pi
+folds, where a single matching pole cannot be exactly consistent with the
+rounded seed geometry; at least twice the first-order estimate is needed there.
+A smaller request is left unsteered and the solve still reports its residual and
+convergence normally. On untranslated chains with bends of at least `1e-2`
+radians the bound is around `1e-15` radians, so `1e-12` radians at exact
+coordinates and `1e-6` radians with a pole a million meters away still steer;
+near-straight chains resolve proportionally coarser changes. The bound grows
+with world translation and with a pole offset along the neighbour axis, and is
+largest at a near-pi fold. For a one-meter chain, a pole one meter off-axis, and
+a `pi-1e-3` fold, it is about `9e-10`, `9e-7` and `9e-4` radians at translations
+of 0, one kilometre and a thousand kilometres with a `1e3` meter axial pole
+offset (`9e-12`, `9e-9` and `9e-6` radians with a ten-meter offset); the
+elbow motion left unsteered is the bound times the joint radius. An unconditional
+rotation would follow requests below the bound in these translated, axially
+offset cases. A single matching pole also cannot preserve folds that alternate
+sides of their neighbour axes, such as unequal nested gaps or 6+ joint zigzags;
+that contract is tracked separately in #551.
 
 Twelve independent boundary tests exercise ordinary near-folded matching,
 small segments at large world translations, both explicit backfolded pole

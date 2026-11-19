@@ -113,5 +113,23 @@ class RigFabrikNestedFoldMatchingTests(unittest.TestCase):
                     error = self.steering_error(count, translation, bend, angle, distance, along)
                     self.assertLessEqual(error, 2e-3)
 
+    def test_translated_axially_offset_poles_follow_documented_bound(self):
+        # references/3d-rigging.md: the skip bound grows with translation and
+        # axial pole offset, and is largest at a near-pi fold (about 9e-7 rad
+        # at 1 km and 9e-4 rad at 1000 km for a 1e3 m axial offset).
+        fold = math.pi-1e-3
+        above = ((1e3, 1e3, fold, 1e-5), (1e6, 1e3, fold, 1e-2), (1e6, 10., fold, 1e-4),
+                 (1e3, 1e3, .8, 1e-7), (1e6, 1e3, .8, 1e-4))
+        for count in (3, 4):
+            for translation, along, bend, angle in above:
+                with self.subTest(count=count, translation=translation, along=along, bend=bend, angle=angle):
+                    error = self.steering_error(count, translation, bend, angle, 1., along)
+                    self.assertLessEqual(error, 2e-3)
+        below = ((1e3, 1e3, fold, 1e-7), (1e6, 1e3, fold, 1e-4))
+        for translation, along, bend, angle in below:
+            with self.subTest(documented_skip=True, translation=translation, angle=angle):
+                error = self.steering_error(3, translation, bend, angle, 1., along)
+                self.assertAlmostEqual(error, 1., delta=1e-3)
+
 if __name__ == '__main__':
     unittest.main()
