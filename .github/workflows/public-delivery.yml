@@ -21,7 +21,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # Windows delivery can use the full job window before evidence upload and cleanup.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 60 || 45 }}
     env:
       PYTHONUTF8: '1'
       HATCH_DECOMPOSITION_BROWSER_TEST: '1'
