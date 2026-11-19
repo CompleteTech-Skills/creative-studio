@@ -838,9 +838,11 @@ class EditorRepository:
         try:
             _scan(stage, self.limits, bound_content=False)
             over_limit = False
-        except RigError as exc:
-            if exc.report['code'] != 'EDITOR3D_LIMIT':
-                raise
+        except RigError:
+            # A crashed builder may leave content admission rejects: quotas,
+            # aliases, reserved names, links or junctions. Retain it outside the
+            # repository unopened rather than wedging every later edit; only
+            # admitted trees are deleted below.
             over_limit = True
         check_owned(stage)
         _rename_no_replace(stage, retained)
