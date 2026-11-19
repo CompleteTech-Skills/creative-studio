@@ -381,3 +381,22 @@ before changing the caller fixture. Both Python and CLI reject, retain the
 snapshot hashes and command results, and omit synthetic private path markers.
 Successful unchanged native verification remains a control. These synthetic
 media checks do not establish production rendering or artistic acceptance.
+
+
+### Unambiguous probe facts and native child diagnostics
+
+Probe and frame-timeline JSON reject duplicate object members before deriving
+counts or timestamps. Bounded raw transcripts and observed command/status
+remain in failure evidence. Malformed transcripts do not manufacture stream
+or frame facts; facts established by an earlier unambiguous stage remain.
+Portable transcript simulations are separate from actual codec execution.
+
+Native media children exclude dynamic-loader overrides (`LD_*`, `DYLD_*`,
+`_RLD_*`) and locale/instrumentation path-report controls, plus FFREPORT and
+forced colors. Loader startup diagnostics therefore cannot inherit those
+unrelated instrumentation paths. Ordinary environment configuration and the
+parent environment remain unchanged. Configured executables must resolve
+dependencies without those inherited overrides; a startup refusal remains a
+failure with bounded evidence. The unchanged independent control uses actual
+installed ffprobe, a synthetic corrupt movie and a nonexistent synthetic
+instrumentation library through both public interfaces.

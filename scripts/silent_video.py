@@ -399,9 +399,13 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=(), tool_role=No
     # commands. Inherited reporting can write or disclose an unrelated path;
     # forced ANSI color can split diagnostic path tokens. Keep their native
     # diagnostics plain and report-free without changing the parent's environment.
-    environment = dict(os.environ)
-    environment.pop('FFREPORT', None)
-    environment.pop('AV_LOG_FORCE_COLOR', None)
+    # Dynamic-loader instrumentation can emit unrelated deployment paths before
+    # the media executable starts. Preserve ordinary configuration but exclude
+    # loader overrides and reporting controls from this native child boundary.
+    excluded = {'FFREPORT', 'AV_LOG_FORCE_COLOR', 'GCONV_PATH', 'LOCPATH', 'NLSPATH', 'MALLOC_TRACE'}
+    environment = {key: value for key, value in os.environ.items()
+                   if key.upper() not in excluded
+                   and not key.upper().startswith(('LD_', 'DYLD_', '_RLD_'))}
     environment['AV_LOG_FORCE_NOCOLOR'] = '1'
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
@@ -598,6 +602,18 @@ def _probe_integer(value, label):
     raise ValueError('invalid '+label+' in probe')
 
 
+def _probe_json(transcript):
+    """Refuse ambiguous native transcripts before deriving observable facts."""
+    def unique_members(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate member in probe JSON')
+            result[key] = value
+        return result
+    return json.loads(transcript, object_pairs_hook=unique_members)
+
+
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
     """Probe ALL streams, enumerate presentation timestamps and strictly decode."""
     validate_request(request)
@@ -624,7 +640,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     inspected = execute('probe', [probe, *VERIFY_INPUT_OPTIONS, '-v', 'error', '-count_frames', '-show_entries', entries,
                       '-of', 'json', str(path.resolve())])
     try:
-        data = json.loads(inspected['stdout'])
+        data = _probe_json(inspected['stdout'])
         streams = data['streams']
         if not isinstance(streams, list) or any(not isinstance(x, dict) for x in streams):
             raise ValueError('malformed stream list')
@@ -677,7 +693,7 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
                      '-show_entries', 'frame=best_effort_timestamp,pkt_duration', '-of', 'json', str(path.resolve())],
                     )
     try:
-        frames = json.loads(timeline['stdout'])['frames']
+        frames = _probe_json(timeline['stdout'])['frames']
         if len(frames) != expected_count:
             raise ValueError('decoded frame enumeration mismatch')
         times = [_probe_integer(frame['best_effort_timestamp'], 'frame timestamp')*tick for frame in frames]
