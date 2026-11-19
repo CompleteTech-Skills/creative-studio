@@ -141,7 +141,7 @@ python scripts/rig.py solve-ik --run-dir output/character --chain arm.right --ta
 
 The programmatic facial layer mixes authored morph/bone expressions with explicit intensities and incompatibilities, resets to neutral, and aims existing eye joints with vergence and optional head follow. Finger controls articulate existing segmented finger bones. Tail and wing controls use bounded deterministic parameters; secondary tail motion uses an explicit seed. Missing anatomy raises an unavailable-capability error.
 
-`facial-controls --run-dir RUN` reports availability for neutral, smile, sadness, anger, surprise, fear, squint, blink, independent winks, brows, jaw and mouth-corner controls, plus the 15-symbol viseme vocabulary `sil PP FF TH DD kk CH SS nn RR aa E ih oh ou`. Only existing labelled morphs are mapped; the report explicitly identifies unavailable controls. Author actual targets with `create_morph_target` / `edit_morph_target`, or a `morph` correction containing exact topology-matched deltas/positions. A target-count change invalidates affected weight-animation channels. Qualified expression keys such as `eye-white-left::blink` provide independent left/right control. Resetting expressions clears their controlled morphs/bones; `reset=False` applies a partial overlay. Passing `None` to `gaze_at` releases gaze back to neutral.
+`facial-controls --run-dir RUN` reports availability for neutral, smile, sadness, anger, surprise, fear, squint, blink, independent winks, brows, jaw and mouth-corner controls, plus the 15-symbol viseme vocabulary `sil PP FF TH DD kk CH SS nn RR aa E ih oh ou`. Only existing labelled morphs are mapped; the report explicitly identifies unavailable controls. Author actual targets with `create_morph_target` / `edit_morph_target`, or a `morph` correction containing exact topology-matched deltas/positions. A target-count change invalidates affected weight-animation channels. Qualified expression keys such as `eye-white-left::blink` provide independent left/right control. Resetting expressions clears their controlled morphs/bones; `reset=False` applies a partial overlay. Passing `None` to `gaze_at` releases its recorded overrides, restoring the prior authored values or the neutral defaults.
 
 Sockets use actual evaluated bone transforms and local offsets. Object-relative grasping solves both endpoint position and orientation while accounting for the hand socket. Attach/detach can preserve world position. A handoff requires the current owner and measured world-space contact with the destination hand. Ownership is single-valued; a claimed contact never moves an unrelated prop implicitly.
 
@@ -240,6 +240,19 @@ The server binds only `127.0.0.1` and prints its local bearer token. Configured 
 Unknown mutation fields fail. For HTTP `generate` and template-replacement corrections, use an exact installed canonical template ID such as `humanoid`. The server checks a correction's schema, 1,024-edit ceiling and current rig binding before looking up its templates. One installed catalogue serves all edits in a request. Native execution opens the installed file for each selected ID. Native Python and CLI callers can also select custom files explicitly.
 
 Job status and portable archives record the canonical ID and the operation's `template_source` of `installed`. Resume uses that source to resolve the ID on the current installation. A saved correction contains the submitted object, and its filename is the hash of that object. A stale correction returns 409, missing jobs return 404, unauthenticated requests return 401, and occupied workers return 429.
+
+Pose and IK parameters are shared with `rig_operations.py` and use closed admission. Pose fields are `pose`, `clip`, `time`, `expressions`, `gaze`, `head_follow`, `fingers` and `appendages`; IK adds `chain`, `target`, optional `pole` and optional unit-quaternion `orientation`. Unknown fields, malformed supplied objects, booleans used as numbers, nonfinite/oversized numbers and unavailable pose references fail before evaluation. A null clip preserves the neutral default; an explicitly supplied `gaze: null` releases gaze and its owned eyelid overrides. `time` is nonnegative seconds within the numeric contract bound, and supplied controls retain their documented ranges. IK-only fields do not pass through the pose admission boundary.
+
+A pose with gaze carries optional `gaze_overrides` for the rotations and eyelid
+weights the request applied. Each entry stores the previous value and the applied
+value. A null previous value denotes an absent override. Updating an active
+target keeps the recorded values from before gaze. Releasing gaze restores those
+previous values where the applied value is still present. An older pose
+without that record retains its authored motion and morphs. An explicit gaze
+release runs before expressions in the same request, so a new blink can still use
+a released eyelid channel. Both operations reject unsupported digit names and
+missing digit bindings before sampling animation. Finger spread uses the fixed
+thumb-to-pinky ordering, and a selected digit keeps its angle across subsets.
 
 ## Resource limits, jobs and recovery
 

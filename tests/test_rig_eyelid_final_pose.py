@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 
 from rig_constraints import apply_constraints
-from rig_facial import gaze_at, refresh_gaze_eyelids
+from rig_facial import gaze_at, record_constrained_gaze_rotations, refresh_gaze_eyelids
 from rig_ik import solve_ik
 from rig_math import axis_angle
 from rig_operations import pose_operation, solve_operation
@@ -54,7 +54,7 @@ class FinalGazeEyelidTests(unittest.TestCase):
         rig = final_pose_fixture()
         parameters = dict(gaze=gaze_target(.6), chain='chain', target=[.1, 1., 0.])
         before = deepcopy(parameters)
-        posed = pose_operation(rig, parameters)
+        posed = pose_operation(rig, {'gaze': parameters['gaze']})
         solved = solve_operation(rig, parameters)
         pose_pitch = self.assert_final_response(rig, posed)
         solve_pitch = self.assert_final_response(rig, solved['pose'])
@@ -124,6 +124,68 @@ class FinalGazeEyelidTests(unittest.TestCase):
                     evaluate_deformation(rig, explicit_default)['lid.left']['positions'])
         self.assertEqual(released, before)
 
+    def test_head_follow_release_survives_an_intervening_constraint_pass(self):
+        rig = final_pose_fixture()
+        authored = rotate_bone(rig.skeleton, neutral_pose(rig.skeleton),
+                               'head', axis_angle([0, 1, 0], -.26))
+        expected = pose_operation(rig, {'pose': authored})
+        initially_active = pose_operation(rig, {'pose': authored, 'gaze': gaze_target(.6), 'head_follow': .35})
+        self.assertNotEqual(initially_active['bones']['head']['rotation'], authored['bones']['head']['rotation'])
+        active = pose_operation(rig, {'pose': initially_active})
+        self.assertNotEqual(active['bones']['eye.left']['rotation'],
+                            initially_active['bones']['eye.left']['rotation'])
+        actual = pose_operation(rig, {'pose': active, 'gaze': None})
+        self.assertEqual(actual, expected)
+        for mesh, geometry in evaluate_deformation(rig, expected).items():
+            np.testing.assert_allclose(evaluate_deformation(rig, actual)[mesh]['positions'], geometry['positions'])
+
+    def test_gaze_release_after_ik_solve_survives_its_constraint_pass(self):
+        # solve_ik reruns the manifest constraints after pose_operation records
+        # gaze ownership; the release must still recognise the constrained eye.
+        rig = final_pose_fixture()
+        authored = rotate_bone(rig.skeleton, neutral_pose(rig.skeleton),
+                               'head', axis_angle([0, 1, 0], -.26))
+        solve = dict(pose=authored, chain='chain', target=[.1, 1., 0.])
+        ungazed = solve_operation(rig, solve)['pose']
+        gazed = solve_operation(rig, dict(solve, gaze=gaze_target(.6)))['pose']
+        self.assertNotEqual(gazed['bones']['eye.left'], ungazed['bones']['eye.left'])
+        # Release restores the authored eye under the solved head, then applies
+        # the (non-idempotent, influence .5) aim constraint once.
+        reset = deepcopy(ungazed)
+        reset['bones']['eye.left'].pop('rotation', None)
+        expected = pose_operation(rig, {'pose': reset})
+        actual = pose_operation(rig, {'pose': gazed, 'gaze': None})
+        self.assertEqual(actual, expected)
+        for mesh, geometry in evaluate_deformation(rig, expected).items():
+            np.testing.assert_allclose(evaluate_deformation(rig, actual)[mesh]['positions'], geometry['positions'])
+
+    def test_gaze_release_keeps_bones_written_by_the_ik_solve(self):
+        rig = final_pose_fixture()
+        authored = rotate_bone(rig.skeleton, neutral_pose(rig.skeleton),
+                               'head', axis_angle([0, 1, 0], -.26))
+        chain = rig.manifest['controllers']['ik'][0]
+        target = [.1, 1., 0.]
+        goal = axis_angle([0, 0, 1], math.pi / 4).tolist()
+        cases = ((dict(head_follow=.5), None), (dict(orientation=goal), None),
+                 ({}, goal), (dict(orientation=None), goal))
+        for extra, chain_goal in cases:
+            with self.subTest(chain_orientation=chain_goal is not None, **extra):
+                chain.pop('orientation', None)
+                if chain_goal is not None:
+                    chain['orientation'] = chain_goal
+                oriented = (extra.get('orientation') or chain_goal) is not None
+                parameters = dict(pose=authored, chain='chain', target=target, **extra)
+                ungazed = solve_operation(rig, parameters)['pose']
+                gazed = solve_operation(rig, dict(parameters, gaze=gaze_target(.6)))['pose']
+                released = pose_operation(rig, {'pose': gazed, 'gaze': None})
+                endpoint = evaluate_fk(rig.skeleton, released)[chain['bones'][-1]][:3, 3]
+                self.assertLessEqual(np.linalg.norm(endpoint - target), chain['tolerance'])
+                solved = chain['bones'] if oriented else chain['bones'][:-1]
+                for name in solved:
+                    self.assertEqual(released['bones'][name], gazed['bones'][name])
+                if oriented:
+                    self.assertEqual(released['bones']['eye.right'], ungazed['bones']['eye.right'])
+
     def test_no_gaze_preserves_authored_pose_overrides(self):
         rig = final_pose_fixture()
         initial = neutral_pose(rig.skeleton)
@@ -151,10 +213,15 @@ class FinalGazeEyelidTests(unittest.TestCase):
                 expected, _ = apply_constraints(rig.skeleton,
                     gaze_at(rig, initial, parameters['gaze']),
                     rig.manifest['controllers']['constraints'])
-                self.assertEqual(pose_operation(rig, parameters), expected)
+                for name, change in expected['gaze_overrides']['rotations'].items():
+                    self.assertIsNone(change[0])
+                    change[1] = expected['bones'][name]['rotation']
+                self.assertEqual(pose_operation(rig, dict(pose=initial, gaze=parameters['gaze'])), expected)
                 expected_solve = solve_ik(rig.skeleton, expected,
                     rig.manifest['controllers']['ik'][0], parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'])
+                # The solve's own constraint pass is carried into gaze ownership.
+                record_constrained_gaze_rotations(expected, expected_solve.pose)
                 self.assertEqual(solve_operation(rig, parameters),
                                  dict(pose=expected_solve.pose, report=expected_solve.report()))
                 self.assertEqual(expected['morphs'], initial['morphs'])

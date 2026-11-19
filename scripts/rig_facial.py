@@ -112,16 +112,85 @@ def _gaze_eyelids(rig, pose, bindings, rest):
 
 
 def refresh_gaze_eyelids(rig, pose: dict) -> dict:
-    """Resample gaze-owned morphs after the caller finishes all bone solving.
-
-    Call only while gaze is active: a pose alone carries no gaze ownership or
-    release state. No constraints or expression mixing run here, so unrelated
-    morphs and the final solved bones keep their existing values.
-    """
+    """Resample gaze-driven morphs after the caller finishes all bone solving."""
     bindings = validate_eyelid_bindings(rig)
     if not bindings:
         return pose
-    return _gaze_eyelids(rig, deepcopy(pose), bindings, evaluate_fk(rig.skeleton))
+    result = _gaze_eyelids(rig, deepcopy(pose), bindings, evaluate_fk(rig.skeleton))
+    for mesh, entries in result.get('gaze_overrides', {}).get('morphs', {}).items():
+        for morph, change in entries.items():
+            current = pose['morphs'].get(mesh, {}).get(morph)
+            if current != change[1]:
+                change[0] = current
+            change[1] = result['morphs'][mesh][morph]
+    return result
+
+
+def validate_gaze_overrides(rig, pose, bindings=None):
+    overrides = pose.get('gaze_overrides')
+    if overrides is None:
+        return
+    eyes = set(rig.manifest['facial']['eyes'])
+    heads = [bone['id'] for bone in rig.skeleton['bones'] if bone['role'] == 'head']
+    bones = {bone['id'] for bone in rig.skeleton['bones']}
+    eligible = (eyes | set(heads if len(heads) == 1 else ())) & bones
+    require(set(overrides['rotations']) <= eligible, 'RIG_GAZE_OVERRIDE',
+            'Gaze rotation overrides require configured eyes or a unique head joint.')
+    for before, applied in overrides['rotations'].values():
+        quaternion(applied, strict=True)
+        if before is not None:
+            quaternion(before, strict=True)
+    if overrides['morphs']:
+        bindings = rig.manifest['facial'].get('eyelids', ()) if bindings is None else bindings
+        owned = {(binding['mesh'], binding['morph']) for binding in bindings}
+        require(all((mesh, morph) in owned for mesh, entries in overrides['morphs'].items() for morph in entries),
+                'RIG_GAZE_OVERRIDE', 'Gaze morph overrides require an exact eyelid binding.')
+
+
+def record_constrained_gaze_rotations(before, after):
+    """Carry gaze ownership through the final pose constraint pass."""
+    rotations = after['gaze_overrides']['rotations']
+    for name, change in list(rotations.items()):
+        previous = before['bones'].get(name, {}).get('rotation')
+        current = after['bones'].get(name, {}).get('rotation')
+        if previous == change[1] and current is not None:
+            change[1] = deepcopy(current)
+        else:
+            del rotations[name]
+
+
+def _before_gaze(current, change):
+    return deepcopy(change[0] if change and current == change[1] else current)
+
+
+def _restore_gaze_value(values, name, change):
+    before, applied = change
+    if values.get(name) == applied:
+        if before is None:
+            del values[name]
+        else:
+            values[name] = before
+
+
+def _release_gaze(pose):
+    result = deepcopy(pose)
+    overrides = result.pop('gaze_overrides', None)
+    if overrides is None:
+        return result
+    for bone, change in overrides['rotations'].items():
+        values = result['bones'].get(bone)
+        if values is not None:
+            _restore_gaze_value(values, 'rotation', change)
+            if not values:
+                del result['bones'][bone]
+    for mesh, entries in overrides['morphs'].items():
+        values = result['morphs'].get(mesh)
+        if values is not None:
+            for morph, change in entries.items():
+                _restore_gaze_value(values, morph, change)
+            if not values:
+                del result['morphs'][mesh]
+    return result
 
 
 def apply_expressions(rig, pose: dict, expressions: dict[str, float], *, reset=True) -> dict:
@@ -154,6 +223,23 @@ def apply_expressions(rig, pose: dict, expressions: dict[str, float], *, reset=T
         if expression['bones']:
             overlay = deepcopy(pose);overlay['bones'] = deepcopy(expression['bones']);overlay['morphs'] = {}
             result = blend_poses(rig, result, overlay, amount, additive=True, include_morphs=False)
+    if 'gaze_overrides' in result:
+        # An explicit expression can take over a channel with the same value.
+        overrides = result['gaze_overrides']
+        affected = list(available.values()) if reset else [available[name] for name in expressions]
+        targets = {target for expression in affected for target in expression['morphs']}
+        for mesh, entries in list(overrides['morphs'].items()):
+            for morph in list(entries):
+                if morph in targets or mesh+'::'+morph in targets:
+                    del entries[morph]
+            if not entries:
+                del overrides['morphs'][mesh]
+        for expression in affected:
+            for bone, values in expression['bones'].items():
+                if reset or 'rotation' in values:
+                    overrides['rotations'].pop(bone, None)
+        if not any(overrides.values()):
+            del result['gaze_overrides']
     return result
 
 
@@ -162,17 +248,9 @@ def gaze_at(rig, pose: dict, target, *, head_follow=0., vergence=True) -> dict:
     eyes = rig.manifest['facial']['eyes']
     require(eyes, 'RIG_GAZE_UNAVAILABLE', 'This rig has no verified eye joints.')
     eyelids = validate_eyelid_bindings(rig)
+    validate_gaze_overrides(rig, pose, eyelids)
     if target is None:
-        result=deepcopy(pose)
-        for name in eyes:result['bones'].pop(name,None)
-        for binding in eyelids:
-            weights = result['morphs'].get(binding['mesh'], {})
-            weights.pop(binding['morph'], None)
-            if not weights:result['morphs'].pop(binding['mesh'], None)
-        if head_follow:
-            for bone in rig.skeleton['bones']:
-                if bone['role']=='head':result['bones'].pop(bone['id'],None)
-        return result
+        return _release_gaze(pose)
     target = np.asarray(target, dtype=float)
     require(target.shape == (3,) and np.isfinite(target).all(), 'RIG_GAZE', 'Gaze requires a finite spatial target.')
     rest = evaluate_fk(rig.skeleton);world = evaluate_fk(rig.skeleton, pose)
@@ -189,26 +267,62 @@ def gaze_at(rig, pose: dict, target, *, head_follow=0., vergence=True) -> dict:
         point = target if vergence else world[eye][:3, 3]+target-center
         constraints.append(dict(schema_version=1, id='gaze-'+eye, bone=eye, type='aim',
                                 axis=local_forward.tolist(), point=point.tolist(), influence=1.))
+    gaze_bones = [constraint['bone'] for constraint in constraints]
     constraints.extend(deepcopy(rig.manifest['controllers']['constraints']))
     result, _ = apply_constraints(rig.skeleton, pose, constraints)
-    return _gaze_eyelids(rig, result, eyelids, rest) if eyelids else result
+    if eyelids:
+        result = _gaze_eyelids(rig, result, eyelids, rest)
+    previous = pose.get('gaze_overrides', {})
+    previous_rotations = previous.get('rotations', {})
+    rotations = {}
+    for name in dict.fromkeys(gaze_bones + list(previous_rotations)):
+        current = pose['bones'].get(name, {}).get('rotation')
+        change = previous_rotations.get(name)
+        if name in gaze_bones or (change and current == change[1]):
+            rotations[name] = [_before_gaze(current, change), deepcopy(result['bones'][name]['rotation'])]
+    morphs = {}
+    for binding in eyelids:
+        mesh, morph = binding['mesh'], binding['morph']
+        current = pose['morphs'].get(mesh, {}).get(morph)
+        change = previous.get('morphs', {}).get(mesh, {}).get(morph)
+        morphs.setdefault(mesh, {})[morph] = [_before_gaze(current, change), result['morphs'][mesh][morph]]
+    result['gaze_overrides'] = dict(rotations=rotations, morphs=morphs)
+    return result
+
+
+_FINGER_NAMES = ('thumb', 'index', 'middle', 'ring', 'pinky')
+
+
+def validate_finger_names(fingers):
+    require(all(name in _FINGER_NAMES for name in fingers), 'RIG_FINGER_UNAVAILABLE',
+            'Choose a thumb, index, middle, ring or pinky digit.')
+
+
+def finger_bindings(rig, *, side, fingers=None):
+    fingers = fingers or _FINGER_NAMES
+    validate_finger_names(fingers)
+    bindings = {}
+    for finger in fingers:
+        bones = [bone for bone in rig.skeleton['bones']
+                 if bone['role'].startswith(finger+'.') and bone['role'].endswith('.'+side)]
+        require(bones, 'RIG_FINGER_UNAVAILABLE', 'This rig has no articulated '+finger+' on '+side+'.')
+        bindings[finger] = bones
+    return bindings
 
 
 def finger_controls(rig, pose: dict, *, side: str, curl=0., spread=0., fingers=None) -> dict:
     require(side in ('left', 'right') and 0 <= curl <= 1 and -1 <= spread <= 1,
             'RIG_FINGER_CONTROL', 'Finger controls exceed their bounded ranges.')
-    fingers = fingers or ['thumb', 'index', 'middle', 'ring', 'pinky']
+    bindings = finger_bindings(rig, side=side, fingers=fingers)
     result = deepcopy(pose)
-    found = 0
     order = {name:i for i,name in enumerate(hierarchy_order(rig.skeleton))}
-    for i, finger in enumerate(fingers):
-        bones = [b for b in rig.skeleton['bones'] if b['role'].startswith(finger+'.') and b['role'].endswith('.'+side)]
+    for finger, bones in bindings.items():
         bones.sort(key=lambda bone:order[bone['id']])
-        require(bones, 'RIG_FINGER_UNAVAILABLE', 'This rig has no articulated '+finger+' on '+side+'.')
+        digit_offset = _FINGER_NAMES.index(finger) - (len(_FINGER_NAMES)-1) / 2
         for j, bone in enumerate(bones):
             rotation = axis_angle([1, 0, 0], curl*1.35)
-            if j == 0:rotation = qmul(rotation, axis_angle([0, 0, 1], spread*(i-(len(fingers)-1)/2)*.10))
-            result = rotate_bone(rig.skeleton, result, bone['id'], rotation);found += 1
+            if j == 0:rotation = qmul(rotation, axis_angle([0, 0, 1], spread*digit_offset*.10))
+            result = rotate_bone(rig.skeleton, result, bone['id'], rotation)
     return apply_constraints(rig.skeleton, result, rig.manifest['controllers']['constraints'])[0]
 
 
