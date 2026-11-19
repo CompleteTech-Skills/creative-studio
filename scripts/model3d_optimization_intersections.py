@@ -88,6 +88,13 @@ def triangle_contacts(mesh,*,max_triangles=4096,max_pairs=100_000,limits=None):
     used=np.unique(mesh.triangles)
     exact={int(i):tuple(Fraction(int(x)) if mesh.positions.dtype.kind in 'iu' else Fraction(float(x))
                         for x in mesh.positions[i]) for i in used}
+    # The float degeneracy filter rescales overflowing edges by a non-power-of-two
+    # factor and can admit an exactly collinear triangle. Its zero exact normal
+    # would make every projected point "inside", so reject it exactly here.
+    for triangle in mesh.triangles:
+        a,b,c=(exact[int(k)] for k in triangle)
+        require(any(_cross(_sub(b,a),_sub(c,a))),'MODEL3D_INTERSECTION_DEGENERATE',
+                'Repair degenerate triangles explicitly before intersection measurement.')
     triangles=mesh.positions[mesh.triangles]
     low,high=triangles.min(axis=1),triangles.max(axis=1)
     order=sorted(range(len(triangles)),key=lambda i:(low[i,0],i))

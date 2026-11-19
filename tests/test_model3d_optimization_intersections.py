@@ -32,6 +32,41 @@ class TriangleContacts(unittest.TestCase):
         self.assertEqual(triangle_contacts(mesh)['adjacent_pairs_excluded'],1)
         dup=self.pair([[0,0,0],[1,0,0],[0,1,0]],[[0,0,0],[1,0,0],[0,1,0]])
         self.assertEqual(triangle_contacts(dup)['contact_count'],1)
+    def test_exactly_collinear_triangle_with_overflowing_edges_is_degenerate(self):
+        # Edge differences overflow float64, so the float filter rescales and
+        # misses the exact collinearity; a zero normal must not report contact.
+        H=2.0**1022;u=2.0**971
+        mesh=self.pair([[-H,-3*H,0],[H,3*H,0],[-H+u,-3*H+3*u,0]],[[100,0,-1],[101,0,1],[100,1,1]])
+        with self.assertRaises(RigError) as caught:triangle_contacts(mesh)
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_INTERSECTION_DEGENERATE')
+    def test_noncoplanar_vertex_touching_a_face_is_contact(self):
+        mesh=self.pair([[-1,-1,0],[1,-1,0],[0,1,0]],[[0,0,0],[0,0,1],[1,0,1]])
+        self.assertEqual(triangle_contacts(mesh)['contacts'],[dict(triangles=[0,1],kind='noncoplanar')])
+    def test_coplanar_edge_only_and_boundary_vertex_touches_are_contacts(self):
+        # Edge crossing with no vertex of either triangle inside the other.
+        crossing=self.pair([[0,0,0],[4,0,0],[2,-2,0]],[[1,-1,0],[3,-1,0],[2,1,0]])
+        self.assertEqual(triangle_contacts(crossing)['contacts'][0]['kind'],'coplanar')
+        # A vertex exactly on the other triangle's edge.
+        touching=self.pair([[0,0,0],[1,0,0],[.5,-1,0]],[[.25,0,-1],[.75,0,1],[.5,1,-1]])
+        self.assertEqual(triangle_contacts(touching)['contact_count'],1)
+    def test_tiny_scale_coplanar_touch_is_exact(self):
+        for scale in (2.0**-1000,5e-324*2**40):
+            with self.subTest(scale=scale):
+                m=self.pair([[0,0,0],[2,0,0],[0,2,0]],[[2,0,0],[3,0,0],[2,1,0]]);m.positions=m.positions*scale
+                self.assertEqual(triangle_contacts(m)['contacts'][0]['kind'],'coplanar')
+                m=self.pair([[0,0,0],[2,0,0],[0,2,0]],[[2.5,0,0],[3,0,0],[2.5,1,0]]);m.positions=m.positions*scale
+                self.assertEqual(triangle_contacts(m)['contact_count'],0)
+    def test_coplanar_touch_found_only_by_zero_orientation_segment_test(self):
+        # B touches A's bottom edge at one point; neither first vertex is inside
+        # the other triangle, so only a closed segment test reports it.
+        mesh=self.pair([[0,0,0],[2,0,0],[1,2,0]],[[1,-2,0],[1,0,0],[2,-1,0]])
+        self.assertEqual(triangle_contacts(mesh)['contacts'],[dict(triangles=[0,1],kind='coplanar')])
+    def test_tiny_scale_noncoplanar_crossing_and_miss_are_exact(self):
+        # Plane distances are cubic in the scale and underflow as floats.
+        for b,expected in (([[0,0,-1],[0,0,1],[0,.5,1]],1),([[3,0,-1],[3,0,1],[3,.5,1]],0)):
+            with self.subTest(expected=expected):
+                m=self.pair([[-1,-1,0],[1,-1,0],[0,1,0]],b);m.positions=m.positions*2.0**-1000
+                self.assertEqual(triangle_contacts(m)['contact_count'],expected)
     def test_pair_budget_and_degenerate_fail_with_structured_diagnostics(self):
         mesh=self.pair([[0,0,0],[1,0,0],[0,1,0]],[[0,0,0],[1,0,0],[0,1,0]])
         mesh.positions=np.concatenate([mesh.positions,mesh.positions[:3]]);mesh.triangles=np.array([[0,1,2],[3,4,5],[6,7,8]])
