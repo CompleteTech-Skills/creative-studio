@@ -268,22 +268,26 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     require(not stream.read(1), 'corrupt-output', 'Unexpected bytes after PNG end.')
     stream.seek(0)
     width,height,rows,metadata=png.Reader(file=stream).read()
-    require(metadata['planes'] == header[2] and metadata['bitdepth'] == bit_depth,
+    require((width,height) == header[:2] and metadata['planes'] == header[2] and metadata['bitdepth'] == bit_depth,
             'corrupt-output', 'PNG decoder metadata differs from header.')
     names=list('RGBA' if header[2] == 4 else 'RGB')
     minima=np.full(len(names),np.inf);maxima=np.full(len(names),-np.inf);row_count=0
-    pixel_rows=[]
+    # The preview budget is driven by pixel count, so retain one output
+    # allocation and consume decoded rows without a height-dependent list.
+    data=np.empty((height,width,len(names)),dtype=np.float64) if pixels else None
     for row in rows:
+        require(row_count < height,'corrupt-output','PNG row count differs from dimensions.')
         values=np.asarray(row,dtype=np.float64).reshape((width,len(names)))
         values /= (1<<bit_depth)-1
-        minima=np.minimum(minima,values.min(axis=0));maxima=np.maximum(maxima,values.max(axis=0));row_count+=1
-        if pixels:pixel_rows.append(values)
+        minima=np.minimum(minima,values.min(axis=0));maxima=np.maximum(maxima,values.max(axis=0))
+        if data is not None:data[row_count]=values
+        row_count+=1
         del values
     require(row_count == height,'corrupt-output','PNG row count differs from dimensions.')
     result=dict(channels={name:dict(type='uint'+str(bit_depth),minimum=float(lo),maximum=float(hi)) for name,lo,hi in zip(names,minima,maxima)},
                 decoder='pypng',decoder_version=png.__version__, resolution=[width,height],bit_depth=bit_depth)
-    if pixels:
-        data=np.stack(pixel_rows);result['_pixels']={name:data[:,:,index] for index,name in enumerate(names)}
+    if data is not None:
+        result['_pixels']={name:data[:,:,index] for index,name in enumerate(names)}
     return result
 
 

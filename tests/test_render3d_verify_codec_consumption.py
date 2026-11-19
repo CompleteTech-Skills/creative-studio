@@ -140,6 +140,28 @@ class CodecConsumption(unittest.TestCase):
                 _consume_dwa_ac(iter(words), 1)
             self.assertEqual(refused.exception.report['category'], 'corrupt-output')
 
+    def test_tall_png_preview_keeps_one_bounded_output_buffer(self):
+        import png
+        width, height, components = 1, 16384, (31, 63, 95, 255)
+        path = self.path.with_suffix('.png')
+        with path.open('wb') as fixture:
+            png.Writer(width, height, greyscale=False, alpha=True).write(
+                fixture, (components for _ in range(height)))
+        budget = width * height * len(components) * 24
+        options = dict(output=output('png', 8), resolution=[width, height], memory_bytes=budget)
+        decode_image(path, **options)
+        tracemalloc.start()
+        try:
+            baseline, _ = tracemalloc.get_traced_memory()
+            _, pixels = decode_image(path, **options)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLessEqual(peak - baseline, budget)
+        for name, component in zip('RGBA', components):
+            self.assertEqual(pixels[name].shape, (height, width))
+            self.assertTrue(np.all(pixels[name] == component / 255.0))
+
     def test_narrow_exr_preflight_streams_scanlines_in_both_orders(self):
         height, budget = 1024, 8192
         values = np.arange(height, dtype=np.float32).reshape(height, 1)
