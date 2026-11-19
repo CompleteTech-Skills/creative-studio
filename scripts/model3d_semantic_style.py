@@ -99,7 +99,7 @@ def apply_catalog_state(asset,state_id):
             continue
         change=after[key][:3,:3]@np.linalg.inv(before[key][:3,:3])
         require(np.allclose(change.T@change,np.eye(3),rtol=0,atol=1e-5) and np.linalg.det(change)>0,
-                'MODEL3D_STATE_NOT_RIGID','Catalog state must move every rendered part rigidly in world space: '+key)
+                'MODEL3D_STATE_NOT_RIGID','Catalog state must move every mesh-bearing part rigidly in world space: '+key)
     result.history[-1]['operation']='apply-existing-catalog-state:'+state_id
     return result
 

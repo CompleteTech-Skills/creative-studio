@@ -143,6 +143,27 @@ class StyleExecutionTests(unittest.TestCase):
     def test_catalog_pose_naming_a_missing_part_is_structured(self):
         asset=map_states(define_pose(self.asset,'p',{'head':np.eye(4)}),{'waving':'p'})
         asset.poses['p']['ghost']=np.eye(4).tolist()
-        with self.assertRaises(RigError):apply_catalog_state(asset,'waving')
+        with self.assertRaises(RigError) as caught:apply_catalog_state(asset,'waving')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_PART_POSE')
+
+    def test_catalog_state_checks_descendants_and_small_stretches(self):
+        from model3d_semantic import group_parts
+        grouped=group_parts(self.asset,'rig-group',['head'])
+        self.assertFalse(grouped.parts['rig-group']['meshes'])
+        group=np.asarray(grouped.parts['rig-group']['matrix'])
+        # Stretching a mesh-less parent distorts its meshed child even though
+        # neither the child's matrix nor any posed part carries a mesh.
+        self.refused(grouped,{'rig-group':group@np.diag([1.001,1.,1.,1.])})
+        head=np.asarray(self.asset.parts['head']['matrix'])
+        self.refused(self.asset,{'head':head@np.diag([1.001,1.,1.,1.])})
+
+    def test_six_decimal_world_rotations_under_a_mirrored_parent_are_admitted(self):
+        child=reparent_part(self.asset,'head','body')
+        mirrored=transform_part(child,'body',np.asarray(child.parts['body']['matrix'])@np.diag([-1.,1.,1.,1.]))
+        from model3d_semantic import world_matrices
+        world=world_matrices(mirrored);rng=np.random.default_rng(3862)
+        for _ in range(20):
+            r=self.rotation(rng.uniform(-np.pi,np.pi),rng.normal(size=3));r[:3,:3]=np.round(r[:3,:3],6)
+            self.state(mirrored,{'head':np.linalg.inv(world['body'])@r@world['head']})
 
 if __name__=='__main__':unittest.main()
