@@ -237,15 +237,21 @@ def pose_operation(rig,parameters):
 
 
 def solve_operation(rig,parameters):
+    from copy import deepcopy
     from rig_ik import solve_ik
-    from rig_facial import refresh_gaze_eyelids
+    from rig_facial import record_constrained_gaze_rotations, refresh_gaze_eyelids
     _pose_parameters(parameters, solve=True)
     chain=next((c for c in rig.manifest['controllers']['ik'] if c['id']==parameters['chain']),None)
     require(chain is not None,'RIG_IK_CHAIN','Requested IK chain does not exist.')
     pose_parameters={name:value for name,value in parameters.items() if name in POSE_FIELDS}
-    result=solve_ik(rig.skeleton,pose_operation(rig,pose_parameters),chain,parameters['target'],
+    posed=pose_operation(rig,pose_parameters)
+    before=deepcopy(posed)
+    result=solve_ik(rig.skeleton,posed,chain,parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'],pole=parameters.get('pole'),
                     orientation=parameters.get('orientation'))
+    # solve_ik reruns the manifest constraints; carry gaze ownership through
+    # that pass as pose_operation does, so a later release restores the eye.
+    if result.pose.get('gaze_overrides'):record_constrained_gaze_rotations(before,result.pose)
     if parameters.get('gaze'):result.pose=refresh_gaze_eyelids(rig,result.pose)
     _check_pose(rig, result.pose)
     return dict(pose=result.pose,report=result.report())

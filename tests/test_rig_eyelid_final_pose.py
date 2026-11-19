@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 
 from rig_constraints import apply_constraints
-from rig_facial import gaze_at, refresh_gaze_eyelids
+from rig_facial import gaze_at, record_constrained_gaze_rotations, refresh_gaze_eyelids
 from rig_ik import solve_ik
 from rig_math import axis_angle
 from rig_operations import pose_operation, solve_operation
@@ -139,6 +139,26 @@ class FinalGazeEyelidTests(unittest.TestCase):
         for mesh, geometry in evaluate_deformation(rig, expected).items():
             np.testing.assert_allclose(evaluate_deformation(rig, actual)[mesh]['positions'], geometry['positions'])
 
+    def test_gaze_release_after_ik_solve_survives_its_constraint_pass(self):
+        # solve_ik reruns the manifest constraints after pose_operation records
+        # gaze ownership; the release must still recognise the constrained eye.
+        rig = final_pose_fixture()
+        authored = rotate_bone(rig.skeleton, neutral_pose(rig.skeleton),
+                               'head', axis_angle([0, 1, 0], -.26))
+        solve = dict(pose=authored, chain='chain', target=[.1, 1., 0.])
+        ungazed = solve_operation(rig, solve)['pose']
+        gazed = solve_operation(rig, dict(solve, gaze=gaze_target(.6)))['pose']
+        self.assertNotEqual(gazed['bones']['eye.left'], ungazed['bones']['eye.left'])
+        # Release restores the authored eye under the solved head, then applies
+        # the (non-idempotent, influence .5) aim constraint once.
+        reset = deepcopy(ungazed)
+        reset['bones']['eye.left'].pop('rotation', None)
+        expected = pose_operation(rig, {'pose': reset})
+        actual = pose_operation(rig, {'pose': gazed, 'gaze': None})
+        self.assertEqual(actual, expected)
+        for mesh, geometry in evaluate_deformation(rig, expected).items():
+            np.testing.assert_allclose(evaluate_deformation(rig, actual)[mesh]['positions'], geometry['positions'])
+
     def test_no_gaze_preserves_authored_pose_overrides(self):
         rig = final_pose_fixture()
         initial = neutral_pose(rig.skeleton)
@@ -173,6 +193,8 @@ class FinalGazeEyelidTests(unittest.TestCase):
                 expected_solve = solve_ik(rig.skeleton, expected,
                     rig.manifest['controllers']['ik'][0], parameters['target'],
                     constraints=rig.manifest['controllers']['constraints'])
+                # The solve's own constraint pass is carried into gaze ownership.
+                record_constrained_gaze_rotations(expected, expected_solve.pose)
                 self.assertEqual(solve_operation(rig, parameters),
                                  dict(pose=expected_solve.pose, report=expected_solve.report()))
                 self.assertEqual(expected['morphs'], initial['morphs'])
