@@ -216,11 +216,13 @@ def _worker(argv, directory, timeout):
             if time.monotonic()>=deadline:
                 reason='timeout'
             elif os.name=='nt':
-                from director_worker_windows import WindowsJob
+                from director_worker_windows import WindowsJob, WorkerGateTimeout
                 try:
                     job=cleanup.enter_context(WindowsJob())
                     process=job.start([str(a) for a in argv],directory,env,stream,deadline)
                     finished=lambda: process.poll() is not None
+                except WorkerGateTimeout:
+                    reason='timeout'
                 except OSError:
                     reason='worker-containment-failed'
             elif os.name=='posix':
@@ -361,10 +363,10 @@ def _blend_import_probe(executable, directory, run_worker):
     return outcome
 
 
-def _phase_failure(outcome, reason):
+def _phase_failure(outcome, reason, *, timeout_reason='timeout'):
     if outcome['reason']=='worker-containment-failed':
         return outcome
-    return {**outcome,'reason':reason}
+    return {**outcome,'reason':timeout_reason if outcome['reason']=='timeout' else reason}
 
 
 def _init_probe(operation, directory, run_worker):
@@ -373,7 +375,7 @@ def _init_probe(operation, directory, run_worker):
     script.write_text(inventory.initializer_script(operation,MODULES[operation]),encoding='utf-8')
     outcome,text=run_worker([sys.executable,script],directory)
     if not outcome['success']:
-        return _phase_failure(outcome,'initialization-timeout' if outcome['reason']=='timeout' else 'initialization-failed')
+        return _phase_failure(outcome,'initialization-failed',timeout_reason='initialization-timeout')
     acquisition=operation=='native.acquisition'
     fields={'model_call','generation_backend'} if acquisition else {'schemas_checked'}
     value=_marker(text,fields|{'success','initialization_only','executed','version','call'})
@@ -628,7 +630,7 @@ def _checked_parent(parent, expected, pin, inspect_pin):
 
 
 @contextmanager
-def _evidence_stage(destination, expected_parent):
+def _evidence_stage(destination, expected_parent, deadline):
     """Pin the evidence parent before any write and publish only into that directory.
 
     Linux uses the procfd private stage, other descriptor-capable POSIX hosts a
@@ -636,13 +638,19 @@ def _evidence_stage(destination, expected_parent):
     one of these fail closed rather than fall back to an unpinned pathname.
     """
     parent=destination.parent
+    def check_deadline():
+        _need(deadline>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
+
     if os.name=='nt':
         _need(atomic_publish.windows_private_stage_supported(),'PLATFORM','Pinned Windows evidence publication is unavailable.')
         from atomic_windows import pinned_directory as windows_pin
         with _checked_parent(parent, expected_parent, windows_pin,
                              lambda pin: pin.path.stat(follow_symlinks=False)) as parent_pin, \
                 atomic_publish.windows_private_stage(parent_pin.path, prefix='.director-probe-') as stage:
-            yield _Stage(stage.path,lambda:_disk(stage.path),stage.publish_to)
+            def publish(target):
+                check_deadline()
+                stage.publish_to(target)
+            yield _Stage(stage.path,lambda:_disk(stage.path),publish)
         return
     if atomic_publish.private_stage_supported():
         pin=atomic_publish.pinned_directory
@@ -651,6 +659,7 @@ def _evidence_stage(destination, expected_parent):
             pinned=Path('/proc/self/fd')/str(parent_fd);payload=wrapper/'published';payload.mkdir()
             def publish(target):
                 _same_parent(parent,parent_fd,pin)
+                check_deadline()
                 atomic_publish._rename_no_replace(payload,pinned/target.name)
             yield _Stage(payload,lambda:_disk(pinned),publish)
         return
@@ -663,6 +672,7 @@ def _evidence_stage(destination, expected_parent):
         def publish(target):
             _copy_tree_fd(payload,stage_fd,'published')
             _same_parent(parent,parent_fd,pin)
+            check_deadline()
             atomic_publish._rename_no_replace('published',target.name,source_dir_fd=stage_fd,destination_dir_fd=parent_fd)
         def usage():
             state=os.statvfs(parent_fd);return state.f_bavail*state.f_frsize,state.f_blocks*state.f_frsize
@@ -692,7 +702,7 @@ def probe(request, evidence_root, *, configuration=None):
         return _worker(argv,directory,min(worker_timeout,remaining))
 
     records=[];diagnostics=[];refs=[]
-    with _evidence_stage(destination, expected_parent) as pinned_stage:
+    with _evidence_stage(destination, expected_parent, deadline) as pinned_stage:
         stage=pinned_stage.path;(stage/'receipts').mkdir();(stage/'payloads').mkdir()
         for operation in sorted(ops):
             _need(deadline>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
@@ -757,7 +767,7 @@ def probe(request, evidence_root, *, configuration=None):
                         except importlib.metadata.PackageNotFoundError:pass
                 if record['discovered']:
                     record['status']='untested'
-                    if operation in allowed:
+                    if operation in allowed and operation not in REMOTE_OPERATIONS:
                         # Worker scratch stays outside the pinned stage: subprocesses
                         # never receive a procfd pathname or the stage descriptor.
                         with tempfile.TemporaryDirectory(prefix='director-worker-') as worker:

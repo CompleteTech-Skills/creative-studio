@@ -86,6 +86,10 @@ def _check(result):
     return result
 
 
+class WorkerGateTimeout(TimeoutError):
+    """The request expired before the contained launcher released the target."""
+
+
 class WindowsJob:
     """One worker tree. Never inherit or name its controlling job handle."""
 
@@ -135,10 +139,12 @@ class WindowsJob:
                 if available.value >= 4:
                     break
                 if time.monotonic() >= deadline:
-                    raise OSError('Worker gate identity was not reported in time.')
+                    raise WorkerGateTimeout('Worker gate identity was not reported in time.')
                 time.sleep(.01)
             if int.from_bytes(handshake.read(4), 'little') != self.process.pid:
                 raise OSError('Worker gate is not the assigned process.')
+        if time.monotonic() >= deadline:
+            raise WorkerGateTimeout('Worker deadline expired before gate release.')
         self.process.stdin.write(b'G')
         self.process.stdin.close()
         return self.process

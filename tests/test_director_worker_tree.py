@@ -224,6 +224,34 @@ class DirectorWorkerTreeTests(unittest.TestCase):
     def test_timeout_stops_supervisor_and_grandchild(self):
         self.run_tree('timeout')
 
+    @unittest.skipUnless(os.name == 'nt', 'requires a Windows Job Object')
+    def test_expired_windows_gate_never_releases_worker(self):
+        from ctypes import wintypes
+        with patch.object(sys, 'path', [str(ROOT/'scripts'), *sys.path]):
+            import director_capabilities as cap
+            import director_worker_windows as windows
+
+        for phase in ('waiting', 'identity-ready'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                api = windows._kernel32()
+                clock = Mock(wraps=time)
+                def peek(handle, buf, size, read, available, left):
+                    ok = api.PeekNamedPipe(handle, buf, size, read, available, left)
+                    count = ctypes.cast(available, ctypes.POINTER(wintypes.DWORD)).contents
+                    if phase == 'waiting':
+                        count.value = 0
+                    if phase == 'waiting' or count.value >= 4:
+                        clock.monotonic.side_effect = lambda: time.monotonic() + 60
+                    return ok
+                job_api = Mock(wraps=api)
+                job_api.PeekNamedPipe.side_effect = peek
+                with patch.object(windows, '_kernel32', return_value=job_api), patch.object(windows, 'time', clock):
+                    result, text = cap._worker([sys.executable, '-c',
+                        'from pathlib import Path; Path("started").touch()'], directory, 10)
+                self.assertFalse((Path(directory)/'started').exists())
+                self.assertEqual((result['success'], result['reason'], text), (False, 'timeout', ''))
+                job_api.TerminateJobObject.assert_called_once()
+
     def test_output_limit_stops_supervisor_and_grandchild(self):
         self.run_tree('output-limit')
 

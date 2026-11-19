@@ -209,6 +209,23 @@ class InventoryTests(unittest.TestCase):
                             snapshot, operation, root, path.read_bytes(),
                             'Resource measurement is missing.')
 
+    def test_local_probe_request_preserves_provider_discovery(self):
+        fields = {'planning.provider': 'planning_provider', **inventory.PROVIDERS}
+        config = {field: {'id': 'fixture', 'configured': True} for field in fields.values()}
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(cap, '_worker', side_effect=AssertionError('provider worker started')):
+            root = Path(directory).resolve()/'proof'
+            result = cap.probe(request(fields, fields), root, configuration=config)
+            for operation in fields:
+                with self.subTest(operation=operation):
+                    receipt = self.receipt(root, result, operation)
+                    self.assertTrue(receipt['discovered'])
+                    self.assertEqual((receipt['status'], receipt['reason']), ('untested', 'remote-execution-not-probed'))
+                    self.assertFalse(receipt['initialized'] or receipt['execution_verified'])
+                    self.assertNotIn('execution', receipt)
+                    with self.assertRaisesRegex(RigError, 'unverified'):
+                        cap.assert_admission(result, [operation], evidence_root=root)
+
     def test_provider_descriptors_are_public_unverified_and_never_invoked(self):
         for operation, field in inventory.PROVIDERS.items():
             with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory, patch.object(cap, '_worker', side_effect=AssertionError('provider called')):
@@ -294,6 +311,30 @@ class PublicationTests(unittest.TestCase):
     def setUp(self):
         if not _pinned_publication_supported():
             self.skipTest('pinned evidence publication is unavailable on this host; probe fails closed')
+
+    @unittest.skipUnless(cap.atomic_publish.private_stage_fd_supported(), 'requires descriptor-only adapter')
+    def test_expiry_during_verified_descriptor_copy_prevents_rename(self):
+        value = request(['runtime.python'], ['runtime.python'])
+        deadline = datetime.fromisoformat(value['context']['deadline'])
+        copy = cap._copy_tree_fd
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(cap.atomic_publish, 'private_stage_supported', return_value=False), \
+                patch.object(cap, 'datetime', wraps=datetime) as clock:
+            clock.now.return_value = deadline - timedelta(seconds=1)
+            root = Path(directory).resolve()/'proof'
+            def copy_and_expire(source, parent_fd, name, depth=0):
+                copy(source, parent_fd, name, depth)
+                if depth == 0:
+                    self.assertTrue((source/'result.json').is_file())
+                    clock.now.return_value = deadline
+            with patch.object(cap, '_copy_tree_fd', side_effect=copy_and_expire), \
+                    self.assertRaises(RigError) as error:
+                cap.probe(value, root)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_DEADLINE')
+            self.assertFalse(root.exists())
+            for wrapper in root.parent.iterdir():
+                self.assertTrue(wrapper.name.startswith('.director-probe-'))
+                self.assertEqual(list(wrapper.iterdir()), [])
 
     def test_parent_identity_must_match_before_staging_writes(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -600,13 +641,15 @@ class MissingDependencyTests(unittest.TestCase):
 
     def test_blend_import_failures_are_typed(self):
         import sys
-        for failing, reason in ((1, 'blend-authoring-failed'), (2, 'native-blend-import-failed')):
+        for failing, failure, reason in ((1, 'worker-failed', 'blend-authoring-failed'),
+                                         (2, 'worker-failed', 'native-blend-import-failed'),
+                                         (1, 'timeout', 'timeout'), (2, 'timeout', 'timeout')):
             calls = []
 
             def worker(argv, directory, timeout):
                 calls.append(argv)
                 if len(calls) == failing:
-                    return {'success': False, 'reason': 'worker-failed', 'exit_code': 1}, ''
+                    return {'success': False, 'reason': failure, 'exit_code': 1}, ''
                 (Path(directory)/'triangle.blend').write_bytes(b'BLENDER fixture')
                 return {'success': True, 'reason': None, 'exit_code': 0}, 'DIRECTOR_PROBE={"version": "4.5.3"}\n'
 

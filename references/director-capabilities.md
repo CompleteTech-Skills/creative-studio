@@ -48,6 +48,8 @@ The complete parent inventory additionally has explicit identifiers:
   descriptors use `geometry_provider`, `motion_provider`, `visual_qa_provider`
   with the same strict fields as `planning_provider`; credentials and endpoints
   are rejected. No descriptor authenticates a provider or starts a paid call.
+  Including a configured provider in `local_probes` preserves its `untested`
+  status and `remote-execution-not-probed` reason.
 
 Every receipt includes backend, supported operation/format descriptions,
 permissions, policy limits and explicitly unknown performance information.
@@ -101,6 +103,8 @@ tree belongs to a private native Job Object with kill-on-close and no breakaway
 permission. The physical base Python starts the isolated/no-site launcher,
 including when the controller runs in a venv. The controller checks membership
 in its own job and releases a gate bound to the launcher's process ID.
+If the deadline expires before gate release, the controller reports a timeout
+and closes the job with the requested tool still gated.
 The tool retains null stdin, the minimal environment and
 its own exit status. Timeout, output overflow, exceptions and normal completion
 all terminate remaining job descendants, including a native importer's Blender
@@ -123,7 +127,10 @@ identity captured during destination admission before the stage is created
 handle-pinned `atomic_windows` stage on Windows), and the payload is published
 by exclusive rename. On POSIX a parent identity check immediately before the
 rename reports `DIRECTOR_CAPABILITY_DESTINATION` if it detects a swap. The
-rename uses the held directory capability even if the public name changes
+controller rechecks the deadline after the parent check and, on the
+descriptor-only path, after the verified copy into the pinned stage. An expired
+request leaves the destination unpublished. The rename uses the held
+directory capability even if the public name changes
 after the check. On Windows the held handles prevent renaming the parent
 while publication is in progress. Hosts without a pinned publication adapter
 fail closed with `DIRECTOR_CAPABILITY_PLATFORM`. Exclusive rename preserves a
