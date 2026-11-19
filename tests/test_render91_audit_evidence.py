@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -85,9 +86,16 @@ class Render91AuditEvidenceTests(unittest.TestCase):
                 self.validate.job_binding_source(native)
 
     def test_present_revision_without_claimed_job_test_file_is_rejected(self):
-        native = dict(self.audit['native_job_equivalent'], revision=self.audit['foundation_revision'])
-        with self.assertRaisesRegex(AssertionError, 'Present job revision lacks'):
-            self.validate.job_binding_source(native)
+        with tempfile.TemporaryDirectory() as directory:
+            subprocess.run(['git', 'init', '--quiet', directory], check=True)
+            git = ['git', '-C', directory, '-c', 'user.name=Synthetic fixture',
+                   '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false']
+            empty_tree = subprocess.check_output([*git, 'mktree'], input=b'').decode('ascii').strip()
+            revision = subprocess.check_output([*git, 'commit-tree', empty_tree, '-m', 'Synthetic fixture'])
+            native = dict(self.audit['native_job_equivalent'], revision=revision.decode('ascii').strip())
+            with mock.patch.object(self.validate, 'repo', Path(directory)):
+                with self.assertRaisesRegex(AssertionError, 'Present job revision lacks'):
+                    self.validate.job_binding_source(native)
 
     def test_recorded_runs_reject_corruption_and_false_agreement(self):
         workflow = json.loads((EVIDENCE / 'source-workflow.json').read_bytes())
