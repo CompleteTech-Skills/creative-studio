@@ -1,5 +1,6 @@
 """Offline native import with real Khronos validation and canonical reopening."""
 from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import struct
 import shutil
 import tempfile
+from threading import Event
 from types import SimpleNamespace
 import traceback
 import unittest
@@ -17,7 +19,7 @@ from PIL import Image
 from asset_library import AssetLibrary
 from asset_library_import import ImportPipeline, resolve_import
 from rig_errors import RigError
-from rig_gltf import read_gltf
+from rig_gltf import GltfBuilder, read_gltf
 from rig_import import load_character_model
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +51,111 @@ class NativeImportTests(unittest.TestCase):
     def import_source(self, path, **kwargs):
         return self.pipeline.import_asset(path, identity=IDENTITY, version='1.0.0',
                                           metadata=METADATA, license_file=self.license, **kwargs)
+
+    def triangle_glb(self):
+        source = self.root / 'triangle.glb'
+        builder = GltfBuilder()
+        positions = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', bounds=True, target=34962)
+        builder.json.update(scenes=[dict(nodes=[0])], nodes=[dict(mesh=0)],
+                            meshes=[dict(primitives=[dict(attributes=dict(POSITION=positions))])])
+        builder.write(source)
+        return source
+
+    def test_pre_cancelled_probe_and_import_stop_before_acquisition(self):
+        source = self.triangle_glb()
+        self.pipeline = ImportPipeline(self.library, cancelled=lambda: True)
+        with patch.object(self.pipeline, '_snapshot') as snapshot, \
+             patch('asset_library_import.read_source_bytes') as license_read:
+            for operation in (self.pipeline.probe, self.import_source):
+                with self.assertRaises(RigError) as error:
+                    operation(source)
+                self.assertEqual(error.exception.report['code'], 'LIBRARY_IMPORT_CANCELLED')
+        snapshot.assert_not_called()
+        license_read.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_cancel_verified_native_glb_before_registration(self):
+        source = self.triangle_glb()
+        original = source.read_bytes()
+        reports = {}
+
+        def cancel_when_verified():
+            for report in self.root.glob('asset-gltf-import-*/import-report.json'):
+                reports['import'] = json.loads(report.read_bytes())
+                for name in ('source', 'normalized'):
+                    reports[name] = json.loads(report.with_name(name + '-khronos.json').read_bytes())
+            return bool(reports)
+
+        self.pipeline = ImportPipeline(self.library, cancelled=cancel_when_verified)
+        with patch.object(tempfile, 'tempdir', str(self.root)), \
+             patch.object(self.library, 'register', wraps=self.library.register) as register:
+            with self.assertRaises(RigError) as error:
+                self.import_source(source, fixture=True)
+        self.assertEqual(error.exception.report['code'], 'LIBRARY_IMPORT_CANCELLED')
+        register.assert_not_called()
+        self.assertEqual(reports['import']['native_observation']['triangles'], 1)
+        self.assertEqual(reports['source']['asset_sha256'], hashlib.sha256(original).hexdigest())
+        self.assertTrue(reports['source']['ok'])
+        self.assertTrue(reports['normalized']['ok'])
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(list(self.root.glob('asset-gltf-import-*')), [])
+        self.assertEqual(AssetLibrary(self.library_path).list_references(), [])
+
+    def test_cancel_while_registration_waits_for_writer_leaves_no_durable_content(self):
+        source = self.triangle_glb()
+        cancelled, waiting = Event(), Event()
+        self.pipeline = ImportPipeline(self.library, cancelled=cancelled.is_set)
+        begin_writer = self.library._begin_writer
+
+        def observe_writer(db):
+            # SQLite invokes this trace before its actual BEGIN competes for the lock.
+            db.set_trace_callback(lambda sql: waiting.set() if sql == 'BEGIN IMMEDIATE' else None)
+            begin_writer(db)
+
+        store = self.library.storage.root
+        before = {name: set((store / name).iterdir()) for name in ('commits', 'blobs')}
+        with patch.object(self.library, '_begin_writer', observe_writer), ThreadPoolExecutor(1) as pool:
+            with self.library._connect() as blocker:
+                blocker.execute('BEGIN IMMEDIATE')
+                result = pool.submit(self.import_source, source, fixture=True)
+                self.assertTrue(waiting.wait(15), 'Native import did not attempt registration')
+                self.assertFalse(result.done())
+                cancelled.set()
+            with self.assertRaises(RigError) as error:
+                result.result(timeout=10)
+        self.assertEqual(error.exception.report['code'], 'LIBRARY_IMPORT_CANCELLED')
+        for name in before:
+            self.assertEqual(set((store / name).iterdir()), before[name])
+        reopened = AssetLibrary(self.library_path)
+        self.assertEqual(reopened.list_references(), [])
+        with reopened._connect() as db:
+            for table in ('versions', 'blobs', 'annotations'):
+                self.assertEqual(db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0], 0)
+
+    @unittest.skipUnless(
+        os.environ.get('HATCH_BLENDER') and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
+        'Requires pinned Blender 4.5.3 on Linux with prlimit and wait4',
+    )
+    def test_cancel_in_flight_blender_child_is_reaped(self):
+        system_wait4 = os.wait4
+        live = []
+
+        def observe_child(pid, flags):
+            result = system_wait4(pid, flags)
+            if result[0] == 0:
+                live.append(pid)
+            return result
+
+        self.pipeline = ImportPipeline(self.library, cancelled=lambda: bool(live))
+        with patch('asset_import_blender.os.wait4', side_effect=observe_child):
+            with self.assertRaises(RigError) as error:
+                self.pipeline.import_blender_fixture(
+                    identity=IDENTITY, version='1.0.0', metadata=METADATA, license_file=self.license)
+        self.assertEqual(error.exception.report['code'], 'LIBRARY_IMPORT_CANCELLED')
+        self.assertEqual(len(set(live)), 1)
+        with self.assertRaises(ChildProcessError):
+            system_wait4(live[0], os.WNOHANG)
+        self.assertEqual(AssetLibrary(self.library_path).list_references(), [])
 
     def external_source(self):
         source = self.root / 'fixture.gltf'

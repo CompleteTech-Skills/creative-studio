@@ -201,8 +201,11 @@ def _checked(path, limits):
 class ImportPipeline:
     """Import an explicit local native source and retain exact evidence."""
 
-    def __init__(self, library: AssetLibrary, *, limits=None):
+    def __init__(self, library: AssetLibrary, *, limits=None, cancelled=None):
         self.library = library
+        require(cancelled is None or callable(cancelled), 'ASSET_IMPORT_REQUEST',
+                'Cancellation must be a callable.')
+        self.cancelled = cancelled
         self.limits = effective_limits({**DEFAULT_LIMITS, 'influences': 8}, limits)
         require(self.limits['memory_bytes'] >= 2 * 1024**2, 'RIG_LIMIT_MEMORY',
                 'Memory budget is below the native admission reserve.')
@@ -210,6 +213,10 @@ class ImportPipeline:
         # preflight separately budgets JSON and geometry materialization.
         self.limits['dependency_bytes'] = min(
             self.limits['dependency_bytes'], self.limits['memory_bytes'] // 66)
+
+    def _check_cancelled(self):
+        if self.cancelled is not None and self.cancelled():
+            raise RigError('LIBRARY_IMPORT_CANCELLED', 'Import cancelled before publication.', stage='asset-import')
 
     def _snapshot(self, source, root, *, retained_bytes=0):
         total_limit = min(scene3d_import.MAX_SOURCE_BYTES, self.limits['dependency_bytes'])
@@ -224,9 +231,11 @@ class ImportPipeline:
     def probe(self, source):
         """Inspect declarations and report exact closure prior to geometry decoding."""
         with _private_diagnostics('source'):
+            self._check_cancelled()
             with tempfile.TemporaryDirectory(prefix='asset-gltf-probe-') as temporary:
                 snapshot = self._snapshot(source, Path(temporary) / 'source')
                 _, _, inventory, embedded, preflight = _inspect(snapshot, self.limits)
+                self._check_cancelled()
                 return dict(format=snapshot['path'].suffix[1:], original_filename=snapshot['original_filename'],
                             files=inventory, embedded=embedded, preflight=preflight, geometry_validated=False)
 
@@ -243,6 +252,7 @@ class ImportPipeline:
 
     def _import(self, source, identity, version, metadata, license_file, unit_scale, fixture,
                 *, blender_fixture):
+        self._check_cancelled()
         require(type(unit_scale) in (int, float) and 1e-3 <= unit_scale <= 1e6,
                 'ASSET_IMPORT_SCALE', 'Unit scale must be in [1e-3, 1e6].')
         require(type(fixture) is bool, 'ASSET_IMPORT_REQUEST', 'Fixture classification must be boolean.')
@@ -257,6 +267,9 @@ class ImportPipeline:
                 manifest, paths = self._stage(source, Path(temporary.name), identity, version,
                                               metadata, license_bytes, float(unit_scale), fixture,
                                               blender_fixture=blender_fixture)
+                self._check_cancelled()
+                if self.cancelled is not None:
+                    return self.library.register(manifest, paths, before_publish=self._check_cancelled)
                 return self.library.register(manifest, paths)
             finally:
                 try:
@@ -273,9 +286,11 @@ class ImportPipeline:
             from asset_import_blender import create_fixture
             fixture_limits = {**self.limits,
                 'dependency_bytes': min(scene3d_import.MAX_SOURCE_BYTES, self.limits['dependency_bytes'])}
-            original, source, blender = create_fixture(root / 'blender', fixture_limits)
+            original, source, blender = create_fixture(root / 'blender', fixture_limits,
+                                                       check_cancelled=self._check_cancelled)
         retained_bytes = blender['source_bytes'] if blender is not None else 0
         snapshot = self._snapshot(source, root / 'source', retained_bytes=retained_bytes)
+        self._check_cancelled()
         document, images, inventory, embedded, preflight = _inspect(snapshot, self.limits)
         declarations = {name: len(document.json.get(name, []))
                         for name in ('skins', 'animations', 'materials', 'textures')}
@@ -300,9 +315,13 @@ class ImportPipeline:
         _admit_memory(decode_reserved + 1, self.limits, 'native decode')
         decode_limits = {**self.limits, 'memory_bytes': self.limits['memory_bytes'] - decode_reserved}
         del output
+        self._check_cancelled()
         source_validation = _checked(snapshot['path'], self.limits)
+        self._check_cancelled()
         output_validation = _checked(normalized, self.limits)
+        self._check_cancelled()
         model = load_character_model(normalized, limits=decode_limits)
+        self._check_cancelled()
         if blender is not None:
             self._admit_blender_result(root, original, blender, inventory, model,
                                        source_validation, output_validation)

@@ -18,7 +18,7 @@ WORKER = Path(__file__).resolve().with_name('asset_import_worker.py')
 MAX_LOG_BYTES = 128 * 1024
 
 
-def _run(executable, mode, root, limits, byte_limit, deadline):
+def _run(executable, mode, root, limits, byte_limit, deadline, check_cancelled):
     """Run one stage with a shared wall deadline and kernel-measured peak resident usage."""
     remaining = deadline - time.monotonic()
     require(remaining > 0, 'ASSET_BLENDER_TIMEOUT', 'Blender fixture deadline expired.')
@@ -37,6 +37,8 @@ def _run(executable, mode, root, limits, byte_limit, deadline):
     log = root / f'{mode}.log'
     start = time.monotonic()
     with log.open('xb') as output:
+        if check_cancelled is not None:
+            check_cancelled()
         process = subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                    stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         owned = True
@@ -53,6 +55,8 @@ def _run(executable, mode, root, limits, byte_limit, deadline):
                     owned = False
                     process.returncode = os.waitstatus_to_exitcode(status)
                     break
+                if check_cancelled is not None:
+                    check_cancelled()
                 if time.monotonic() >= deadline:
                     raise RigError('ASSET_BLENDER_TIMEOUT', 'Blender fixture deadline expired.', retryable=True)
                 require(log.stat().st_size <= MAX_LOG_BYTES, 'ASSET_BLENDER_LOG', 'Blender log is too large.')
@@ -83,7 +87,7 @@ def _run(executable, mode, root, limits, byte_limit, deadline):
                 log_sha256=hashlib.sha256(data).hexdigest())
 
 
-def create_fixture(root, limits):
+def create_fixture(root, limits, *, check_cancelled=None):
     """Save a packed app-owned triangle and reopen that exact file before export."""
     require(sys.platform == 'linux' and hasattr(os, 'wait4') and Path('/usr/bin/prlimit').is_file(),
             'ASSET_BLENDER_UNAVAILABLE', 'Blender fixture requires Linux prlimit and wait4.')
@@ -93,14 +97,14 @@ def create_fixture(root, limits):
     require(limits['memory_bytes'] >= 384 * 1024**2,
             'ASSET_BLENDER_BUDGET', 'Insufficient resource budget for a Blender process.')
     deadline = time.monotonic() + limits['timeout_seconds']
-    create = _run(executable, 'create', root, limits, limit, deadline)
+    create = _run(executable, 'create', root, limits, limit, deadline, check_cancelled)
     original = root / 'fixture.blend'
     data = read_source_bytes(original, limit)
     require(data.startswith(b'BLENDER'), 'ASSET_BLENDER_SOURCE', 'Missing native Blender fixture.')
     require(os.fsencode(root.parent.resolve()) not in data, 'ASSET_BLENDER_SOURCE',
             'Blender serialized a private fixture staging path.')
     digest = hashlib.sha256(data).hexdigest()
-    reopen = _run(executable, 'reopen', root, limits, limit, deadline)
+    reopen = _run(executable, 'reopen', root, limits, limit, deadline, check_cancelled)
     require(hashlib.sha256(read_source_bytes(original, limit)).hexdigest() == digest,
             'ASSET_BLENDER_SOURCE', 'The staged source changed during reopen.')
     report = decode_json(read_source_bytes(root / 'reopen.json', 4096))

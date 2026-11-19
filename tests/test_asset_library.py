@@ -140,6 +140,28 @@ class AssetLibraryTests(unittest.TestCase):
         third = reopened.register(proposed, self.sources, expected_identity_refs=history[::-1])
         self.assertEqual(reopened.resolve(third), proposed)
 
+    def test_publication_hook_runs_only_after_matching_history_and_cancellation_allows_retry(self):
+        self.library.upgrade_storage()
+        first = self.register()
+        proposed = seal({**self.manifest, 'version': '2.0.0'})
+        store = self.library.storage.root
+        original_commits = set((store / 'commits').iterdir())
+
+        def cancel():
+            raise InterruptedError('fixture cancellation')
+
+        with self.assertRaises(RigError) as stale:
+            self.library.register(proposed, self.sources, expected_identity_refs=[], before_publish=cancel)
+        self.assertEqual(stale.exception.report['code'], 'LIBRARY_CONFLICT')
+        with self.assertRaisesRegex(InterruptedError, 'fixture cancellation'):
+            self.library.register(proposed, self.sources, expected_identity_refs=[first], before_publish=cancel)
+
+        reopened = AssetLibrary(self.library.root)
+        self.assertEqual(reopened.list_references(), [first])
+        self.assertEqual(set((store / 'commits').iterdir()), original_commits)
+        second = reopened.register(proposed, self.sources, expected_identity_refs=[first])
+        self.assertEqual(reopened.resolve(second), proposed)
+
     def test_identity_snapshot_rejects_invalid_or_inexact_references(self):
         first = self.register()
         proposed = seal({**self.manifest, 'version': '2.0.0'})
