@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from rig_demo import make_geometry
-from rig_errors import read_json, timestamp
+from rig_errors import RigError, read_json, sha256, timestamp
 from rig_jobs import save_rig
 from rig_models import load_rig, rig_signature
 from rig_operations import mutate
@@ -173,6 +173,140 @@ class RigCorrectionEvidenceDomainTests(unittest.TestCase):
                          self.before_bones[self.target]['tail'])
         self.assert_pending()
 
+    def remove(self, target=None):
+        return dict(operation='bone-remove', target=target or self.target, value=None)
+
+    def restore(self, *, target=None, **updates):
+        fields = ('role', 'parent', 'head', 'tail', 'deform', 'mirror', 'roll')
+        value = {key: deepcopy(self.before_bones[self.target][key]) for key in fields}
+        value.update(updates)
+        return dict(operation='bone-add', target=target or self.target, value=value)
+
+    def test_atomic_leaf_removal_and_identical_restoration_preserve_saved_evidence(self):
+        manifest = deepcopy(self.rig.manifest)
+        geometry = {mesh.id: (mesh.positions.copy(), mesh.triangles.copy())
+                    for mesh in self.rig.geometry.meshes}
+        self.apply(self.remove(), self.restore())
+        # The persisted/reloaded rest transforms and every bone field are identical.
+        self.assertEqual(self.bones(), self.before_bones)
+        self.assert_pending()
+        for field in ('controllers', 'attachments', 'facial'):
+            self.assertEqual(self.rig.manifest[field], manifest[field])
+        for mesh in self.rig.geometry.meshes:
+            self.assertTrue((mesh.positions == geometry[mesh.id][0]).all())
+            self.assertTrue((mesh.triangles == geometry[mesh.id][1]).all())
+
+    def test_atomic_restoration_with_metadata_and_numeric_coordinates_keeps_pending(self):
+        before = self.before_bones[self.target]
+        self.apply(self.remove(), self.restore(role='reviewed-jaw-label', deform=False,
+            head=list(map(str, before['head'])), tail=list(map(str, before['tail']))))
+        self.assertEqual(self.bones()[self.target]['role'], 'reviewed-jaw-label')
+        self.assertIs(self.bones()[self.target]['deform'], False)
+        self.assert_pending()
+
+    def test_atomic_restoration_then_rename_keeps_pending_lineage(self):
+        self.apply(self.remove(), self.restore(), self.edit({'id': 'left-jaw'}))
+        self.assert_pending(renamed='left-jaw')
+
+    def test_atomic_rename_then_removal_and_restoration_keeps_pending_lineage(self):
+        self.apply(self.edit({'id': 'left-jaw'}), self.remove('left-jaw'),
+                   self.restore(target='left-jaw'))
+        self.assert_pending(renamed='left-jaw')
+
+    def test_repeated_atomic_restoration_and_geometry_revert_keep_pending(self):
+        tail = list(self.before_bones[self.target]['tail'])
+        tail[2] -= .02
+        self.apply(self.remove(), self.restore(tail=tail), self.remove(), self.restore())
+        self.assertEqual(self.bones(), self.before_bones)
+        self.assert_pending()
+
+    def test_atomic_restoration_with_changed_anatomy_records_real_correction(self):
+        tail = list(self.before_bones[self.target]['tail'])
+        tail[2] -= .02
+        self.apply(self.remove(), self.restore(tail=tail))
+        self.assertEqual(self.bones()[self.target]['tail'], tail)
+        self.assert_anatomically_corrected()
+
+    def test_distinct_replacement_identity_is_new_anatomical_evidence(self):
+        self.apply(self.remove(), self.restore(target='replacement-jaw'))
+        self.assertNotIn(self.target, self.bones())
+        self.assertEqual(self.rig.manifest['uncertainties'],
+                         [u for u in self.before_issues if u['element'] != self.target])
+        replacement = self.bones()['replacement-jaw']
+        self.assertEqual(replacement['evidence']['confidence'], 1.)
+        self.assertEqual(replacement['evidence']['source'], 'human-landmark')
+        self.assertEqual(self.bones()[self.other], self.before_bones[self.other])
+
+    def test_rename_into_removed_identity_uses_surviving_bones_lineage(self):
+        self.apply(self.remove(), self.edit({'id': self.target}, target=self.other))
+        expected = deepcopy([u for u in self.before_issues if u['element'] == self.other])
+        for issue in expected:
+            issue['element'] = self.target
+        self.assertEqual(self.rig.manifest['uncertainties'], expected)
+        self.assertEqual(self.bones()[self.target]['evidence'],
+                         self.before_bones[self.other]['evidence'])
+        self.assertNotIn(self.other, self.bones())
+
+    def test_new_bone_renamed_into_removed_identity_does_not_inherit_evidence(self):
+        self.apply(self.remove(), self.restore(target='replacement-jaw'),
+                   self.edit({'id': self.target}, target='replacement-jaw'))
+        self.assertEqual(self.bones()[self.target]['evidence']['confidence'], 1.)
+        self.assertEqual(self.rig.manifest['uncertainties'],
+                         [u for u in self.before_issues if u['element'] != self.target])
+
+    def test_genuine_removal_cleans_anatomy_and_controller_facial_attachment_references(self):
+        controllers = self.rig.manifest['controllers']
+        chain = dict(schema_version=1, id='synthetic-jaw-chain',
+                     bones=['elbow', 'gripper', self.target], solver='two-bone',
+                     pole=[0, 0, 1], tolerance=1e-6, iterations=32)
+        controllers['ik'].append(chain)
+        controllers['constraints'].extend([
+            dict(schema_version=1, id='synthetic-jaw-lock', bone=self.target, type='locked'),
+            dict(schema_version=1, id='synthetic-jaw-copy', bone=self.other,
+                 target=self.target, type='copy-position')])
+        attachment = deepcopy(self.rig.manifest['attachments'][0])
+        attachment.update(id='synthetic-jaw-socket', bone=self.target)
+        self.rig.manifest['attachments'].append(attachment)
+        self.rig.manifest['facial']['eyes'] = [self.target, self.other]
+        self.rig.manifest['facial']['expressions']['blink']['bones'] = {
+            self.target: {'rotation': [0, 0, 0, 1]}, self.other: {}}
+        independent = self.save_independent_uncertainties(first=True)
+        before = deepcopy(self.rig.manifest)
+        self.apply(self.remove())
+        self.assertNotIn(self.target, self.bones())
+        self.assertEqual(self.rig.manifest['uncertainties'], independent +
+                         [u for u in self.before_issues
+                          if u['code'] == 'RIG_ANATOMY_UNCERTAIN' and u['element'] != self.target])
+        self.assertEqual(self.rig.manifest['controllers']['ik'],
+                         [c for c in before['controllers']['ik'] if c != chain])
+        self.assertEqual(self.rig.manifest['controllers']['constraints'],
+                         [c for c in before['controllers']['constraints']
+                          if not c['id'].startswith('synthetic-jaw-')])
+        self.assertEqual(self.rig.manifest['attachments'],
+                         [a for a in before['attachments'] if a != attachment])
+        self.assertEqual(self.rig.manifest['facial']['eyes'], [self.other])
+        self.assertEqual(self.rig.manifest['facial']['expressions']['blink']['bones'],
+                         {self.other: {}})
+
+    def test_invalid_restoration_preserves_saved_rig_and_revision_bytes(self):
+        before = deepcopy(self.rig.manifest)
+        protected = {p: sha256(p) for p in self.rig.root.rglob('*')
+                     if p.is_file() and p.name not in ('job.json', '.rig.lock')}
+        invalid = (([self.remove(), self.restore(tail=self.before_bones[self.target]['head'])],
+                    'RIG_ZERO_VECTOR'),
+                   ([self.remove(), self.restore(), self.restore()], 'RIG_BONE_EDIT'))
+        for edits, code in invalid:
+            with self.subTest(code=code):
+                with self.assertRaises(RigError) as caught:
+                    mutate(self.rig.root, 'correct', {'correction': self.correction(edits)})
+                self.assertEqual(caught.exception.report['code'], code)
+                self.assertEqual(load_rig(self.rig.root).manifest, before)
+                self.assertEqual({p: sha256(p) for p in self.rig.root.rglob('*')
+                                  if p.is_file() and p.name not in ('job.json', '.rig.lock')},
+                                 protected)
+                self.assertEqual(read_json(self.rig.root / 'job.json')['steps']['correct']['status'],
+                                 'failed')
+
     def independent_uncertainties(self):
         # Explicit synthetic domains, using the public free-text code contract.
         return [dict(element=self.target, code=code,
@@ -191,6 +325,14 @@ class RigCorrectionEvidenceDomainTests(unittest.TestCase):
         self.rig = load_rig(self.rig.root)
         self.before_issues = deepcopy(self.rig.manifest['uncertainties'])
         return independent
+
+    def test_atomic_restoration_preserves_all_record_fields_domains_and_resolutions(self):
+        anatomy = [dict(deepcopy(self.before_issues[0]), resolution=resolution)
+                   for resolution in ('accepted', 'corrected')]
+        self.rig.manifest['uncertainties'].extend(anatomy)
+        self.save_independent_uncertainties(first=True)
+        self.apply(self.remove(), self.restore())
+        self.assert_pending()
 
     def test_anatomical_edit_preserves_independent_records_after_anatomy_record(self):
         independent = self.save_independent_uncertainties()

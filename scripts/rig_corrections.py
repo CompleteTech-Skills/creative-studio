@@ -38,9 +38,9 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                 if operation=='bone-remove':
                     require(not any(b['parent']==target for b in specs), 'RIG_BONE_CHILDREN', 'Reparent or remove children before deleting a bone.')
                     specs=[b for b in specs if b['id']!=target]
-                    evidence.pop(target,None)
-                    baseline.pop(target,None)
-                    for b in (*specs, *baseline.values()):
+                    # Retain lineage and anatomy records until the final state is
+                    # known: this transaction may restore the same bone.
+                    for b in specs:
                         if b.get('mirror')==target:b['mirror']=None
                     result.manifest['controllers']['ik']=[c for c in result.manifest['controllers']['ik'] if target not in c['bones']]
                     result.manifest['controllers']['constraints']=[c for c in result.manifest['controllers']['constraints'] if c['bone']!=target and c.get('target')!=target]
@@ -54,6 +54,11 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                     require(renamed==target or renamed not in index, 'RIG_BONE_EDIT', 'Renamed bone ID already exists.')
                     index[target].update(value)
                     if renamed!=target:
+                        # Renaming a different bone into a removed ID replaces
+                        # that identity; it must not inherit the removed evidence.
+                        baseline.pop(renamed,None);evidence.pop(renamed,None)
+                        uncertainties[:]=[u for u in uncertainties
+                                          if u['code']!='RIG_ANATOMY_UNCERTAIN' or u['element']!=renamed]
                         # Keep automatic reference rewrites out of the anatomy comparison.
                         for bone in (*specs, *baseline.values()):
                             for field in ('parent','mirror'):
@@ -73,9 +78,6 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                         for issue in uncertainties:
                             if issue['code']=='RIG_ANATOMY_UNCERTAIN' and issue['element']==target:
                                 issue['element']=renamed
-            if operation in ('bone-add','bone-remove'):
-                uncertainties[:]=[u for u in uncertainties
-                                  if u['code']!='RIG_ANATOMY_UNCERTAIN' or u['element']!=target]
             skeleton_changed=True
         elif operation=='weights':
             require(not skeleton_changed, 'RIG_CORRECTION_ORDER', 'Regenerate binding after skeletal edits before editing weights.')
@@ -160,6 +162,9 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                 corrected.add(target)
             else:
                 bone['evidence']=evidence[target]
+        bone_ids={b['id'] for b in skeleton['bones']}
+        result.manifest['uncertainties'][:]=[u for u in result.manifest['uncertainties']
+                                           if u['code']!='RIG_ANATOMY_UNCERTAIN' or u['element'] in bone_ids]
         for issue in result.manifest['uncertainties']:
             if issue['code']=='RIG_ANATOMY_UNCERTAIN' and issue['element'] in corrected:
                 issue['resolution']='corrected'
