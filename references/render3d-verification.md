@@ -181,6 +181,12 @@ acceptance.
 
 ## Captured PNG extent and result-file materialization
 
+PNG admission updates CRCs incrementally from the chunk type and payload.
+During IDAT admission the input block, bounded inflate output and possible
+unconsumed input suffix share the working budget. Admission releases each
+payload before reading the next. The pixel decoder still uses its own buffers.
+The supported RGB/RGBA profile excludes optional suggested palettes (`PLTE`).
+
 Before reading a PNG chunk payload, the verifier checks its declared length
 against both the configured memory budget and the actual remaining extent of
 the private capture, including the four-byte CRC. A tiny truncated capture
@@ -217,6 +223,11 @@ above. The existing capture-evidence limitation remains in the returned report.
 
 
 ## Complete legacy EXR scanline consumption
+
+The verifier's `code_sha256` is the canonical object hash of a mapping from
+`render3d_verify.py` and `exr_consumption.py` to their individual SHA-256
+file digests. This binds the verifier and its dedicated codec checks in the
+existing verifier identity field.
 
 Compression IDs 0–9 retain their full-size raw fallback and native HALF/FLOAT
 pixel decoding. Before native decoding, the verifier now checks each bounded

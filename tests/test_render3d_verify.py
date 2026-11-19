@@ -473,6 +473,27 @@ class ImageVerification(unittest.TestCase):
             bad=deepcopy(result);bad['status']='invented'
             with self.assertRaises(Render3DError):verify_result(request,bad,root,snapshot_root=snapshot,expected_backend=backend)
 
+    def test_result_verifier_identity_binds_exr_helper_bytes(self):
+        import render3d_verify
+
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            request, result, root, snapshot, backend = self.scene_result(folder)
+            scripts = folder / 'scripts'
+            scripts.mkdir()
+            names = ('render3d_verify.py', 'exr_consumption.py')
+            for name in names:
+                (scripts / name).write_bytes((ROOT / 'scripts' / name).read_bytes())
+            with mock.patch.object(render3d_verify, '__file__', str(scripts / names[0])):
+                first = verify_result(request, result, root, snapshot_root=snapshot, expected_backend=backend)
+                with (scripts / names[1]).open('ab') as helper:
+                    helper.write(b'\n# test-only implementation revision\n')
+                second = verify_result(request, result, root, snapshot_root=snapshot, expected_backend=backend)
+            expected = object_hash({name: hashlib.sha256((scripts / name).read_bytes()).hexdigest()
+                                    for name in names})
+            self.assertEqual(second['verifier']['code_sha256'], expected)
+            self.assertNotEqual(first['verifier']['code_sha256'], second['verifier']['code_sha256'])
+
     def test_result_decodes_from_a_scoped_output_directory(self):
         from atomic_publish import pinned_directory, private_stage_supported
         from rig_errors import directory_capability
@@ -858,6 +879,41 @@ class ImageVerification(unittest.TestCase):
                 report=verify_image(path,output=output(depth=depth),resolution=[3,2])
                 self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
                 self.assertEqual(report['bit_depth'],depth)
+
+    def test_png_exact_chunk_budget_checks_separate_crc_inputs_and_bounded_idat(self):
+        import render3d_verify
+
+        def chunk(kind, data):
+            crc = zlib.crc32(data, zlib.crc32(kind))
+            return struct.pack('>I4s', len(data), kind) + data + struct.pack('>I', crc)
+
+        # A real one-pixel RGBA stream with ordinary PNG text chunks exactly
+        # as large as the admitted pixel budget, followed by a stored zlib block.
+        memory_bytes = 32
+        text = b'Comment\x00' + b'a' * 24
+        image_data = zlib.compress(bytes((0, 255, 128, 64, 255)), level=0)
+        header = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
+        image = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'tEXt', text) * 2
+                 + chunk(b'IDAT', image_data) + chunk(b'IEND', b''))
+        calls = []
+        crc32 = zlib.crc32
+
+        def record_crc(data, seed=0):
+            calls.append((data, seed))
+            return crc32(data, seed)
+
+        with mock.patch.object(zlib, 'crc32', record_crc):
+            report = render3d_verify._png(io.BytesIO(image), [1, 1], 8, memory_bytes)
+        self.assertEqual(report['channels']['G']['maximum'], 128 / 255)
+        # Check the admission pass alone. pypng runs a second CRC pass while decoding.
+        admission = calls[:calls.index((b'IEND', 0))]
+        self.assertEqual(admission.count((text, crc32(b'tEXt'))), 2)
+        idat = admission[admission.index((b'IDAT', 0)) + 1:]
+        self.assertGreater(len(idat), 1)
+        self.assertEqual(b''.join(data for data, _ in idat), image_data)
+        with self.assertRaisesRegex(Render3DError, 'PNG chunk exceeds verification memory budget'):
+            render3d_verify._png(io.BytesIO(image.replace(chunk(b'tEXt', text),
+                chunk(b'tEXt', text + b'b'))), [1, 1], 8, memory_bytes)
 
     def test_result_rejects_actual_hardlink_aliases_but_accepts_equal_copies(self):
         import os

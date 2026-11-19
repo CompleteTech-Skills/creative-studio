@@ -22,6 +22,14 @@ from render3d_contracts import Render3DError, require, validate, VERSION, frame_
 from rig_errors import RigError, object_hash, open_payload, scoped_directory_descriptor
 
 
+def _verifier_identity():
+    folder = Path(__file__).resolve().parent
+    implementation = {name: hashlib.sha256((folder / name).read_bytes()).hexdigest()
+                      for name in ('render3d_verify.py', 'exr_consumption.py')}
+    return dict(id='render3d-independent-pixels', version=VERSION,
+                code_sha256=object_hash(implementation), platform=platform.platform())
+
+
 def _image_identity(name=None):
     """Expose only canonical frame/pass names, never a caller's basename."""
     if isinstance(name, str) and re.fullmatch(
@@ -200,12 +208,44 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
         length, kind = struct.unpack('>I4s', prefix)
         require(length <= memory_bytes, 'system-memory', 'PNG chunk exceeds verification memory budget.')
         require(length+4 <= extent-stream.tell(), 'corrupt-output', 'Truncated PNG payload.')
-        payload = stream.read(length); checksum = stream.read(4)
-        require(len(payload) == length and len(checksum) == 4, 'corrupt-output', 'Truncated PNG payload.')
-        require(zlib.crc32(kind+payload) & 0xffffffff == struct.unpack('>I',checksum)[0], 'corrupt-output', 'PNG CRC mismatch.')
         if count == 0:
             require(kind == b'IHDR' and length == 13, 'corrupt-output', 'PNG must start with IHDR.')
-            width,height,depth,color,compression,filtering,interlace = struct.unpack('>IIBBBBB',payload)
+        elif kind == b'IHDR':
+            raise Render3DError('corrupt-output','Duplicate PNG header.')
+
+        crc = zlib.crc32(kind)
+        if kind == b'IDAT':
+            require(not idat_ended, 'corrupt-output', 'PNG IDAT chunks must be consecutive.')
+            idat_started = True
+            require(not inflater.eof or length == 0, 'corrupt-output', 'Trailing compressed PNG stream.')
+            remaining = length
+            while remaining:
+                # Reserve the bounded output (including its overrun sentinel)
+                # and space for zlib to return an unconsumed input suffix.
+                output_limit = header[3] - inflated + 1
+                size = min(remaining, (memory_bytes - output_limit) // 2)
+                require(size > 0, 'system-memory', 'PNG inflate buffers exceed memory budget.')
+                block = stream.read(size)
+                require(len(block) == size, 'corrupt-output', 'Truncated PNG payload.')
+                crc = zlib.crc32(block, crc)
+                inflated += len(inflater.decompress(block, output_limit))
+                del block
+                require(inflated <= header[3] and not inflater.unconsumed_tail and not inflater.unused_data,
+                        'corrupt-output', 'PNG decompressed data exceeds declared dimensions.')
+                remaining -= size
+        else:
+            payload = stream.read(length)
+            require(len(payload) == length, 'corrupt-output', 'Truncated PNG payload.')
+            crc = zlib.crc32(payload, crc)
+            if kind == b'IHDR':
+                width,height,depth,color,compression,filtering,interlace = struct.unpack('>IIBBBBB',payload)
+            del payload
+            if idat_started:
+                idat_ended = True
+        checksum = stream.read(4)
+        require(len(checksum) == 4, 'corrupt-output', 'Truncated PNG payload.')
+        require(crc == struct.unpack('>I', checksum)[0], 'corrupt-output', 'PNG CRC mismatch.')
+        if kind == b'IHDR':
             require([width,height] == list(resolution) and depth == bit_depth, 'corrupt-output', 'PNG dimensions or precision differ from request.')
             require(color in (2,6) and compression == filtering == interlace == 0,
                     'unsupported-feature', 'PNG verification supports noninterlaced RGB/RGBA output.')
@@ -216,22 +256,11 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
             if pixels:
                 require(width*height*channels*24 <= memory_bytes,'system-memory','PNG preview arrays exceed memory budget.')
             header=(width,height,channels,expected)
-        elif kind == b'IHDR':
-            raise Render3DError('corrupt-output','Duplicate PNG header.')
         require(kind not in (b'acTL',b'fcTL',b'fdAT'),'corrupt-output','Animated PNG is not a single render frame.')
         require(kind in (b'IHDR',b'IDAT',b'IEND') or kind[0]&32,
                 'unsupported-feature','Unsupported critical PNG chunk.')
         require(kind != b'tRNS', 'unsupported-feature',
                 'PNG color-key transparency is unsupported; use explicit RGBA samples.')
-        if kind != b'IDAT' and idat_started:
-            idat_ended = True
-        if kind == b'IDAT':
-            require(not idat_ended, 'corrupt-output', 'PNG IDAT chunks must be consecutive.')
-            idat_started = True
-            require(not inflater.eof or length == 0, 'corrupt-output', 'Trailing compressed PNG stream.')
-            expanded=inflater.decompress(payload,header[3]-inflated+1);inflated+=len(expanded)
-            require(inflated <= header[3] and not inflater.unconsumed_tail and not inflater.unused_data,
-                    'corrupt-output', 'PNG decompressed data exceeds declared dimensions.')
         if kind == b'IEND':
             require(length == 0 and inflater.eof and inflated == header[3], 'corrupt-output', 'PNG pixel stream is incomplete.')
             ended=True
@@ -245,9 +274,11 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     minima=np.full(len(names),np.inf);maxima=np.full(len(names),-np.inf);row_count=0
     pixel_rows=[]
     for row in rows:
-        values=np.asarray(row,dtype=np.float64).reshape((width,len(names))) / ((1<<bit_depth)-1)
+        values=np.asarray(row,dtype=np.float64).reshape((width,len(names)))
+        values /= (1<<bit_depth)-1
         minima=np.minimum(minima,values.min(axis=0));maxima=np.maximum(maxima,values.max(axis=0));row_count+=1
         if pixels:pixel_rows.append(values)
+        del values
     require(row_count == height,'corrupt-output','PNG row count differs from dimensions.')
     result=dict(channels={name:dict(type='uint'+str(bit_depth),minimum=float(lo),maximum=float(hi)) for name,lo,hi in zip(names,minima,maxima)},
                 decoder='pypng',decoder_version=png.__version__, resolution=[width,height],bit_depth=bit_depth)
@@ -588,8 +619,7 @@ class RenderArtifactVerifier:
             raise
         except (RigError, OSError, ValueError):
             raise Render3DError('corrupt-output', 'Output inventory could not be verified safely.') from None
-        identity=dict(id='render3d-independent-pixels',version=VERSION,code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),platform=platform.platform())
-        return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=identity,
+        return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=_verifier_identity(),
                     request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
                     settings_sha256=object_hash(settings),backend=deepcopy(self.expected_backend),images=decoded,
                     decoded_frames=len(frames),decoded_images=len(decoded),output_bytes=total,
