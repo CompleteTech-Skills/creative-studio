@@ -126,7 +126,6 @@ class ArchiveGuards(unittest.TestCase):
         self.frame=next(n for n in self.members if n.endswith('frames/000000.png'))
 
     def forge(self,name,*,members=None,records=None,extra=()):
-        import hashlib
         members=dict(self.members if members is None else members)
         files=[dict(r) for r in (self.index['files'] if records is None else records)]
         path=self.root/(name+'.zip')
@@ -168,7 +167,6 @@ class ArchiveGuards(unittest.TestCase):
         self.refused(path,'duplicate entries')
 
     def test_listed_case_alias_is_refused(self):
-        import hashlib
         source=self.record(self.frame);alias=dict(source,path=source['path'].replace('frames/','FRAMES/'))
         members={**self.members,'payload/'+alias['path']:self.members[self.frame]}
         self.refused(self.forge('alias',members=members,records=[*self.index['files'],alias]),'alias')
@@ -179,10 +177,24 @@ class ArchiveGuards(unittest.TestCase):
         records=[dict(r,sha256=hashlib.sha256(bytes(data)).hexdigest()) if 'payload/'+r['path']==self.frame else r
                  for r in self.index['files']]
         path=self.forge('reforged',members={**self.members,self.frame:bytes(data)},records=records)
-        destination=self.root/'reforged-out'
-        with self.assertRaises(Render3DError) as caught:restore_render(path,destination)
-        self.assertNotIn('Archived file hash differs',str(caught.exception))
-        self.assertFalse(destination.exists())
+        # The member hash agrees; only independent re-verification decodes the PNG.
+        self.refused(path,'PNG CRC mismatch')
+
+    def test_encrypted_member_is_refused_as_render_error(self):
+        # ZipFile.writestr clears flag_bits, so set the encryption bit in the
+        # written local and central headers of one member.
+        import struct
+        path=self.forge('encrypted');raw=bytearray(path.read_bytes())
+        with zipfile.ZipFile(path) as archive:info=archive.getinfo(self.frame)
+        raw[info.header_offset+6]|=1
+        name=self.frame.encode();central=raw.find(b'PK\x01\x02')
+        while central>=0:
+            length=struct.unpack_from('<H',raw,central+28)[0]
+            if bytes(raw[central+46:central+46+length])==name:raw[central+8]|=1;break
+            central=raw.find(b'PK\x01\x02',central+46)
+        self.assertGreaterEqual(central,0)
+        path.write_bytes(bytes(raw))
+        self.refused(path,'nonregular/encrypted')
 
 
 class JunctionSources(unittest.TestCase):
@@ -203,3 +215,15 @@ class JunctionSources(unittest.TestCase):
                 def __exit__(self,*args):return self.listing.__exit__(*args)
             with patch('render3d_archive.os.scandir',side_effect=Listing):
                 with self.assertRaisesRegex(Render3DError,'junction'):module._inventory(source)
+
+    def test_archive_refuses_junction_delivery_and_snapshot_roots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'delivery').mkdir();(root/'snapshot').mkdir()
+            for junction,message in (('delivery','Delivery root'),('snapshot','Snapshot root')):
+                with self.subTest(root=junction):
+                    original=Path.is_junction if hasattr(Path,'is_junction') else None
+                    def is_junction(path,_name=junction):return path.name==_name
+                    with patch.object(Path,'is_junction',is_junction,create=True):
+                        with self.assertRaisesRegex(Render3DError,message):
+                            archive_render(root/'delivery',root/(junction+'.zip'),snapshot_root=root/'snapshot')
+                    self.assertFalse((root/(junction+'.zip')).exists())
