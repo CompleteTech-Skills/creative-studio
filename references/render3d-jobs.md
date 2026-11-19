@@ -34,7 +34,12 @@ without consuming attempts and continues global scheduling.
 `recover(job, verifier=...)` consults the dead worker's durable publication
 intent. It checks the published directory identity, exact receipt digest, source
 plan, every referenced artifact and the independent frame report before settling
-that same attempt as complete. Supply the verifier when an interrupted
+that same attempt as complete. An ordinary worker exception after the rename
+also relinquishes the lease for receipt reconciliation. The frame keeps its
+attempt and reservation while verification is pending, even if the process
+remains alive. A transient verifier error permits a later `recover` with the
+verifier. Cancellation after the rename preserves the verified frame and keeps
+the job cancelled until explicit resume. Supply the verifier when an interrupted
 publication is present. Unpublished or invalid attempts follow the existing
 retry and cancellation limits. This store requires
 local same-host storage; it does not claim distributed leases or cross-host
@@ -51,7 +56,10 @@ Admission checks the stored request, backend and priority against the canonical
 job ID in the lease transaction. Running leases supply checked resource
 reservations. SQLite selects one fitting job in priority order using an
 indexed lookup of the first queued frame per job. Before granting the lease, it checks the selected
-frame's bounds, attempt, snapshot-derived plan and cache key. On Windows the
+frame's bounds, attempt, snapshot-derived plan and cache key. Heartbeat,
+failure, cache reuse and publication also match the lease's process, token,
+request, backend, snapshot path, frame plan and cache key to that durable claim.
+On Windows the
 owner probe opens a synchronization handle and performs a zero-time wait.
 Resume checks its expected revision before recovering dead workers and commits
 the recovery and resume together. A cancelled frame with no remaining attempts
@@ -79,13 +87,25 @@ the backend again. Identical refreshed pixels keep a separately pinned receipt
 directory for the new worker's files. Status exposes its `receipt_key` and exact
 `receipt_sha256`. The shared pixel cache retains the original per-frame request
 and backend provenance when a different job or output location reuses identical
-pixels. Deliveries from older stores classify a frame backed by another request's
-receipt as reused. Source, camera, shot, settings, timing
+pixels. A reused frame pins the exact bytes of the source worker's receipt.
+If a later repair installs a different receipt at the shared key, delivery
+rejects the substitution. Resume checks the pinned digest before deciding
+whether the frame needs a new attempt.
+
+For a completed historical frame without a receipt pointer, the store first
+looks for a retained receipt from the exact claim that completed it. If the last
+completion records cache reuse but has no retained digest, direct delivery
+requires explicit `resume(job, verifier=...)`. Successful re-verification pins
+the current receipt and records a new `cache-reuse-reverified` event. Historical
+publication records that predate receipt binding retain their shared-cache
+delivery behavior and classify another worker's request as reused. Source, camera, shot, settings, timing
 or backend differences cannot qualify as the same cache entry.
 
 `materialize()` revalidates the source and every frame cache, creates relative
 frame paths and per-frame provenance files, independently verifies the complete
-sequence, and publishes a complete portable delivery. Every published image and metadata byte, including provenance, manifest,
+sequence, and publishes a complete portable delivery. Both staging admission and
+the final publication transaction require all expected frame indices to be
+complete and cancellation to be clear. Every published image and metadata byte, including provenance, manifest,
 verification and result JSON, counts against the request storage budget. Output
 usage reports the complete directory size. Existing destinations remain untouched. Store/cache metadata uses bounded nonblocking regular-file reads and strict JSON
 decoding. The full request, manifest, result and verifier identity are
@@ -117,8 +137,8 @@ Synthetic Pillow images test storage/verifier contracts only; these tests alone
 do not establish execution of a 3D renderer. Real Blender end-to-end acceptance
 is recorded separately by the Render3D backend and acceptance owners.
 
-The optional native job workflow can be reproduced with an installed Blender
-4.5 LTS and the independent verifier dependencies:
+The optional native job workflow requires the separate Blender backend and
+independent verifier modules in addition to an installed Blender 4.5 LTS:
 
 ```sh
 HATCH_BLENDER=/path/to/blender HATCH_RENDER3D_REAL_TESTS=1 \
@@ -127,8 +147,11 @@ HATCH_BLENDER=/path/to/blender HATCH_RENDER3D_REAL_TESTS=1 \
 
 It executes actual per-frame native rig rendering, independently decodes the
 portable delivery, reuses verified pixels without a renderer, repairs one
-corrupted frame while retaining its bytes, and cancels a real worker through the
-durable job callback. The fixture is synthetic and carries no visual approval.
+corrupted frame while retaining its bytes, and requests job cancellation before
+entering the backend. Active-worker cancellation requires a separate integration
+run that observes a live Blender process, cancels through the store, and checks
+that the process and its descendants have exited. The fixture is synthetic and
+carries no visual approval.
 
 Portable delivery retains historical per-frame receipt JSON and current pixel
 verification. Raw historical worker logs/reports remain in the JobStore cache;

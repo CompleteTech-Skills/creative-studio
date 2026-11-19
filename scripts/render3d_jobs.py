@@ -40,10 +40,11 @@ def _metadata(path, expected_digest=None):
     try:
         with open_regular(path,limit) as stream:
             data=stream.read(limit+1)
+            digest=hashlib.sha256(data).hexdigest()
             if expected_digest is not None:
-                require(hashlib.sha256(data).hexdigest()==expected_digest,
+                require(digest==expected_digest,
                         'stale-cache','Published metadata differs from the prepared frame.')
-            return decode_json(data,max_bytes=limit)
+            return decode_json(data,max_bytes=limit),digest
     except (OSError,RigError) as exc:
         raise Render3DError('invalid-input',str(exc),path=path) from exc
 
@@ -248,7 +249,7 @@ class JobStore:
                 pass
             finally:
                 if stage.exists(): shutil.rmtree(stage)
-        marker = _metadata(safe_path(self.root,'store.json',exists=True))
+        marker,_ = _metadata(safe_path(self.root,'store.json',exists=True))
         require(marker == dict(version=VERSION, host=socket.gethostname(), capacity=self.capacity),
                 'ownership', 'Store host, version or capacities differ; open with its original configuration.')
         safe_path(self.root,'jobs.sqlite3',exists=True)
@@ -264,6 +265,8 @@ class JobStore:
             db.execute('CREATE INDEX IF NOT EXISTS frames_by_state ON frames(state,job,frame)')
             if 'publication_token' not in {row['name'] for row in db.execute('PRAGMA table_info(frames)')}:
                 db.execute('ALTER TABLE frames ADD COLUMN publication_token TEXT')
+            if 'settlement_pending' not in {row['name'] for row in db.execute('PRAGMA table_info(frames)')}:
+                db.execute('ALTER TABLE frames ADD COLUMN settlement_pending INTEGER NOT NULL DEFAULT 0')
             db.execute('CREATE TABLE IF NOT EXISTS frame_publications('
                        'token TEXT PRIMARY KEY, job TEXT NOT NULL, frame INTEGER NOT NULL, '
                        'payload TEXT NOT NULL, digest TEXT NOT NULL, receipt_key TEXT NOT NULL)')
@@ -381,6 +384,9 @@ class JobStore:
             for frame in result['frames']:
                 require(frame.pop('publication_token') is None or frame['receipt_key'] is not None,
                         'ownership','Published frame has lost its bound receipt.')
+            unbound={f['frame']:f for f in result['frames'] if f['state']=='complete' and f['receipt_key'] is None}
+            if unbound:
+                self._historical_receipts(db,job,unbound)
             counts={name:sum(frame['state']==state for frame in result['frames']) for name,state in
                     (('queued','queued'),('active','running'),('completed','complete'),('failed','failed'),('cancelled','cancelled'))}
             counts['requested']=len(result['frames'])
@@ -404,6 +410,24 @@ class JobStore:
                 unattributed_store_staging_bytes=sum(stage['bytes'] for stage in stages if stage['job'] is None and _alive(stage['pid'])))
             result['events']=[dict(x) for x in db.execute('SELECT seq,at,event,detail FROM (SELECT seq,at,event,detail FROM events WHERE job=? ORDER BY seq DESC LIMIT ?) ORDER BY seq',(job,event_limit))]
             return result
+
+    def _historical_receipts(self,db,job,frames):
+        """Only an intent from the same claim may supply a missing historical binding."""
+        claims={};completions={}
+        for row in db.execute('SELECT event,detail FROM events WHERE job=? AND event IN '
+                              '("claimed","cache-reused","frame-published") ORDER BY seq',(job,)):
+            detail=decode_json(row['detail']);index=detail['frame']
+            if index not in frames:continue
+            if row['event']=='claimed':
+                claims[index]=detail['token']
+                continue
+            completions[index]=(row['event'],claims.get(index))
+        for index,(event,token) in completions.items():
+            frame=frames[index]
+            receipt=db.execute('SELECT receipt_key,digest FROM frame_publications WHERE token=? AND job=? AND frame=?',
+                               (token,job,index)).fetchone()
+            frame['receipt_key'],frame['receipt_sha256']=receipt if receipt else (None,None)
+            frame['unbound_reuse']=receipt is None and event=='cache-reused'
 
     def list_jobs(self, *, limit=100, offset=0):
         require(type(limit) is int and 1<=limit<=1000 and type(offset) is int and offset>=0,
@@ -593,8 +617,14 @@ class JobStore:
 
     def _owned(self, db, lease):
         row=db.execute('SELECT * FROM frames WHERE job=? AND frame=?',(lease['job'],lease['frame'])).fetchone()
-        require(row is not None and row['state']=='running' and row['token']==lease['token']
+        require(row is not None and row['state']=='running' and type(lease['frame']) is int
+                and row['token']==lease['token'] and not row['settlement_pending']
                 and row['pid']==os.getpid(),'ownership','Frame lease is stale or belongs to another process.')
+        job=db.execute('SELECT * FROM jobs WHERE id=?',(row['job'],)).fetchone()
+        request,backend=self._checked_request(job)
+        require(_dump(lease.get('request'))==_dump(request) and _dump(lease.get('backend'))==_dump(backend)
+                and lease.get('snapshot')==job['snapshot'] and _dump(lease.get('spec'))==row['spec']
+                and lease.get('cache_key')==row['cache_key'],'ownership','Work differs from its claimed frame.')
         return row
 
     def heartbeat(self, lease):
@@ -613,67 +643,94 @@ class JobStore:
             db.execute('UPDATE frames SET state="cancelled" WHERE job=? AND state="queued"',(job,))
             self._event(db,job,'cancel-requested');self._refresh(db,job)
 
-    def fail(self, lease, error, *, retryable=False):
+    def fail(self, lease, error, *, retryable=False, verifier=None):
         with self._transaction() as db:
             row=self._owned(db,lease)
             job=db.execute('SELECT request,cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()
-            state='cancelled' if job['cancel'] else 'queued' if retryable and row['attempts']<json.loads(job['request'])['max_attempts'] else 'failed'
-            db.execute('UPDATE frames SET state=?,error=?,token=NULL,pid=NULL,heartbeat=NULL WHERE job=? AND frame=?',
-                       (state,str(error)[:2048],lease['job'],lease['frame']))
-            db.execute('DELETE FROM frame_publications WHERE token=?',(lease['token'],))
-            self._event(db,lease['job'],'attempt-failed',{'frame':lease['frame'],'state':state,'error':str(error)[:2048]})
-            self._refresh(db,lease['job'])
+            try:published=self._publication_path(db,row) is not None
+            except OSError:published=True  # An uncertain rename must retain its intent.
+            if not published:
+                state='cancelled' if job['cancel'] else 'queued' if retryable and row['attempts']<json.loads(job['request'])['max_attempts'] else 'failed'
+                db.execute('UPDATE frames SET state=?,error=?,token=NULL,pid=NULL,heartbeat=NULL WHERE job=? AND frame=?',
+                           (state,str(error)[:2048],lease['job'],lease['frame']))
+                db.execute('DELETE FROM frame_publications WHERE token=?',(lease['token'],))
+                self._event(db,lease['job'],'attempt-failed',{'frame':lease['frame'],'state':state,'error':str(error)[:2048]})
+                self._refresh(db,lease['job'])
+                return
+            # The caller has stopped writing. Fence its lease before invoking an
+            # independent verifier; any process may now reconcile this exact intent.
+            db.execute('UPDATE frames SET settlement_pending=1,pid=NULL,heartbeat=NULL,error=? WHERE job=? AND frame=?',
+                       (str(error)[:2048],row['job'],row['frame']))
+            self._event(db,row['job'],'publication-interrupted',dict(frame=row['frame'],error=str(error)[:2048]))
+        if verifier is not None:
+            with self._transaction() as db:
+                self._recover(db,lease['job'],verifier,token=lease['token'])
 
     def recover(self, job=None, *, verifier=None):
         """Settle dead claims, rechecking any interrupted publication before completion."""
         with self._transaction() as db:
             return self._recover(db,job,verifier)
 
-    def _published_receipt(self, db, row, verifier):
+    def _publication_path(self, db, row):
         intent=db.execute('SELECT * FROM frame_publications WHERE token=? AND job=? AND frame=?',
                           (row['token'],row['job'],row['frame'])).fetchone()
-        if intent is None or row['cancel']:
+        if intent is None:
             return None
         for key in (row['cache_key'],intent['receipt_key']):
             path=safe_path(self.root,'cache/'+key)
-            if not path.is_dir() or _identity(path.stat(follow_symlinks=False))!=intent['payload']:
-                continue
-            require(verifier is not None,'verification-failed',
-                    'Recovering a published frame requires an independent verifier.')
-            job_row=db.execute('SELECT * FROM jobs WHERE id=?',(row['job'],)).fetchone()
-            request,backend=self._checked_request(job_row)
-            try:
-                spec=make_frame_spec(request,row['frame'],Path(job_row['snapshot'])/'snapshot.json')
-                require(row['spec']==_dump(spec) and row['cache_key']==object_hash(dict(
-                    frame=spec['cache_key'],backend=backend)),'ownership','Interrupted frame plan differs.')
-                lease=dict(job=row['job'],frame=row['frame'],token=row['token'],request=request,
-                           backend=backend,spec=spec,cache_key=row['cache_key'])
-                record=self._verify_cache(lease,verifier,key=key,digest=intent['digest'])
-                require(record['request']==self.frame_request(lease) and record['spec']==spec
-                        and _identity(path.stat(follow_symlinks=False))==intent['payload'],
-                        'ownership','Interrupted frame publication changed.')
-            except (ValueError,OSError,KeyError):
-                return None
-            return key
+            try:info=path.stat(follow_symlinks=False)
+            except FileNotFoundError:continue
+            if stat.S_ISDIR(info.st_mode) and _identity(info)==intent['payload']:
+                return intent,key,path
         return None
 
-    def _recover(self, db, job, verifier):
+    def _published_receipt(self, db, row, verifier):
+        publication=self._publication_path(db,row)
+        if publication is None:return None
+        intent,key,path=publication
+        require(verifier is not None,'verification-failed',
+                'Recovering a published frame requires an independent verifier.')
+        job_row=db.execute('SELECT * FROM jobs WHERE id=?',(row['job'],)).fetchone()
+        request,backend=self._checked_request(job_row)
+        try:
+            spec=make_frame_spec(request,row['frame'],Path(job_row['snapshot'])/'snapshot.json')
+            require(row['spec']==_dump(spec) and row['cache_key']==object_hash(dict(
+                frame=spec['cache_key'],backend=backend)),'ownership','Interrupted frame plan differs.')
+            lease=dict(job=row['job'],frame=row['frame'],token=row['token'],request=request,
+                       backend=backend,spec=spec,cache_key=row['cache_key'])
+            record,_=self._verify_cache(lease,verifier,key=key,digest=intent['digest'])
+            require(record['request']==self.frame_request(lease) and record['spec']==spec
+                    and _identity(path.stat(follow_symlinks=False))==intent['payload'],
+                    'ownership','Interrupted frame publication changed.')
+        except (ValueError,KeyError,FileNotFoundError) as exc:
+            if isinstance(exc,Render3DError) and exc.report['category'] in RETRYABLE:
+                raise
+            if isinstance(exc.__cause__,OSError) and not isinstance(exc.__cause__,FileNotFoundError):
+                raise
+            return None
+        return key
+
+    def _recover(self, db, job, verifier, *, token=None):
         recovered=[]
         query='SELECT f.*,j.request,j.cancel FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'
         args=[]
         if job is not None:query+=' AND f.job=?';args.append(job)
+        if token is not None:query+=' AND f.token=?';args.append(token)
         for row in db.execute(query,args).fetchall():
-            if _alive(row['pid']):continue
+            relinquished=row['settlement_pending']==1 and row['pid'] is None
+            if not relinquished and _alive(row['pid']):continue
             key=self._published_receipt(db,row,verifier)
             if key is not None:
                 self._finish_frame(db,row,key,recovered=True)
                 recovered.append((row['job'],row['frame']))
                 continue
             state='cancelled' if row['cancel'] else 'queued' if row['attempts']<json.loads(row['request'])['max_attempts'] else 'failed'
-            db.execute('UPDATE frames SET state=?,token=NULL,pid=NULL,heartbeat=NULL,error="Owner process exited" WHERE job=? AND frame=?',
-                       (state,row['job'],row['frame']))
+            error=row['error'] if relinquished else 'Owner process exited'
+            db.execute('UPDATE frames SET state=?,settlement_pending=0,token=NULL,pid=NULL,heartbeat=NULL,error=? WHERE job=? AND frame=?',
+                       (state,error,row['job'],row['frame']))
             recovered.append((row['job'],row['frame']))
-            self._event(db,row['job'],'owner-exited',{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
+            event='publication-unavailable' if row['settlement_pending'] else 'owner-exited'
+            self._event(db,row['job'],event,{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
             db.execute('DELETE FROM frame_publications WHERE token=?',(row['token'],))
         return recovered
 
@@ -683,12 +740,15 @@ class JobStore:
         completed=[frame for frame in snapshot['frames'] if frame['state']=='complete']
         require(not completed or verifier is not None,'verification-failed',
                 'Resuming completed frames requires an independent verifier.')
-        invalid=[]
+        invalid=[];historical=[]
         for frame in completed:
             spec=make_frame_spec(snapshot['request'],frame['frame'],Path(snapshot['snapshot'])/'snapshot.json')
             lease=dict(request=snapshot['request'],frame=frame['frame'],spec=spec,
                        cache_key=frame['cache_key'],backend=snapshot['backend'])
-            try:self._verify_cache(lease,verifier,key=frame['receipt_key'],digest=frame['receipt_sha256'])
+            try:
+                _,digest=self._verify_cache(lease,verifier,key=frame['receipt_key'],digest=frame['receipt_sha256'])
+                if frame.get('unbound_reuse'):
+                    historical.append((frame,digest))
             except (Render3DError,ValueError,OSError,KeyError):invalid.append(frame['frame'])
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
@@ -698,6 +758,9 @@ class JobStore:
             self._recover(db,job,verifier)
             require(not db.execute('SELECT 1 FROM frames WHERE job=? AND state="running"',(job,)).fetchone(),
                     'ownership','Cannot resume while a live worker owns a frame.')
+            for frame,digest in historical:
+                self._bind_reuse(db,job,frame['frame'],uuid.uuid4().hex,frame['cache_key'],digest)
+                self._event(db,job,'cache-reuse-reverified',dict(frame=frame['frame'],receipt_sha256=digest))
             db.execute('UPDATE jobs SET cancel=0 WHERE id=?',(job,))
             states=['cancelled']+(['failed'] if retry_failed else [])
             for state in states:
@@ -721,7 +784,7 @@ class JobStore:
     def _verify_cache(self, lease, verifier, *, key=None, digest=None):
         path=safe_path(self.root,'cache/'+(key or lease['cache_key']))
         require(path.is_dir() and not path.is_symlink(),'missing-asset','Cache entry unavailable.')
-        record=_metadata(safe_path(path,'cache.json',exists=True),digest)
+        record,observed=_metadata(safe_path(path,'cache.json',exists=True),digest)
         require(isinstance(record,dict) and set(record)=={
                     'version','cache_key','spec','backend','request','result','report'},
                 'stale-cache','Cache metadata has an invalid record shape.')
@@ -754,33 +817,49 @@ class JobStore:
         report=verifier(record['request'],result,path)
         require(isinstance(report,dict) and _dump(report)==_dump(record['report']),
                 'verification-failed','Stored frame report differs from independent verification.')
-        return record
+        return record,observed
+
+    def _bind_reuse(self,db,job,frame,token,key,digest):
+        path=safe_path(self.root,'cache/'+key)
+        _metadata(safe_path(path,'cache.json',exists=True),digest)
+        db.execute('INSERT INTO frame_publications VALUES(?,?,?,?,?,?)',
+                   (token,job,frame,_identity(path.stat()),digest,key))
+        db.execute('UPDATE frames SET state="complete",publication_token=?,token=NULL,pid=NULL,heartbeat=NULL,error=NULL WHERE job=? AND frame=?',
+                   (token,job,frame))
 
     def reuse(self, lease, verifier):
         """Re-decode and hash every artifact; stale entries are never accepted."""
+        lease=deepcopy(lease)
+        with self._transaction() as db:
+            self._owned(db,lease)
         # Revalidate source bytes, even if a cache directory already exists.
         current=make_frame_spec(lease['request'],lease['frame'],Path(lease['snapshot'])/'snapshot.json')
         require(current==lease['spec'],'stale-asset','Source changed since job submission.')
         if lease['request']['cache_policy']=='refresh':return False
-        try:self._verify_cache(lease,verifier)
+        try:_,digest=self._verify_cache(lease,verifier)
         except (Render3DError,ValueError,OSError,KeyError):return False
         with self._transaction() as db:
             self._owned(db,lease)
             require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                     'cancelled','Cancellation requested before cache completion.')
-            db.execute('UPDATE frames SET state="complete",publication_token=NULL,token=NULL,pid=NULL,heartbeat=NULL,error=NULL WHERE job=? AND frame=?',
-                       (lease['job'],lease['frame']))
+            self._bind_reuse(db,lease['job'],lease['frame'],lease['token'],lease['cache_key'],digest)
             self._event(db,lease['job'],'cache-reused',{'frame':lease['frame']});self._refresh(db,lease['job'])
         return True
 
     def publish(self, lease, output_root, result, verifier):
         """Copy verified artifacts to private staging, reverify, publish exclusively."""
+        lease=deepcopy(lease)
+        with self._transaction() as db:
+            self._owned(db,lease)
         output_root=Path(output_root)
         require(not output_root.is_symlink(),'ownership','Output root cannot be a symlink.')
         validate(result,'RenderResult')
         require(result['status']=='complete','incomplete-output','Only complete verified frames can enter cache.')
         require(result['backend']==lease['backend'],'stale-cache','Backend identity changed.')
         request=self.frame_request(lease)
+        require(result['request_sha256']==object_hash(request) and result['requested_frames']==[lease['frame']]
+                and result['snapshot_sha256']==lease['spec']['snapshot_sha256'],
+                'stale-cache','Worker result differs from its claimed request or frame.')
         report=verifier(request,result,output_root)
         require(isinstance(report,dict),'verification-failed','Verifier did not return a metadata report.')
         current=make_frame_spec(lease['request'],lease['frame'],Path(lease['snapshot'])/'snapshot.json')
@@ -840,7 +919,7 @@ class JobStore:
                 try:_rename_no_replace(stage,destination)
                 except FileExistsError:
                     try:
-                        existing=self._verify_cache(lease,verifier)
+                        existing,_=self._verify_cache(lease,verifier)
                     except (Render3DError,ValueError,OSError,KeyError):
                         # Preserve corrupt bytes as evidence before installing a
                         # newly rendered and independently verified replacement.
@@ -850,7 +929,7 @@ class JobStore:
                         _rename_no_replace(destination,quarantine)
                         try:_rename_no_replace(stage,destination)
                         except Exception:
-                            _rename_no_replace(quarantine,destination)
+                            if not destination.exists():_rename_no_replace(quarantine,destination)
                             raise
                         self._event(db,lease['job'],'cache-corruption-repaired',
                                     {'frame':lease['frame'],'preserved':str(quarantine.relative_to(self.root))})
@@ -874,7 +953,7 @@ class JobStore:
 
     def _finish_frame(self,db,lease,key,*,recovered=False):
         db.execute('UPDATE frame_publications SET receipt_key=? WHERE token=?',(key,lease['token']))
-        db.execute('UPDATE frames SET state="complete",publication_token=?,token=NULL,pid=NULL,heartbeat=NULL,'
+        db.execute('UPDATE frames SET state="complete",settlement_pending=0,publication_token=?,token=NULL,pid=NULL,heartbeat=NULL,'
                    'error=NULL WHERE job=? AND frame=?',(lease['token'],lease['job'],lease['frame']))
         self._event(db,lease['job'],'frame-published',dict(frame=lease['frame'],cache_key=lease['cache_key'],
                                                           receipt_key=key,recovered=recovered))
@@ -893,7 +972,8 @@ class JobStore:
             completed=True
             return dict(lease=lease,reused=False)
         except Exception as exc:
-            try:self.fail(lease,exc,retryable=isinstance(exc,Render3DError) and exc.report['category'] in RETRYABLE)
+            try:self.fail(lease,exc,retryable=isinstance(exc,Render3DError) and exc.report['category'] in RETRYABLE,
+                          verifier=verifier)
             except Render3DError:pass
             raise
         finally:
@@ -907,7 +987,10 @@ class JobStore:
         as provenance. No existing destination, even an empty one, is replaced.
         """
         state=self.status(job)
-        require(state['state']=='complete','incomplete-output','Job is not complete.')
+        require(state['state']=='complete' and state['cancel']==0 and state['counts']['completed']==state['counts']['requested'],
+                'incomplete-output','All requested frames must be complete and cancellation clear.')
+        require(not any(frame.get('unbound_reuse') for frame in state['frames']),'verification-failed',
+                'Historical cache reuse requires explicit receipt verification through resume.')
         destination=Path(destination).absolute()
         require(destination.name not in ('','.','..') and '..' not in destination.parts,
                 'ownership','Delivery destination contains parent traversal.')
@@ -924,9 +1007,7 @@ class JobStore:
                 digest=receipt['sha256']
                 intent=(str(destination),job,state['revision'],parent_id,payload_id,digest,receipt['bytes'])
                 with self._transaction() as db:
-                    current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
-                    require(current['revision']==state['revision'] and current['state']=='complete',
-                            'ownership','Job changed while delivering frames.')
+                    self._check_delivery_state(db,state)
                     require(not destination.exists() and not destination.is_symlink(),
                             'ownership','Delivery destination already exists.')
                     # Pre-rename interruption leaves no published destination. Replace
@@ -938,9 +1019,8 @@ class JobStore:
                     db.execute('INSERT OR REPLACE INTO delivery_intents VALUES(?,?,?,?,?,?,?)',intent)
                 with self._transaction() as db:
                     pending=db.execute('SELECT * FROM delivery_intents WHERE destination=?',(str(destination),)).fetchone()
-                    current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
-                    require(pending is not None and tuple(pending)==intent and current['revision']==state['revision']
-                            and current['state']=='complete','ownership','Delivery changed before publication.')
+                    self._check_delivery_state(db,state)
+                    require(pending is not None and tuple(pending)==intent,'ownership','Delivery changed before publication.')
                     require(_identity(destination.parent.stat())==parent_id,'ownership','Delivery parent changed.')
                     publish(result,receipt)
                     require(_identity(destination.parent.stat())==parent_id and
@@ -948,6 +1028,16 @@ class JobStore:
                             'ownership','Delivery location changed during publication.')
                     self._finish_delivery(db,job,destination,digest)
                 return result
+
+    def _check_delivery_state(self,db,state):
+        job=state['id']
+        current=db.execute('SELECT revision,state,cancel FROM jobs WHERE id=?',(job,)).fetchone()
+        span=state['request']['frame_range']
+        partition=db.execute('SELECT count(*),min(frame),max(frame),min(typeof(frame)="integer" AND state="complete") '
+                             'FROM frames WHERE job=?',(job,)).fetchone()
+        require(current is not None and tuple(current)==(state['revision'],'complete',0)
+                and tuple(partition)==(span['end']-span['start'],span['start'],span['end']-1,1),
+                'ownership','Job changed while delivering frames.')
 
     def _finish_delivery(self,db,job,destination,digest):
         self._event(db,job,'delivery-published',dict(destination=str(destination),result_sha256=digest))
@@ -961,8 +1051,8 @@ class JobStore:
             require(pending is not None and pending['job']==job and pending['parent']==parent_id
                     and not destination.is_symlink() and destination.is_dir(),
                     'ownership','Delivery destination already exists.')
-            current=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
-            require(current['revision']==state['revision']==pending['revision'] and current['state']=='complete',
+            self._check_delivery_state(db,state)
+            require(state['revision']==pending['revision'],
                     'ownership','Job changed while reconciling delivery.')
             if os.name=='nt':
                 payload=stack.enter_context(parent.pin_child(destination.name))
@@ -1018,7 +1108,7 @@ class JobStore:
             lease=dict(request=request,frame=frame['frame'],cache_key=frame['cache_key'],
                        spec=spec,backend=backend)
             key=frame['receipt_key'] or frame['cache_key']
-            record=self._verify_cache(lease,verifier,key=key,digest=frame['receipt_sha256'])
+            record,_=self._verify_cache(lease,verifier,key=key,digest=frame['receipt_sha256'])
             # Older stores can cite a previous worker even for an executed refresh.
             if record['request']!=self.frame_request(lease):
                 reused.add(frame['frame'])

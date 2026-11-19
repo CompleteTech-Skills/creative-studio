@@ -1,5 +1,6 @@
 """Real persistence, process ownership and independent image-cache checks."""
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -444,14 +446,192 @@ finally:case.tearDown()
             ref=record['result']['verification']['evidence']
             self.assertEqual(file(ref['path'],(entry/ref['path']).read_bytes()),ref)
             self.assertTrue(next(x['pinned'] for x in self.store.cache_inventory() if x['key']==entry.name))
-        # A pre-upgrade refresh kept a frame-published event and only the shared receipt.
+        frame_key_for_refresh=self.store.status(job)['frames'][0]['receipt_key']
         with self.store._transaction() as db:
             db.execute('UPDATE frames SET publication_token=NULL WHERE job=?',(job,))
+        # An existing intent from this exact claim recovers the receipt association.
+        self.assertEqual(self.store.status(job)['frames'][0]['receipt_key'],frame_key_for_refresh)
+        # A pre-upgrade refresh kept a frame-published event and only the shared receipt.
+        with self.store._transaction() as db:
+            db.execute('DELETE FROM frame_publications WHERE token=?',(lease['token'],))
+            db.execute('UPDATE events SET detail=? WHERE job=? AND event="frame-published"',
+                       (json.dumps(dict(frame=5,cache_key=lease['cache_key'])),job))
         destination=self.root/'legacy-delivery'
         delivered=JobStore(self.store.root).materialize(job,destination,self.verify)
         self.assertEqual((delivered['successful'],delivered['reused']),([],[5]))
         historical=json.loads((destination/delivered['logs'][0]['path']).read_bytes())
         self.assertEqual(historical['request']['id'],self.request['id'])
+
+    def test_reuse_remains_bound_after_another_attempt_repairs_shared_cache(self):
+        self.request['frame_range']['end']=6
+        original=self.submit();first=self.store.claim(original)
+        out,result=self.output(first);self.store.publish(first,out,result,self.verify)
+        req=deepcopy(self.request);req['id']='reused';req['destination']['path']='reused'
+        job=self.submit(req);lease=self.store.claim(job)
+        self.assertTrue(self.store.reuse(lease,self.verify))
+        destination=self.root/'first-delivery'
+        delivered=self.store.materialize(job,destination,self.verify)
+        record=json.loads((destination/delivered['logs'][0]['path']).read_bytes())
+        self.assertEqual((delivered['reused'],record['request']['id']),([5],self.request['id']))
+        # The ordinary repair path preserves the previous directory in quarantine.
+        cache=self.store.root/'cache'/lease['cache_key']
+        digest=hashlib.sha256((cache/'cache.json').read_bytes()).hexdigest()
+        (cache/'frame.png').write_bytes(b'incomplete')
+        req['id']='replacement';req['destination']['path']='replacement'
+        replacement=self.submit(req);fresh=self.store.claim(replacement)
+        self.assertFalse(self.store.reuse(fresh,self.verify))
+        out,result=self.output(fresh);self.store.publish(fresh,out,result,self.verify)
+        reopened=JobStore(self.store.root)
+        with self.assertRaises(Render3DError):reopened.materialize(job,self.root/'later',self.verify)
+        self.assertFalse((self.root/'later').exists())
+        self.assertEqual(reopened.status(job)['frames'][0]['receipt_sha256'],digest)
+        reopened.resume(job,verifier=self.verify)
+        self.assertEqual(reopened.status(job)['state'],'queued')
+
+    def test_unbound_historical_reuse_requires_explicit_receipt_verification(self):
+        self.request['frame_range']['end']=6
+        job=self.submit();first=self.store.claim(job)
+        out,result=self.output(first);self.store.publish(first,out,result,self.verify)
+        req=deepcopy(self.request);req['destination']['path']='elsewhere'
+        reused=self.submit(req);lease=self.store.claim(reused)
+        self.assertTrue(self.store.reuse(lease,self.verify))
+        with self.store._transaction() as db:
+            db.execute('UPDATE frames SET publication_token=NULL WHERE job=?',(reused,))
+            db.execute('DELETE FROM frame_publications WHERE token=?',(lease['token'],))
+        reopened=JobStore(self.store.root)
+        with self.assertRaises(Render3DError):reopened.materialize(reused,self.root/'historical',self.verify)
+        reopened.resume(reused,verifier=self.verify)
+        state=reopened.status(reused)
+        self.assertTrue(state['frames'][0]['receipt_sha256'])
+        self.assertIn('cache-reuse-reverified',[e['event'] for e in state['events']])
+        self.assertEqual(reopened.materialize(reused,self.root/'historical',self.verify)['reused'],[5])
+
+    def test_publication_faults_settle_the_exact_final_attempt(self):
+        import render3d_jobs as jobs
+        self.request['frame_range']['end']=6;self.request['max_attempts']=1
+        def render(req,snapshot,destination,cancelled):
+            spec=json.loads((Path(snapshot)/'snapshot.json').read_bytes())
+            out,result=self.output(dict(request=req,frame=5,spec=spec,token=destination.name))
+            out.rename(destination)
+            return result
+        for index,fault in enumerate(('before-rename','after-rename','after-commit','deferred','timeout','cancel-after-rename')):
+            with self.subTest(fault=fault):
+                req=deepcopy(self.request);req['settings']['samples']+=index
+                req['id']=fault;req['destination']['path']=fault
+                job=self.submit(req)
+                rename=jobs._rename_no_replace
+                def interrupt_rename(*args,**kwargs):
+                    if fault=='before-rename':raise OSError(fault)
+                    rename(*args,**kwargs)
+                    if fault in ('after-rename','deferred','timeout','cancel-after-rename'):raise OSError(fault)
+                transaction=self.store._transaction
+                raised=False
+                @contextmanager
+                def transaction_fault():
+                    nonlocal raised
+                    with transaction() as db:
+                        yield db
+                        done=db.execute('SELECT state FROM jobs WHERE id=?',(job,)).fetchone()[0]=='complete'
+                    if done and fault=='after-commit' and not raised:
+                        raised=True
+                        raise OSError(fault)
+                def verify(req,result,root):
+                    if fault=='deferred' and root.parent==self.store.root/'cache':
+                        raise OSError('verification temporarily unavailable')
+                    if fault=='timeout' and root.parent==self.store.root/'cache':
+                        raise Render3DError('timeout','verification timed out')
+                    return self.verify(req,result,root)
+                fail=self.store.fail
+                def request_cancel(*args,**kwargs):
+                    if fault=='cancel-after-rename':self.store.cancel(job)
+                    return fail(*args,**kwargs)
+                with patch.object(jobs,'_rename_no_replace',side_effect=interrupt_rename), \
+                     patch.object(self.store,'_transaction',transaction_fault), \
+                     patch.object(self.store,'fail',side_effect=request_cancel):
+                    with self.assertRaises(OSError):
+                        self.store.run_one(SimpleNamespace(render_frames=render),verify,job=job)
+                reopened=JobStore(self.store.root)
+                if fault in ('deferred','timeout'):
+                    self.assertEqual(reopened.status(job)['state'],'running')
+                    self.assertIsNone(reopened.claim(job))
+                    reopened.recover(job,verifier=self.verify)
+                state=reopened.status(job);frame=state['frames'][0]
+                expected='failed' if fault=='before-rename' else 'complete'
+                self.assertEqual((frame['state'],frame['attempts']),(expected,1))
+                self.assertEqual([e['event'] for e in state['events']].count('claimed'),1)
+                self.assertEqual([e['event'] for e in state['events']].count('frame-published'),int(expected=='complete'))
+                if fault=='cancel-after-rename':
+                    self.assertEqual(state['state'],'cancelled')
+                    with self.assertRaises(Render3DError):reopened.materialize(job,self.root/fault,self.verify)
+                    reopened.resume(job,verifier=self.verify)
+                if expected=='complete':
+                    self.assertEqual(reopened.materialize(job,self.root/fault,self.verify)['successful'],[5])
+
+    def test_settlement_checks_all_fields_of_the_current_process_lease(self):
+        self.store=JobStore(self.root/'parallel',workers=2)
+        self.request['frame_range']['end']=6
+        first=self.submit();one=self.store.claim(first)
+        out,result=self.output(one);self.store.publish(one,out,result,self.verify)
+        req=deepcopy(self.request);req['destination']['path']='other'
+        other=self.submit(req);lease=self.store.claim(other)
+        req=deepcopy(self.request);req['destination']['path']='third';req['settings']['samples']+=1
+        different=self.store.submit(req,self.root/'snapshot',dict(self.backend,worker_sha256='f'*64))
+        second=self.store.claim(different)
+        relocated=self.root/'relocated';shutil.copytree(self.root/'snapshot',relocated)
+        for field,value in [('request',second['request']),('backend',second['backend']),
+                            ('spec',second['spec']),('cache_key',second['cache_key']),('snapshot',str(relocated))]:
+            mixed=dict(lease);mixed[field]=value
+            with self.subTest(field=field):
+                with self.assertRaises(Render3DError):self.store.heartbeat(mixed)
+                with self.assertRaises(Render3DError):self.store.fail(mixed,'mixed work')
+                with self.assertRaises(Render3DError):self.store.reuse(mixed,self.verify)
+        mixed=dict(second,job=lease['job'],frame=lease['frame'],token=lease['token'])
+        self.backend=second['backend']
+        other_out,other_result=self.output(second)
+        with self.assertRaises(Render3DError):self.store.publish(mixed,other_out,other_result,self.verify)
+        # A different process may inspect the live work but cannot settle its lease.
+        child="""import json,sys
+from render3d_contracts import Render3DError
+from render3d_jobs import JobStore
+store=JobStore(sys.argv[1],workers=2)
+lease=json.load(sys.stdin)
+try:store.fail(lease,'foreign process')
+except Render3DError as exc:assert exc.report['category']=='ownership'
+else:raise AssertionError('settled foreign lease')
+assert store.recover(lease['job'])==[]
+"""
+        run=subprocess.run([sys.executable,'-c',child,str(self.store.root)],input=json.dumps(lease),
+                           env=dict(os.environ,PYTHONPATH=str(ROOT/'scripts')),capture_output=True,text=True,timeout=30)
+        self.assertEqual(run.returncode,0,run.stderr)
+        self.assertFalse(self.store.heartbeat(lease))
+        self.store.fail(lease,'retry',retryable=True)
+        again=self.store.claim(other)
+        with self.assertRaises(Render3DError):self.store.heartbeat(lease)
+        self.assertTrue(self.store.reuse(again,self.verify))
+        self.assertFalse(self.store.heartbeat(second))
+
+    def test_materialize_checks_frame_partition_and_cancel_before_stage_and_commit(self):
+        self.request['frame_range']['end']=6
+        job=self.submit();lease=self.store.claim(job)
+        out,result=self.output(lease);self.store.publish(lease,out,result,self.verify)
+        for column in ('frame-state','cancel'):
+            change=('UPDATE frames SET state="queued" WHERE job=?' if column=='frame-state'
+                    else 'UPDATE jobs SET cancel=1 WHERE id=?')
+            for moment in ('before-stage','before-rename'):
+                with self.subTest(column=column,moment=moment):
+                    destination=self.root/(column+moment)
+                    with self.store._transaction() as db:
+                        db.execute('DROP TRIGGER IF EXISTS change_at_intent')
+                        db.execute('UPDATE frames SET state="complete" WHERE job=?',(job,))
+                        db.execute('UPDATE jobs SET cancel=0 WHERE id=?',(job,))
+                        if moment=='before-stage':db.execute(change,(job,))
+                        else:
+                            db.execute('CREATE TRIGGER change_at_intent AFTER INSERT ON delivery_intents BEGIN '+
+                                       change.replace('?', 'NEW.job')+'; END')
+                    with patch.object(self.store,'_build_delivery',wraps=self.store._build_delivery) as build:
+                        with self.assertRaises(Render3DError):self.store.materialize(job,destination,self.verify)
+                        if moment=='before-stage':build.assert_not_called()
+                    self.assertFalse(destination.exists())
 
     def test_dead_final_worker_recovers_only_its_exact_published_receipt(self):
         self.request['frame_range']['end']=6;self.request['max_attempts']=1
