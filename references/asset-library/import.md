@@ -90,7 +90,8 @@ The version retains the original bytes under
 `source/model.obj` and records the original filename and SHA-256.
 The normalized GLB keeps faces from separate object declarations distinct,
 even when object labels or group names repeat. Mesh extras preserve the
-authored object label, declaration order, and group names. Generic library
+authored object label, declaration order, and group names; an unnamed object
+declaration records only its order. Generic library
 registration retains the historical header rules for existing sealed sources.
 Khronos validates the normalized GLB, with its receipt retained as
 `normalized-khronos.json`. The OBJ source has native geometry checks.

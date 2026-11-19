@@ -135,7 +135,8 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
                 current_group = label or 'mesh'
             elif key == 'o':
                 object_index += 1
-                current_object = (object_index, label) if label else None
+                # Every declaration opens its own scope, including an unnamed one.
+                current_object = (object_index, label)
             else:
                 current_group = label
                 group_members[label] = values
@@ -168,11 +169,13 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, geometr
     meshes = []
     obj_partitions = []
     for i, ((group, material, object_scope), faces) in enumerate(groups.items()):
-        name = object_scope[1] if object_scope is not None else group or 'mesh'
+        name = (object_scope[1] if object_scope is not None else '') or group or 'mesh'
         if geometry_only:
             partition = {}
             if object_scope is not None:
-                partition.update(object=object_scope[1], object_index=object_scope[0])
+                partition['object_index'] = object_scope[0]
+                if object_scope[1]:
+                    partition['object'] = object_scope[1]
             if group:
                 partition['groups'] = group_members[group]
             obj_partitions.append((len(group), partition))

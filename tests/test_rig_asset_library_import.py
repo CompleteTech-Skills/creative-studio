@@ -574,3 +574,36 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(error.exception.report['code'], 'ASSET_BLENDER_RSS')
         signal_group.assert_not_called()
         self.assertEqual(self.library.list_references(), [])
+
+
+class ObjObjectScopeTests(unittest.TestCase):
+    """Parser-level object scoping; runs without the Khronos validator."""
+
+    def partitions(self, text):
+        from rig_obj import import_obj
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / 'model.obj'
+            source.write_text(text)
+            imported = import_obj(source, geometry_only=True)
+        return [(mesh.name, partition) for mesh, (_, partition)
+                in zip(imported.geometry.meshes, imported.report['obj_partitions'], strict=True)]
+
+    def test_unnamed_object_declarations_stay_distinct(self):
+        tri = 'v 0 0 {z}\nv 1 0 {z}\nv 0 1 {z}\nf -3 -2 -1\n'
+        cases = {
+            'repeated bare objects in a shared group':
+                ('o\ng panel\n' + tri.format(z=0) + 'o\ng panel\n' + tri.format(z=1),
+                 [('panel', dict(object_index=1, groups=['panel'])),
+                  ('panel', dict(object_index=2, groups=['panel']))]),
+            'faces before a bare object':
+                ('g panel\n' + tri.format(z=0) + 'o\ng panel\n' + tri.format(z=1),
+                 [('panel', dict(groups=['panel'])),
+                  ('panel', dict(object_index=1, groups=['panel']))]),
+            'named then bare objects':
+                ('o A\n' + tri.format(z=0) + 'o\n' + tri.format(z=1) + 'o\n' + tri.format(z=2),
+                 [('A', dict(object='A', object_index=1)),
+                  ('mesh', dict(object_index=2)), ('mesh', dict(object_index=3))]),
+        }
+        for label, (text, expected) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(self.partitions(text), expected)
