@@ -54,8 +54,13 @@ chronological time may have no unique presentation occurrence.
 priority, prerequisite event IDs, author, revision, hash-pinned source references
 and one or more typed operations. The minimal operations for this phase are
 absolute canonical `relocate` transforms, `visibility` booleans, and scalar
-`set-fact` transitions. Every operation has a before-value precondition. Null
-facts represent the initially unknown value. There are no unrestricted mutation
+`set-fact` transitions. Every operation has a before-value precondition.
+Authored transforms compare exactly, with common nonzero quaternion scales
+representing the same rotation. Native matrix decomposition allows small
+floating-point roundoff. Changing the transform or visibility of a mapped
+ancestor of another mapped entity requires a hierarchy-aware adapter and
+rejects the transaction with `CONTINUITY_ADAPTER_REQUIRED`.
+Null facts represent the initially unknown value. There are no unrestricted mutation
 paths. Costume, ownership, spawning and richer fact scopes remain later tasks.
 
 Append requires the expected head SHA-256. Duplicate IDs, repeated targets in one

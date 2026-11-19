@@ -17,6 +17,11 @@ from continuity_contracts import (MAX_BYTES, MAX_ITEMS, canonical_bytes, decode_
 
 MAX_EVENTS = 4096
 ENGINE_VERSION = 'continuity-temporal-v1'
+EVALUATOR_SOURCES = (
+    'continuity_temporal.py', 'continuity_contracts.py', 'scene3d_contracts.py',
+    'scene3d_graph.py', 'scene3d_math.py', 'rig_math.py', 'rig_errors.py',
+    'portable_paths.py', 'production_contracts.py', 'asset_contracts.py',
+)
 
 
 def fail(code, message):
@@ -71,8 +76,16 @@ def _same_transform(a, b, *, native):
                 return False
         elif not _equal(a[field], b[field]):
             return False
-    # Unit quaternion components share a unit scale. Only reversing every
-    # component together represents the same rotation.
+    if not native:
+        # Compare exact ratios of the authored components before normalization.
+        # A common nonzero scale, including a sign flip, preserves rotation.
+        rotation_a = [Fraction(x) for x in a['rotation']]
+        rotation_b = [Fraction(x) for x in b['rotation']]
+        pivot = next(i for i, x in enumerate(rotation_a) if x)
+        return all(x * rotation_b[pivot] == y * rotation_a[pivot]
+                   for x, y in zip(rotation_a, rotation_b))
+
+    # Native decompositions may differ by roundoff or reverse all components.
     length_a, length_b = math.hypot(*a['rotation']), math.hypot(*b['rotation'])
     rotation_a = [x / length_a for x in a['rotation']]
     rotation_b = [x / length_b for x in b['rotation']]
@@ -173,6 +186,7 @@ class TemporalEngine:
         known_scenes = {digest(rooted(r)): r['path'] for r in project_doc['scenes']}
         known_shots = {digest(rooted(r)): r['path'] for r in project_doc['shots']}
         scenes, scene_references, seeds, mapped_ancestors = {}, {}, {}, {}
+        mapped_parents = set()
         for entry in self.plan['scenes']:
             reference = entry['scene']
             native_path = known_scenes.get(digest(reference))
@@ -209,6 +223,9 @@ class TemporalEngine:
                     ancestors[node] = scene_nodes[node]
                     node = scene_nodes[node]['parent']
             mapped_ancestors[scene['id']] = ancestors
+            parent_nodes = {node['parent'] for node in ancestors.values()}
+            mapped_parents.update(binding['entity_id'] for binding in entry['entities']
+                                  if binding['node_id'] in parent_nodes)
             scenes[scene['id']] = scene
             scene_references[scene['id']] = reference
             seeds[scene['id']] = entities
@@ -263,6 +280,15 @@ class TemporalEngine:
         _integer(self.max_tick, 'story end')
         if any(e['tick'] > self.max_tick for e in self.events):
             fail('MAPPING', 'event falls outside mapped story time')
+        for event in self.events:
+            for operation in event['operations']:
+                if operation.get('entity_id') not in mapped_parents:
+                    continue
+                before, after = operation['before'], operation['after']
+                unchanged = (_same_transform(before, after, native=False)
+                             if operation['event_type'] == 'relocate' else _equal(before, after))
+                if not unchanged:
+                    fail('ADAPTER_REQUIRED', 'event changes a native ancestor of another mapped entity')
         _operations(self.events, self.initial)
         # An additional scene's native starting state must agree with the
         # authored chronology. Never silently discard a conflicting native
@@ -291,8 +317,7 @@ class TemporalEngine:
         import platform
         self.evaluator_sha256 = digest(dict(
             sources={name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                     for name in ('continuity_temporal.py', 'continuity_contracts.py',
-                                  'scene3d_contracts.py', 'scene3d_graph.py', 'scene3d_math.py', 'rig_math.py')},
+                     for name in EVALUATOR_SOURCES},
             python=platform.python_version(), numpy=importlib.metadata.version('numpy'),
             jsonschema=importlib.metadata.version('jsonschema')))
 

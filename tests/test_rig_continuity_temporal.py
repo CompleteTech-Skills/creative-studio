@@ -195,6 +195,47 @@ class TemporalTests(unittest.TestCase):
             observed = registry.temporal_snapshot('main', 'shot-0', 2)['snapshot']
             self.assertEqual(observed['entities'][0]['transform'], after)
 
+    def test_changes_to_a_mapped_parent_need_a_hierarchy_aware_adapter(self):
+        def configure(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            child = nodes['second-character']
+            child['parent'] = 'mesh'
+            child['transform'] = dict(TRANSFORM, translation=[1, 0, 0])
+
+        root = Path(self.temp.name) / 'parent-and-child'
+        plan = fixture(root, configure_scene=configure)
+        native_bytes = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        parent_pose = dict(TRANSFORM, translation=[2, 0, 0])
+        child_pose = dict(TRANSFORM, translation=[3, 0, 0])
+        for operation, before, after in (
+                ('relocate', parent_pose, dict(TRANSFORM, translation=[7, 0, 0])),
+                ('visibility', True, False)):
+            database = Path(self.temp.name) / (operation + '.sqlite')
+            with self.subTest(operation=operation), IdentityRegistry(database, asset_root=root) as registry:
+                head = registry.create_timeline(plan)
+                snapshot = registry.temporal_snapshot('main', 'shot-0', 2, boundary='before')['snapshot']
+                entities = {item['entity_id']: item for item in snapshot['entities']}
+                self.assertEqual(entities['aster']['transform'], parent_pose)
+                self.assertEqual(entities['moss']['transform'], child_pose)
+                changed = event('parent-change', 2002, kind=operation, target='aster', before=before, after=after)
+                with self.assertRaisesRegex(ValueError, 'ADAPTER_REQUIRED'):
+                    registry.append_events('main', [changed], expected_sha256=head)
+                self.assertEqual(registry.temporal_history('main')['sha256'], head)
+                self.assertEqual(registry.temporal_history('main')['events'], [])
+                self.assertEqual({p: p.read_bytes() for p in native_bytes}, native_bytes)
+
+        database = Path(self.temp.name) / 'hierarchy-controls.sqlite'
+        with IdentityRegistry(database, asset_root=root) as registry:
+            head = registry.create_timeline(plan)
+            noop = event('parent-noop', 2002, kind='visibility', target='aster', before=True, after=True)
+            moved = event('leaf-move', 3003, kind='relocate', target='moss',
+                          before=child_pose, after=dict(TRANSFORM, translation=[4, 0, 0]))
+            registry.append_events('main', [noop, moved], expected_sha256=head)
+            later = registry.temporal_snapshot('main', 'shot-0', 3)['snapshot']
+            observed = {item['entity_id']: item for item in later['entities']}
+            self.assertEqual(observed['aster']['transform'], parent_pose)
+            self.assertEqual(observed['moss']['transform']['translation'], [4, 0, 0])
+
     def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
         coordinate = 999999999999.0
         angle_component = math.sqrt(0.5)
@@ -207,7 +248,8 @@ class TemporalTests(unittest.TestCase):
         head = self.append([first])
         for field, value in (
                 ('translation', [coordinate + 0.001, 0, 0]),
-                ('scale', [math.nextafter(1.0, 2.0), 1.0, 1.0])):
+                ('scale', [math.nextafter(1.0, 2.0), 1.0, 1.0]),
+                ('rotation', [1e-15, float32_component, 0.0, float32_component])):
             wrong = dict(recorded, **{field: value})
             later = event('authored-later', 3003, kind='relocate', target='aster',
                           before=wrong, after=native_before)
@@ -221,6 +263,21 @@ class TemporalTests(unittest.TestCase):
         self.assertEqual(continuity_bytes(self.registry.temporal_history('main')['events']),
                          continuity_bytes([first, later]))
         self.assertEqual(self.snap(frame=3)['snapshot']['entities'][0]['transform'], native_before)
+
+    def test_evaluator_fingerprint_tracks_decoder_and_graph_implementation(self):
+        document = dict(plan=self.plan, events=[])
+        original = TemporalEngine(self.root, document).evaluator_sha256
+        source = Path(__file__).resolve().parents[1] / 'scripts'
+        read = Path.read_bytes
+        for name in ('rig_errors.py', 'scene3d_graph.py'):
+            def changed(path):
+                data = read(path)
+                if path == source / name:
+                    return data + b'\n# synthetic source change'
+                return data
+
+            with self.subTest(source=name), patch.object(Path, 'read_bytes', changed):
+                self.assertNotEqual(TemporalEngine(self.root, document).evaluator_sha256, original)
 
     def test_plan_and_events_share_one_immutable_path_closure(self):
         source = self.plan['shots'][0]['shot']

@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from continuity_contracts import canonical_bytes
 from continuity_registry import IdentityRegistry
+from continuity_temporal import EVALUATOR_SOURCES
 from test_rig_continuity_temporal import fixture, event
 from scene3d_example import TRANSFORM
 
@@ -70,9 +71,10 @@ def main():
         write('arrival-plan.json',arrival_plan);write('arrival-snapshot.json',incoming)
     assert arrival_before==protected()
     source_root=Path(__file__).resolve().parents[1]
-    sources=['scripts/continuity_temporal.py','scripts/continuity_registry.py','scripts/continuity_contracts.py',
-             'scripts/scene3d_contracts.py','scripts/scene3d_math.py','scripts/rig_math.py',
-             'tests/test_rig_continuity_temporal.py','tests/continuity_temporal_probe.py']
+    sources=[f'scripts/{name}' for name in EVALUATOR_SOURCES] + [
+        'scripts/continuity_registry.py', 'scripts/scene3d_example.py',
+        'tests/test_rig_continuity_temporal.py', 'tests/continuity_temporal_probe.py',
+        'tests/continuity_test_helpers.py']
     report=dict(status='passed-synthetic-structural-replay',production_artwork_approved=False,
         versions=dict(python=platform.python_version(),numpy=importlib.metadata.version('numpy'),
                       jsonschema=importlib.metadata.version('jsonschema'),sqlite=__import__('sqlite3').sqlite_version),
