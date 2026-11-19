@@ -259,3 +259,12 @@ and retains the actual native sources/caches/logs rather than successful badges.
 Local/CI results and exact source/dependency hashes belong in the retained
 validation receipt for the final reviewed commit. Intermediate development runs
 with sibling-branch imports are not final committed-tree evidence.
+
+## Explicit collision proxies
+
+The additive `explicit-proxies-v1` DIRECT profile separates visual assets from
+collision geometry, supports native primitive/convex/compound/static-mesh proxies,
+and adds masks, explicit pair exclusions and cache-bound native ray queries.
+See [collision proxies and the playground](physics-collisions.md) for its exact
+backend limits, commands and numerical verification. This profile is opt-in;
+the original sphere/box backend contract remains available unchanged.

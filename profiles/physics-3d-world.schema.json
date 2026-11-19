@@ -1980,6 +1980,23 @@
           },
           "minItems": 0,
           "maxItems": 100000
+        },
+        "collision_profile": {
+          "const": "explicit-proxies-v1"
+        },
+        "collision_exclusions": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "minItems": 0,
+          "maxItems": 496
         }
       },
       "required": [

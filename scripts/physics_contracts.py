@@ -202,6 +202,8 @@ def definitions() -> dict:
                      materials=arr(material, 1, 1000), bodies=arr(body, 0, 10000),
                      components=arr(component, 0, 10000), joints=arr(joint, 0, 10000),
                      forces=arr(force, 0, 10000), events=arr(event, 0, 100000)))
+    world['properties']['collision_profile'] = {'const': 'explicit-proxies-v1'}
+    world['properties']['collision_exclusions'] = arr(arr(identifier, 2, 2), 0, 496)
     backend = obj(dict(id={'enum': ['blender', 'pybullet']}, adapter_version=version,
                        solver_name=text, solver_version=text, application_version=text,
                        platform=text, precision={'enum': ['float32', 'float64', 'mixed']},
@@ -411,6 +413,14 @@ def _world(world: dict) -> None:
                     'PHYSICS_REFERENCE', 'Unknown PBR material.', '/materials/' + identifier)
     aliases = [unicodedata.normalize('NFC', item['path']).casefold() for item in world['assets']]
     require(len(aliases) == len(set(aliases)), 'PHYSICS_PATH_ALIAS', 'Asset paths must not alias.', '/assets')
+    excluded_pairs = set()
+    for pair in world.get('collision_exclusions', []):
+        require(pair[0] != pair[1] and set(pair) <= set(bodies), 'PHYSICS_REFERENCE',
+                'Collision exclusion requires two distinct body IDs.', '/collision_exclusions')
+        key = tuple(sorted(pair))
+        require(key not in excluded_pairs, 'PHYSICS_DUPLICATE_ID',
+                'Collision exclusion pair is duplicated.', '/collision_exclusions')
+        excluded_pairs.add(key)
     collider_ids = set()
     for identifier, body in bodies.items():
         path = '/bodies/' + identifier
