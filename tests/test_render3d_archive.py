@@ -221,7 +221,6 @@ class JunctionSources(unittest.TestCase):
             root=Path(temporary);(root/'delivery').mkdir();(root/'snapshot').mkdir()
             for junction,message in (('delivery','Delivery root'),('snapshot','Snapshot root')):
                 with self.subTest(root=junction):
-                    original=Path.is_junction if hasattr(Path,'is_junction') else None
                     def is_junction(path,_name=junction):return path.name==_name
                     with patch.object(Path,'is_junction',is_junction,create=True):
                         with self.assertRaisesRegex(Render3DError,message):
