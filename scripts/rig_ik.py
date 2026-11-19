@@ -418,14 +418,28 @@ def _orient_chain(skeleton: dict, pose: dict, names: list[str], targets: np.ndar
 # Minimum FK-to-IK matching pole distance, far above the 1e-8 m pole-degeneracy
 # cutoff in _pole_perpendicular. Ordinary matches keep their reach distance.
 MIN_MATCHING_POLE_DISTANCE = 1e-6
+POLE_BEND_CUTOFF = 1e-8
 
 
 def _pole_perpendicular(direction, origin, pole):
     delta = pole-origin
     perpendicular = delta-direction*np.dot(delta, direction)
-    if np.linalg.norm(perpendicular) < 1e-8:
+    if np.linalg.norm(perpendicular) < POLE_BEND_CUTOFF:
         perpendicular = np.cross(direction, np.eye(3)[np.argmin(np.abs(direction))])
     return unit(perpendicular)
+
+
+def _pole_keeps_bend(axis, origin, pole, bend):
+    """Check the bend encoded by the rounded world pole."""
+    with np.errstate(over='ignore', invalid='ignore'):
+        delta = pole - origin
+    span = float(np.max(np.abs(delta)))
+    if not math.isfinite(span) or span < POLE_BEND_CUTOFF:
+        return False
+    represented = np.cross(axis, delta / span)
+    requested = np.cross(axis, bend)
+    alignment = float(np.dot(represented, requested))
+    return alignment >= max(POLE_BEND_CUTOFF / span, 16 * np.finfo(float).eps)
 
 
 def _orientation_barrier(skeleton: dict, constraints: list[dict], endpoint: str) -> int:
@@ -586,18 +600,26 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
 
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     validate_chain(skeleton, chain)
-    points, lengths = _chain_points_and_lengths(skeleton, chain['bones'], pose)
+    points, _ = _chain_points_and_lengths(skeleton, chain['bones'], pose)
     world = evaluate_fk(skeleton, pose)
-    reach = math.dist(points[-1], points[0])
+    origin = points[0]
+    reach = math.dist(points[-1], origin)
     if reach <= 1e-9:
         # A valid fully folded chain has a measurable first segment even
         # though its endpoint coincides with its root.
         pole = points[1]
     else:
-        bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
+        axis = unit(points[-1] - origin)
+        bend = _pole_perpendicular(axis, origin, points[1])
         # Keep the near-closed matching pole above the degeneracy cutoff.
         with np.errstate(over='ignore', invalid='ignore'):
-            pole = points[0]+bend*max(reach, MIN_MATCHING_POLE_DISTANCE)
+            pole = origin + bend * max(reach, MIN_MATCHING_POLE_DISTANCE)
+        if np.isfinite(pole).all() and not _pole_keeps_bend(axis, origin, pole, bend):
+            # The shorter pole can round away at a large origin. The measured
+            # elbow is already an admitted world point on the requested side.
+            pole = points[1]
+            require(_pole_keeps_bend(axis, origin, pole, bend), 'RIG_IK_POLE',
+                    'FK-to-IK pole cannot represent the measured bend in world coordinates.')
     require(np.isfinite(pole).all(), 'RIG_NONFINITE',
             'FK-to-IK pole exceeds finite world-coordinate representation.')
     return dict(target=points[-1].tolist(), pole=pole.tolist(),
