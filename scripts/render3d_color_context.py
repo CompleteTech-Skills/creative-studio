@@ -1,4 +1,4 @@
-"""Renderer-owned observations of a pinned OCIO profile and actual scene state.
+"""Observe the current OCIO environment, expected profile files and scene settings.
 
 This module declares no independent color registry or grading transform.
 """
@@ -13,7 +13,7 @@ def color_context(scene, profile_root, inventory, plan):
     root = Path(profile_root).absolute()
     expected = root/inventory['config_path']
     require(os.environ.get('OCIO') == str(expected), 'verification-failed',
-            'Worker did not start with the captured OCIO config pinned explicitly.')
+            'Current OCIO environment path differs from the expected profile.')
     closure = verify_config_bytes(root, inventory)
     image = scene.render.image_settings
     management = getattr(image, 'color_management', None)
@@ -21,7 +21,8 @@ def color_context(scene, profile_root, inventory, plan):
             'Bound output does not support an image color-management override.')
     view = scene.view_settings
     return dict(kind='render3d-color-context', schema_version=1,
-                config_source='builtin-pinned', config_path=inventory['config_path'],
+                config_source='observed-environment-and-files', renderer_profile_verified=False,
+                config_path=inventory['config_path'],
                 config_sha256=inventory['config_sha256'], closure_sha256=closure,
                 declared_roles=inventory['declared_roles'],
                 scene_linear_role=inventory['declared_roles']['scene_linear'],

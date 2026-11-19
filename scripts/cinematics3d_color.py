@@ -371,8 +371,8 @@ def _measure(config, source):
     return result
 
 
-def _calibrate_srgb(config, ocio, source):
-    """Verify the declared sRGB display against an independent XYZ/OETF oracle."""
+def _srgb_error(config, source, processor, *, xyz_input=False):
+    """Compare a native processor to the independent XYZ-to-sRGB oracle."""
     import numpy as np
     columns = []
     for key in ('r', 'g', 'b'):
@@ -383,15 +383,67 @@ def _calibrate_srgb(config, ocio, source):
     scale = np.linalg.solve(basis, np.array([x/y, 1., (1-x-y)/y]))
     xyz_to_709 = np.linalg.inv(basis*scale)
     xyz = config.getProcessor(source, config.getColorSpace('cie_xyz_d65_interchange').getName()).getDefaultCPUProcessor()
-    standard = _processor(config, ocio, {'source': {'working_space': source}, 'target': 'sdr-srgb',
-                                       'display': 'sRGB', 'view': 'Standard', 'look': ''})
     maximum = 0.
     for patch in ([.18, .18, .18], [.5, .1, .03], [1., 1., 1.], [2., .25, .1]):
-        expected = [linear_to_srgb_reference(float(value)) for value in xyz_to_709 @ np.array(_rgb(xyz, patch))]
-        actual = _rgb(standard, patch)
+        tristimulus = _rgb(xyz, patch)
+        expected = [linear_to_srgb_reference(float(value)) for value in xyz_to_709 @ np.array(tristimulus)]
+        actual = _rgb(processor, tristimulus if xyz_input else patch)
+        _need(all(math.isfinite(v) for v in actual), 'nonfinite sRGB calibration result')
         maximum = max(maximum, max(abs(a-b) for a, b in zip(actual, expected)))
-    _need(maximum < 5e-4, 'declared sRGB display fails independent XYZ/OETF calibration')
     return maximum
+
+
+def _calibrate_view(config, ocio, plan):
+    source = plan['source']['working_space']
+    display, view = plan['display'], plan['view']
+    if view != 'Standard':
+        standard = _processor(config, ocio, dict(plan, view='Standard', look=''))
+        _need(_srgb_error(config, source, standard) < 5e-4, 'declared sRGB display fails independent calibration')
+    processor = _processor(config, ocio, dict(plan, look=''))
+    error = _srgb_error(config, source, processor)
+    if error < 5e-4:
+        return error
+
+    # A tone-mapped view intentionally changes scene values before encoding.
+    # Measure its actual final conversion separately when the profile exposes it.
+    name = config.getDisplayViewColorSpaceName(display, view)
+    output = config.getColorSpace(display if name == ocio.OCIO_VIEW_USE_DISPLAY_NAME else name)
+    _need(view != 'Standard' and output is not None and not output.isData() and not processor.isIdentity(),
+          'selected view fails independent sRGB calibration')
+    xyz = config.getColorSpace('cie_xyz_d65_interchange')
+    if output.getReferenceSpaceType() == ocio.REFERENCE_SPACE_DISPLAY:
+        _need(xyz.getReferenceSpaceType() == ocio.REFERENCE_SPACE_DISPLAY,
+              'sRGB display encoding requires a display-referred XYZ D65 interchange role')
+        # With both spaces display-referred, this processor excludes the view transform.
+        final = config.getProcessor(xyz, output).getDefaultCPUProcessor()
+        error = _srgb_error(config, source, final, xyz_input=True)
+    else:
+        # Legacy configs can bundle the grade and an explicit final conversion
+        # into one scene-referred space. An opaque grading LUT alone is ambiguous.
+        group = output.getTransform(ocio.COLORSPACE_DIR_FROM_REFERENCE)
+        _need(isinstance(group, ocio.GroupTransform) and len(group) and
+              group.getDirection() == ocio.TRANSFORM_DIR_FORWARD, 'selected view lacks a verifiable sRGB output stage')
+        stage = group[len(group)-1]
+        if isinstance(stage, ocio.ColorSpaceTransform) and stage.getDirection() == ocio.TRANSFORM_DIR_FORWARD:
+            linear = config.getColorSpace(stage.getSrc())
+            encoded = config.getColorSpace(stage.getDst())
+            _need(linear is not None and encoded is not None and not linear.isData() and not encoded.isData(),
+                  'selected sRGB output stage requires color spaces')
+            _measure(config, linear.getName())
+            error = _srgb_error(config, linear.getName(), config.getProcessor(stage).getDefaultCPUProcessor())
+        else:
+            # An inline encoder can follow a grade that preserves the reference
+            # RGB axes. Remove only these recognized grades in a measurement copy.
+            _need(len(group) > 1 and all(isinstance(group[i], ocio.ExposureContrastTransform)
+                  for i in range(len(group)-1)), 'selected view lacks an explicit final sRGB conversion')
+            probe = deepcopy(config)
+            space = probe.getColorSpace(output.getName())
+            space.setTransform(stage, ocio.COLORSPACE_DIR_FROM_REFERENCE)
+            probe.addColorSpace(space)
+            final = _processor(probe, ocio, dict(plan, look=''))
+            error = _srgb_error(config, source, final)
+    _need(error < 5e-4, 'selected view output stage fails independent sRGB calibration')
+    return None
 
 
 def _processor(config, ocio, plan):
@@ -435,10 +487,8 @@ def make_plan(root, inventory, source, *, target='sdr-srgb', display='sRGB', vie
         _need(max(abs(a-b) for key in measured for a, b in zip(measured[key], source['primaries'][key])) < 5e-5,
               'declared source primaries disagree with the actual OCIO transform to CIE XYZ D65')
         value['measured_source_primaries'] = measured
-        calibration = None if target == 'scene-linear' else _calibrate_srgb(config, ocio, source['working_space'])
-        # The oracle measures only the Standard view without a look. Other
-        # views and explicit looks are deliberately non-identity, so the
-        # display check above remains a gate but is not reported as their error.
+        calibration = None if target == 'scene-linear' else _calibrate_view(config, ocio, value)
+        # Preserve the full-view error only for ungraded Standard plans.
         value['output_calibration_max_error'] = calibration if (view, look) == ('Standard', '') else None
         _processor(config, ocio, value)
     value['plan_sha256'] = object_hash(value)

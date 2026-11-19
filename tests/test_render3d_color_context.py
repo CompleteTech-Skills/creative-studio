@@ -326,6 +326,114 @@ class PinnedTransforms(Temporary):
         self.assertEqual(receipt['exposure_applications'], 1)
         self.assertTrue(np.array_equal(pixels[0], np.array([.18, .18, .18, 1.], dtype=np.float32)))
 
+    def test_selected_view_must_prove_its_output_encoding(self):
+        import PyOpenColorIO as ocio
+        for view in ('AgX', 'Filmic'):
+            for target, accepted in [('Linear Rec.709', False), ('sRGB Display', True)]:
+                with self.subTest(view=view, target=target):
+                    config = CONFIG.replace('looks:', f'    - !<View> {{name: {view}, colorspace: {target}}}\n\nlooks:')
+                    write_profile(self.root, config)
+                    inventory = color.capture_config(self.root)
+                    source = source_context(inventory)
+                    native = ocio.Config.CreateFromFile(str(self.root/'config.ocio'))
+                    cpu = native.getProcessor(source['working_space'], 'sRGB', view,
+                                              ocio.TRANSFORM_DIR_FORWARD).getDefaultCPUProcessor()
+                    observed = cpu.applyRGB([.18]*3)[0]
+                    if accepted:
+                        self.assertAlmostEqual(observed, color.linear_to_srgb_reference(.18), places=4)
+                        plan = color.make_plan(self.root, inventory, source, view=view)
+                        self.assertEqual(plan['output_transfer'], 'srgb')
+                    else:
+                        self.assertAlmostEqual(observed, .18, places=6)
+                        with self.assertRaisesRegex(ValueError, 'sRGB'):
+                            color.make_plan(self.root, inventory, source, view=view)
+
+    def test_legacy_graded_view_verifies_final_color_space_conversion(self):
+        import numpy as np
+        graded = CONFIG.replace('looks:', '    - !<View> {name: AgX, colorspace: Graded}\n\nlooks:') + '''
+  - !<ColorSpace>
+    name: Graded
+    from_scene_reference: !<GroupTransform>
+      children:
+        - !<ExposureContrastTransform> {exposure: -1}
+        - !<ColorSpaceTransform> {src: Linear Rec.709, dst: sRGB Display}
+'''
+        for target in ('sRGB Display', 'Linear Rec.709'):
+            with self.subTest(target=target):
+                write_profile(self.root, graded.replace('dst: sRGB Display', 'dst: '+target))
+                inventory = color.capture_config(self.root)
+                if target == 'Linear Rec.709':
+                    with self.assertRaisesRegex(ValueError, 'sRGB'):
+                        color.make_plan(self.root, inventory, source_context(inventory), view='AgX')
+                    continue
+                plan = color.make_plan(self.root, inventory, source_context(inventory), view='AgX')
+                pixels = np.array([[.36, .36, .36, 1]], dtype=np.float32)
+                result, receipt = color.transform_pixels(self.root, plan, pixels)
+                self.assertAlmostEqual(result[0, 0], color.linear_to_srgb_reference(.18), places=4)
+                self.assertEqual(receipt['output_transfer'], 'srgb')
+                self.assertIsNone(plan['output_calibration_max_error'])
+
+    def test_inline_encoding_after_exposure_is_checked_independently(self):
+        import numpy as np
+        config = CONFIG.replace('looks:', '    - !<View> {name: AgX, colorspace: Graded}\n\nlooks:') + '''
+  - !<ColorSpace>
+    name: Graded
+    from_scene_reference: !<GroupTransform>
+      children:
+        - !<ExposureContrastTransform> {exposure: -1}
+        - !<ExponentWithLinearTransform> {gamma: 2.4, offset: 0.055, direction: inverse}
+'''
+        write_profile(self.root, config)
+        inventory = color.capture_config(self.root)
+        plan = color.make_plan(self.root, inventory, source_context(inventory), view='AgX')
+        pixels = np.array([[.36, .36, .36, 1]], dtype=np.float32)
+        result, _ = color.transform_pixels(self.root, plan, pixels)
+        self.assertAlmostEqual(result[0, 0], color.linear_to_srgb_reference(.18), places=4)
+        prefix, suffix = config.rsplit('gamma: 2.4', 1)
+        write_profile(self.root, prefix+'gamma: 2.2'+suffix)
+        inventory = color.capture_config(self.root)
+        with self.assertRaisesRegex(ValueError, 'sRGB'):
+            color.make_plan(self.root, inventory, source_context(inventory), view='AgX')
+
+    def test_display_referred_tone_map_measures_selected_output_space(self):
+        import numpy as np
+        config = CONFIG.replace('name: CIE-XYZ-D65', 'name: Scene XYZ').replace(
+            'looks:', '    - !<View> {name: Filmic, view_transform: Dim, display_colorspace: Monitor}\n\nlooks:')
+        config += '''
+view_transforms:
+  - !<ViewTransform>
+    name: Reference
+    from_scene_reference: !<MatrixTransform> {matrix: %s}
+  - !<ViewTransform>
+    name: Dim
+    from_scene_reference: !<GroupTransform>
+      children:
+        - !<ExposureContrastTransform> {exposure: -1}
+        - !<MatrixTransform> {matrix: %s}
+
+display_colorspaces:
+  - !<ColorSpace>
+    name: CIE-XYZ-D65
+  - !<ColorSpace>
+    name: Monitor
+    from_display_reference: !<GroupTransform>
+      children:
+        - !<MatrixTransform> {matrix: %s, direction: inverse}
+        - !<ExponentWithLinearTransform> {gamma: 2.4, offset: 0.055, direction: inverse}
+''' % (_XYZ, _XYZ, _XYZ)
+        for encoded in (True, False):
+            with self.subTest(encoded=encoded):
+                write_profile(self.root, config if encoded else config[:config.rindex('        - !<Exponent')])
+                inventory = color.capture_config(self.root)
+                if not encoded:
+                    with self.assertRaisesRegex(ValueError, 'sRGB'):
+                        color.make_plan(self.root, inventory, source_context(inventory), view='Filmic')
+                    continue
+                plan = color.make_plan(self.root, inventory, source_context(inventory), view='Filmic')
+                result, receipt = color.transform_pixels(self.root, plan, np.array([[.36]*3+[1]], dtype=np.float32))
+                self.assertAlmostEqual(result[0, 0], color.linear_to_srgb_reference(.18), places=4)
+                self.assertEqual(receipt['output_transfer'], 'srgb')
+
     def test_exposure_look_and_alpha_modes(self):
         import numpy as np
         pixels = np.array([[.09, .09, .09, 1.]], dtype=np.float32)
@@ -391,11 +499,20 @@ class ColorContext(Temporary):
         with patch.dict(os.environ, OCIO=str(Path(self.tmp.name)/'different'/'config.ocio')):
             with self.assertRaises(Render3DError) as caught:
                 color_context(self.scene(), self.root, self.inventory, {'alpha': 'straight'})
+
         self.assertEqual(caught.exception.report['category'], 'verification-failed')
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop('OCIO', None)
             with self.assertRaises(Render3DError):
                 color_context(self.scene(), self.root, self.inventory, {'alpha': 'straight'})
+
+    def test_environment_change_after_scene_creation_is_only_an_observation(self):
+        with patch.dict(os.environ, OCIO='different-at-startup.ocio'):
+            scene = self.scene()
+            os.environ['OCIO'] = self.pinned
+            receipt = color_context(scene, self.root, self.inventory, {'alpha': 'straight'})
+        self.assertEqual(receipt['config_source'], 'observed-environment-and-files')
+        self.assertIs(receipt['renderer_profile_verified'], False)
 
     def test_changed_profile_bytes_or_image_override_fail_closed(self):
         with patch.dict(os.environ, OCIO=self.pinned):
