@@ -26,7 +26,7 @@ import sys
 import tempfile
 import time
 
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 import atomic_publish
 from director_contracts import validate_method_request, validate_method_result, validate_document
 from director_schema import schemas
@@ -135,7 +135,7 @@ def _posix_completion(process):
     else:
         # CPython 3.12 on macOS has kqueue but does not expose waitid.
         import select
-        with select.kqueue() as queue:
+        with closing(select.kqueue()) as queue:
             event = select.kevent(process.pid, filter=select.KQ_FILTER_PROC,
                                   flags=select.KQ_EV_ADD, fflags=select.KQ_NOTE_EXIT)
             try:

@@ -8,6 +8,8 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, call, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -154,7 +156,7 @@ class DirectorWorkerTreeTests(unittest.TestCase):
             if venv_launcher:
                 import venv
                 venv.EnvBuilder(with_pip=False, system_site_packages=True).create(root/'venv')
-                harness_python = root/'venv'/'Scripts'/'python.exe'
+                harness_python = root/'venv'/('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
             # An independent process using the same Python executable must survive.
             sibling = subprocess.Popen(
                 [sys.executable, '-c', 'import time; time.sleep(40)'],
@@ -231,9 +233,34 @@ class DirectorWorkerTreeTests(unittest.TestCase):
     def test_success_stops_live_descendant_and_preserves_unrelated_process(self):
         self.run_tree('success-with-descendant')
 
-    @unittest.skipUnless(os.name == 'nt', 'Windows venv redirector')
     def test_venv_launcher_stops_live_descendant(self):
         self.run_tree('success-with-descendant', venv_launcher=True)
+
+    def test_kqueue_observes_exit_and_closes_without_reaping(self):
+        with patch.object(sys, 'path', [str(ROOT/'scripts'), *sys.path]):
+            import director_capabilities as cap
+        process = SimpleNamespace(pid=42)
+        for exited_before_registration in (False, True):
+            with self.subTest(exited_before_registration=exited_before_registration):
+                # Model the Python 3.12 kqueue API: close(), no context manager.
+                queue = Mock(spec=['close', 'control'])
+                event = object()
+                selector = SimpleNamespace(kqueue=Mock(return_value=queue), kevent=Mock(return_value=event),
+                                           KQ_FILTER_PROC=1, KQ_EV_ADD=2, KQ_NOTE_EXIT=3)
+                queue.control.side_effect = (ProcessLookupError() if exited_before_registration else
+                                             [[], [], [event]])
+                with patch.object(cap, 'os', SimpleNamespace()), patch.dict(sys.modules, select=selector):
+                    with cap._posix_completion(process) as finished:
+                        if not exited_before_registration:
+                            self.assertFalse(finished())
+                        self.assertTrue(finished())
+                        queue.close.assert_not_called()
+                selector.kevent.assert_called_once_with(process.pid, filter=1, flags=2, fflags=3)
+                expected = [call([event], 0)]
+                if not exited_before_registration:
+                    expected.extend([call(None, 1, 0)]*2)
+                self.assertEqual(queue.control.call_args_list, expected)
+                queue.close.assert_called_once_with()
 
 
 if __name__ == '__main__':
