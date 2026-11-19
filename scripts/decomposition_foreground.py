@@ -54,7 +54,7 @@ RECEIPT = obj({'schema_version': {'const': 1}, 'kind': {'const': 'foreground-pro
     'backend': obj({'name': {'const': 'torchvision-maskrcnn-coco-v1'}, 'weights_sha256': HASH,
                     'torch': TEXT, 'torchvision': TEXT, 'execution': {'const': 'local'}}),
     'parameters': obj({'score_threshold': CONFIDENCE, 'mask_threshold': {'const': .5},
-                        'threads': {'enum': [1, 2]}, 'max_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 300},
+                        'threads': {'type': 'integer', 'enum': [1, 2]}, 'max_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 300},
                         'max_pixels': {'const': MAX_PIXELS}}),
     'elapsed_seconds': {'type': 'number', 'minimum': 0},
     'candidates': array(CANDIDATE, MAX_CANDIDATES), 'overlap': ASSET,
@@ -62,7 +62,7 @@ RECEIPT = obj({'schema_version': {'const': 1}, 'kind': {'const': 'foreground-pro
     'anatomy_recognized': {'const': False}, 'review_status': {'const': 'pending'}})
 
 # Optional on historical v1 receipts; current workers retain actual runtime counts.
-RECEIPT['properties']['runtime'] = obj({'torch_threads': {'enum': [1, 2]},
+RECEIPT['properties']['runtime'] = obj({'torch_threads': {'type': 'integer', 'enum': [1, 2]},
     'torch_interop_threads': {'const': 1}})
 
 
@@ -427,6 +427,12 @@ def select(root, identifiers, destination, *, name=None):
         receipt, receipt_hash = _capture_snapshot(root, snapshot)
         selected, ambiguous = _selected_geometry(snapshot, receipt, identifiers)
         source = receipt['source']
+        # Seed identity with the original bytes' digest, the binary source-space
+        # membership, and the set of selected candidate IDs (even if masks coincide).
+        identity = hashlib.sha256(bytes.fromhex(source['asset']['sha256']))
+        identity.update(selected.tobytes())
+        identity.update(','.join(sorted(identifiers)).encode('ascii'))
+        character_id = 'character-' + identity.hexdigest()[:32]
         ambiguous_pixels = count(ambiguous)
         annotation = {'schema_version': 1, 'source_sha256': source['asset']['sha256'],
             'author': 'Explicit foreground candidate selection',
@@ -437,7 +443,7 @@ def select(root, identifiers, destination, *, name=None):
         run = stage / 'run'
         result = create_decomposition(safe_path(snapshot, source['asset']['path']), run,
             annotations=annotation, foreground_mask={'runs': mask_to_runs(selected)},
-            name=name, origin=source['origin'], fixture=source['fixture'])
+            character_id=character_id, name=name, origin=source['origin'], fixture=source['fixture'])
         # Build the ordinary run first, then attach and verify lineage while
         # the complete run is still inside the pinned private staging directory.
         snapshot.rename(run / RETAINED_DIRECTORY)

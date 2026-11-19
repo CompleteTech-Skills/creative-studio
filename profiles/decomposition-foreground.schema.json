@@ -103,6 +103,7 @@
           "const": 0.5
         },
         "threads": {
+          "type": "integer",
           "enum": [
             1,
             2
@@ -254,6 +255,7 @@
       "additionalProperties": false,
       "properties": {
         "torch_threads": {
+          "type": "integer",
           "enum": [
             1,
             2

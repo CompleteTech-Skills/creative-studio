@@ -155,6 +155,49 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(load_decomposition(destination)['source']['sha256'],before)
 
     @requires_foreground_publication
+    def test_selection_identity_is_bound_to_original_source_and_membership(self):
+        def select_id(identifiers, label):
+            destination = Path(self.temp.name) / label
+            selected = fg.select(self.root, identifiers, destination, name=label)
+            character = load_decomposition(destination)['character']
+            self.assertEqual(character, selected['character'])
+            self.assertEqual(character['name'], label)
+            self.assertNotIn(label, character['id'])
+            return character['id']
+
+        first = ['candidate-1']
+        second = ['candidate-2']
+        first_id = select_id(first, 'first')
+        second_id = select_id(second, 'second')
+        union_id = select_id(first + second, 'group')
+        self.assertEqual(len({first_id, second_id, union_id}), 3)
+        self.assertEqual(select_id(first, 'renamed'), first_id)
+        self.assertEqual(select_id(second + first, 'reordered'), union_id)
+
+        # Even coincident detections preserve the user's explicit membership.
+        left, right = self.receipt['candidates']
+        mask_data = (self.root / right['mask']['path']).read_bytes()
+        for descriptor in (left['mask'], self.receipt['overlap']):
+            (self.root / descriptor['path']).write_bytes(mask_data)
+            descriptor['sha256'] = right['mask']['sha256']
+        left.update(bbox=right['bbox'], pixels=right['pixels'])
+        self.save()
+        moved_id = select_id(first, 'moved')
+        self.assertNotEqual(moved_id, first_id)
+        self.assertNotEqual(moved_id, second_id)
+        self.assertEqual(select_id(second, 'same-membership'), second_id)
+
+        source_path = self.root / self.receipt['source']['asset']['path']
+        with Image.open(source_path) as image:
+            source = image.copy()
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text('fixture', 'Different original bytes, identical pixels')
+        source.save(source_path, pnginfo=metadata)
+        self.receipt['source']['asset']['sha256'] = sha(source_path)
+        self.save()
+        self.assertNotEqual(select_id(first, 'other-source'), moved_id)
+
+    @requires_foreground_publication
     def test_selection_flags_selected_overlap_pixels_as_ambiguous(self):
         destination = Path(self.temp.name) / 'one-person'
         fg.select(self.root, ['candidate-1'], destination)
@@ -295,6 +338,18 @@ class ForegroundContracts(unittest.TestCase):
         fg.load(self.root)
         self.receipt['runtime']['torch_threads']=2;self.save()
         with self.assertRaises(ValueError):fg.load(self.root)
+
+    def test_receipt_thread_counts_require_integers(self):
+        self.receipt['parameters']['threads'] = 1
+        self.receipt['runtime'] = {'torch_threads': 1, 'torch_interop_threads': 1}
+        for section, field in [('parameters', 'threads'), ('runtime', 'torch_threads')]:
+            for invalid in (True, False, 1.0):
+                with self.subTest(section=section, field=field, invalid=repr(invalid)):
+                    self.receipt[section][field] = invalid
+                    self.save()
+                    with self.assertRaisesRegex(ValueError, rf'{section}\.{field}: expected integer'):
+                        fg.load(self.root)
+                    self.receipt[section][field] = 1
 
     @requires_foreground_publication
     def test_unknown_duplicate_empty_selection_rejected(self):
