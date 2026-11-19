@@ -26,6 +26,7 @@ from decomposition_spec import (ALGORITHM, ANNOTATION_SCHEMA, MANIFEST_SCHEMA, c
     check_slug, safe_path, validate_relations, validate_structure)
 from extraction_annotations import rectangle
 from extract_strip_frames import atomic_json
+from rig_errors import normalize_root, scoped_directory_descriptor
 
 MAX_JSON_BYTES = 64 * 1024 * 1024
 
@@ -491,7 +492,7 @@ def save_manifest(root, manifest, validate=True, transactional=True):
     Existing runs stage their manifest and sidecars together. Internal callers
     already building a staged run disable the additional copy explicitly.
     """
-    root = Path(root).resolve()
+    root = normalize_root(root)
     if transactional and (root / 'decomposition.json').exists():
         recover_decomposition(root)
         from decomposition_package import _inventory
@@ -585,6 +586,8 @@ def _load_checked(root, verify):
         validate_structure(annotation, ANNOTATION_SCHEMA, 'current annotation')
         if annotation['source_sha256'] != source['sha256']:
             raise ValueError('current annotation names another source')
+        from decomposition_foreground import verify_selection
+        verify_selection(root, manifest, annotation)
         from decomposition_analysis import provenance as analysis_provenance
         analysis_record = analysis_provenance(root, annotation, source['sha256'])
         expected_call = bool(analysis_record and analysis_record['evidence']['execution'] == 'local')
@@ -602,7 +605,7 @@ def _load_checked(root, verify):
 
 
 def load_decomposition(root, verify=True):
-    root = Path(root).resolve()
+    root = normalize_root(root)
     return _load_checked(root, verify)
 
 
@@ -673,7 +676,13 @@ def _build(root, source, source_info, annotation, foreground_mask, foreground_in
 def create_decomposition(source, run_dir, annotations=None, background='auto', foreground_mask=None,
                          selection=None, name=None, character_id=None, pixel_art=False,
                          origin='User supplied image', fixture=False, mode='faithful', chroma_key=None, key_threshold=0):
-    source_path, root = Path(source).expanduser().resolve(), Path(run_dir).expanduser().resolve()
+    source_path = Path(source).expanduser()
+    with scoped_directory_descriptor(source_path.parent) as source_fd:
+        if source_fd is None:
+            source_path = source_path.resolve()
+        else:
+            source_path = safe_path(source_path.parent, source_path.name)
+    root = normalize_root(Path(run_dir).expanduser())
     if root.exists():
         raise ValueError('decomposition run directory must be new; review/rebuild or resume the existing package')
     if type(pixel_art) is not bool or type(fixture) is not bool or mode not in ('faithful', 'assisted'):
@@ -821,6 +830,8 @@ def rebuild_from_annotation(root, annotation, reason='Component correction', aut
     base = Path(annotation).resolve().parent if isinstance(annotation, (str, Path)) else root
     normalized = _annotation(annotation, previous['source']['sha256'], original, base)
     normalized['author'], normalized['note'] = author, reason
+    if 'foreground_analysis' in previous['extensions']:
+        normalized['extensions']['foreground_analysis'] = copy.deepcopy(previous['extensions']['foreground_analysis'])
     validate_structure(normalized, ANNOTATION_SCHEMA, 'corrected annotation')
     supplied = normalized.get('foreground_mask')
     old_mask = _image(root, previous['foreground']['mask']).convert('L')
