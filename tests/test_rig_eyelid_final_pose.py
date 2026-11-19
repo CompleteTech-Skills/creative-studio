@@ -159,6 +159,26 @@ class FinalGazeEyelidTests(unittest.TestCase):
         for mesh, geometry in evaluate_deformation(rig, expected).items():
             np.testing.assert_allclose(evaluate_deformation(rig, actual)[mesh]['positions'], geometry['positions'])
 
+    def test_gaze_release_keeps_bones_written_by_the_ik_solve(self):
+        rig = final_pose_fixture()
+        authored = rotate_bone(rig.skeleton, neutral_pose(rig.skeleton),
+                               'head', axis_angle([0, 1, 0], -.26))
+        chain = rig.manifest['controllers']['ik'][0]
+        target = [.1, 1., 0.]
+        for extra in (dict(head_follow=.5), dict(orientation=axis_angle([0, 0, 1], math.pi / 4).tolist())):
+            with self.subTest(**extra):
+                parameters = dict(pose=authored, chain='chain', target=target, **extra)
+                ungazed = solve_operation(rig, parameters)['pose']
+                gazed = solve_operation(rig, dict(parameters, gaze=gaze_target(.6)))['pose']
+                released = pose_operation(rig, {'pose': gazed, 'gaze': None})
+                endpoint = evaluate_fk(rig.skeleton, released)[chain['bones'][-1]][:3, 3]
+                self.assertLessEqual(np.linalg.norm(endpoint - target), chain['tolerance'])
+                solved = chain['bones'] if 'orientation' in extra else chain['bones'][:-1]
+                for name in solved:
+                    self.assertEqual(released['bones'][name], gazed['bones'][name])
+                if 'orientation' in extra:
+                    self.assertEqual(released['bones']['eye.right'], ungazed['bones']['eye.right'])
+
     def test_no_gaze_preserves_authored_pose_overrides(self):
         rig = final_pose_fixture()
         initial = neutral_pose(rig.skeleton)
