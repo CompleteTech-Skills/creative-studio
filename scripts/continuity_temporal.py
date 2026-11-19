@@ -60,14 +60,20 @@ def _equal(a, b):
     return a == b
 
 
-def _same_transform(a, b, *, native):
-    """Compare validated TRS, allowing roundoff only at a native matrix boundary."""
+def _same_transform(a, b, *, native, floor=None):
+    """Compare validated TRS, allowing roundoff only at a native matrix boundary.
+
+    ``floor`` is the per-axis absolute translation bound recorded when the
+    native value was composed; cancellation leaves a residual proportional to
+    the magnitudes that cancelled, not to the result.
+    """
     roundoff = 8 * math.ulp(1.0)
+    floor = floor or (0., 0., 0.)
     for field in ('translation', 'scale'):
         if native:
-            # Matrix cancellation near zero needs a small absolute floor.
-            if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=roundoff)
-                       for x, y in zip(a[field], b[field])):
+            bounds = floor if field == 'translation' else (0., 0., 0.)
+            if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=max(roundoff, bound))
+                       for x, y, bound in zip(a[field], b[field], bounds)):
                 return False
         elif not _equal(a[field], b[field]):
             return False
@@ -80,7 +86,7 @@ def _same_transform(a, b, *, native):
                for sign in (1, -1))
 
 
-def _operations(events, initial, until=None):
+def _operations(events, initial, until=None, floors=None):
     """Replay from source; no mutable evaluator state survives a query."""
     state = deepcopy(initial)
     applied, previous = [], None
@@ -116,7 +122,8 @@ def _operations(events, initial, until=None):
                 field = 'transform' if kind == 'relocate' else 'visible'
                 current = container[field]
             if kind == 'relocate':
-                matches = _same_transform(current, operation['before'], native=entity not in relocated)
+                matches = _same_transform(current, operation['before'], native=entity not in relocated,
+                                          floor=(floors or {}).get(entity))
                 relocated.add(entity)
             else:
                 matches = _equal(current, operation['before'])
@@ -173,6 +180,7 @@ class TemporalEngine:
         known_scenes = {digest(rooted(r)): r['path'] for r in project_doc['scenes']}
         known_shots = {digest(rooted(r)): r['path'] for r in project_doc['shots']}
         scenes, scene_references, seeds, mapped_ancestors = {}, {}, {}, {}
+        floors = {}
         for entry in self.plan['scenes']:
             reference = entry['scene']
             native_path = known_scenes.get(digest(reference))
@@ -186,6 +194,9 @@ class TemporalEngine:
             # collection and layer flags, through its single visible field.
             graph_state = SceneGraph(scene).evaluate_base()
             matrix = local_matrix(entry['scene_to_world'])
+            import numpy
+            linear, offset = numpy.abs(matrix[:3, :3]), numpy.abs(matrix[:3, 3])
+            scene_floors = {}
             entities, nodes = {}, set()
             for binding in entry['entities']:
                 entity, node = binding['entity_id'], binding['node_id']
@@ -195,7 +206,10 @@ class TemporalEngine:
                 if node not in evaluated:
                     fail('MAPPING', 'node has no native evaluated state')
                 result = evaluated[node]
-                transform = decompose(matrix @ __import__('numpy').array(result['world_matrix']))
+                world = numpy.array(result['world_matrix'])
+                transform = decompose(matrix @ world)
+                # Bound on the translation residual of the composition.
+                scene_floors[entity] = (8 * math.ulp(1.0) * (linear @ numpy.abs(world[:3, 3]) + offset)).tolist()
                 state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=graph_state[node]['render_visible'])
@@ -212,6 +226,7 @@ class TemporalEngine:
             scenes[scene['id']] = scene
             scene_references[scene['id']] = reference
             seeds[scene['id']] = entities
+            floors[scene['id']] = scene_floors
         self.shots = {}
         last_end = -1
         scene_intervals = {}
@@ -254,6 +269,7 @@ class TemporalEngine:
         if first['entry']['story_start_tick'] != 0:
             fail('MAPPING', 'initial native state must be anchored at story tick zero')
         self.initial = dict(entities=seeds[first['entry']['scene_id']], facts={})
+        self.initial_floors = floors[first['entry']['scene_id']]
         for scene_id, entities in seeds.items():
             if set(entities) != set(self.initial['entities']):
                 fail('MAPPING', 'every scene must explicitly map the persistent entity set')
@@ -263,7 +279,7 @@ class TemporalEngine:
         _integer(self.max_tick, 'story end')
         if any(e['tick'] > self.max_tick for e in self.events):
             fail('MAPPING', 'event falls outside mapped story time')
-        _operations(self.events, self.initial)
+        _operations(self.events, self.initial, floors=self.initial_floors)
         # An additional scene's native starting state must agree with the
         # authored chronology. Never silently discard a conflicting native
         # incoming transform/visibility under an inherited sidecar value.
@@ -276,9 +292,12 @@ class TemporalEngine:
             if not incoming:
                 fail('MAPPING', 'scene mapping has no consuming shot')
             initial_tick = min(incoming)
-            state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick)
+            state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick,
+                                   floors=self.initial_floors)
             if any(native['visible'] != state['entities'][entity]['visible'] or
-                   not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True)
+                   not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True,
+                                       floor=[a + b for a, b in zip(floors[scene_id][entity],
+                                                                    self.initial_floors.get(entity, (0., 0., 0.)))])
                    for entity, native in entities.items()):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
         verify_references(self.root, sources)
@@ -336,7 +355,7 @@ class TemporalEngine:
 
     def _snapshot(self, cutoff, *, head_sha256, shot_id, scene_id, frame, boundary,
                   event_id, tick, scene_tick, presentation_tick):
-        state, applied = _operations(self.events, self.initial, cutoff)
+        state, applied = _operations(self.events, self.initial, cutoff, floors=self.initial_floors)
         result = dict(schema_version='1.0.0', kind='continuity-temporal-snapshot',
             timeline_id=self.plan['timeline_id'], branch_id=self.plan['branch_id'],
             project_revision=self.plan['project_revision'], world_id=self.plan['world_id'],

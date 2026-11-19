@@ -195,6 +195,45 @@ class TemporalTests(unittest.TestCase):
             observed = registry.temporal_snapshot('main', 'shot-0', 2)['snapshot']
             self.assertEqual(observed['entities'][0]['transform'], after)
 
+    def test_native_cancellation_bound_scales_with_cancelled_magnitudes(self):
+        camera, child, total = 1000.1, 1000.2, 2000.3
+
+        def configure(scene, index):
+            nodes = {node['id']: node for node in scene['nodes']}
+            nodes['camera']['parent'] = None
+            nodes['camera']['transform'] = dict(TRANSFORM, translation=[camera, 0.0, 0.0])
+            nodes['mesh']['parent'] = 'camera' if index == 0 else None
+            nodes['mesh']['transform'] = dict(TRANSFORM, translation=[child if index == 0 else total, 0.0, 0.0])
+            scene['roots'] = [node['id'] for node in scene['nodes'] if node['parent'] is None]
+
+        def plan_for(name):
+            root = Path(self.temp.name) / name
+            plan = fixture(root, configure_scene=configure)
+            for scene in plan['scenes']:
+                scene['scene_to_world']['translation'] = [-total, 0.0, 0.0]
+            return root, plan
+
+        after = dict(TRANSFORM, translation=[3.0, 0.0, 0.0])
+        root, plan = plan_for('scaled-cancellation')
+        with IdentityRegistry(Path(self.temp.name) / 'scaled.sqlite', asset_root=root) as registry:
+            head = registry.create_timeline(plan)
+            snapshot = registry.temporal_snapshot('main', 'shot-0', 2, boundary='before')['snapshot']
+            residual = snapshot['entities'][0]['transform']['translation'][0]
+            # The residual exceeds the former fixed 8-ulp floor near zero.
+            self.assertGreater(abs(residual), 8 * math.ulp(1.0))
+            registry.append_events('main', [event('scaled-origin', 2002, kind='relocate', target='aster',
+                                                  before=TRANSFORM, after=after)], expected_sha256=head)
+            self.assertEqual(registry.temporal_snapshot('main', 'shot-0', 2)['snapshot']['entities'][0]['transform'],
+                             after)
+
+        root, plan = plan_for('scaled-distinct')
+        with IdentityRegistry(Path(self.temp.name) / 'scaled-distinct.sqlite', asset_root=root) as registry:
+            head = registry.create_timeline(plan)
+            distinct = dict(TRANSFORM, translation=[1e-9, 0.0, 0.0])
+            with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
+                registry.append_events('main', [event('scaled-distinct', 2002, kind='relocate', target='aster',
+                                                      before=distinct, after=after)], expected_sha256=head)
+
     def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
         coordinate = 999999999999.0
         angle_component = math.sqrt(0.5)

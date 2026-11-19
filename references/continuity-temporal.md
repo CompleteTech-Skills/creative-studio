@@ -50,6 +50,13 @@ chronological time may have no unique presentation occurrence.
 
 ## Typed events and branches
 
+Relocation preconditions compare authored translation and scale exactly. Only
+a value composed from native matrices (an entity's first relocation, and each
+incoming scene's seed) allows roundoff: 8 ulp relative, plus an absolute
+translation bound derived from the magnitudes that cancelled in the
+scene-to-world composition. Rotations are normalized and compared within 8
+ulp, with `q` and `-q` treated as the same rotation.
+
 `continuity-temporal-event` carries immutable identity, integer story tick,
 priority, prerequisite event IDs, author, revision, hash-pinned source references
 and one or more typed operations. The minimal operations for this phase are
