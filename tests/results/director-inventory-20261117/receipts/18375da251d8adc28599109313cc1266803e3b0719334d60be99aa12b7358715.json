@@ -1,0 +1,50 @@
+{
+  "backend": "local",
+  "dependencies": {
+    "Pillow": "13.0.0",
+    "inventory_source": "315b275fbf8fffd471a5c41f73a8e9620876c23b3ddc596335711f23ef066c31",
+    "jsonschema": "4.25.1",
+    "native_module": "4404669449370d91c18af973fb5e5e079514554899c4878297dd34633e60dede",
+    "probe_source": "ede1752998119ebcd6f1261805f3bfbaad09c70c9f206d515cbfe1818aa1c6d7"
+  },
+  "dependency_fingerprint": "86ee615eeaf58b26e451b0e46f9d1ef447e88312e4222619a995fc51601df3e6",
+  "discovered": true,
+  "execution": {
+    "call": "animation3d_contracts.schemas",
+    "executed": false,
+    "exit_code": 0,
+    "initialization_only": true,
+    "reason": null,
+    "schemas_checked": 13,
+    "success": true,
+    "version": null
+  },
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "module.animation3d",
+  "payloads": [],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "initialized-not-executed",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "untested",
+  "supported_formats": [],
+  "supported_operations": [
+    "module.animation3d"
+  ],
+  "version": null
+}

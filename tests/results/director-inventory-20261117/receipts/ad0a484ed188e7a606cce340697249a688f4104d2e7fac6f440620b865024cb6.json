@@ -1,0 +1,51 @@
+{
+  "backend": "hatch-imagegen-acquisition",
+  "dependencies": {
+    "Pillow": "13.0.0",
+    "inventory_source": "315b275fbf8fffd471a5c41f73a8e9620876c23b3ddc596335711f23ef066c31",
+    "jsonschema": "4.25.1",
+    "native_module": "246979e97c2622ef1ecf043ca19ae346d5d4c6bc28409774f3192ef4aceb2017",
+    "probe_source": "ede1752998119ebcd6f1261805f3bfbaad09c70c9f206d515cbfe1818aa1c6d7"
+  },
+  "dependency_fingerprint": "75b2877b03004ea22550a311893e8cb7c91a3b7f27fe973f6eecb71ada416653",
+  "discovered": true,
+  "execution": {
+    "call": "asset_contracts.versions",
+    "executed": false,
+    "exit_code": 0,
+    "generation_backend": "installed-imagegen-not-invoked",
+    "initialization_only": true,
+    "model_call": null,
+    "reason": null,
+    "success": true,
+    "version": "2.1.0"
+  },
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "native.acquisition",
+  "payloads": [],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "initialized-not-executed",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "untested",
+  "supported_formats": [],
+  "supported_operations": [
+    "native.acquisition"
+  ],
+  "version": "2.1.0"
+}

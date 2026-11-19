@@ -434,11 +434,16 @@ def _read_json_file(path):
         raise RigError('DIRECTOR_PATH','JSON input is missing or unsafe.',stage='director') from exc
 
 
+def artifact_reads_supported():
+    """Whether the Director reader can pin and open artifacts without following links."""
+    return hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd
+
+
 def _read_artifact(root, artifact):
     """Open every path component relative to the root; reject links and devices."""
     root=Path(root)
     # dir_fd/O_NOFOLLOW protects reads even if an untrusted child is exchanged.
-    _require(hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd,
+    _require(artifact_reads_supported(),
              'PLATFORM','Secure descriptor-relative artifact reads are unavailable on this platform.')
     flags=os.O_RDONLY|os.O_NOFOLLOW|getattr(os,'O_NONBLOCK',0)
     descriptors=[]

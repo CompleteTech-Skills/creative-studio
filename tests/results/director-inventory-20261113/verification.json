@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "kind": "director-capability-inventory-execution",
+  "executed_head": "00c7871b4069fd31ff79feed074b937ef44b29b3",
+  "implementation": {
+    "scripts/director_capabilities.py": "9edd4c76c76592e3d72ba02c9fc66fc06620d046efb4a24d4f8846bd3a094f19",
+    "scripts/director_inventory.py": "0357e94361c2669ff52b5928cb2d57c5966bd41e45303537a09c6732b12bf406"
+  },
+  "results": {
+    "focused": "22/22 PASS6.309s zero skips",
+    "native_geometry": "4/4PASS2.933s zero skips",
+    "actual_inventory": "all6 executed successfully; native lane exclusive; Blender1thread"
+  },
+  "limitations": [
+    "No remote provider execution",
+    "No engine render for engine enumeration",
+    "Host memory/free filesystem observations are transient, not resource reservations or user quota guarantees",
+    "Procedural geometry is an engineering robotic fixture, not full narrative or artistic approval",
+    "Retained one-hour snapshot expires; cannot authorize future execution",
+    "Inherited publication ownership correction remains coordinated with canonical portable publisher owner"
+  ],
+  "files": {
+    "payloads/70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526.png": {
+      "bytes": 77,
+      "sha256": "70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526"
+    },
+    "payloads/ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5.glb": {
+      "bytes": 42212,
+      "sha256": "ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5"
+    },
+    "receipts/20b6303f0435a5dec66b9ad71e2041995939a71afc7584e26f4df9cdd3c74cf8.json": {
+      "bytes": 1324,
+      "sha256": "751addb3bb7612f6ade48487b581e227027d3d77f9b060e70f8d5de79e562613"
+    },
+    "receipts/41ea5d90873346344b6875655716fbb19097c79789a0259250de885b92c2bb7d.json": {
+      "bytes": 5099,
+      "sha256": "36d7faac531b8eadecab1187823618d31518b619c5e50f0c579adac3c7c2112b"
+    },
+    "receipts/6f8adbd64130668a9c9512cdc7d9683462b409eea299526dfd0bd896b4d9860f.json": {
+      "bytes": 1437,
+      "sha256": "8a59299132f047c73c7688fb410f0c064e560ea6b3e3b1bdefd9ddaddd0ecda7"
+    },
+    "receipts/bf4bf5587c2998c3f21d80b7356704112fdf90fead7f275f488f46e408cb0ae1.json": {
+      "bytes": 1709,
+      "sha256": "f887dd7d4398e7480bbb1addebfb226019318b8f4c59a4e1ecf55225ea9a0069"
+    },
+    "receipts/cd2cfdd7ec5d96ab9397e29da9ad983241ab578dc84a4d6744aa81522adff309.json": {
+      "bytes": 1425,
+      "sha256": "601ee33a7e9e5abf2a440fbe9c35f4d1d15ababd9f8d1a1bce489ed4077c217d"
+    },
+    "receipts/e6c7b6918ab0c153f0d804cae7d920803b47e0c61bbd2c3062e697ed0ecfa028.json": {
+      "bytes": 1478,
+      "sha256": "d9e38575f696868641d27e6991249db86ceb6ec31030f37c4e08128de830cc28"
+    },
+    "result.json": {
+      "bytes": 18259,
+      "sha256": "f2b4d32a21326f1c2a16645188a5f66979bf8bd6958df7ad95f7a8c3351f78cb"
+    }
+  }
+}

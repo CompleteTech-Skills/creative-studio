@@ -41,6 +41,9 @@ OPTIONAL_NATIVE_KRITA = (
 WINDOWS_NO_FIFO = (
     'test_style_catalog.CatalogIntegrityTests.'
     'test_loader_rejects_named_pipes_without_blocking')
+WINDOWS_JOB_DESCENDANT_CLEANUP = (
+    'test_director_worker_tree.DirectorWorkerTreeTests.'
+    'test_success_stops_live_descendant_and_preserves_unrelated_process')
 
 
 def write_json(path, value):
@@ -100,6 +103,8 @@ def run_tests(destination, *, scope='2d'):
     allowed = {OPTIONAL_NATIVE_KRITA}
     if os.name == 'nt' and not hasattr(os, 'mkfifo'):
         allowed.add(WINDOWS_NO_FIFO)
+    if os.name != 'nt':
+        allowed.add(WINDOWS_JOB_DESCENDANT_CLEANUP)
     unexpected = [item for item in skipped if item['test'] not in allowed]
     return {'ok': result.wasSuccessful() and not unexpected, 'scope': scope,
             'run': result.testsRun, 'failures': len(result.failures), 'errors': len(result.errors),

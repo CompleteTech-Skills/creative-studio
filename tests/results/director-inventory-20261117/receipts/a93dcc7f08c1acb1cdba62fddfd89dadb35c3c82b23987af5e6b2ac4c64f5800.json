@@ -1,0 +1,50 @@
+{
+  "backend": "local",
+  "dependencies": {
+    "Pillow": "13.0.0",
+    "inventory_source": "315b275fbf8fffd471a5c41f73a8e9620876c23b3ddc596335711f23ef066c31",
+    "jsonschema": "4.25.1",
+    "native_module": "687c5669cdcc417f99aa5f0ab477f8964e3a02a7c5aeb3d93e894a50c167d3de",
+    "probe_source": "ede1752998119ebcd6f1261805f3bfbaad09c70c9f206d515cbfe1818aa1c6d7"
+  },
+  "dependency_fingerprint": "0423535da42a44afc256119ed44e599e97442b204e3658415548a0705858c13e",
+  "discovered": true,
+  "execution": {
+    "call": "lookdev_contracts.schemas",
+    "executed": false,
+    "exit_code": 0,
+    "initialization_only": true,
+    "reason": null,
+    "schemas_checked": 9,
+    "success": true,
+    "version": null
+  },
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "module.lookdev3d",
+  "payloads": [],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "initialized-not-executed",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "untested",
+  "supported_formats": [],
+  "supported_operations": [
+    "module.lookdev3d"
+  ],
+  "version": null
+}

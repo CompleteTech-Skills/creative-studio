@@ -1,0 +1,1559 @@
+{
+  "schema_version": 1,
+  "kind": "director-result",
+  "method": "CapabilityRegistry.probe",
+  "status": "succeeded",
+  "operation_id": "CapabilityRegistry-probe-fixture",
+  "input_digest": "f97d124be777a11b6f44f0abedc7ed97133af1dca3a028ef4d7fd10f31aee109",
+  "value": {
+    "capabilities": [
+      {
+        "operation": "blender.cpu",
+        "version": null,
+        "status": "unavailable",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603.json",
+            "sha256": "ac46e85dc8b83781e9f7de46823bd9e5ba217c59fcf55b9138a7b55b0aaa7b33",
+            "byte_size": 1008,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "blender.engines",
+        "version": null,
+        "status": "unavailable",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe.json",
+            "sha256": "14203401d2f626af03ac177cf3f9469a2b6f1684ac7489f95098105657b1fde1",
+            "byte_size": 1016,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "blender.gpu",
+        "version": null,
+        "status": "unavailable",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e.json",
+            "sha256": "7ac72c14874e718d25b44c0c8c72e6d3607c1314bce7ac449874e1944a116df2",
+            "byte_size": 1061,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "format.image",
+        "version": "13.0.0",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27.json",
+            "sha256": "2bc57b896d31a03ae15b2a88d58a4a93be0c0e5fbd84c74026b08135d23d45dd",
+            "byte_size": 1894,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": [
+              {
+                "artifact_id": "probe-70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+                "kind": "capability-probe-evidence",
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "path": "payloads/70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526.png",
+                "sha256": "70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+                "byte_size": 77,
+                "media_type": "image/png",
+                "provenance_ref": null,
+                "fixture": true,
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "importer.blend",
+        "version": null,
+        "status": "unavailable",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d.json",
+            "sha256": "2c51a56bcc1417db4db3b9d90932c7c1aa530d0959f4053914644322f450cb79",
+            "byte_size": 4317,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "importer.glb",
+        "version": "native-rig-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957.json",
+            "sha256": "6461b5862ae1ce3865df47efb55d64006d3ae8916deeec69d249a2ca20d8dd29",
+            "byte_size": 5092,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": [
+              {
+                "artifact_id": "probe-707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+                "kind": "capability-probe-evidence",
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "path": "payloads/707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913.glb",
+                "sha256": "707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+                "byte_size": 588,
+                "media_type": "model/gltf-binary",
+                "provenance_ref": null,
+                "fixture": true,
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "importer.gltf",
+        "version": "native-rig-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c.json",
+            "sha256": "e6920e89b60fbaf26231b5b14fd49e20a3a27a5f394c2ab3f4c8b75095b7b5cf",
+            "byte_size": 5094,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": [
+              {
+                "artifact_id": "probe-771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1",
+                "kind": "capability-probe-evidence",
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "path": "payloads/771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1.gltf",
+                "sha256": "771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1",
+                "byte_size": 617,
+                "media_type": "model/gltf+json",
+                "provenance_ref": null,
+                "fixture": true,
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "importer.obj",
+        "version": "native-rig-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a.json",
+            "sha256": "0061bcf6a3623a4a3f19237fb5b8e283c2b262284a35875f02fa308954f63055",
+            "byte_size": 5084,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": [
+              {
+                "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+                "kind": "capability-probe-evidence",
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+                "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+                "byte_size": 32,
+                "media_type": "text/plain",
+                "provenance_ref": null,
+                "fixture": true,
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "module.animation3d",
+        "version": null,
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715.json",
+            "sha256": "43cd782f294268db696134d14dc353b2fbff20c426131b7418c337f0734b7c36",
+            "byte_size": 1396,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "module.camera3d",
+        "version": null,
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770.json",
+            "sha256": "1d35c0671786716f3780e0bc407d334a232d7ddee481aed8300d4a1ea5540e7d",
+            "byte_size": 1387,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "module.editor3d",
+        "version": "1.0.0",
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759.json",
+            "sha256": "ec52404d7979a395005e0407102dda371a45a8d2f3e142521b536e39f6ad2f6b",
+            "byte_size": 1392,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "module.lookdev3d",
+        "version": null,
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800.json",
+            "sha256": "a757b633ead2c2feb6d697bd0f7f09df14ea8c8e682837f799881ed65d26aab5",
+            "byte_size": 1387,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "module.render3d",
+        "version": "1.0.0",
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0.json",
+            "sha256": "5a0beffdfdbd106eef3bd012c5d0c52c1fae0f17c3aedeec80a8e58bdce3428c",
+            "byte_size": 1392,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "module.scene3d",
+        "version": null,
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7.json",
+            "sha256": "cfa2bfd4de27942e15039b517cf107008353dc7e70fc5e2e0fb79204a83c1da3",
+            "byte_size": 1383,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "native.acquisition",
+        "version": "2.1.0",
+        "status": "untested",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6.json",
+            "sha256": "42c6c372f8a8aaee8db447ac04f44b0f33259b770b408e457075a4ecbfdccd3e",
+            "byte_size": 1475,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "planning.provider",
+        "version": null,
+        "status": "unavailable",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64.json",
+            "sha256": "2cebc17f02b977c4d7d0fa763d2d40a6e9b66c758c83e09ccb69783739c7bf47",
+            "byte_size": 1125,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": false
+      },
+      {
+        "operation": "procedural.native",
+        "version": "native-rig-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced.json",
+            "sha256": "64b86c6163366b65391594b9c3c4aaa917f82c865291826231aceeb28e5b9316",
+            "byte_size": 5354,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": [
+              {
+                "artifact_id": "probe-ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5",
+                "kind": "capability-probe-evidence",
+                "schema_version": 1,
+                "semantic_version": "1.0.0",
+                "path": "payloads/ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5.glb",
+                "sha256": "ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5",
+                "byte_size": 42212,
+                "media_type": "model/gltf-binary",
+                "provenance_ref": null,
+                "fixture": true,
+                "dependencies": []
+              }
+            ]
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "resource.memory",
+        "version": "local-inventory-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc.json",
+            "sha256": "98915c8ca2186dfdf5c82cf3ade99383baeff7ba3ff6720c59d5163581b40708",
+            "byte_size": 1477,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "resource.storage",
+        "version": "local-inventory-v1",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54.json",
+            "sha256": "1cb1c5184921b645f46d93f658ac4d8524749a09615319e28ef52d285fb65ea0",
+            "byte_size": 1449,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": true
+      },
+      {
+        "operation": "runtime.python",
+        "version": "3.12.15",
+        "status": "available",
+        "limits": {
+          "max_provider_calls": 0,
+          "max_cpu_seconds": 3600,
+          "max_gpu_seconds": 3600,
+          "max_storage_bytes": 1073741824,
+          "max_memory_bytes": 1610612736,
+          "currency": null,
+          "max_amount": null,
+          "policy_ref": null
+        },
+        "probe_evidence": [
+          {
+            "artifact_id": "probe-9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96",
+            "kind": "capability-probe-evidence",
+            "schema_version": 1,
+            "semantic_version": "1.0.0",
+            "path": "receipts/9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96.json",
+            "sha256": "8f1c24fba4bf4b3e1eb5f998cbec2d49da2f546f0331b29ef72193da1e3dbbc9",
+            "byte_size": 1425,
+            "media_type": "application/json",
+            "provenance_ref": null,
+            "fixture": true,
+            "dependencies": []
+          }
+        ],
+        "execution_verified": true
+      }
+    ],
+    "expires_at": "2026-11-17T19:50:57.118302+00:00",
+    "digest": "4b08ee7debcf81a67fbf1935c4b1962e9e3a35f4f53a40d4b5befd0d7f47cf26"
+  },
+  "artifacts": [
+    {
+      "artifact_id": "probe-7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603.json",
+      "sha256": "ac46e85dc8b83781e9f7de46823bd9e5ba217c59fcf55b9138a7b55b0aaa7b33",
+      "byte_size": 1008,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe.json",
+      "sha256": "14203401d2f626af03ac177cf3f9469a2b6f1684ac7489f95098105657b1fde1",
+      "byte_size": 1016,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e.json",
+      "sha256": "7ac72c14874e718d25b44c0c8c72e6d3607c1314bce7ac449874e1944a116df2",
+      "byte_size": 1061,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27.json",
+      "sha256": "2bc57b896d31a03ae15b2a88d58a4a93be0c0e5fbd84c74026b08135d23d45dd",
+      "byte_size": 1894,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526.png",
+          "sha256": "70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+          "byte_size": 77,
+          "media_type": "image/png",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d.json",
+      "sha256": "2c51a56bcc1417db4db3b9d90932c7c1aa530d0959f4053914644322f450cb79",
+      "byte_size": 4317,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957.json",
+      "sha256": "6461b5862ae1ce3865df47efb55d64006d3ae8916deeec69d249a2ca20d8dd29",
+      "byte_size": 5092,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913.glb",
+          "sha256": "707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+          "byte_size": 588,
+          "media_type": "model/gltf-binary",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c.json",
+      "sha256": "e6920e89b60fbaf26231b5b14fd49e20a3a27a5f394c2ab3f4c8b75095b7b5cf",
+      "byte_size": 5094,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1.gltf",
+          "sha256": "771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1",
+          "byte_size": 617,
+          "media_type": "model/gltf+json",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a.json",
+      "sha256": "0061bcf6a3623a4a3f19237fb5b8e283c2b262284a35875f02fa308954f63055",
+      "byte_size": 5084,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715.json",
+      "sha256": "43cd782f294268db696134d14dc353b2fbff20c426131b7418c337f0734b7c36",
+      "byte_size": 1396,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770.json",
+      "sha256": "1d35c0671786716f3780e0bc407d334a232d7ddee481aed8300d4a1ea5540e7d",
+      "byte_size": 1387,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759.json",
+      "sha256": "ec52404d7979a395005e0407102dda371a45a8d2f3e142521b536e39f6ad2f6b",
+      "byte_size": 1392,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800.json",
+      "sha256": "a757b633ead2c2feb6d697bd0f7f09df14ea8c8e682837f799881ed65d26aab5",
+      "byte_size": 1387,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0.json",
+      "sha256": "5a0beffdfdbd106eef3bd012c5d0c52c1fae0f17c3aedeec80a8e58bdce3428c",
+      "byte_size": 1392,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7.json",
+      "sha256": "cfa2bfd4de27942e15039b517cf107008353dc7e70fc5e2e0fb79204a83c1da3",
+      "byte_size": 1383,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6.json",
+      "sha256": "42c6c372f8a8aaee8db447ac04f44b0f33259b770b408e457075a4ecbfdccd3e",
+      "byte_size": 1475,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64.json",
+      "sha256": "2cebc17f02b977c4d7d0fa763d2d40a6e9b66c758c83e09ccb69783739c7bf47",
+      "byte_size": 1125,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced.json",
+      "sha256": "64b86c6163366b65391594b9c3c4aaa917f82c865291826231aceeb28e5b9316",
+      "byte_size": 5354,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5.glb",
+          "sha256": "ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5",
+          "byte_size": 42212,
+          "media_type": "model/gltf-binary",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc.json",
+      "sha256": "98915c8ca2186dfdf5c82cf3ade99383baeff7ba3ff6720c59d5163581b40708",
+      "byte_size": 1477,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54.json",
+      "sha256": "1cb1c5184921b645f46d93f658ac4d8524749a09615319e28ef52d285fb65ea0",
+      "byte_size": 1449,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96.json",
+      "sha256": "8f1c24fba4bf4b3e1eb5f998cbec2d49da2f546f0331b29ef72193da1e3dbbc9",
+      "byte_size": 1425,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "CAPABILITY_MISSING_BLENDER",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "blender.cpu",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "missing-blender",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_MISSING_BLENDER",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "blender.engines",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "missing-blender",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_MISSING_BLENDER",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "blender.gpu",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "missing-blender",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_MISSING_BLENDER",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "importer.blend",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "missing-blender",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "module.animation3d",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "module.camera3d",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "module.editor3d",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "module.lookdev3d",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "module.render3d",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "module.scene3d",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_INITIALIZED_NOT_EXECUTED",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "native.acquisition",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "initialized-not-executed",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_PRICE_UNKNOWN",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "planning.provider",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "Provider price is unknown; admission requires explicit allowance and reservation.",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    },
+    {
+      "code": "CAPABILITY_MISSING_PLANNING_CREDENTIALS",
+      "severity": "error",
+      "stage": "capability",
+      "entity_id": "planning.provider",
+      "field_path": "capabilities",
+      "expected": "executed and verified local capability",
+      "observed": "missing-planning-credentials",
+      "retryable": false,
+      "recommended_action": "Install/configure the required native owner, then explicitly reprobe.",
+      "evidence": []
+    }
+  ],
+  "usage": {
+    "classification": "unavailable",
+    "provider_calls": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "input_tokens": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "output_tokens": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "cpu_seconds": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "gpu_seconds": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "storage_bytes": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "amount": {
+      "value": null,
+      "explanation": "Not measured by capability discovery."
+    },
+    "currency": null,
+    "measurement_source": "director-local-probe-v1"
+  },
+  "provenance_receipts": [
+    {
+      "artifact_id": "probe-7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/7f969d5048fe08db485121e4cc233e7837d5d21bb462716420f0912f23a7c603.json",
+      "sha256": "ac46e85dc8b83781e9f7de46823bd9e5ba217c59fcf55b9138a7b55b0aaa7b33",
+      "byte_size": 1008,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/98b2b3f026a162c57232bc02a2aab6be7e3808a1bb05cd3de277f375c2c063fe.json",
+      "sha256": "14203401d2f626af03ac177cf3f9469a2b6f1684ac7489f95098105657b1fde1",
+      "byte_size": 1016,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/d1d96e3c7f4bd412cd6e0a0f1207f42077d0d488b71adc94858ea3b11aa3e64e.json",
+      "sha256": "7ac72c14874e718d25b44c0c8c72e6d3607c1314bce7ac449874e1944a116df2",
+      "byte_size": 1061,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/43a2b66e5d89f12c11ea0c6b2d2cdb0f6fca62fc021f98a1ff1fd331a2cd9d27.json",
+      "sha256": "2bc57b896d31a03ae15b2a88d58a4a93be0c0e5fbd84c74026b08135d23d45dd",
+      "byte_size": 1894,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526.png",
+          "sha256": "70e7494c9e3a66fbe8f28afb568a2f8f870f42fd1e1ddce31aa4f6e8b5205526",
+          "byte_size": 77,
+          "media_type": "image/png",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/20d50d9449c268fa7ca76b2da80987f8618e48b9b6682a64df9962fe42af6a5d.json",
+      "sha256": "2c51a56bcc1417db4db3b9d90932c7c1aa530d0959f4053914644322f450cb79",
+      "byte_size": 4317,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/8c9f450fbf7152e5efbb7d97e24af96487627ed9d0b558470629d319a46e9957.json",
+      "sha256": "6461b5862ae1ce3865df47efb55d64006d3ae8916deeec69d249a2ca20d8dd29",
+      "byte_size": 5092,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913.glb",
+          "sha256": "707f4440672c8deed9a818f7447a31f0441a397e65176c700e52ea4590ec0913",
+          "byte_size": 588,
+          "media_type": "model/gltf-binary",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/b398aa72a17b7df503daa9134f00c9c1b7c547f578118eeb2840f4b02ed5866c.json",
+      "sha256": "e6920e89b60fbaf26231b5b14fd49e20a3a27a5f394c2ab3f4c8b75095b7b5cf",
+      "byte_size": 5094,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1.gltf",
+          "sha256": "771718e52a4553ea7ae3cedb707aad9310d2b2eb27a3f27c4c94d73d39720ce1",
+          "byte_size": 617,
+          "media_type": "model/gltf+json",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/2329e0b6b8d7b83ef320fb25984178b6b9e831c787c05ad8002fbebb76530b1a.json",
+      "sha256": "0061bcf6a3623a4a3f19237fb5b8e283c2b262284a35875f02fa308954f63055",
+      "byte_size": 5084,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "media_type": "text/plain",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/18375da251d8adc28599109313cc1266803e3b0719334d60be99aa12b7358715.json",
+      "sha256": "43cd782f294268db696134d14dc353b2fbff20c426131b7418c337f0734b7c36",
+      "byte_size": 1396,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/6d40f7ec284d6710c338569072f04e9c949a4c443f5a30497d3dc3a174366770.json",
+      "sha256": "1d35c0671786716f3780e0bc407d334a232d7ddee481aed8300d4a1ea5540e7d",
+      "byte_size": 1387,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/29383a3cd8183872b1c2830ecdba8b071aa6dbd1ee5c169b39bdc7cc8c5d1759.json",
+      "sha256": "ec52404d7979a395005e0407102dda371a45a8d2f3e142521b536e39f6ad2f6b",
+      "byte_size": 1392,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/a93dcc7f08c1acb1cdba62fddfd89dadb35c3c82b23987af5e6b2ac4c64f5800.json",
+      "sha256": "a757b633ead2c2feb6d697bd0f7f09df14ea8c8e682837f799881ed65d26aab5",
+      "byte_size": 1387,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/ee427fa61a976abc1e72d4885d754156ea90ffb339e56081e2f0f37aee6c6ba0.json",
+      "sha256": "5a0beffdfdbd106eef3bd012c5d0c52c1fae0f17c3aedeec80a8e58bdce3428c",
+      "byte_size": 1392,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/b9755646617eef2ffb647809f56920bc907d8a2562ff1bc57845a3f72ae095b7.json",
+      "sha256": "cfa2bfd4de27942e15039b517cf107008353dc7e70fc5e2e0fb79204a83c1da3",
+      "byte_size": 1383,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/ad0a484ed188e7a606cce340697249a688f4104d2e7fac6f440620b865024cb6.json",
+      "sha256": "42c6c372f8a8aaee8db447ac04f44b0f33259b770b408e457075a4ecbfdccd3e",
+      "byte_size": 1475,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/3f783d4558ae82ab6fdf8f4bd79ae3fe40a1d64984f0e492478c6712daf4eb64.json",
+      "sha256": "2cebc17f02b977c4d7d0fa763d2d40a6e9b66c758c83e09ccb69783739c7bf47",
+      "byte_size": 1125,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/437ca7deca1897de4f51aaf05244e4895cf1a1b020dc87653d00c8d50da9bced.json",
+      "sha256": "64b86c6163366b65391594b9c3c4aaa917f82c865291826231aceeb28e5b9316",
+      "byte_size": 5354,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": [
+        {
+          "artifact_id": "probe-ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5",
+          "kind": "capability-probe-evidence",
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "path": "payloads/ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5.glb",
+          "sha256": "ddbf22e8551c12618c824d9cade88c5ecd70b6cce3d8d35a1e9b60ea701f3ae5",
+          "byte_size": 42212,
+          "media_type": "model/gltf-binary",
+          "provenance_ref": null,
+          "fixture": true,
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "artifact_id": "probe-8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/8693a535996affd499264723b1f4304b7c0c36d917981a385d09241127ea0efc.json",
+      "sha256": "98915c8ca2186dfdf5c82cf3ade99383baeff7ba3ff6720c59d5163581b40708",
+      "byte_size": 1477,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/0351a7c03caad3c60d5291e20ee52cac754fc573a276fc4b153c89ac9c1b1f54.json",
+      "sha256": "1cb1c5184921b645f46d93f658ac4d8524749a09615319e28ef52d285fb65ea0",
+      "byte_size": 1449,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    },
+    {
+      "artifact_id": "probe-9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96",
+      "kind": "capability-probe-evidence",
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "path": "receipts/9cd4e62490fe387ad246684c196f6f26b6c2077af444ded785151c0dd60b7d96.json",
+      "sha256": "8f1c24fba4bf4b3e1eb5f998cbec2d49da2f546f0331b29ef72193da1e3dbbc9",
+      "byte_size": 1425,
+      "media_type": "application/json",
+      "provenance_ref": null,
+      "fixture": true,
+      "dependencies": []
+    }
+  ]
+}

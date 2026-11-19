@@ -1,0 +1,37 @@
+{
+  "backend": "blender",
+  "dependencies": {
+    "inventory_source": "315b275fbf8fffd471a5c41f73a8e9620876c23b3ddc596335711f23ef066c31",
+    "probe_source": "ede1752998119ebcd6f1261805f3bfbaad09c70c9f206d515cbfe1818aa1c6d7"
+  },
+  "dependency_fingerprint": "f36f50c9b6744b61a76ff1909e2456077cacdfdfccfcf5dd5db2d1ac1e2b86a5",
+  "discovered": false,
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": false,
+  "operation": "blender.cpu",
+  "payloads": [],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "missing-blender",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "unavailable",
+  "supported_formats": [],
+  "supported_operations": [
+    "blender.cpu"
+  ],
+  "version": null
+}

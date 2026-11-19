@@ -17,13 +17,69 @@ omitting an operation from that list permits discovery only. Discovery yields
 - `importer.obj`, `importer.glb`, `importer.gltf`: feed real triangle geometry
   through the existing native rig importer and check three vertices/one triangle.
 
-`importer.blend`, `native.acquisition`, `module.scene3d`, `module.camera3d`,
-`module.lookdev3d`, `module.animation3d`, `module.render3d`, `module.editor3d`,
-and `planning.provider` return explicit unavailable/untested evidence. Finding
-a contract module never proves a production implementation. Native acquisition
-is not started by this probe. No 2D substitute is offered for a missing 3D
-capability. Missing GPU may suggest **separately probed** CPU execution only
-under the caller's explicit device policy.
+The complete parent inventory additionally has explicit identifiers:
+
+- `runtime.python`: records the actual executing interpreter, implementation and
+  pointer width after the Director validators import. This is not verification
+  of the complete supported OS/device matrix.
+- `resource.memory`, `resource.storage`: measure available host physical memory
+  and free space on the evidence destination filesystem. Receipts separate these
+  observations from policy ceilings. Resource admission checks both the observed
+  bytes and policy. A workload estimate for memory or storage automatically
+  includes the corresponding measurement when its entry exists in the snapshot.
+  Admission verifies that receipt and applies its policy ceiling to the matching
+  byte estimate. Each requested workload remains subject to its full policy.
+  Observations can become stale and do not reserve resources,
+  establish per-user quota availability, or replace native worker enforcement.
+  Missing supported memory APIs produce explicit unavailable evidence.
+- `blender.engines`: starts Blender and checks accepted render-engine settings;
+  it records the actual installed engine identifiers/version. This does not
+  render through every engine; CPU/GPU renders require their separate probes.
+- `format.image`: saves and independently reads four RGBA PNG pixels using
+  Pillow, retaining the actual PNG and exact alpha values.
+- `rigging.native`, `animation.native`: discover the existing native tool owners;
+  they remain untested until those owners supply actual execution evidence.
+- `procedural.native`: creates real robotic fixture geometry through
+  `rig_demo.make_geometry`, exports GLB and reimports/counts its vertices and
+  triangles through the native geometry owner. It neither creates a full film
+  nor certifies arbitrary creative specifications.
+- `geometry.provider`, `motion.provider`, `visual-qa.provider`: record explicit
+  unconfigured or configured-but-untested provider states. Public configuration
+  descriptors use `geometry_provider`, `motion_provider`, `visual_qa_provider`
+  with the same strict fields as `planning_provider`; credentials and endpoints
+  are rejected. No descriptor authenticates a provider or starts a paid call.
+  Including a configured provider in `local_probes` preserves its `untested`
+  status and `remote-execution-not-probed` reason.
+
+Every receipt includes backend, supported operation/format descriptions,
+permissions, policy limits and explicitly unknown performance information.
+Declared formats are not execution proof; availability and execution verification
+remain separate. New probes retain the v1 request/result interface and existing
+capability names.
+
+`importer.blend` uses Blender to author one real triangle and save a `.blend`
+project, then decodes it through the existing native importer
+(`rig_import.load_character_model`, which routes `.blend` through the pinned
+`rig_blender` worker) and checks three vertices/one triangle. The `.blend`
+payload is retained as `application/x-blender`.
+
+Discovery, initialization and execution are three separate receipt fields.
+`module.scene3d`, `module.camera3d`, `module.lookdev3d`, `module.animation3d`,
+`module.render3d`, `module.editor3d` and `native.acquisition` are *discovered*
+when their owner module file exists. When explicitly listed in `local_probes`
+they are *initialized* in a fresh, bounded interpreter: the module is imported
+and one dry, side-effect-free constructor runs (`<module>.schemas()` checked as
+Draft 2020-12 schemas; for acquisition, `asset_contracts.versions()` with no
+model call and no generation). A successful initialization records
+`initialized: true`, `execution_verified: false`, status `untested` and reason
+`initialized-not-executed`; it can never satisfy admission. A missing owner gives
+`missing-native-module`; a failed import or constructor gives
+`initialization-failed` (or `initialization-timeout`) without retaining worker
+output. Finding or initializing a contract module never proves a production
+implementation, and native acquisition generation is never started.
+`planning.provider` remains explicit unavailable/untested evidence. No 2D
+substitute is offered for a missing 3D capability. Missing GPU may suggest
+**separately probed** CPU execution only under the caller's explicit device policy.
 
 Executable configuration accepts trusted local `blender`, `ffmpeg`, `ffprobe`
 paths (null explicitly disables a tool), `timeout_seconds` (1–120), bounded
@@ -31,15 +87,56 @@ paths (null explicitly disables a tool), `timeout_seconds` (1–120), bounded
 `configured`, `price_per_call`, `currency`). It accepts no provider credential,
 endpoint, arbitrary command, worker code or environment overrides. Provider
 configuration is an assertion supplied by the caller, never authenticated
-credential or live-provider proof. Unknown price is recorded as unknown.
+credential or live-provider proof. Public IDs start with an ASCII letter or digit,
+followed by up to 127 ASCII letters, digits, periods, underscores, colons or
+hyphens. A known price requires a currency of three uppercase ASCII letters.
+Invalid descriptors raise `DIRECTOR_CAPABILITY_CONFIG` before staging.
 
-Worker probes have a separate timeout, bounded output, one compute thread,
-process-group termination, no stdin and a minimal environment without secrets.
-On POSIX they also have CPU/output/core limits. They execute only fixed trusted
-code in an owned temporary directory; failure text from executables is not
-copied into public receipts. Required files are hash-bound and published through
-the repository's exclusive rename primitive. A racing or existing destination
-is preserved. Retained payloads are explicitly synthetic engineering fixtures.
+Each worker phase receives the smaller of the configured timeout and the time
+remaining until the request deadline. Once the deadline expires, pending phases
+are refused. Workers have bounded output, one compute thread, no stdin and a
+minimal environment without secrets. On POSIX they also have
+process-group termination and CPU/output/core limits. The controller observes
+leader exit without reaping it, kills its original group, and checks for
+remaining live members before reading output. On Windows each worker
+tree belongs to a private native Job Object with kill-on-close and no breakaway
+permission. The physical base Python starts the isolated/no-site launcher,
+including when the controller runs in a venv. The controller checks membership
+in its own job and releases a gate bound to the launcher's process ID.
+If the deadline expires before gate release, the controller reports a timeout
+and closes the job with the requested tool still gated.
+The tool retains null stdin, the minimal environment and
+its own exit status. Timeout, output overflow, exceptions and normal completion
+all terminate remaining job descendants, including a native importer's Blender
+grandchild. Cleanup waits at most five seconds for the job to become empty and
+the launcher to exit. Job creation, configuration, assignment or cleanup failure
+fails the probe closed (`worker-containment-failed`); an incompatible enclosing
+Windows job is not permission to run without containment. The controller alone
+owns the non-inheritable job handle, so controller exit also terminates assigned
+descendants. These jobs are process-lifetime containment, not a filesystem or
+network sandbox. They execute only fixed trusted code in an owned temporary
+directory; failure text from executables is not
+copied into public receipts. Worker scratch directories live outside the
+evidence stage. Each worker result must match its operation's exact marker
+fields and expected scratch files. Only required, validated, singly linked
+regular payloads enter the evidence tree. These files are hash-bound and published through the shared
+`atomic_publish` primitives. The pinned authority must match the parent directory
+identity captured during destination admission before the stage is created
+(`pinned_directory`/`private_stage` on Linux, the descriptor-only
+`pinned_directory_fd`/`private_stage_fd` on other POSIX hosts, and the
+handle-pinned `atomic_windows` stage on Windows), and the payload is published
+by exclusive rename. On POSIX a parent identity check immediately before the
+rename reports `DIRECTOR_CAPABILITY_DESTINATION` if it detects a swap. The
+controller rechecks the deadline after the parent check and, on the
+descriptor-only path, after the verified copy into the pinned stage. An expired
+request leaves the destination unpublished. The rename uses the held
+directory capability even if the public name changes
+after the check. On Windows the held handles prevent renaming the parent
+while publication is in progress. Hosts without a pinned publication adapter
+fail closed with `DIRECTOR_CAPABILITY_PLATFORM`. Exclusive rename preserves a
+racing or existing destination. The shared primitive retains an empty private
+`.director-probe-*` wrapper after successful publication. Retained payloads
+are synthetic engineering fixtures.
 
 The production admission policy defaults to 3,600 CPU/GPU seconds, 1.5 GiB RAM,
 1 GiB storage and zero provider calls. Callers may configure positive bounded
@@ -50,7 +147,12 @@ worker must enforce its own limits and measure execution separately.
 `assert_admission(snapshot_or_result, required_operations, evidence_root=...,
 resources=...)` verifies the capability snapshot digest and expiry, requires
 available/execution-verified operation entries, and requires the evidence root to check exact retained
-receipt/payload bytes. Resource estimates
+receipt/payload bytes. Admission uses the canonical secure descriptor-relative
+Director reader. A platform without that reader fails closed with
+`DIRECTOR_PLATFORM` even if it can publish receipts through another adapter.
+The Windows handle-pinned adapter currently covers publication. Windows
+end-to-end admission would require a secure Director reader and native tests.
+Resource estimates
 use the canonical budget keys (`max_cpu_seconds`, `max_memory_bytes`,
 `max_storage_bytes`, `max_provider_calls`, etc.) and must fit every required
 capability's policy. An expired snapshot, mutated payload, missing operation,
@@ -63,9 +165,24 @@ must establish that independently.
 The snapshot digest is the canonical `object_hash` of its value without the
 `digest` field, including its expiry. Each receipt separately records a stable
 dependency fingerprint over selected executable hashes, native source hashes
-and package versions. Reordered requests produce the same ordered capability
-entries and fingerprints; a new expiry intentionally changes the snapshot hash.
-Do not treat a receipt as a cryptographic signature or a production visual review.
+and installed package metadata. These observations are separate from execution
+and can include dependencies that a worker did not load. Version scope is
+recorded as reported during the probe, reported by an initialized component,
+a probe protocol label, or unknown. The codec smoke tests have an unknown
+execution version. The BLEND receipt records the versions reported during
+authoring and native import as separate execution details. The combined
+authoring/import operation has an unknown version. Matching receipt and snapshot
+versions verifies their recorded agreement. The caller must retain and trust
+the original snapshot or pin its digest independently. The expiry bounds use of
+that snapshot, whose references pin its exact receipt bytes. Rebuilding a
+snapshot around older standalone receipts and assigning a new expiry provides
+no evidence of fresh execution. Establishing the age of independent receipts,
+the identity of dependencies in the running process, their deployed versions,
+or the current execution host requires separate verification.
+Reordered requests produce the same ordered capability entries and
+fingerprints when the observed inputs stay the same. A new expiry changes the
+snapshot hash. Do not treat a receipt as a cryptographic signature or a
+production visual review.
 
 ```bash
 PYTHONPATH=scripts:tests python -m unittest test_director_capabilities -v
@@ -91,3 +208,9 @@ All 17 focused tests passed. The 14 ordinary tests also passed with optional
 3D imports blocked. Three native importer/evidence tests are registered only in
 the optional native schema/math gate, preserving the 2D dependency boundary.
 No provider calls or production film acceptance is claimed.
+
+The [November 17 inventory](../tests/results/director-inventory-20261117/verification.json)
+records the exact earlier revision it exercised. Its one-hour snapshot has
+expired. It includes the runtime, resource, PNG and real native geometry
+probes plus initialization-only results. It includes no execution evidence
+for Blender, codecs or providers.
