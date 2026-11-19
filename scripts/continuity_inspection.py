@@ -768,8 +768,15 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         if result['status']=='unverified':
             result['issues'].append(dict(code='APPROVAL_REQUIRED',message='equal measured structures do not establish approved rig identity'))
         return finish()
-    if x.get('facial_controls') != y.get('facial_controls'):
-        result['issues'].append(dict(code='FACIAL_CONTROLS_DIFFER',message='captured facial controls differ between rigs'))
+    # Unavailable facial controls are unknown, as in compare_assets, not a
+    # measured difference.
+    x_face,y_face=x.get('facial_controls'),y.get('facial_controls')
+    if x_face is not None and y_face is not None:
+        if x_face!=y_face:
+            result['issues'].append(dict(code='FACIAL_CONTROLS_DIFFER',message='captured facial controls differ between rigs'))
+    elif x_face is not None or y_face is not None:
+        result['issues'].append(dict(code='FACIAL_CONTROLS_UNAVAILABLE',
+                                     message='facial controls are captured for only one rig and cannot be compared'))
     if profile is None or review is None:
         sb={v['id']:v for v in x['skeleton']['bones']}
         tb={v['id']:v for v in y['skeleton']['bones']}
