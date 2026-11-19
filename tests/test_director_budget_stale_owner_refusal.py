@@ -21,7 +21,7 @@ class StaleOwnerRefusalTests(unittest.TestCase):
     claim = controls.StaleNativeOwnerTests.claim
     observe = controls.StaleNativeOwnerTests.observe
     row = controls.StaleNativeOwnerTests.row
-    inventory = controls.StaleNativeOwnerTests.inventory
+    owned_inventory = controls.StaleNativeOwnerTests.owned_inventory
     interrupt_observation = controls.StaleNativeOwnerTests.interrupt_observation
 
     def saved_claim_revisions(self):
@@ -62,24 +62,24 @@ class StaleOwnerRefusalTests(unittest.TestCase):
         return pending, running, token
 
     def assert_refusal_and_recovery(self, stale, action, *, calls, amount):
-        with hatch.ownership(self.root):
-            before = self.inventory()
+        with self.owned_inventory() as inventory:
+            before = inventory()
             error = None
             try:
                 budget = NativeBudget.for_run(self.root, stale, recovery=True)
                 action(budget, hatch.job_for(stale, 'base'))
             except (RigError, ValueError) as caught:
                 error = caught
-            after = self.inventory()
+            after = inventory()
             changed = sorted(name for name in set(before) | set(after)
                              if before.get(name) != after.get(name))
             self.assertTrue(error is not None and before == after,
                             f'Stale snapshot must refuse without writing: '
                             f'refused={error is not None}, changed={changed}')
             hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
-            recovered = self.inventory()
+            recovered = inventory()
             hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
-            self.assertEqual(self.inventory(), recovered)
+            self.assertEqual(inventory(), recovered)
         row = self.row()
         self.assertEqual(row['state'], 'uncertain')
         self.assertEqual(row['spent']['provider_calls'], str(calls))
@@ -132,11 +132,11 @@ class StaleOwnerRefusalTests(unittest.TestCase):
         self.assertEqual(interrupted.exception.report['code'], 'RIG_BUSY')
         self.assertEqual(self.row()['attempts'], [])
 
-        def digests():
-            return {path: sha256(content).hexdigest() for path, content in self.inventory().items()}
-
         journal = (self.root / 'imagegen-jobs.json').relative_to(self.owner).as_posix()
-        with hatch.ownership(self.root):
+        with self.owned_inventory() as inventory:
+            def digests():
+                return {path: sha256(content).hexdigest() for path, content in inventory().items()}
+
             current = hatch.manifest(self.root)
             current_job = hatch.job_for(current, 'base')
             pending, = current_job['budget_operation']['events']

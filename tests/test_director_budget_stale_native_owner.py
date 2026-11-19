@@ -1,4 +1,6 @@
 """Current-owner recovery across durable native claim and usage interruptions."""
+from contextlib import contextmanager
+import os
 import unittest
 from unittest.mock import patch
 
@@ -18,10 +20,32 @@ class StaleNativeOwnerTests(unittest.TestCase):
     observe = native_fixtures.NativeBudgetTests.observe
     row = native_fixtures.NativeBudgetTests.row
 
-    def inventory(self):
-        """Compare actual bytes, including retained evidence and ledger files."""
-        return {path.relative_to(self.owner).as_posix(): path.read_bytes()
-                for path in self.owner.rglob('*') if path.is_file()}
+    @contextmanager
+    def owned_inventory(self):
+        """Read every file, bracketing Windows' mandatory lock on the sentinel byte."""
+        lock = self.root.with_name(f'.{self.root.name}.hatch.lock')
+        original = lock.stat()
+        sentinel = lock.read_bytes()
+        self.assertEqual(sentinel, b'0')
+
+        def check_lock():
+            current = lock.stat()
+            self.assertTrue(os.path.samestat(original, current))
+            self.assertEqual(current.st_size, len(sentinel))
+
+        def inventory():
+            check_lock()
+            return {path.relative_to(self.owner).as_posix():
+                    sentinel if os.name == 'nt' and path == lock else path.read_bytes()
+                    for path in self.owner.rglob('*') if path.is_file()}
+
+        try:
+            with hatch.ownership(self.root):
+                yield inventory
+                check_lock()
+        finally:
+            check_lock()
+            self.assertEqual(lock.read_bytes(), sentinel)
 
     def interrupted_publication(self):
         with patch.object(NativeBudget, 'publish_claim',
@@ -102,18 +126,18 @@ class StaleNativeOwnerTests(unittest.TestCase):
         self.assertEqual([event['payload']['id'] for event in job['budget_operation']['events']],
                          ['earlier-measured', 'newer-unknown'])
         self.assertTrue(all('receipt' in event for event in job['budget_operation']['events']))
-        with hatch.ownership(self.root):
-            before = self.inventory()
+        with self.owned_inventory() as inventory:
+            before = inventory()
             for _ in range(2):
                 hatch.reconcile(self.root, hatch.manifest(self.root, recovery=True))
                 hatch.record_budget_usage(self.root, hatch.manifest(self.root, recovery=True),
                                           'base', token, unknown)
-            self.assertEqual(self.inventory(), before)
+            self.assertEqual(inventory(), before)
             with self.assertRaises((RigError, ValueError)):
                 hatch.release_budget(self.root, hatch.manifest(self.root, recovery=True), 'base',
                                      idempotency_key='active-unknown', outcome='canceled-known',
                                      evidence=self.proof)
-            self.assertEqual(self.inventory(), before)
+            self.assertEqual(inventory(), before)
 
     def test_fresh_record_preserves_earlier_pending_observation(self):
         token, unknown = self.pending_usage()
@@ -130,11 +154,11 @@ class StaleNativeOwnerTests(unittest.TestCase):
         self.assertEqual([event['payload']['id'] for event in job['budget_operation']['events']],
                          [unknown['id'], later['id']])
         self.assertEqual(job['token'], token)
-        with hatch.ownership(self.root):
-            before = self.inventory()
+        with self.owned_inventory() as inventory:
+            before = inventory()
             hatch.record_budget_usage(self.root, hatch.manifest(self.root, recovery=True),
                                       'base', token, later)
-            self.assertEqual(self.inventory(), before)
+            self.assertEqual(inventory(), before)
 
     def test_original_pending_claim_recovery_reuses_token_and_reservation(self):
         original_before_claim = NativeBudget.before_claim

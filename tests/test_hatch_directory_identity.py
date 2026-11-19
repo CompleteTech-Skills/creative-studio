@@ -30,35 +30,55 @@ class JournalDirectoryIdentityTests(unittest.TestCase):
         moved = self.root.parent if ancestor else self.root
         retained = self.owner / 'retained-synthetic-directory'
         sentinel = b'Unrelated synthetic journal must remain byte-identical.\n'
+        denied_rename = None
+        replacement_contents = []
+
+        def source_contents():
+            return {path.relative_to(self.root): path.read_bytes()
+                    for path in self.root.rglob('*') if path.is_file()}
 
         def substitute(target, data):
+            nonlocal denied_rename
             if hatch.job_for(data, 'base')['status'] != 'running':
                 return original_save(target, data)
             self.assertEqual(Path(target), self.root)
-            original = (self.root / 'imagegen-jobs.json').read_bytes()
-            ledger = self.ledger.snapshot()['sha256']
-            moved.rename(retained)
+            observations.append((moved.stat(), self.root.stat(), source_contents(),
+                                 self.ledger.snapshot()['sha256']))
+            self.assertFalse(retained.exists())
+            try:
+                moved.rename(retained)
+            except PermissionError as error:
+                # The open sibling lock can prevent renaming its parent on Windows.
+                self.assertTrue(ancestor and os.name == 'nt')
+                self.assertEqual(error.winerror, 5)  # ERROR_ACCESS_DENIED
+                denied_rename = error
+                raise
             self.root.mkdir(parents=True)
             journal = self.root / 'imagegen-jobs.json'
             journal.write_bytes(sentinel)
             try:
                 return original_save(target, data)
             finally:
-                observations.append((journal.read_bytes(), original, ledger))
+                replacement_contents.append(journal.read_bytes())
                 shutil.rmtree(moved)
                 retained.rename(moved)
 
-        refused = False
-        try:
+        with self.assertRaises((PermissionError, ValueError)) as refused:
             with hatch.ownership(self.root), patch.object(hatch, 'save', substitute):
                 hatch.claim(self.root, hatch.manifest(self.root), 'base')
-        except (OSError, ValueError):
-            refused = True
         self.assertEqual(len(observations), 1)
-        written, original, ledger = observations[0]
-        self.assertEqual(written, sentinel, 'a replacement ordinary directory was overwritten')
-        self.assertTrue(refused, 'replacement must not produce a usable claim')
-        self.assertEqual((self.root / 'imagegen-jobs.json').read_bytes(), original)
+        if denied_rename is not None:
+            self.assertIs(refused.exception, denied_rename)
+            self.assertEqual(replacement_contents, [])
+        else:
+            self.assertIsInstance(refused.exception, ValueError)
+            self.assertIn('differs from its original admission', str(refused.exception))
+            self.assertEqual(replacement_contents, [sentinel])
+        moved_stat, root_stat, original, ledger = observations[0]
+        self.assertFalse(retained.exists())
+        self.assertTrue(os.path.samestat(moved_stat, moved.stat()))
+        self.assertTrue(os.path.samestat(root_stat, self.root.stat()))
+        self.assertEqual(source_contents(), original)
         self.assertEqual(self.ledger.snapshot()['sha256'], ledger)
         self.assertEqual(hatch.job_for(hatch.manifest(self.root), 'base')['status'], 'pending')
 
