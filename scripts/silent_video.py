@@ -681,7 +681,7 @@ def _mp4_file_matches(stream, file_size):
     while offset < file_size:
         if file_size - offset < 8:
             return False
-        if not fragment_boxes and (boxes >= MAX_CONTAINER_BOXES or read_bytes + 8 > MAX_CONTAINER_HEADER_BYTES):
+        if not found_type and (boxes >= MAX_CONTAINER_BOXES or read_bytes + 8 > MAX_CONTAINER_HEADER_BYTES):
             return False
         header = read_at(offset, 8, metadata=False)
         if header is None:

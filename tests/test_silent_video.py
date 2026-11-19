@@ -155,10 +155,12 @@ class SilentContracts(unittest.TestCase):
             with self.subTest(case=label):
                 stream = ObservedReads(data)
                 self.assertIs(video._mp4_file_matches(stream, len(data)), expected)
-                self.assertLessEqual(sum(length for _, length in stream.reads), max_bytes)
+                lookahead = 8 if label == 'no-budget-after-type' else 0
+                self.assertLessEqual(sum(length for _, length in stream.reads), max_bytes + lookahead)
                 self.assertTrue(all(0 <= length <= max_bytes for _, length in stream.reads))
                 if label == 'over-header-limit':
-                    self.assertEqual(len(stream.reads), max_boxes + 1)  # one ftyp payload read
+                    # One ftyp payload read and one rejected classification lookahead.
+                    self.assertEqual(len(stream.reads), max_boxes + 2)
                 if label == 'skipped-media':
                     self.assertEqual(stream.reads, [(0, 8), (8, 12), (20, 8)])
 
@@ -170,6 +172,7 @@ class SilentContracts(unittest.TestCase):
         self.assertFalse(video._mp4_header_matches(full + SIMULATED_MP4_FTYP))
         padding = mp4_box(b'free') * (video.MAX_CONTAINER_BOXES - 1)
         self.assertTrue(video._mp4_header_matches(full + padding))
+        self.assertTrue(video._mp4_header_matches(SIMULATED_MP4_FTYP + padding + fragment))
         self.assertFalse(video._mp4_header_matches(full + padding + mp4_box(b'free')))
 
     def _simulated_verification_records(self):
