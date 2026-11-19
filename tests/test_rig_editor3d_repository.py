@@ -8,6 +8,7 @@ import zlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -654,6 +655,83 @@ repo.transact_native(0, 'oversized-interruption', {}, unverified)
         self.assertEqual(len(list((small.root / 'failed').glob('*.json'))), 1)
         self.assertEqual(self.mesh_x(reopened.apply(0, self.move(8), 'after-discard')), 8)
         self.assertEqual((self.source / 'triangle.obj').read_bytes(), native)
+
+    def test_discard_releases_unadmittable_partial_stages_without_following_links(self):
+        outside = self.root / 'outside-target'
+        outside.mkdir()
+        (outside / 'keep.txt').write_bytes(b'keep')
+        builders = {
+            'alias': "(destination / 'Part.obj').write_bytes(b'a'); (destination / 'part.obj').write_bytes(b'b')",
+            'reserved': "(destination / 'aux.tmp').write_bytes(b'x')",
+            'link': "os.symlink(sys.argv[2], destination / 'escape', target_is_directory=True)",
+        }
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts'))
+        for name, body in builders.items():
+            with self.subTest(stage=name):
+                repo = EditorRepository.create(self.source, self.root / ('unadmittable-' + name))
+                before = repo.snapshot()
+                child = f"""import os
+import sys
+from editor3d_repository import EditorRepository
+repo = EditorRepository(sys.argv[1])
+def unverified(source, destination, scene):
+    destination.mkdir()
+    {body}
+    os._exit(47)
+repo.transact_native(0, 'interrupted-{name}', {{}}, unverified)
+"""
+                try:
+                    exited = subprocess.run([sys.executable, '-B', '-c', child, str(repo.root), str(outside)],
+                                            env=env, capture_output=True, timeout=20)
+                except OSError as exc:
+                    self.skipTest(f'cannot run interrupted builder: {exc}')
+                if name == 'link' and exited.returncode != 47:
+                    self.skipTest('directory symlinks unavailable: ' + exited.stderr.decode(errors='replace')[-200:])
+                self.assertEqual(exited.returncode, 47, exited.stderr)
+                reopened = EditorRepository(repo.root)
+                item, = reopened.recovery()
+                with self.assertRaises(RigError) as blocked:
+                    reopened.apply(0, self.move(8), 'blocked-by-recovery')
+                self.assertEqual(blocked.exception.report['code'], 'EDITOR3D_RECOVERY')
+                reopened.discard_incomplete('interrupted-' + name, 0, expected_sha256=before['sha256'])
+                self.assertFalse(os.path.lexists(repo.root / 'revisions' / item['stage']))
+                self.assertFalse(reopened.recovery())
+                self.assertEqual(len(list((repo.root / 'failed').glob('*.json'))), 1)
+                self.assertEqual(self.mesh_x(reopened.apply(0, self.move(8), 'after-discard')), 8)
+        self.assertEqual((outside / 'keep.txt').read_bytes(), b'keep')
+
+    def test_discard_refuses_a_stage_replaced_by_a_link(self):
+        outside = self.root / 'link-target'
+        outside.mkdir()
+        (outside / 'keep.txt').write_bytes(b'keep')
+        repo = EditorRepository.create(self.source, self.root / 'linked-stage')
+        before = repo.snapshot()
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / 'scripts'))
+        child = """import os
+import sys
+from editor3d_repository import EditorRepository
+repo = EditorRepository(sys.argv[1])
+def unverified(source, destination, scene):
+    os._exit(47)
+repo.transact_native(0, 'swapped-stage', {}, unverified)
+"""
+        exited = subprocess.run([sys.executable, '-B', '-c', child, str(repo.root)],
+                                env=env, capture_output=True, timeout=20)
+        self.assertEqual(exited.returncode, 47, exited.stderr)
+        item, = EditorRepository(repo.root).recovery()
+        stage = repo.root / 'revisions' / item['stage']
+        if stage.exists():
+            shutil.rmtree(stage)
+        try:
+            stage.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f'directory symlinks unavailable: {exc}')
+        with self.assertRaises(RigError) as refused:
+            EditorRepository(repo.root).discard_incomplete('swapped-stage', 0, expected_sha256=before['sha256'])
+        # Control: path admission refuses the swapped stage before any deletion.
+        self.assertTrue(refused.exception.report['code'].endswith('_PATH'))
+        self.assertEqual((outside / 'keep.txt').read_bytes(), b'keep')
+        self.assertTrue(os.path.islink(stage))
 
     def test_archive_refuses_captured_payload_that_differs_from_immutable_revision(self):
         original = self.repo.root / 'revisions/00000000/native/triangle.obj'

@@ -369,6 +369,26 @@ def _validate_revision_record(value, revision, limits):
     _check_id(value['transaction_id'])
     return value
 
+def _discard_private_stage(stage, revisions):
+    """Delete a private, never-published revision stage without following links.
+
+    The journal admits only ``.editor-revision-*`` names, so the stage can never
+    name a published revision. The stage must be a real directory directly
+    under ``revisions`` (not a link or junction), and deletion requires a
+    symlink-attack-safe ``rmtree`` so entries inside are never followed.
+    """
+    _require(re.fullmatch(r'\.editor-revision-[a-zA-Z0-9_-]+', stage.name) is not None
+             and stage.parent == revisions, 'RECOVERY', 'Private stage path is not a revision stage.')
+    info = os.lstat(stage)
+    _require(stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode)
+             and not getattr(info, 'st_file_attributes', 0) & 0x400,
+             'PATH', 'Private stage is not a real directory.')
+    _require(shutil.rmtree.avoids_symlink_attacks, 'RECOVERY',
+             'This platform cannot delete a private stage without following links.')
+    shutil.rmtree(stage)
+    _sync_directory(revisions)
+
+
 class EditorRepository:
     """Repository of exact native project revisions, with optimistic concurrency.
 
@@ -791,12 +811,11 @@ class EditorRepository:
                      item['expected_sha256']==head['sha256'], 'RECOVERY','Only an unverified current attempt can be discarded.')
             if item['stage'] is not None:
                 stage=safe_path(self.root,'revisions/'+item['stage'])
-                if stage.exists():
-                    # A crashed builder may exceed snapshot quotas before admission.
-                    # Validate the private tree shape and entry bound before discarding it.
-                    _scan(stage,self.limits,bound_content=False)
-                    shutil.rmtree(stage)
-                    _sync_directory(stage.parent)
+                if os.path.lexists(stage):
+                    # A crashed builder may leave content that admission would
+                    # reject (quota, aliases, reserved names, links, entry count).
+                    # Safety comes from the stage itself, not its contents.
+                    _discard_private_stage(stage, safe_path(self.root, 'revisions'))
             failure_root=safe_path(self.root,'failed');failure_root.mkdir(exist_ok=True)
             _sync_directory(self.root)
             destination=safe_path(failure_root, f'{path.stem}-{secrets.token_hex(16)}.json')
