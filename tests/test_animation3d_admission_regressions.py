@@ -494,6 +494,64 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
             self.f.put('archive-project.json', archive_project, 'project')]
         self.assertTrue(self.check()['source_ready'])
 
+    def test_archived_sequence_uses_only_its_containing_project_scenes(self):
+        sequence = self.f.put('sequence.json', self.f.values['sequence'], 'sequence')
+        scene = self.f.put('scene.json', self.scene, 'scene')
+        archive = {**deepcopy(self.f.project), 'id': 'archive', 'sequences': [sequence],
+                   'scene_assets': [scene]}
+        self.f.project['provenance']['sources'] = [self.f.put('archive.json', archive, 'project')]
+        self.assertTrue(self.f.check()['source_ready'])
+
+    def test_archived_sequence_cannot_borrow_current_project_scene(self):
+        sequence = self.f.put('sequence.json', self.f.values['sequence'], 'sequence')
+        archive = {**deepcopy(self.f.project), 'id': 'archive', 'sequences': [sequence],
+                   'scene_assets': []}
+        self.f.project['provenance']['sources'] = [self.f.put('archive.json', archive, 'project')]
+        self.f.project['sequences'] = [sequence]
+        self.assert_code('ANIMATION_REFERENCE')
+
+    def test_shared_clip_must_match_both_current_and_archived_project_clocks(self):
+        archive = {**deepcopy(self.f.project), 'id': 'archive',
+                   'fps': dict(numerator=30, denominator=1)}
+        self.f.project['provenance']['sources'] = [self.f.put('archive.json', archive, 'project')]
+        self.assert_code('ANIMATION_RATE')
+        archive['fps'] = dict(numerator=48, denominator=2)
+        self.f.project['provenance']['sources'] = [self.f.put('archive.json', archive, 'project')]
+        self.assertTrue(self.f.check()['source_ready'])
+
+    def test_archived_projects_check_shared_camera_clip_with_each_own_registry(self):
+        clip, first_registry = self._historical_camera_callers()
+        clip['dependencies'] = []
+        shared = self.f.put('archive-clip.json', clip, 'clip')
+        first = {**deepcopy(self.f.project), 'id': 'first', 'clips': [shared],
+                 'default_render_profile': {**first_registry, 'kind': 'render-profile'}}
+        second = {**deepcopy(self.f.project), 'id': 'second', 'clips': [shared]}
+        first_ref = self.f.put('first.json', first, 'project')
+        self.f.project['clips'] = []
+        for has_owner in (False, True):
+            if has_owner:
+                second['default_render_profile'] = {**self.clip['dependencies'][0], 'kind': 'render-profile'}
+            second_ref = self.f.put('second.json', second, 'project')
+            for archives in ([first_ref, second_ref], [second_ref, first_ref]):
+                with self.subTest(has_owner=has_owner, first=archives[0]['id']):
+                    self.f.project['provenance']['sources'] = archives
+                    if has_owner:
+                        self.assertTrue(self.f.check()['source_ready'])
+                    else:
+                        with self.assertRaises(RigError) as rejected:
+                            self.f.check()
+                        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_OWNER')
+
+    def test_separate_dependency_project_keeps_its_own_frame_rate(self):
+        independent = deepcopy(self.f.project)
+        independent.update(id='independent-project', fps=dict(numerator=30, denominator=1),
+                           scene_assets=[], clips=[], rig_assets=[])
+        self.clip['dependencies'] = [self.f.put('independent-project.json', independent, 'project')]
+        self.f.project['clips'] = [self.f.put('clip.json', self.clip, 'clip')]
+        result = self.check()
+        self.assertTrue(result['source_ready'])
+        self.assertEqual(result['documents']['independent-project.json']['fps'], independent['fps'])
+
     def test_provenance_only_clip_keeps_its_own_frame_rate(self):
         archived = self.f.project['clips'][0]
         self.f.project['fps'] = dict(numerator=30, denominator=1)

@@ -369,14 +369,15 @@ def verify_native(root, reference):
         return kind, value
 
 
-def _reachable_paths(edges, roots):
-    reached = set()
-    pending = list(roots)
+def _binding_paths(root, edges, projects):
+    """Follow ordinary dependencies until another project takes binding authority."""
+    reached = {}
+    pending = [root]
     while pending:
         path = pending.pop()
-        if path not in reached:
-            reached.add(path)
-            pending.extend(edges.get(path, ()))
+        if path not in reached and (path == root or path not in projects):
+            reached[path] = None
+            pending.extend(reversed(edges.get(path, ())))
     return reached
 
 
@@ -436,10 +437,7 @@ def load_project(root, name='animation-project.json'):
                 visit(reference['path'], reference, depth+1)
             active.remove(path)
         visit(name, captured=project)
-        # A document may be reached both through provenance and a current
-        # dependency. Decide binding authority after capturing every revision.
-        current_paths = _reachable_paths(edges, [name])
-        _validate_bindings(project, documents, native, snapshot.destination, current_paths, edges)
+        _validate_bindings(project, documents, native, snapshot.destination, edges)
         # Preserve independent top-level project and document views. Transfer
         # the rest of the privately owned receipt without copying it again.
         project_copy = snapshot.memory_charges[name]
@@ -452,27 +450,8 @@ def load_project(root, name='animation-project.json'):
                 'source_ready': True, 'scope': 'exact dependency and native target admission; no evaluated scene or render'}
 
 
-def _validate_bindings(project, documents, native, snapshot_root, current_paths, edges):
-    from functools import lru_cache
-
-    historical_parents = {}
-    for parent, children in edges.items():
-        if parent not in current_paths:
-            for child in children:
-                historical_parents.setdefault(child, set()).add(parent)
-
-    @lru_cache(maxsize=1)
-    def historical_context(path):
-        ancestors = _reachable_paths(historical_parents, [path])
-        roots = [ancestor for ancestor in ancestors if ancestor not in historical_parents]
-        return ancestors, _reachable_paths(edges, roots)
-
-    def authority_paths(path):
-        return current_paths if path in current_paths else historical_context(path)[1]
-
+def _validate_bindings(project, documents, native, snapshot_root, edges):
     budgets = project['budgets']
-    require(not project.get('character_state_bindings'), 'ANIMATION_OWNER',
-            'Character state bindings need a canonical character-to-actor owner.')
     # Every typed frame coordinate participates in the same project admission
     # bound, including auxiliary tracks, interactions and nested controls.
     for document_value in documents.values():
@@ -509,21 +488,40 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
     require(sum(len(d['nodes']) for value in scene_projects for d in value['documents'].values()
                 if d['kind'] == 'scene3d-scene') <= budgets['max_scene_nodes'],
             'ANIMATION_LIMIT', 'Native scene exceeds project node budget.')
-    # Bare shot IDs refer only to the exact active scene references explicitly
-    # selected by the project. Historical provenance versions never select an
-    # active scene according to dependency traversal order.
-    scenes = {}
-    for reference in project['scene_assets']:
-        value = documents.get(reference['path'])
-        if value is not None and value['kind'] == KINDS['scene']:
-            require(value['id'] not in scenes, 'ANIMATION_IDENTITY', 'Active scene ID is ambiguous.')
-            scenes[value['id']] = value
     owner_sources = {}
     for path, (kind, _) in native.items():
         if kind in ('camera3d-registry','material3d','material-instance3d','material-variant3d','light3d'):
             data = decode_json((snapshot_root/path).read_bytes())
             owner_sources[path] = dict(path=path,sha256=hashlib.sha256((snapshot_root/path).read_bytes()).hexdigest(),
                                        id=data['id'],version=data['version'],kind=kind)
+
+    projects = {path for path, value in documents.items() if value['kind'] == KINDS['project']}
+    children = {child for paths in edges.values() for child in paths}
+    for root, value in documents.items():
+        if root not in projects and root in children:
+            continue
+        # Each project, and each standalone provenance branch, has an independent
+        # ordinary closure. Shared bytes are admitted once and checked in every use.
+        paths = _binding_paths(root, edges, projects)
+        containing_project = value if root in projects else None
+        _validate_scope(containing_project, project, paths, documents, native, rigs, owner_sources)
+
+
+def _validate_scope(containing_project, outer_project, paths, documents, native, rigs, owner_sources):
+    budgets = outer_project['budgets']
+    # Standalone provenance sequences historically select scenes from the outer
+    # project. That fallback supplies only scenes, never a clock or native owners.
+    scene_project = containing_project or outer_project
+    scenes = {}
+    for reference in scene_project['scene_assets']:
+        value = documents.get(reference['path'])
+        if value is not None and value['kind'] == KINDS['scene']:
+            require(value['id'] not in scenes, 'ANIMATION_IDENTITY', 'Project scene ID is ambiguous.')
+            scenes[value['id']] = value
+    if containing_project is not None:
+        require(not containing_project.get('character_state_bindings'), 'ANIMATION_OWNER',
+                'Character state bindings need a canonical character-to-actor owner.')
+    scope_owners = [path for path in paths if path in owner_sources]
 
     def document(reference, kind):
         value = documents.get(reference['path'])
@@ -563,7 +561,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
         require(identifier in {b['id'] for b in rig.skeleton['bones']},
                 'ANIMATION_TARGET', 'Bone is absent from bound rig: '+identifier)
 
-    def target(value, rig=None, scene=None, actor_id=None, *, context_path):
+    def target(value, rig=None, scene=None, actor_id=None):
         domain, prop = value['kind'], value['property']
         if domain in ('bone', 'morph'):
             if scene is not None:
@@ -588,10 +586,8 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
         # context, including the ordinary links of an archived project.
         from animation3d_owners import _resolve_property
         candidates = []
-        eligible = authority_paths(context_path)
-        for path, (kind, admitted) in native.items():
-            if path not in eligible:
-                continue
+        for path in scope_owners:
+            kind, admitted = native[path]
             if ((domain == 'camera' and kind == 'camera3d-registry') or
                 (domain == 'material' and kind in ('material3d','material-instance3d','material-variant3d')) or
                 (domain == 'light' and kind == 'light3d')):
@@ -606,15 +602,15 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
         from animation3d_owners import property_domain
         return property_domain(*candidates[0])
 
-    def track_target(track, rig=None, scene=None, actor_id=None, *, context_path):
-        domain = target(track['target'], rig, scene, actor_id, context_path=context_path)
+    def track_target(track, rig=None, scene=None, actor_id=None):
+        domain = target(track['target'], rig, scene, actor_id)
         if domain is not None:
             from jsonschema import Draft202012Validator
             validator = Draft202012Validator(domain)
             require(all(validator.is_valid(value) for value in [track['default_value']] + [key['value'] for key in track['keys']]),
                     'ANIMATION_RANGE', 'Track values violate the admitted native property domain.')
 
-    def clip_targets(clip, bound=None, scene=None, actor_id=None, *, clip_path):
+    def clip_targets(clip, bound=None, scene=None, actor_id=None):
         require(not any(clip.get(field) for field in ('constraints','procedural_modifiers','entry_pose','exit_pose')),
                 'ANIMATION_OWNER', 'Named clip constraints, modifiers and poses need explicit native adapters.')
         require(actor_id is None or bound is not None or 'rig_binding' not in clip,
@@ -625,7 +621,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                     'ANIMATION_TARGET', 'Clip rig differs from actor rig; retargeted output must bind its actual rig.')
         rig = own if actor_id is None else bound
         for track in clip['tracks']:
-            track_target(track, rig, scene, actor_id, context_path=clip_path)
+            track_target(track, rig, scene, actor_id)
         root = clip['root_motion']
         if root['enabled']:
             if 'source_bone' in root:
@@ -633,17 +629,17 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                 bone(rig, root['source_bone'])
             else:
                 target(dict(kind='node', node_id=root['source_node'], property='translation'),
-                       scene=scene, context_path=clip_path)
+                       scene=scene)
         for contact in clip['contacts']:
             if 'target_object' in contact:
                 target(dict(kind='node', node_id=contact['target_object'], property='translation'),
-                       scene=scene, context_path=clip_path)
+                       scene=scene)
             if 'target_bone' in contact:
                 require(rig is not None, 'ANIMATION_TARGET', 'Contact needs a bound rig.')
                 bone(rig, contact['target_bone'])
             elif 'target_node' in contact:
                 target(dict(kind='node', node_id=contact['target_node'], property='translation'),
-                       scene=scene, context_path=clip_path)
+                       scene=scene)
             else:
                 require(False, 'ANIMATION_OWNER', 'Contact anchors need an explicit native anchor adapter.')
         if 'skeleton_signature' in clip:
@@ -651,11 +647,11 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
             require(rig is not None and clip['skeleton_signature'] == object_hash(rig.skeleton),
                     'ANIMATION_TARGET', 'Clip skeleton signature differs from bound rig.')
 
-    active_contexts = {ref['path'] for field in ('scene_assets', 'sequences') for ref in project[field]}
+    selected_contexts = {ref['path'] for field in ('scene_assets', 'sequences') for ref in scene_project[field]}
     placed_clips = set()
 
     def record_binding(clip_path, context_path):
-        if clip_path not in current_paths or context_path in active_contexts:
+        if containing_project is None or context_path in selected_contexts:
             placed_clips.add(clip_path)
 
     def placement(value, context_path, scene, actor=None, layer=None, duration=None):
@@ -676,21 +672,18 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
         require(value['layer_id'] in layers and (layer is None or layer['id'] == value['layer_id']),
                 'ANIMATION_REFERENCE', 'Placement layer is absent from actor.')
         bound = rig_for(actor['rig']) if 'rig' in actor else None
-        clip_targets(clip, bound, scene, actor_id, clip_path=value['clip']['path'])
+        clip_targets(clip, bound, scene, actor_id)
         record_binding(value['clip']['path'], context_path)
 
-    for context_path, d in documents.items():
+    for context_path in paths:
+        if context_path not in documents:
+            continue
+        d = documents[context_path]
         if 'duration_frames' in d:
             require(d['duration_frames'] <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Animation duration exceeds project budget.')
-        if 'fps' in d:
+        if 'fps' in d and containing_project is not None:
             from animation3d_time import rate
-            if context_path in current_paths:
-                clocks = [project['fps']]
-            else:
-                ancestors, _ = historical_context(context_path)
-                clocks = [documents[path]['fps'] for path in ancestors
-                          if documents[path]['kind'] == KINDS['project']]
-            require(all(rate(d['fps']) == rate(clock) for clock in clocks),
+            require(rate(d['fps']) == rate(containing_project['fps']),
                     'ANIMATION_RATE', 'Project documents use inconsistent frame rates.')
         if d['kind'] == KINDS['scene']:
             scene_owner = native_scene(d)
@@ -721,7 +714,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
             _check_constraint_cycles([], dependencies)
             for field in ('object_tracks','environment_tracks','camera_tracks','lighting_tracks'):
                 for track in d[field]:
-                    track_target(track, scene=d, context_path=context_path)
+                    track_target(track, scene=d)
             actor_ids = {a['actor_id'] for a in d['actors']}
             for interaction in d['interactions']:
                 require(set(interaction['synchronization_markers']) <= {m['name'] for m in d['markers']},
@@ -730,7 +723,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                         'ANIMATION_REFERENCE', 'Interaction participant is absent from scene.')
                 if 'prop_id' in interaction:
                     target(dict(kind='node', node_id=interaction['prop_id'], property='translation'),
-                           scene=d, context_path=context_path)
+                           scene=d)
                 constraints = {c['id'] for a in d['actors'] for c in a['constraints']}
                 require(set(interaction['constraints']) <= constraints, 'ANIMATION_REFERENCE', 'Interaction constraint is absent.')
                 for participant in interaction['participants']:
@@ -745,12 +738,12 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
             for actor in d['actors']:
                 rig = rig_for(actor['rig']) if 'rig' in actor else None
                 for constraint in actor['constraints']:
-                    target(constraint['source'], rig, d, actor['actor_id'], context_path=context_path)
+                    target(constraint['source'], rig, d, actor['actor_id'])
                     if 'target' in constraint:
-                        target(constraint['target'], scene=d, context_path=context_path)
+                        target(constraint['target'], scene=d)
                     if 'target_object_id' in constraint:
                         target(dict(kind='node', node_id=constraint['target_object_id'], property='translation'),
-                               scene=d, context_path=context_path)
+                               scene=d)
                     chain = constraint.get('chain_bones', [])
                     if chain:
                         require(rig is not None, 'ANIMATION_TARGET', 'Constraint chain needs a rig.')
@@ -770,7 +763,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                         bone(rig, identifier)
                     for value in layer['placements']: placement(value, context_path, d, actor, layer)
                     for value in layer.get('affected_targets', []):
-                        target(value, rig, d, actor['actor_id'], context_path=context_path)
+                        target(value, rig, d, actor['actor_id'])
                 if 'retarget_profile' in actor:
                     profile = document(actor['retarget_profile'], 'retarget')
                     require(rig is not None and rig is rig_for(profile['target_rig']),
@@ -796,8 +789,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                                 'ANIMATION_VALUE', 'Initial state parameter violates its canonical declared domain.')
                     for state in machine['states']:
                         require('clip' in state, 'ANIMATION_OWNER', 'Blend-tree admission needs an explicit owner.')
-                        clip_targets(document(state['clip'], 'clip'), rig, d, actor['actor_id'],
-                                     clip_path=state['clip']['path'])
+                        clip_targets(document(state['clip'], 'clip'), rig, d, actor['actor_id'])
                         record_binding(state['clip']['path'], context_path)
         if d['kind'] == KINDS['sequence']:
             require(d['total_frames'] <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Sequence exceeds project frame budget.')
@@ -815,7 +807,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                     require(actor is not None, 'ANIMATION_REFERENCE', 'Override actor is absent from scene.')
                     rig = rig_for(actor['rig']) if 'rig' in actor else None
                     for track in values:
-                        track_target(track, rig, scene, identifier, context_path=context_path)
+                        track_target(track, rig, scene, identifier)
         if d['kind'] == KINDS['retarget']:
             for field, key in (('source_rig','source_bone'),('target_rig','target_bone')):
                 rig = rig_for(d[field])
@@ -832,7 +824,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                     require(entry['source']['kind'] == 'rig' and admitted[0] == 'hatch-3d-rig' and
                             entry['target']['kind'] in ('bone','morph'), 'ANIMATION_OWNER',
                             'Rig registry entry needs its native rig and skeletal target.')
-                    target(entry['target'], admitted[1], context_path=context_path)
+                    target(entry['target'], admitted[1])
                 else:
                     _resolve_property(entry, admitted)
         if d['kind'] == KINDS['state-machine']:
@@ -840,6 +832,7 @@ def _validate_bindings(project, documents, native, snapshot_root, current_paths,
                     not any('exit_marker' in transition for transition in d['transitions']),
                     'ANIMATION_OWNER', 'Named state events and transition markers need an explicit canonical event owner.')
             require(all('clip' in state for state in d['states']), 'ANIMATION_OWNER', 'Blend-tree admission needs an explicit owner.')
-    for path, d in documents.items():
-        if d['kind'] == KINDS['clip'] and path not in placed_clips:
-            clip_targets(d, clip_path=path)
+    for path in paths:
+        clip = documents.get(path)
+        if clip is not None and clip['kind'] == KINDS['clip'] and path not in placed_clips:
+            clip_targets(clip)
