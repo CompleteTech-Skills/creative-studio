@@ -97,6 +97,118 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
         self.actor['constraints']=[self.constraint('parent','b2','b0')]
         self.assertTrue(self.check()['source_ready'])
 
+    def test_frame_budget_ignores_parameter_names_and_override_actor_ids(self):
+        sequence = deepcopy(self.f.values['sequence'])
+        overrides = {}
+        for identifier in ('frame', 'last_frame'):
+            self.scene['actors'].append({**self.actor, 'actor_id': identifier, 'animation_layers': []})
+            track = deepcopy(self.clip['tracks'][0])
+            track['target']['actor_id'] = identifier
+            overrides[identifier] = [track]
+        machine = deepcopy(self.f.values['state-machine'])
+        machine['states'][0]['clip'] = self.f.project['clips'][0]
+        machine['parameters'] = [dict(name='bonus_frames', type='int', default=0)]
+        self.actor['state_machine'] = self.f.put('machine.json', machine, 'state-machine')
+        self.actor['initial_state_parameters'] = {'bonus_frames': 101}
+        sequence['shots'][0]['actor_overrides'] = overrides
+        self.f.project['sequences'] = [self.f.put('sequence.json', sequence, 'sequence')]
+        self.assertTrue(self.check()['source_ready'])
+        overrides['frame'][0]['keys'][-1]['time']['frame'] = 101
+        self.f.project['sequences'] = [self.f.put('sequence.json', sequence, 'sequence')]
+        self.assert_code('ANIMATION_LIMIT')
+
+    def test_state_machine_transition_count_is_independent_of_frame_budget(self):
+        machine = deepcopy(self.f.values['state-machine'])
+        machine['states'][0]['clip'] = self.f.project['clips'][0]
+        machine['transition_limit_per_frame'] = 101
+        self.actor['state_machine'] = self.f.put('machine.json', machine, 'state-machine')
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_registered_scene_hierarchies_reuse_ids_and_resolve_constraint_endpoints(self):
+        native = json.loads((self.f.root / 'native/project.json').read_bytes())
+        second = json.loads((self.f.root / 'native/example-scene.json').read_bytes())
+        second.update(id='second-scene', shots=[], roots=['second-top'], cameras=['second-camera'])
+        nodes = {node['id']: node for node in second['nodes']}
+        second['nodes'].append({**nodes['root'], 'id': 'second-top'})
+        nodes['mesh']['parent'] = 'second-top'
+        nodes['root']['parent'] = 'mesh'
+        nodes['camera']['id'] = 'second-camera'
+        ref = self.f.put('native/second-scene.json', second)
+        local_ref = {**ref, 'path': 'second-scene.json'}
+        native['scenes'].append(local_ref)
+        native['dependency_lock'].append(local_ref)
+        self.scene['scene_asset'] = self.f.put('native/project.json', native, 'scene')
+        self.actor['model'] = {**self.scene['scene_asset'], 'kind': 'model'}
+        self.assertTrue(self.check()['source_ready'])
+
+        constraint = self.constraint('spatial')
+        constraint['source'] = dict(kind='node', node_id='second-top', property='translation')
+        del constraint['target_position']
+        constraint['target_object_id'] = 'camera'
+        self.actor['constraints'] = [constraint]
+        self.assertTrue(self.check()['source_ready'])
+        cross_scene = dict(id='cross', type='position', enabled=True, weight=1,
+                           source=dict(kind='node', node_id='camera', property='translation'),
+                           target_object_id='second-camera')
+        self.actor['constraints'].append(cross_scene)
+        self.assert_code('ANIMATION_CYCLE')
+        self.actor['constraints'].pop()
+        for endpoint, code in [('root', 'ANIMATION_TARGET'), ('second-camera', 'ANIMATION_CYCLE')]:
+            for field in ('target_object_id', 'target'):
+                with self.subTest(endpoint=endpoint, field=field):
+                    constraint.pop('target_object_id', None)
+                    constraint.pop('target', None)
+                    constraint[field] = (endpoint if field == 'target_object_id' else
+                                         dict(kind='node', node_id=endpoint, property='translation'))
+                    self.assert_code(code)
+
+    def test_historical_placements_do_not_bind_active_unbound_clip(self):
+        del self.clip['rig_binding']
+        clip_ref = self.f.put('clip.json', self.clip, 'clip')
+        self.f.project['clips'] = [clip_ref]
+        for binding in ('layer', 'state-machine', 'sequence'):
+            with self.subTest(binding=binding):
+                self.f.project['provenance'] = {**self.f.project['provenance'], 'sources': []}
+                history = deepcopy(self.f.values['sequence'] if binding == 'sequence' else self.scene)
+                history['version'] = '2.0.0'
+                if binding == 'sequence':
+                    history['shots'][0]['clip_placements'] = [{**self.placement(), 'actor_id': 'actor'}]
+                elif binding == 'state-machine':
+                    machine = deepcopy(self.f.values['state-machine'])
+                    machine['states'][0]['clip'] = clip_ref
+                    history['actors'][0]['state_machine'] = self.f.put('machine.json', machine, 'state-machine')
+                else:
+                    history['actors'][0]['animation_layers'][0]['placements'] = [self.placement()]
+                kind = 'sequence' if binding == 'sequence' else 'scene'
+                self.f.project['provenance']['sources'] = [self.f.put('history.json', history, kind)]
+                self.assert_code('ANIMATION_TARGET')
+                self.layer['placements'] = [self.placement()]
+                self.assertTrue(self.check()['source_ready'])
+                self.layer['placements'] = []
+                self.f.project['clips'] = []
+                self.assertTrue(self.check()['source_ready'])
+                if binding == 'layer':
+                    del history['actors'][0]['rig']
+                    self.f.project['provenance']['sources'] = [self.f.put('history.json', history, kind)]
+                    self.assert_code('ANIMATION_TARGET')
+                self.f.project['clips'] = [clip_ref]
+
+    def test_current_state_machine_clip_cannot_inherit_a_historical_binding(self):
+        del self.clip['rig_binding']
+        clip_ref = self.f.put('clip.json', self.clip, 'clip')
+        self.f.project['clips'] = [clip_ref]
+        history = deepcopy(self.scene)
+        history['version'] = '2.0.0'
+        history['actors'][0]['animation_layers'][0]['placements'] = [self.placement()]
+        self.f.project['clips'] = []
+        machine = deepcopy(self.f.values['state-machine'])
+        machine['states'][0]['clip'] = clip_ref
+        self.f.project['state_machines'] = [self.f.put('machine.json', machine, 'state-machine')]
+        self.f.project['provenance']['sources'] = [self.f.put('history.json', history, 'scene')]
+        self.assert_code('ANIMATION_TARGET')
+        self.actor['state_machine'] = self.f.project['state_machines'][0]
+        self.assertTrue(self.check()['source_ready'])
+
     def test_constraint_chain_must_follow_actual_parent_adjacency(self):
         constraint=self.constraint('ik','b0');constraint.update(type='two_bone_ik',chain_bones=['b0','b2','b1'])
         self.actor['constraints']=[constraint];self.assert_code('ANIMATION_CONSTRAINT')
