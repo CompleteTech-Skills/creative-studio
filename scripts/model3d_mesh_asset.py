@@ -127,13 +127,22 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
         if name == 'runtime/asset.glb': runtime = item
         if name == 'normalized.glb': normalized = item
     registered = None
-    # Bind the selected bytes before choosing a compatibility bridge. A same-
-    # byte legacy alias must not suppress the native source/fixture checks, and
-    # an unrelated legacy entry must not override verified normalized geometry.
+    from asset_library_import import TOOL
+    registered_provenance = manifest.get('provenance', {})
+    producer_claim = False
+    if isinstance(registered_provenance, dict):
+        for collection, key in (('tools', 'name'), ('conversions', 'tool')):
+            items = registered_provenance.get(collection, [])
+            if isinstance(items, list) and any(isinstance(item, dict) and item.get(key) == TOOL
+                                               for item in items):
+                producer_claim = True
+    # A real native claim follows its selected bytes through a legacy alias.
+    # An ordinary evidence file with the same bytes does not invent that claim.
     native_selection = normalized is not None and (
-        runtime is None or geometry_record['path'] == 'normalized.glb'
-        or (normalized['sha256'], normalized['bytes']) ==
-           (geometry_record['sha256'], geometry_record['bytes']))
+        runtime is None or producer_claim and (
+            geometry_record['path'] == 'normalized.glb'
+            or (normalized['sha256'], normalized['bytes']) ==
+               (geometry_record['sha256'], geometry_record['bytes'])))
     if native_selection:
         runtime, registered_files, registered = _normalized_evidence(manifest)
         require(geometry_record['media_type'] == runtime['mime_type'],

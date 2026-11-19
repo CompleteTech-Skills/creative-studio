@@ -85,7 +85,7 @@ def _blender_receipts(blender, original, intermediate):
 
     timeout = blender.get('shared_wall_timeout_seconds')
     require(type(timeout) in (int, float) and (type(timeout) is int or math.isfinite(timeout))
-            and timeout == int(timeout) and 0 < timeout <= 2**63 - 1
+            and timeout == int(timeout) and 0 < timeout <= DEFAULT_LIMITS['timeout_seconds']
             and blender.get('worker_sha256') == hashlib.sha256(read_source_bytes(WORKER, 65536)).hexdigest()
             and blender.get('command_policy') ==
             'private-cwd/fixed-package-worker/no-shell/factory/autoexec-disabled',
@@ -100,7 +100,7 @@ def _blender_receipts(blender, original, intermediate):
         seconds, argv = stage.get('seconds'), stage.get('argv')
         require(stage.get('status') == 'completed' and type(stage.get('exit_code')) is int
                 and stage['exit_code'] == 0 and stage.get('cwd') == '<workspace>'
-                and type(memory) is int and 384 * 1024**2 <= memory <= 2**63 - 1
+                and type(memory) is int and 384 * 1024**2 <= memory <= DEFAULT_LIMITS['memory_bytes']
                 and type(peak) is int and 0 < peak <= memory
                 and stage.get('peak_rss_source') == 'linux-wait4'
                 and stage.get('virtual_limit_bytes') == memory * 8
@@ -117,7 +117,9 @@ def _blender_receipts(blender, original, intermediate):
                     f'--fsize={byte_limit}', '--nofile=128:128', '--', '<blender>',
                     '--background', '--factory-startup', '--disable-autoexec', '--threads', '2',
                     '--python-exit-code', '1', '--python', '<worker>', '--', mode]
-        require(argv == expected and max(original['bytes'], intermediate['bytes']) <= byte_limit <= MAX_FILE_BYTES,
+        maximum_file = min(MAX_FILE_BYTES, DEFAULT_LIMITS['source_bytes'],
+                           DEFAULT_LIMITS['dependency_bytes'], memory // 66)
+        require(argv == expected and max(original['bytes'], intermediate['bytes']) <= byte_limit <= maximum_file,
                 'MODEL3D_NORMALIZATION', 'Blender worker stage has a contradictory command or file budget.')
         budgets.append((memory, byte_limit))
         elapsed += seconds
@@ -255,9 +257,12 @@ def _verify_normalized(root, manifest, inventory, limits, *, blender):
             'MODEL3D_NORMALIZATION', 'Report inventory differs from the retained glTF resource closure.')
     if blender:
         require(not document.json.get('skins') and not document.json.get('animations')
+                and all(not document.json.get(key) for key in ('materials', 'images', 'textures', 'samplers'))
                 and all(not mesh.get('weights') and all(not primitive.get('targets')
+                        and 'material' not in primitive
                         for primitive in mesh['primitives']) for mesh in document.json.get('meshes', [])),
-                'MODEL3D_NORMALIZATION', 'The fixed Blender fixture cannot contain skin, animation or morph channels.')
+                'MODEL3D_NORMALIZATION',
+                'The fixed Blender fixture cannot contain materials, textures, skin, animation or morph channels.')
     # The exact registered length is enough for the producer's packing plan.
     # It also avoids reserving its full configured output limit for a small GLB.
     document.limits = {**document.limits, 'source_bytes': int(normalized['bytes'])}

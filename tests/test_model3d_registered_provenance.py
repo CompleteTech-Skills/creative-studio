@@ -48,7 +48,7 @@ class RegisteredProvenanceTests(unittest.TestCase):
 
     def native_registration(self, positions=FIXED_TRIANGLE, triangles=((0, 1, 2),),
                             original_name='roundtrip.glb', deformation=None,
-                            embedded_fixture=True):
+                            embedded_fixture=True, material_free=False):
         mesh = Mesh('triangle', np.asarray(positions, dtype=float),
                     np.asarray(triangles, dtype=int), name='Triangle')
         if deformation == 'morph':
@@ -58,18 +58,26 @@ class RegisteredProvenanceTests(unittest.TestCase):
         original = self.root / original_name
         export_geometry(geometry, original,
                         provenance={'fixture': True} if embedded_fixture else None)
-        if deformation in ('animation', 'skin'):
+        if material_free or deformation in ('animation', 'skin'):
             document = read_gltf(original)
             builder = GltfBuilder()
             builder.json = deepcopy(document.json)
             builder.binary = bytearray(document.buffers[0])
+            if material_free:
+                # The fixed Blender worker emits no authored material. The
+                # generic Geometry exporter requires a default slot, so remove
+                # only that synthetic slot and its binding before native packing.
+                builder.json.pop('materials', None)
+                for item in builder.json['meshes']:
+                    for part in item['primitives']:
+                        part.pop('material', None)
             if deformation == 'animation':
                 time = builder.accessor([0., 1.], 'SCALAR', bounds=True)
                 motion = builder.accessor([[0., 0., 0.], [1., 0., 0.]], 'VEC3')
                 builder.json['animations'] = [dict(name='move',
                     samplers=[dict(input=time, output=motion, interpolation='LINEAR')],
                     channels=[dict(sampler=0, target=dict(node=0, path='translation'))])]
-            else:
+            elif deformation == 'skin':
                 attributes = builder.json['meshes'][0]['primitives'][0]['attributes']
                 attributes['JOINTS_0'] = builder.accessor([[0, 1, 0, 0]] * 3,
                                                           'VEC4', component=5121)
@@ -98,7 +106,8 @@ class RegisteredProvenanceTests(unittest.TestCase):
         Stage receipts are synthetic, internally consistent declarations: they
         are not process measurements or evidence that Blender ran.
         """
-        ref, manifest = self.native_registration(positions, triangles, deformation=deformation)
+        ref, manifest = self.native_registration(positions, triangles, deformation=deformation,
+                                               material_free=True)
         staging = self.root / 'forged-envelope'
         staging.mkdir()
         paths = {}
