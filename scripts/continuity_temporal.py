@@ -60,23 +60,28 @@ def _equal(a, b):
     return a == b
 
 
-def _same_transform(a, b, *, native, floor=None, relative=None):
+def _same_transform(a, b, *, native, floor=None, relative=None, conditioned=None):
     """Compare validated TRS, allowing roundoff only at a native matrix boundary.
 
     ``floor`` is the per-axis absolute translation bound recorded when the
     native value was composed; cancellation leaves a residual proportional to
-    the magnitudes that cancelled, not to the result.
+    the magnitudes that cancelled, not to the result. ``relative`` bounds the
+    composition depth; ``conditioned`` additionally includes the world-scale
+    conditioning, which affects only the decomposed scale and rotation.
     """
-    roundoff = max(8 * math.ulp(1.0), relative or 0.) if native else 8 * math.ulp(1.0)
+    unit = 8 * math.ulp(1.0)
+    base = max(unit, relative or 0.) if native else unit
+    roundoff = max(base, conditioned or 0.) if native else unit
     floor = floor or (0., 0., 0.)
-    for field in ('translation', 'scale'):
-        if native:
-            bounds = floor if field == 'translation' else (0., 0., 0.)
-            if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=max(roundoff, bound))
-                       for x, y, bound in zip(a[field], b[field], bounds)):
-                return False
-        elif not _equal(a[field], b[field]):
+    if native:
+        if not all(math.isclose(x, y, rel_tol=base, abs_tol=max(unit, bound))
+                   for x, y, bound in zip(a['translation'], b['translation'], floor)):
             return False
+        if not all(math.isclose(x, y, rel_tol=roundoff, abs_tol=0.)
+                   for x, y in zip(a['scale'], b['scale'])):
+            return False
+    elif not (_equal(a['translation'], b['translation']) and _equal(a['scale'], b['scale'])):
+        return False
     # Unit quaternion components share a unit scale. Only reversing every
     # component together represents the same rotation.
     length_a, length_b = math.hypot(*a['rotation']), math.hypot(*b['rotation'])
@@ -123,8 +128,6 @@ def _native_bounds(scene, scene_to_world):
         levels = depth + 1
         floor = 8 * math.sqrt(3) * (levels + 1) * math.ulp(1.0) * (outer_magnitude + outer_scale * total)
         product = outer_scale * scale
-        if not (math.isfinite(floor) and math.isfinite(product)):
-            fail('LIMIT', 'native transform magnitudes exceed representable roundoff bounds')
         bounds[identifier] = ([floor] * 3, 8 * (levels + 1) * math.ulp(1.0), product)
     return bounds
 
@@ -133,21 +136,23 @@ def _seed_bound(bound, transform):
     """Scale and rotation error grow with the conditioning of the world scale."""
     floor, relative, product = bound
     smallest = min(abs(float(value)) for value in transform['scale'])
-    relative *= max(1.0, product / smallest)
-    if not math.isfinite(relative):
-        fail('LIMIT', 'native transform scale conditioning exceeds representable roundoff bounds')
-    return floor, relative
+    conditioned = relative * max(1.0, product / smallest)
+    # Only mapped nodes are checked; non-finite bounds fail closed.
+    if not all(math.isfinite(value) for value in (*floor, product, conditioned)):
+        fail('LIMIT', 'native transform magnitudes exceed representable roundoff bounds')
+    return floor, relative, conditioned
 
 
 def _bound_arguments(bound):
-    return {} if bound is None else dict(floor=bound[0], relative=bound[1])
+    return {} if bound is None else dict(floor=bound[0], relative=bound[1], conditioned=bound[2])
 
 
 def _combined_bound(incoming, initial):
-    """Both sides may be native: add translation floors, keep the wider relative bound."""
+    """Both sides may be native: add their floors and relative bounds."""
     if initial is None:
         return _bound_arguments(incoming)
-    return dict(floor=[a + b for a, b in zip(incoming[0], initial[0])], relative=max(incoming[1], initial[1]))
+    return dict(floor=[a + b for a, b in zip(incoming[0], initial[0])], relative=incoming[1] + initial[1],
+                conditioned=incoming[2] + initial[2])
 
 
 def _operations(events, initial, until=None, floors=None):

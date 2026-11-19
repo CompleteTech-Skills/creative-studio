@@ -277,8 +277,8 @@ class TemporalTests(unittest.TestCase):
                 parent = 'n%d' % index
                 world = local_matrix(transform) if world is None else world @ local_matrix(transform)
             value = decompose(local_matrix(outer) @ world)
-            floor, relative = _seed_bound(_native_bounds(dict(nodes=nodes), outer)[parent], value)
-            return value, dict(floor=floor, relative=relative)
+            floor, relative, conditioned = _seed_bound(_native_bounds(dict(nodes=nodes), outer)[parent], value)
+            return value, dict(floor=floor, relative=relative, conditioned=conditioned)
 
         # A 90 degree scene_to_world rotation leaves ulp-sized error in entries
         # that are exactly zero; an authored zero component must still match.
@@ -307,6 +307,14 @@ class TemporalTests(unittest.TestCase):
         authored = dict(identity, rotation=[0.5, -0.5, -0.5, -0.5], scale=[1.0, 1.0, 100.0])
         self.assertTrue(_same_transform(value, authored, native=True, **bound))
         self.assertFalse(_same_transform(value, dict(authored, scale=[1.0, 1.0, 100.0 + 1e-9]), native=True, **bound))
+
+        # Thin scale conditions rotation only; translation and scale stay tight.
+        value, bound = native([dict(identity, translation=[100.0, 0.0, 0.0], scale=[1.0, 1.0, 1e-8])], identity)
+        self.assertTrue(_same_transform(value, dict(value), native=True, **bound))
+        moved = dict(value, translation=[100.0 + 1e-6, 0.0, 0.0])
+        stretched = dict(value, scale=[1.0, 1.0, 1.01e-8])
+        self.assertFalse(_same_transform(value, moved, native=True, **bound))
+        self.assertFalse(_same_transform(value, stretched, native=True, **bound))
 
         # Scale products that overflow while the world stays finite fail closed.
         swap = [0.5, 0.5, 0.5, 0.5]

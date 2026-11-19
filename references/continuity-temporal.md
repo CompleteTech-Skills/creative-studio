@@ -54,9 +54,10 @@ Relocation preconditions compare authored translation and scale exactly. Only
 a value composed from native matrices (an entity's first relocation, and each
 incoming scene's seed) allows roundoff. Translation uses an absolute bound
 from the norms of every translation, pivot and scale composed through the
-parent chain and scene-to-world transform; scale and normalized rotation use
-a relative bound multiplied by the scale conditioning (composed maximum scale
-over the smallest decomposed world scale). Both grow linearly with the number
+parent chain and scene-to-world transform, plus a depth-scaled relative
+bound; scale (relative only) and normalized rotation additionally multiply
+that relative bound by the scale conditioning (composed maximum scale over the
+smallest decomposed world scale). Both grow linearly with the number
 of composed levels L, counting scene-to-world (8·(L+1) ulp relative, and
 8√3·(L+1) ulp of the composed magnitude for translation). Bounds that are not
 finite fail closed with `CONTINUITY_LIMIT`. `q` and `-q` are the same rotation.
