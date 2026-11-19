@@ -68,6 +68,19 @@ class ProbeMemberAdmission(unittest.TestCase):
                 ('video_stream_count', 'audio_stream_count', 'other_stream_count')], [0, 1, 0])
             self.assertEqual(evidence['probe']['stdout'], record['stdout'])
 
+    def test_nonstandard_json_constants_never_produce_probe_facts(self):
+        for value in ('NaN', 'Infinity', '-Infinity'):
+            for cli in (False, True):
+                with self.subTest(value=value, cli=cli):
+                    record = core.SilentContracts._simulated_verification_records(self)[0]
+                    record['stdout'] = ('{"streams":[{"codec_type":"audio"}],'
+                                        '"format":{"duration":' + value + '}}')
+                    evidence = self.refusal([record], cli=cli)
+                    self.assertEqual(evidence['probe']['stdout'], record['stdout'])
+                    for key in ('audio_stream_count', 'video_stream_count', 'other_stream_count',
+                                'frame_count', 'timeline', 'decode'):
+                        self.assertNotIn(key, evidence)
+
     def test_duplicate_timeline_members_never_produce_frame_facts(self):
         frames = [{"best_effort_timestamp": index * 512} for index in range(6)]
         for transcript in ('{"frames":[],"frames":' + json.dumps(frames) + '}',

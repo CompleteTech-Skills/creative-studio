@@ -611,7 +611,9 @@ def _probe_json(transcript):
                 raise ValueError('duplicate member in probe JSON')
             result[key] = value
         return result
-    return json.loads(transcript, object_pairs_hook=unique_members)
+    def invalid_constant(value):
+        raise ValueError('nonstandard numeric constant in probe JSON')
+    return json.loads(transcript, object_pairs_hook=unique_members, parse_constant=invalid_constant)
 
 
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
@@ -754,7 +756,7 @@ def _check_historical_probe(path, request, recorded, *, ffprobe=None):
         if (observed['exit_status'] != 0 or observed['stderr'] or
                 observed.get('stdout_truncated') or observed.get('stderr_truncated')):
             raise ValueError('incomplete historical probe')
-        original, actual = json.loads(recorded), json.loads(observed['stdout'])
+        original, actual = _probe_json(recorded), _probe_json(observed['stdout'])
         for data in (original, actual):
             if not isinstance(data, dict) or not isinstance(data.get('format'), dict):
                 raise ValueError('malformed historical probe')
@@ -850,7 +852,7 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
                 'fps', 'duration', 'timebase_tolerance', 'profile'):
         if receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
-    old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
+    old_probe, new_probe = _probe_json(receipt['probe']['stdout']), _probe_json(actual['probe']['stdout'])
     # Full historical observations were compared privately against the same
     # exact-byte snapshot. Current observations bind every queried field.
     if ((not historical_full_probe and _digest(old_probe) != _digest(new_probe)) or

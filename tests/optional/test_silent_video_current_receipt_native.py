@@ -5,6 +5,7 @@ is compatibility evidence, not a claim of execution by an older runtime.
 """
 from copy import deepcopy
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,6 +50,31 @@ class CurrentReceiptNative(unittest.TestCase):
         self.assertIs(accepted['verified'], True)
         self.assertEqual(accepted['artifact_sha256'], video.file_hash(artifact))
         self.assertEqual(json.loads(accepted['probe']['stdout']), raw)
+
+    def test_current_and_full_probe_refuse_identical_repeated_members(self):
+        artifact, receipt, _ = self.current_receipt()
+        command = [shutil.which('ffprobe'), '-v', 'error', '-count_frames',
+                   '-show_streams', '-show_format', '-of', 'json', str(artifact)]
+        full = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertEqual(full.returncode, 0, full.stderr)
+        self.assertEqual(full.stderr, '')
+        historical_format = deepcopy(receipt)
+        historical_format['probe'] = dict(command=command, exit_status=full.returncode,
+                                          stdout=full.stdout, stderr=full.stderr)
+        for kind, original in (('current', receipt), ('historical-format', historical_format)):
+            with self.subTest(kind=kind):
+                self.assertIs(video.validate_receipt(original, artifact, self.request,
+                                                     root=self.root)['verified'], True)
+                changed = deepcopy(original)
+                changed['probe']['stdout'], count = re.subn(
+                    r'("width"\s*:\s*\d+)(\s*,)', r'\1, \1\2',
+                    original['probe']['stdout'], count=1)
+                self.assertEqual(count, 1)
+                self.assert_only_probe_stdout_changed(original, changed)
+                self.assertEqual(json.loads(changed['probe']['stdout']),
+                                 json.loads(original['probe']['stdout']))
+                with self.assertRaises(ValueError):
+                    video.validate_receipt(changed, artifact, self.request, root=self.root)
 
     def test_current_receipt_rejects_added_unqueried_stream_bitrate(self):
         artifact, receipt, raw = self.current_receipt()

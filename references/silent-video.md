@@ -400,3 +400,11 @@ dependencies without those inherited overrides; a startup refusal remains a
 failure with bounded evidence. The unchanged independent control uses actual
 installed ffprobe, a synthetic corrupt movie and a nonexistent synthetic
 instrumentation library through both public interfaces.
+
+Fresh, current-receipt and historical-receipt probe comparisons use the same
+strict JSON admission: duplicate members and nonstandard NaN/Infinity constants
+are refused before facts or equivalence are derived. Native controls compare
+current and historical-format receipts against the actual six-frame synthetic
+movie. The unchanged independent `tests/independent/test_silent_video_receipt_parser.py`
+also invokes the pinned older runtime when `SILENT_RECEIPT_BASE` names its
+checkout; the automatic full-probe-format test does not claim old-runtime execution.
