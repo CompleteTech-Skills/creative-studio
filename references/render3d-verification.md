@@ -226,8 +226,15 @@ above. The existing capture-evidence limitation remains in the returned report.
 
 The verifier's `code_sha256` is the canonical object hash of a mapping from
 `render3d_verify.py` and `exr_consumption.py` to their individual SHA-256
-file digests. This binds the verifier and its dedicated codec checks in the
-existing verifier identity field.
+file digests. At import, each module checks that compiling its captured source
+yields the code Python loaded. A disagreement, including stale bytecode from
+a previous revision, fails verification at import. The verifier binds its
+loaded EXR helper and their digests together. Long-lived callers continue to
+report the identity they loaded when files on disk change. Reloading changed
+code in place invalidates older verifier instances that share its module
+namespace. Loading both updated modules picks up their new identity.
+PNG verification still loads
+its image dependencies on demand and does not require native OpenEXR.
 
 Compression IDs 0–9 retain their full-size raw fallback and native HALF/FLOAT
 pixel decoding. Before native decoding, the verifier now checks each bounded

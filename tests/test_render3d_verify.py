@@ -2,6 +2,7 @@
 from copy import deepcopy
 from contextlib import contextmanager
 import hashlib
+import importlib
 import io
 import json
 from pathlib import Path
@@ -473,9 +474,7 @@ class ImageVerification(unittest.TestCase):
             bad=deepcopy(result);bad['status']='invented'
             with self.assertRaises(Render3DError):verify_result(request,bad,root,snapshot_root=snapshot,expected_backend=backend)
 
-    def test_result_verifier_identity_binds_exr_helper_bytes(self):
-        import render3d_verify
-
+    def test_result_verifier_identity_binds_loaded_verifier_and_helper(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             request, result, root, snapshot, backend = self.scene_result(folder)
@@ -484,15 +483,88 @@ class ImageVerification(unittest.TestCase):
             names = ('render3d_verify.py', 'exr_consumption.py')
             for name in names:
                 (scripts / name).write_bytes((ROOT / 'scripts' / name).read_bytes())
-            with mock.patch.object(render3d_verify, '__file__', str(scripts / names[0])):
-                first = verify_result(request, result, root, snapshot_root=snapshot, expected_backend=backend)
+
+            def source_digests():
+                return {name: hashlib.sha256((scripts / name).read_bytes()).hexdigest() for name in names}
+
+            def load_verifier(*, fresh_helper):
+                sys.modules.pop('render3d_verify', None)
+                if fresh_helper:
+                    sys.modules.pop('exr_consumption', None)
+                module = importlib.import_module('render3d_verify')
+                return module.RenderArtifactVerifier(snapshot, backend)
+
+            def identity(verifier):
+                report = verifier.verify(request, result, root)
+                self.assertEqual(report['decoded_images'], 2)
+                return report['verifier']
+
+            with mock.patch.dict(sys.modules), mock.patch.object(sys, 'path', [str(scripts), *sys.path]):
+                original_sources = source_digests()
+                resident = load_verifier(fresh_helper=True)
+                original = identity(resident)
+                self.assertEqual(original['code_sha256'], object_hash(original_sources))
+
                 with (scripts / names[1]).open('ab') as helper:
-                    helper.write(b'\n# test-only implementation revision\n')
-                second = verify_result(request, result, root, snapshot_root=snapshot, expected_backend=backend)
-            expected = object_hash({name: hashlib.sha256((scripts / name).read_bytes()).hexdigest()
-                                    for name in names})
-            self.assertEqual(second['verifier']['code_sha256'], expected)
-            self.assertNotEqual(first['verifier']['code_sha256'], second['verifier']['code_sha256'])
+                    helper.write(b'\n# independent fixture revision\n')
+                helper_sources = source_digests()
+                self.assertEqual(identity(resident), original)
+                self.assertEqual(identity(load_verifier(fresh_helper=False)), original)
+                helper_revision = identity(load_verifier(fresh_helper=True))
+                self.assertEqual(helper_revision['code_sha256'], object_hash(helper_sources))
+                self.assertNotEqual(helper_revision['code_sha256'], original['code_sha256'])
+
+                verifier_file = scripts / names[0]
+                updated_id = 'render3d-test-revision'
+                verifier_file.write_bytes(verifier_file.read_bytes().replace(
+                    b"'render3d-independent-pixels'", repr(updated_id).encode('ascii')))
+                self.assertEqual(identity(resident), original)
+                new_instance = load_verifier(fresh_helper=True)
+                fresh = identity(new_instance)
+                self.assertEqual(fresh['id'], updated_id)
+                self.assertEqual(fresh['code_sha256'], object_hash(source_digests()))
+                self.assertNotEqual(fresh['code_sha256'], helper_revision['code_sha256'])
+
+                # reload() keeps the old module namespace alive for existing instances.
+                with verifier_file.open('ab') as source:
+                    source.write(b'\n# in-place verifier reload\n')
+                module = importlib.reload(sys.modules['render3d_verify'])
+                with self.assertRaisesRegex(Render3DError, 'implementation changed after loading'):
+                    identity(new_instance)
+                next_instance = module.RenderArtifactVerifier(snapshot, backend)
+                self.assertEqual(identity(next_instance)['code_sha256'], object_hash(source_digests()))
+                with (scripts / names[1]).open('ab') as helper:
+                    helper.write(b'\n# in-place helper reload\n')
+                importlib.reload(sys.modules['exr_consumption'])
+                with self.assertRaisesRegex(Render3DError, 'implementation changed after loading'):
+                    identity(next_instance)
+
+    def test_import_detects_cached_bytecode_from_another_source_revision(self):
+        import os
+        import py_compile
+
+        for name, old, new in (
+                ('render3d_verify', b'render3d-independent-pixels', b'render3d-independent-sample'),
+                ('exr_consumption', b'EXR compressed payload', b'EXR compressed samples')):
+            with self.subTest(module=name), tempfile.TemporaryDirectory() as temporary:
+                folder = Path(temporary)
+                for module in ('render3d_verify', 'exr_consumption'):
+                    source = ROOT / 'scripts' / (module + '.py')
+                    (folder / source.name).write_bytes(source.read_bytes())
+                path = folder / (name + '.py')
+                previous = path.read_bytes()
+                self.assertIn(old, previous)
+                self.assertEqual(len(old), len(new))
+                py_compile.compile(str(path), doraise=True,
+                                   invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP)
+                timestamp = path.stat()
+                path.write_bytes(previous.replace(old, new))
+                os.utime(path, ns=(timestamp.st_atime_ns, timestamp.st_mtime_ns))
+                with mock.patch.dict(sys.modules), mock.patch.object(sys, 'path', [str(folder), *sys.path]):
+                    for module in ('render3d_verify', 'exr_consumption'):
+                        sys.modules.pop(module, None)
+                    with self.assertRaisesRegex(Render3DError, 'source differs from the loaded code'):
+                        importlib.import_module('render3d_verify')
 
     def test_result_decodes_from_a_scoped_output_directory(self):
         from atomic_publish import pinned_directory, private_stage_supported

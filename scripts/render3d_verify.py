@@ -15,19 +15,19 @@ import platform
 import re
 import stat
 import struct
+import sys
 import tempfile
 import zlib
 
+import exr_consumption
 from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational, definitions, _validator
 from rig_errors import RigError, object_hash, open_payload, scoped_directory_descriptor
 
 
-def _verifier_identity():
-    folder = Path(__file__).resolve().parent
-    implementation = {name: hashlib.sha256((folder / name).read_bytes()).hexdigest()
-                      for name in ('render3d_verify.py', 'exr_consumption.py')}
-    return dict(id='render3d-independent-pixels', version=VERSION,
-                code_sha256=object_hash(implementation), platform=platform.platform())
+_CODE_SHA256 = object_hash({
+    'render3d_verify.py': exr_consumption.loaded_source_sha256(__file__, sys._getframe().f_code),
+    'exr_consumption.py': exr_consumption.SOURCE_SHA256,
+})
 
 
 def _image_identity(name=None):
@@ -400,10 +400,9 @@ def _exr_envelope(stream, resolution, memory_bytes, bit_depth, pixels=False):
             boundary = offset+8+length
             require(boundary <= end, 'corrupt-output', 'Truncated EXR pixel payload.')
             require(length <= memory_bytes, 'system-memory', 'EXR compressed chunk exceeds verification memory budget.')
-            from exr_consumption import verify_chunk
             payload = stream.read(length)
             require(len(payload) == length, 'corrupt-output', 'Truncated EXR pixel payload.')
-            verify_chunk(payload, compression, resolution[0], min(rows, height - line), channels, memory_bytes)
+            exr_consumption.verify_chunk(payload, compression, resolution[0], min(rows, height - line), channels, memory_bytes)
         require(boundary == end, 'corrupt-output', 'Unexpected bytes after EXR chunks.')
     stream.seek(0)
 
@@ -532,6 +531,9 @@ def decode_image(path, **options):
 
 
 class RenderArtifactVerifier:
+    _code_sha256 = _CODE_SHA256
+    _helper_sha256 = exr_consumption.SOURCE_SHA256
+
     def __init__(self,snapshot_root,expected_backend,*,max_total_bytes=None):
         self.snapshot_root=Path(snapshot_root)
         self.expected_backend=deepcopy(expected_backend)
@@ -619,7 +621,12 @@ class RenderArtifactVerifier:
             raise
         except (RigError, OSError, ValueError):
             raise Render3DError('corrupt-output', 'Output inventory could not be verified safely.') from None
-        return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=_verifier_identity(),
+        # reload() reuses a module's globals even for previously created instances.
+        require(self._code_sha256 == _CODE_SHA256 and self._helper_sha256 == exr_consumption.SOURCE_SHA256,
+                'verification-failed', 'Verifier implementation changed after loading.')
+        identity = dict(id='render3d-independent-pixels', version=VERSION,
+                        code_sha256=self._code_sha256, platform=platform.platform())
+        return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=identity,
                     request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
                     settings_sha256=object_hash(settings),backend=deepcopy(self.expected_backend),images=decoded,
                     decoded_frames=len(frames),decoded_images=len(decoded),output_bytes=total,

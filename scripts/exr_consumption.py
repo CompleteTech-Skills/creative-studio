@@ -6,10 +6,29 @@ declared compressed byte or transformed sample. No declared count allocates
 memory until it has been bounded by admitted geometry and the working budget.
 """
 from array import array
+import hashlib
+from pathlib import Path
 import struct
+import sys
 import zlib
 
 from render3d_contracts import Render3DError, require
+
+
+def loaded_source_sha256(path, module_code):
+    """Bind a source digest to the module code actually selected by the loader."""
+    try:
+        source = Path(path).read_bytes()
+        compiled = compile(source, module_code.co_filename, 'exec', dont_inherit=True,
+                           optimize=sys.flags.optimize)
+    except (OSError, ValueError, SyntaxError):
+        raise Render3DError('verification-failed', 'Verifier implementation source is unavailable.') from None
+    require(compiled == module_code, 'verification-failed',
+            'Verifier implementation source differs from the loaded code.')
+    return hashlib.sha256(source).hexdigest()
+
+
+SOURCE_SHA256 = loaded_source_sha256(__file__, sys._getframe().f_code)
 
 
 def _check(value):
