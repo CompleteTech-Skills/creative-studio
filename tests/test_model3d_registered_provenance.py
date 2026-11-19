@@ -260,5 +260,153 @@ class RegisteredProvenanceTests(unittest.TestCase):
                              'Validated source retained a name contradicting its exact registered bytes')
 
 
+@unittest.skipUnless(shutil.which('node') and (native_fixture.VALIDATOR / 'package.json').is_file(),
+                     'Requires the pinned offline Khronos glTF validator')
+class RegisteredResourceAcquisitionTests(unittest.TestCase):
+    """A native acquisition retains the primary name and every external resource name."""
+
+    texture = 'source/resources/paint.png'
+    buffer = 'source/resources/triangle.bin'
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.library = AssetLibrary(self.root / 'library', create=True)
+        self.library.upgrade_storage()
+        path = native_fixture.NativeImportTests.external_source(self)
+        self.primary = path.rename(path.with_name('Authored.gltf'))
+        self.originals = {
+            'source/model.gltf': self.primary,
+            self.texture: self.root / 'resources/paint.png',
+            self.buffer: self.root / 'resources/triangle.bin',
+        }
+        self.source_bytes = {name: file.read_bytes() for name, file in self.originals.items()}
+        license_file = self.root / 'license.txt'
+        license_file.write_text('Synthetic engineering fixture. CC0-1.0.', encoding='utf-8')
+        self.ref = ImportPipeline(self.library).import_asset(
+            self.primary, identity=native_fixture.IDENTITY, version='1.0.0',
+            metadata=native_fixture.METADATA, license_file=license_file, fixture=True)
+        self.manifest = self.library.resolve(self.ref)
+        self.work = self.root / 'snapshot'
+        self.paths = {}
+        self.payloads = {}
+        for item in self.manifest['files']:
+            name = item['path']
+            data = self.library.read_file(self.ref, name)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), item['sha256'])
+            self.assertEqual(len(data), item['bytes'])
+            path = self.work / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            self.paths[name] = path
+            self.payloads[name] = data
+        self.versions = [(self.ref, deepcopy(self.manifest))]
+        self.addCleanup(self.assert_retained_bytes)
+        records = self.manifest['provenance']['source_records']
+        self.assertEqual({r['file']['path']: r['original_filename'] for r in records},
+                         {'source/model.gltf': 'Authored.gltf', self.texture: 'resources/paint.png',
+                          self.buffer: 'resources/triangle.bin'})
+        self.assertEqual({name: self.payloads[name] for name in self.originals}, self.source_bytes)
+        report = json.loads(self.payloads['import-report.json'])
+        self.assertEqual({r['path']: r['sha256'] for r in report['source_files']},
+                         {name.removeprefix('source/'): hashlib.sha256(data).hexdigest()
+                          for name, data in self.source_bytes.items()})
+        self.assertEqual(report['source_sha256'], hashlib.sha256(self.primary.read_bytes()).hexdigest())
+        self.assertEqual(report['normalized_sha256'], hashlib.sha256(self.payloads['normalized.glb']).hexdigest())
+
+    def assert_retained_bytes(self):
+        for name, path in self.originals.items():
+            self.assertEqual(path.read_bytes(), self.source_bytes[name])
+        for ref, manifest in self.versions:
+            self.assertEqual(self.library.resolve(ref), manifest)
+            for name, data in self.payloads.items():
+                self.assertEqual(self.library.read_file(ref, name), data)
+                self.assertEqual(self.paths[name].read_bytes(), data)
+
+    def register_metadata_variant(self, resource, *, omit):
+        manifest = deepcopy(self.manifest)
+        records = manifest['provenance']['source_records']
+        record = next(item for item in records if item['file']['path'] == resource)
+        if omit:
+            records.remove(record)
+        else:
+            record['original_filename'] = 'alternate' + Path(resource).suffix
+        manifest['version'] = '1.0.1'
+        manifest = seal(manifest)
+        self.assertEqual(manifest['files'], self.manifest['files'])
+        self.assertEqual(manifest['provenance']['conversions'], self.manifest['provenance']['conversions'])
+        ref = self.library.register(manifest, self.paths)
+        self.versions.append((ref, deepcopy(manifest)))
+        return ref
+
+    def build_from_reference(self, ref, *, texture_name):
+        manifest = self.library.resolve(ref)
+        canonical = self.work / 'canonical.json'
+        canonical.write_text(json.dumps(dict(canonical_ref=ref, manifest=manifest)), encoding='utf-8')
+        texture = record(self.work, self.texture, 'image/png')
+        supplied = dict(source(texture), role='texture', original_filename=texture_name, dimensions_px=[2, 2])
+        geometry = record(self.work, 'normalized.glb', 'model/gltf-binary')
+        asset = build_asset(self.work, geometry, asset_id='resource-names', version='1.0.0',
+            category='prop', sources=[supplied], provenance=provenance(), files=[geometry, texture],
+            canonical_evidence=record(self.work, 'canonical.json', 'application/json'))
+        output = self.work / 'asset.json'
+        output.write_text(json.dumps(asset), encoding='utf-8')
+        checked = validate_file(output, self.work)
+        self.assertTrue(checked['payloads_verified'])
+        self.assertTrue(checked['geometry_inspected'])
+        return asset
+
+    def test_native_external_resource_acquisitions_roundtrip(self):
+        from asset_library_contracts import canonical_bytes
+
+        with import_canonical(self.library, self.ref) as imported:
+            self.assertEqual(imported.provenance['canonical_ref'], self.ref)
+            self.assertEqual(imported.model.geometry.triangle_count, 1)
+        asset = self.build_from_reference(self.ref, texture_name='resources/paint.png')
+        self.assertEqual(asset['sources'][0]['original_filename'], 'resources/paint.png')
+        records = self.manifest['provenance']['source_records']
+        print('MODEL3D_NATIVE_RESOURCE_ACQUISITION ' + json.dumps(dict(
+            source_sha256={name: hashlib.sha256(data).hexdigest() for name, data in self.source_bytes.items()},
+            acquisition_records_sha256=hashlib.sha256(canonical_bytes(records)).hexdigest(),
+            manifest_sha256=self.ref['sha256'],
+            import_report_sha256=hashlib.sha256(self.payloads['import-report.json']).hexdigest(),
+            normalized_sha256=asset['geometry']['sha256']), sort_keys=True))
+
+    def test_intact_texture_acquisition_refuses_incorrect_caller_name(self):
+        with self.assertRaises(RigError) as caught:
+            self.build_from_reference(self.ref, texture_name='alternate.png')
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_PROVENANCE')
+
+    def assert_native_claim_refused(self, resource, *, omit):
+        ref = self.register_metadata_variant(resource, omit=omit)
+        with self.subTest(consumer='canonical-reader'):
+            with self.assertRaises(RigError) as caught:
+                with import_canonical(self.library, ref):
+                    pass
+            self.assertIn(caught.exception.report['code'], ('MODEL3D_NORMALIZATION', 'MODEL3D_PROVENANCE',
+                                                           'MODEL3D_SOURCE', 'MODEL3D_REFERENCE'))
+        # Reach the builder independently. A buffer is an inventoried dependency,
+        # even when the only supplied Model3D source record describes the texture.
+        with self.subTest(consumer='asset-builder'):
+            name = 'alternate.png' if resource == self.texture else 'resources/paint.png'
+            with self.assertRaises(RigError) as caught:
+                self.build_from_reference(ref, texture_name=name)
+            self.assertIn(caught.exception.report['code'], ('MODEL3D_NORMALIZATION', 'MODEL3D_PROVENANCE',
+                                                           'MODEL3D_SOURCE', 'MODEL3D_REFERENCE'))
+
+    def test_native_texture_missing_acquisition_refused(self):
+        self.assert_native_claim_refused(self.texture, omit=True)
+
+    def test_native_texture_contradictory_acquisition_refused(self):
+        self.assert_native_claim_refused(self.texture, omit=False)
+
+    def test_native_buffer_missing_acquisition_refused(self):
+        self.assert_native_claim_refused(self.buffer, omit=True)
+
+    def test_native_buffer_contradictory_acquisition_refused(self):
+        self.assert_native_claim_refused(self.buffer, omit=False)
+
+
 if __name__ == '__main__':
     unittest.main()

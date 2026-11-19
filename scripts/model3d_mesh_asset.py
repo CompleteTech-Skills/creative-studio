@@ -79,7 +79,7 @@ def _normalized_evidence(manifest):
     return normalized, inventory, provenance
 
 
-def _canonical_binding(payload, geometry_record, sources, provenance):
+def _canonical_binding(payload, geometry_record, sources, provenance, snapshot):
     require(isinstance(payload, dict) and set(payload) == {'canonical_ref', 'manifest'},
             'MODEL3D_REFERENCE', 'Canonical evidence must retain exact reference and original manifest.')
     ref, manifest = payload['canonical_ref'], payload['manifest']
@@ -140,6 +140,15 @@ def _canonical_binding(payload, geometry_record, sources, provenance):
         # The claim belongs to the registered version, even when a distinct
         # legacy runtime entry supplies the geometry for this document.
         normalized, registered_files, registered = _normalized_evidence(manifest)
+        # The producer inventory identifies the primary document separately
+        # from external resources. Read its exact report instead of guessing
+        # from filenames, which may also name legitimate resource payloads.
+        from model3d_mesh_import import _gltf_sources
+        report_record = registered_files['import-report.json']
+        report_path = snapshot.capture(dict(path=report_record['path'], bytes=report_record['bytes'],
+                                            sha256=report_record['sha256'], media_type='application/json'),
+                                       file_bytes=MAX_JSON_BYTES)
+        _gltf_sources(registered_files, registered, decode_json(report_path.read_bytes()))
         if (runtime is None or geometry_record['path'] == normalized['path']
                 or (normalized['sha256'], normalized['bytes']) ==
                    (geometry_record['sha256'], geometry_record['bytes'])):
@@ -217,7 +226,7 @@ def build_asset(root, geometry, *, asset_id, version, category, sources, provena
         if canonical_evidence is not None:
             require(canonical_evidence['media_type']=='application/json', 'MODEL3D_REFERENCE', 'Canonical evidence must be JSON.')
             path = snapshot.capture(canonical_evidence)
-            _canonical_binding(decode_json(path.read_bytes()), geometry, sources, provenance)
+            _canonical_binding(decode_json(path.read_bytes()), geometry, sources, provenance, snapshot)
         native_limits = dict(DEFAULT_LIMITS,source_bytes=selected_limits['file_bytes'],
                              dependency_bytes=selected_limits['total_bytes'],vertices=selected_limits['vertices'],
                              triangles=selected_limits['triangles'],memory_bytes=selected_limits['memory_bytes'],influences=8)

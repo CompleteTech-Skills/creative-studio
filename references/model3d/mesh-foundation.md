@@ -56,6 +56,16 @@ Parts describe the native world-space mesh view with explicit identity transform
 
 For native glTF acquisition evidence, caller-supplied source names must agree with the retained original filename. Acquisition names retain the asset library's 1,024-character metadata bound; they are not shortened to the 128-character identifier limit. The logical inventory path remains separate from that name. If identical bytes identify several originals with different names, an exact retained logical path disambiguates the source; otherwise contradictory provenance is refused. The original-name regression registers, reopens, builds and validates an actual synthetic GLB with a 129-character filename.
 
+Every native source, including external buffers and textures, must have exactly
+one acquisition record. The primary model name is bound to the retained import
+report; resource names must match their original relative paths. Both the
+canonical reader and builder enforce this inventory. A native canonical builder
+input must therefore include the inventoried `import-report.json` in its source
+root. The builder captures and hashes that report through its existing bounded
+reader before decoding geometry, including when a legacy runtime entry is
+selected. This checks retained provenance consistency; it does not authenticate
+the author of a caller-supplied manifest or execute a conversion.
+
 When a registered version contains both native normalized geometry and a legacy runtime entry, the builder can bind either geometry payload. The native conversion evidence, original filenames and fixture classification are checked for the registered version, including when the selected runtime bytes differ from the normalized GLB. A legacy runtime-only manifest or an ordinary evidence file named `normalized.glb` retains its existing runtime binding.
 
 ## Reproduce actual geometry evidence

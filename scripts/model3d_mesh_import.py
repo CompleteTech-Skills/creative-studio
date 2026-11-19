@@ -170,6 +170,8 @@ def _blender_source(root, inventory, provenance, report, conversion):
 
 
 def _gltf_sources(inventory, provenance, report):
+    require(isinstance(report, dict), 'MODEL3D_NORMALIZATION',
+            'Native acquisition requires its retained import report.')
     sources = {record['path']: record for record in provenance['sources']}
     require(sources and set(sources) == {path for path in inventory if path.startswith('source/')}
             and all(record['role'] == 'source' for record in sources.values()),
@@ -179,7 +181,16 @@ def _gltf_sources(inventory, provenance, report):
             'MODEL3D_NORMALIZATION', 'Import report requires a native glTF source.')
     primary = 'model' + Path(original_name).suffix.lower()
     primary_record = sources.get('source/'+primary)
-    primary_evidence = [item for item in provenance.get('source_records', [])
+    acquired = provenance.get('source_records', [])
+    require(len(acquired) == len(sources) and
+            {item['file']['path'] for item in acquired} == set(sources) and
+            all(item['file'] == sources[item['file']['path']] for item in acquired),
+            'MODEL3D_NORMALIZATION', 'Native acquisition must retain every exact original source record once.')
+    require(all(item['file'] == primary_record or
+                item['original_filename'] == item['file']['path'].removeprefix('source/')
+                for item in acquired),
+            'MODEL3D_NORMALIZATION', 'Native resource acquisition names differ from their inventoried paths.')
+    primary_evidence = [item for item in acquired
                         if item['file'] == primary_record]
     require(primary_record is not None and report.get('source_sha256') == primary_record['sha256']
             and len(primary_evidence) == 1 and primary_evidence[0]['original_filename'] == original_name,
