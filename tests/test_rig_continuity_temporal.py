@@ -263,6 +263,41 @@ class TemporalTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, 'PRECONDITION'):
                             registry.append_events('main', [move], expected_sha256=head)
 
+    def test_native_bounds_use_norms_for_rotations_and_stay_linear_in_depth(self):
+        from continuity_temporal import _native_bounds, _same_transform
+        from rig_math import decompose
+        from scene3d_math import local_matrix
+        half = math.sqrt(0.5)
+        identity = dict(translation=[0.0, 0.0, 0.0], rotation=[0.0, 0.0, 0.0, 1.0], scale=[1.0, 1.0, 1.0])
+
+        def native(chain, outer):
+            nodes, parent, world = [], None, None
+            for index, transform in enumerate(chain):
+                nodes.append(dict(id='n%d' % index, parent=parent, transform=transform))
+                parent = 'n%d' % index
+                world = local_matrix(transform) if world is None else world @ local_matrix(transform)
+            floor, relative = _native_bounds(dict(nodes=nodes), outer)[parent]
+            return decompose(local_matrix(outer) @ world), dict(floor=floor, relative=relative)
+
+        # A 90 degree scene_to_world rotation leaves ulp-sized error in entries
+        # that are exactly zero; an authored zero component must still match.
+        turn = dict(identity, rotation=[0.0, half, 0.0, half])
+        value, bound = native([dict(identity, translation=[1000.0, 0.0, 0.0])], turn)
+        self.assertNotEqual(value['translation'][0], 0.0)
+        self.assertTrue(_same_transform(value, dict(identity, translation=[0.0, 0.0, -1000.0],
+                                                   rotation=turn['rotation']), native=True, **bound))
+
+        # Unit-magnitude chains at the contract depth keep a tight bound and
+        # still reject a millimetre offset; scale roundoff grows with depth.
+        quarter = [0.0, 0.0, math.sin(math.pi / 8), math.cos(math.pi / 8)]
+        chain = [dict(identity, translation=[1.0, 0.0, 0.0], rotation=quarter) for _ in range(64)]
+        value, bound = native(chain, identity)
+        self.assertLess(max(bound['floor']), 1e-9)
+        exact = dict(value, scale=[1.0, 1.0, 1.0])
+        self.assertTrue(_same_transform(value, exact, native=True, **bound))
+        offset = dict(value, translation=[value['translation'][0] + 1e-3] + value['translation'][1:])
+        self.assertFalse(_same_transform(value, offset, native=True, **bound))
+
     def test_authored_preconditions_are_exact_and_rotations_are_normalized(self):
         coordinate = 999999999999.0
         angle_component = math.sqrt(0.5)

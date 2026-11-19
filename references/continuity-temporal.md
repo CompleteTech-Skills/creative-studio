@@ -52,11 +52,12 @@ chronological time may have no unique presentation occurrence.
 
 Relocation preconditions compare authored translation and scale exactly. Only
 a value composed from native matrices (an entity's first relocation, and each
-incoming scene's seed) allows roundoff: 8 ulp relative, plus an absolute
-translation bound derived from the magnitudes that cancelled anywhere in the
-parent chain, pivots and scene-to-world composition, scaled by chain depth.
-Rotations are normalized and compared within 8
-ulp, with `q` and `-q` treated as the same rotation.
+incoming scene's seed) allows roundoff. Translation uses an absolute bound
+from the norms of every translation, pivot and scale composed through the
+parent chain and scene-to-world transform; scale and normalized rotation use
+a relative bound. Both grow linearly with chain depth (8·(depth+1) ulp, and
+8√3·(depth+1) ulp of the composed magnitude for translation). `q` and `-q`
+are the same rotation.
 
 `continuity-temporal-event` carries immutable identity, integer story tick,
 priority, prerequisite event IDs, author, revision, hash-pinned source references

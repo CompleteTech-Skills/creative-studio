@@ -60,14 +60,14 @@ def _equal(a, b):
     return a == b
 
 
-def _same_transform(a, b, *, native, floor=None):
+def _same_transform(a, b, *, native, floor=None, relative=None):
     """Compare validated TRS, allowing roundoff only at a native matrix boundary.
 
     ``floor`` is the per-axis absolute translation bound recorded when the
     native value was composed; cancellation leaves a residual proportional to
     the magnitudes that cancelled, not to the result.
     """
-    roundoff = 8 * math.ulp(1.0)
+    roundoff = max(8 * math.ulp(1.0), relative or 0.) if native else 8 * math.ulp(1.0)
     floor = floor or (0., 0., 0.)
     for field in ('translation', 'scale'):
         if native:
@@ -86,47 +86,57 @@ def _same_transform(a, b, *, native, floor=None):
                for sign in (1, -1))
 
 
-def _magnitude(transform):
-    """Absolute local matrix bounding every term summed into local_matrix."""
-    import numpy
-    from scene3d_math import local_matrix
-    local = local_matrix(dict(transform, translation=[0.0, 0.0, 0.0], **(
-        {'pivot': [0.0, 0.0, 0.0]} if 'pivot' in transform else {})))
-    result = numpy.abs(local)
-    result[:3, 3] = numpy.abs(numpy.asarray(transform['translation'], dtype=float))
-    if 'pivot' in transform:
-        pivot = numpy.abs(numpy.asarray(transform['pivot'], dtype=float))
-        result[:3, 3] += pivot + result[:3, :3] @ pivot
-    return result
+def _native_bounds(scene, scene_to_world):
+    """Per-node roundoff bounds for values composed from native matrices.
 
-
-def _translation_floors(scene, scene_to_world):
-    """Per-node absolute translation roundoff bound through the full chain.
-
-    Mirrors evaluate_transforms with absolute values, so cancellation between
-    parents, locals, pivots and scene_to_world is bounded by the magnitudes that
-    cancelled rather than by the small result. The factor grows with depth.
+    Mirrors evaluate_transforms with norm bounds rather than entrywise values:
+    a rotation's computed zero entries carry ulp-sized error, and entrywise
+    products of rotations grow exponentially with depth. For each level the
+    linear part has spectral norm at most max|scale|; the effective local
+    translation t + p - R S p is bounded by |t| + |p| + max|scale| |p|.
+    Returns {node: (translation floor per axis, relative tolerance)}.
     """
-    import numpy
     nodes = {node['id']: node for node in scene['nodes']}
-    outer = _magnitude(scene_to_world)
+    def local(transform):
+        largest = max(abs(float(v)) for v in transform['scale'])
+        magnitude = math.hypot(*map(float, transform['translation']))
+        if 'pivot' in transform:
+            magnitude += (1 + largest) * math.hypot(*map(float, transform['pivot']))
+        return largest, magnitude
     chains = {}
     def visit(identifier):
         if identifier not in chains:
             node = nodes[identifier]
-            local = _magnitude(node['transform'])
+            largest, magnitude = local(node['transform'])
             if node['parent'] is None:
-                chains[identifier] = (local, 1)
+                chains[identifier] = (largest, magnitude, 1)
             else:
-                parent, depth = visit(node['parent'])
-                chains[identifier] = (parent @ local, depth + 1)
+                scale, total, depth = visit(node['parent'])
+                chains[identifier] = (scale * largest, total + scale * magnitude, depth + 1)
         return chains[identifier]
-    floors = {}
+    outer_scale, outer_magnitude = local(scene_to_world)
+    bounds = {}
     for identifier in nodes:
-        chain, depth = visit(identifier)
-        total = outer @ chain
-        floors[identifier] = (8 * (depth + 1) * math.ulp(1.0) * total[:3, 3]).tolist()
-    return floors
+        _, total, depth = visit(identifier)
+        levels = depth + 1
+        floor = 8 * math.sqrt(3) * (levels + 1) * math.ulp(1.0) * (outer_magnitude + outer_scale * total)
+        bounds[identifier] = ([floor] * 3, 8 * (levels + 1) * math.ulp(1.0))
+    return bounds
+
+
+def _translation_floors(scene, scene_to_world):
+    return {node: bound[0] for node, bound in _native_bounds(scene, scene_to_world).items()}
+
+
+def _bound_arguments(bound):
+    return {} if bound is None else dict(floor=bound[0], relative=bound[1])
+
+
+def _combined_bound(incoming, initial):
+    """Both sides may be native: add translation floors, keep the wider relative bound."""
+    if initial is None:
+        return _bound_arguments(incoming)
+    return dict(floor=[a + b for a, b in zip(incoming[0], initial[0])], relative=max(incoming[1], initial[1]))
 
 
 def _operations(events, initial, until=None, floors=None):
@@ -166,7 +176,7 @@ def _operations(events, initial, until=None, floors=None):
                 current = container[field]
             if kind == 'relocate':
                 matches = _same_transform(current, operation['before'], native=entity not in relocated,
-                                          floor=(floors or {}).get(entity))
+                                          **_bound_arguments((floors or {}).get(entity)))
                 relocated.add(entity)
             else:
                 matches = _equal(current, operation['before'])
@@ -238,7 +248,7 @@ class TemporalEngine:
             graph_state = SceneGraph(scene).evaluate_base()
             matrix = local_matrix(entry['scene_to_world'])
             import numpy
-            node_floors = _translation_floors(scene, entry['scene_to_world'])
+            node_bounds = _native_bounds(scene, entry['scene_to_world'])
             scene_floors = {}
             entities, nodes = {}, set()
             for binding in entry['entities']:
@@ -251,7 +261,7 @@ class TemporalEngine:
                 result = evaluated[node]
                 world = numpy.array(result['world_matrix'])
                 transform = decompose(matrix @ world)
-                scene_floors[entity] = node_floors[node]
+                scene_floors[entity] = node_bounds[node]
                 state = dict(entity_id=entity, identity_id=binding['identity_id'],
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=graph_state[node]['render_visible'])
@@ -338,8 +348,7 @@ class TemporalEngine:
                                    floors=self.initial_floors)
             if any(native['visible'] != state['entities'][entity]['visible'] or
                    not _same_transform(native['transform'], state['entities'][entity]['transform'], native=True,
-                                       floor=[a + b for a, b in zip(floors[scene_id][entity],
-                                                                    self.initial_floors.get(entity, (0., 0., 0.)))])
+                                       **_combined_bound(floors[scene_id][entity], self.initial_floors.get(entity)))
                    for entity, native in entities.items()):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
         verify_references(self.root, sources)
