@@ -87,6 +87,88 @@ class CapabilityTest(unittest.TestCase):
                 server.shutdown()
                 thread.join(timeout=2)
 
+    def call(self, server, method, path, body=None, *, token=True):
+        thread = threading.Thread(target=server.serve_forever,
+                                  kwargs={'poll_interval': 0.01}, daemon=True)
+        thread.start()
+        connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+        headers = {'Origin': f'http://127.0.0.1:{server.server_port}'}
+        if token: headers['Authorization'] = 'Bearer ' + server.token
+        payload = None
+        if body is not None:
+            headers['Content-Type'] = 'application/json'; payload = json.dumps(body)
+        try:
+            connection.request(method, path, payload, headers)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close(); server.shutdown(); thread.join(timeout=2)
+
+    def nested_project(self):
+        outer = self.root
+        self.root = outer/'project'
+        (self.root/'evidence').mkdir(parents=True)
+        (self.root/'project.json').write_bytes(b'{"fixture":true}\n')
+        self.project = pointer(self.root, self.root/'project.json', kind='project-revision')
+        return outer
+
+    def evidence_files(self):
+        return sorted(p.relative_to(self.root).as_posix() for p in (self.root/'evidence').rglob('*'))
+
+    def test_continuity_routes_require_bearer_token(self):
+        owner, request = self.bound('geometry-inspection')
+        before = self.evidence_files()
+        for method, path, body in (('GET', '/v1/continuity/capabilities', None),
+                                   ('POST', '/v1/continuity/admit', request)):
+            with self.subTest(method=method), \
+                 RigServer(self.root, self.root, continuity=self.engine(owner)) as server:
+                status, result = self.call(server, method, path, body, token=False)
+                self.assertEqual(status, 401, result)
+                self.assertEqual(result['error']['code'], 'RIG_API_AUTH')
+        self.assertEqual(self.evidence_files(), before)
+
+    def test_unconfigured_continuity_routes_are_refused(self):
+        _, request = self.bound('geometry-inspection')
+        for method, path, body in (('GET', '/v1/continuity/capabilities', None),
+                                   ('POST', '/v1/continuity/admit', request)):
+            with self.subTest(method=method), RigServer(self.root, self.root) as server:
+                status, result = self.call(server, method, path, body)
+                self.assertEqual(status, 400, result)
+                self.assertEqual(result['error']['code'], 'RIG_API_CONTINUITY_UNAVAILABLE')
+
+    def test_untrusted_or_outside_admission_is_rejected_at_construction(self):
+        with self.assertRaises(RigError) as raised:
+            RigServer(self.root, self.root, continuity=SimpleNamespace(root=self.root))
+        self.assertEqual(raised.exception.report['code'], 'RIG_API_CONTINUITY')
+        with tempfile.TemporaryDirectory() as other:
+            with self.assertRaises(RigError) as raised:
+                RigServer(other, self.root, continuity=self.engine())
+            self.assertEqual(raised.exception.report['code'], 'RIG_API_CONTINUITY_ROOT')
+
+    def test_rebound_admission_root_is_refused_per_request(self):
+        owner, request = self.bound('geometry-inspection')
+        admission = self.engine(owner)
+        with RigServer(self.root, self.root, continuity=admission) as server:
+            with tempfile.TemporaryDirectory(dir=self.root) as inner:
+                admission.root = Path(inner).resolve()
+                status, result = self.call(server, 'POST', '/v1/continuity/admit', request)
+        self.assertEqual(status, 400, result)
+        self.assertEqual(result['error']['code'], 'RIG_API_CONTINUITY_ROOT')
+
+    def test_symlink_swapped_admission_root_is_refused_per_request(self):
+        outer = self.nested_project()
+        admission = self.engine()
+        with RigServer(outer, outer, continuity=admission) as server:
+            moved = outer/'project-real'
+            self.root.rename(moved)
+            try:
+                self.root.symlink_to(moved, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                server.server_close(); self.skipTest(f'directory symlinks unavailable: {exc}')
+            status, result = self.call(server, 'GET', '/v1/continuity/capabilities')
+        self.assertEqual(status, 400, result)
+        self.assertEqual(result['error']['code'], 'RIG_API_CONTINUITY_ROOT')
+
     def test_discovery_is_not_execution_or_approval(self):
         result = discover()
         self.assertEqual(len(result['capabilities']), 13)
